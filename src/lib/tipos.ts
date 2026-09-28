@@ -11,6 +11,9 @@ export interface Semana {
 }
 
 export type Unidade = 'kg' | 'un'
+/** Selo "conferir" calculado pelo robô: o item chega fora da lista (aba Conferir) com o motivo escrito. */
+export type CodigoSelo = 'linha_alta' | 'bebida_negativa' | 'preco_fora' | 'fracao_un'
+export interface Selo { codigo: CodigoSelo; texto: string }
 export interface ItemSemana {
   id: number
   semana_id: number
@@ -23,11 +26,13 @@ export interface ItemSemana {
   qtd_sugerida: number
   qtd_aprovada: number
   preco_estimado: number | null
+  custo_medio: number | null
   data_ultima_compra: string | null
   fornecedor_ultima: string | null
   situacao: string
   negativo: boolean
   incluido: boolean
+  selos: Selo[]
 }
 
 export type Resultado = 'comprado' | 'parcial' | 'nao_achei'

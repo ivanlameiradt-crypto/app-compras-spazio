@@ -1,6 +1,7 @@
 import {
   totalEstimado, quantidadeComprada, situacaoDoItem, variacaoPreco, resumirSemana, separarAbas,
   lerNumero, formatarReais, formatarQtd, formatarData, normalizar, nomeCurto, mensagemDeErro,
+  paraConferir, qtdAoIncluir, formatarDataHora,
 } from '../../src/lib/regras'
 import { item, linha } from '../fabricas'
 
@@ -99,5 +100,34 @@ describe('regras', () => {
     expect(nomeCurto('joao.silva@gmail.com')).toBe('joao.silva')
     expect(mensagemDeErro(new Error('x'))).toBe('x')
     expect(mensagemDeErro('y')).toBe('y')
+  })
+})
+
+describe('regras da Fase 1A (selos e incluir fora da lista)', () => {
+  const selo = { codigo: 'linha_alta' as const, texto: '≈ R$ 1.100,00 nesta linha (acima de R$ 1.000)' }
+
+  it('aba Conferir: só itens com selo e fora da lista, em ordem alfabética', () => {
+    const b = item({ id: 1, produto: 'B', incluido: false, selos: [selo] })
+    const a = item({ id: 2, produto: 'A', incluido: false, selos: [selo] })
+    const incluido = item({ id: 3, produto: 'C', incluido: true, selos: [selo] })
+    const semSelo = item({ id: 4, produto: 'D', incluido: false })
+    expect(paraConferir([b, a, incluido, semSelo]).map((i) => i.id)).toEqual([2, 1])
+  })
+
+  it('quantidade ao incluir: negativo = max(estoque mínimo, passo); demais = sugerido ou um passo', () => {
+    const neg = { bebida: false, negativo: true, incluido: false, qtd_sugerida: 4321 }
+    expect(qtdAoIncluir(item({ ...neg, unidade: 'un', estoque_minimo: 300 }))).toBe(300)
+    expect(qtdAoIncluir(item({ ...neg, unidade: 'kg', estoque_minimo: 0 }))).toBe(0.5)
+    expect(qtdAoIncluir(item({ ...neg, unidade: 'kg', estoque_minimo: 0.2 }))).toBe(0.5)
+    expect(qtdAoIncluir(item({ ...neg, unidade: 'kg', estoque_minimo: 2.5 }))).toBe(2.5)
+    expect(qtdAoIncluir(item({ incluido: false, unidade: 'kg', qtd_sugerida: 40, selos: [selo] }))).toBe(40)
+    expect(qtdAoIncluir(item({ incluido: false, unidade: 'un', qtd_sugerida: 0, estoque_minimo: 71 }))).toBe(1)
+    expect(qtdAoIncluir(item({ incluido: false, unidade: 'kg', qtd_sugerida: 0 }))).toBe(0.5)
+  })
+
+  it('data e hora no horário de Brasília', () => {
+    expect(formatarDataHora('2026-09-23T13:05:00Z')).toBe('23/09 às 10h05')
+    expect(formatarDataHora('2026-09-24T02:30:00Z')).toBe('23/09 às 23h30') // ainda é dia 23 em Brasília
+    expect(formatarDataHora('2026-09-23T03:00:00Z')).toBe('23/09 às 00h00')
   })
 })

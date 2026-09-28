@@ -9,9 +9,11 @@ const signInWithPassword = vi.fn()
 const updateUser = vi.fn()
 const refreshSession = vi.fn()
 const invoke = vi.fn()
+const from = vi.fn()
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...a: unknown[]) => rpc(...a),
+    from: (...a: unknown[]) => from(...a),
     storage: { from: () => ({ upload: (...a: unknown[]) => upload(...a) }) },
     functions: { invoke: (...a: unknown[]) => invoke(...a) },
     auth: {
@@ -24,15 +26,15 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }))
 import {
-  ErroApi, aprovarCompra, criarAcesso, entrarComSenha, escolherSenhaInicial, executarOp, enviarOp,
-  redefinirSenha, sair, trocarMinhaSenha,
+  ErroApi, adminFecharCompra, aprovarCompra, comprasAbertasParaFechar, criarAcesso, entrarComSenha, escolherSenhaInicial,
+  executarOp, enviarOp, itensDaSemana, redefinirSenha, sair, semanaTravandoAprovacao, trocarMinhaSenha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
 
 beforeEach(async () => {
   rpc.mockReset(); upload.mockReset(); signOut.mockReset(); getSession.mockReset()
-  signInWithPassword.mockReset(); updateUser.mockReset(); refreshSession.mockReset(); invoke.mockReset()
+  signInWithPassword.mockReset(); updateUser.mockReset(); refreshSession.mockReset(); invoke.mockReset(); from.mockReset()
   getSession.mockResolvedValue({ data: { session: { access_token: 'x' } }, error: null })
   localStorage.clear()
   await clear()
@@ -234,5 +236,85 @@ describe('escolherSenhaInicial (P3 — primeiro acesso)', () => {
     await escolherSenhaInicial('minhaSenhaSó123')
     expect(updateUser).toHaveBeenCalledWith({ password: 'minhaSenhaSó123', data: { trocar_senha: false } })
     expect(refreshSession).toHaveBeenCalled()
+  })
+})
+
+/** Imita a consulta do supabase-js: cada filtro devolve a própria consulta e o await entrega a resposta. */
+function consulta(resposta: { data: unknown; error: { message: string } | null }) {
+  const q: Record<string, unknown> = {}
+  for (const metodo of ['select', 'eq', 'neq', 'in', 'order', 'limit', 'maybeSingle']) q[metodo] = vi.fn(() => q)
+  q.then = (ok: (r: unknown) => unknown, falha?: (e: unknown) => unknown) => Promise.resolve(resposta).then(ok, falha)
+  return q as Record<string, ReturnType<typeof vi.fn>>
+}
+
+describe('Fase 1A: selos, compras abertas e admin_fechar_compra', () => {
+  it('itensDaSemana traz selos e custo médio; linha sem as colunas novas vale como "sem selo"', async () => {
+    const selos = [{ codigo: 'linha_alta', texto: '≈ R$ 1.100,00 nesta linha (acima de R$ 1.000)' }]
+    from.mockReturnValue(consulta({ data: [{ id: 1, produto: 'A' }, { id: 2, produto: 'B', selos, custo_medio: 9.5 }], error: null }))
+    const r = await itensDaSemana(7)
+    expect(from).toHaveBeenCalledWith('itens_semana')
+    expect(r[0]).toMatchObject({ id: 1, selos: [], custo_medio: null })
+    expect(r[1]).toMatchObject({ id: 2, selos, custo_medio: 9.5 })
+  })
+
+  it('comprasAbertasParaFechar: só as abertas da semana; conta os itens marcados e soma qtd × preço (sem preço conta 0)', async () => {
+    const q = consulta({
+      data: [
+        {
+          id: 'a1', semana_id: 7, loja: 'FEIRA', comprador: 'joao@spazio.com', aberta_em: '2026-09-23T13:05:00Z', status: 'aberta',
+          usuarios: { nome: 'João' },
+          compras_itens: [{ qtd: 2, preco_unit: 10.5 }, { qtd: 3, preco_unit: null }, { qtd: 0, preco_unit: 4 }, { qtd: '1.5', preco_unit: '2' }],
+        },
+        { id: 'a2', semana_id: 7, loja: 'PADARIA', comprador: 'maria@spazio.com', aberta_em: '2026-09-23T15:00:00Z', status: 'aberta', usuarios: null, compras_itens: [] },
+      ],
+      error: null,
+    })
+    from.mockReturnValue(q)
+    const r = await comprasAbertasParaFechar(7)
+    expect(from).toHaveBeenCalledWith('compras')
+    expect(q.eq).toHaveBeenCalledWith('semana_id', 7)
+    expect(q.eq).toHaveBeenCalledWith('status', 'aberta')
+    expect(r).toEqual([
+      { id: 'a1', loja: 'FEIRA', comprador: 'joao@spazio.com', aberta_em: '2026-09-23T13:05:00Z', comprador_nome: 'João', itens: 4, total_marcado: 24 },
+      { id: 'a2', loja: 'PADARIA', comprador: 'maria@spazio.com', aberta_em: '2026-09-23T15:00:00Z', comprador_nome: 'maria@spazio.com', itens: 0, total_marcado: 0 },
+    ])
+  })
+
+  describe('semanaTravandoAprovacao', () => {
+    const emCompra = { id: 7, data_referencia: '2026-09-21', status: 'em_compra', aprovada_por: null, aprovada_em: null }
+    const rascunho = { id: 8, data_referencia: '2026-09-28', status: 'rascunho', aprovada_por: null, aprovada_em: null }
+    /** a primeira leitura é a semana em compra, a segunda a semana para revisar */
+    const semanas = (emC: unknown, revisar: unknown) => from
+      .mockReturnValueOnce(consulta({ data: emC, error: null }))
+      .mockReturnValueOnce(consulta({ data: revisar, error: null }))
+
+    it('lista nova em rascunho esperando e outra semana em compra: devolve a semana em compra', async () => {
+      semanas(emCompra, rascunho)
+      expect(await semanaTravandoAprovacao()).toEqual(emCompra)
+    })
+    it('sem rascunho esperando (a semana para revisar é a própria em compra): nada trava', async () => {
+      semanas(emCompra, emCompra)
+      expect(await semanaTravandoAprovacao()).toBeNull()
+    })
+    it('rascunho sem semana em compra: nada trava', async () => {
+      semanas(null, rascunho)
+      expect(await semanaTravandoAprovacao()).toBeNull()
+    })
+  })
+
+  it('adminFecharCompra chama admin_fechar_compra com a compra, com/sem nota e o total', async () => {
+    rpc.mockResolvedValue({ data: true, error: null })
+    expect(await adminFecharCompra('c1', false, 123.4)).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('admin_fechar_compra', { p_compra: 'c1', p_com_nota: false, p_total: 123.4 })
+  })
+
+  it('adminFecharCompra devolve false quando o banco diz que a compra já estava fechada', async () => {
+    rpc.mockResolvedValue({ data: false, error: null })
+    expect(await adminFecharCompra('c1', true, 10)).toBe(false)
+  })
+
+  it('adminFecharCompra: recusa do banco vira erro com a mensagem', async () => {
+    rpc.mockResolvedValue({ error: { message: 'compra sem itens: use Cancelar', code: 'P0001' }, status: 400 })
+    await expect(adminFecharCompra('c1', true, 10)).rejects.toThrow('compra sem itens: use Cancelar')
   })
 })

@@ -109,7 +109,9 @@ export async function listarSemanas(): Promise<Semana[]> {
   return checar(await supabase.from('semanas').select('*').order('data_referencia', { ascending: false }).limit(52))
 }
 export async function itensDaSemana(semanaId: number): Promise<ItemSemana[]> {
-  return checar(await supabase.from('itens_semana').select('*').eq('semana_id', semanaId).order('produto'))
+  const r = checar(await supabase.from('itens_semana').select('*').eq('semana_id', semanaId).order('produto')) as ItemSemana[]
+  // selos e custo_medio chegam com a migration 20260928000001; sem eles, o item vale como "sem selo" e "sem custo médio"
+  return r.map((i) => ({ ...i, selos: i.selos ?? [], custo_medio: i.custo_medio ?? null }))
 }
 export async function linhasDaSemana(semanaId: number): Promise<LinhaCompra[]> {
   const r = checar(await supabase.from('compras_itens').select('*, compras!inner(semana_id)').eq('compras.semana_id', semanaId)) as
@@ -169,6 +171,42 @@ export async function comprasAbertas(semanaId: number): Promise<CompraAbertaResu
   return r.map((c) => ({ id: c.id, loja: c.loja, comprador: c.comprador, aberta_em: c.aberta_em, comprador_nome: c.usuarios?.nome ?? c.comprador }))
 }
 export const cancelarCompra = (id: string) => chamar('cancelar_compra', { p_compra: id })
+
+// ---------- Fase 1A: compra aberta de outra pessoa trava o encerrar da semana (Lançamentos: fechar ou cancelar)
+export type CompraAbertaParaFechar = CompraAbertaResumo & { itens: number; total_marcado: number }
+/** As compras abertas da semana, com quantos itens já foram marcados e o total sugerido (soma de qtd × preço, sem preço = 0). */
+export async function comprasAbertasParaFechar(semanaId: number): Promise<CompraAbertaParaFechar[]> {
+  const r = checar(await supabase.from('compras').select('*, usuarios!compras_comprador_fkey(nome), compras_itens(qtd, preco_unit)')
+    .eq('semana_id', semanaId).eq('status', 'aberta').order('aberta_em')) as
+    (Compra & { usuarios: { nome: string } | null; compras_itens: { qtd: number; preco_unit: number | null }[] | null })[]
+  return r.map((c) => {
+    const linhas = c.compras_itens ?? []
+    return {
+      id: c.id, loja: c.loja, comprador: c.comprador, aberta_em: c.aberta_em, comprador_nome: c.usuarios?.nome ?? c.comprador,
+      itens: linhas.length,
+      total_marcado: linhas.reduce((s, l) => s + Number(l.qtd) * Number(l.preco_unit ?? 0), 0),
+    }
+  })
+}
+/**
+ * A semana em compra que está travando a aprovação da lista nova: só quando já existe uma semana em rascunho
+ * esperando e a semana em compra é outra (só uma fica em compra por vez). Fora disso, compra aberta é compra
+ * em curso (o comprador pode estar na loja) e não há o que destravar.
+ */
+export async function semanaTravandoAprovacao(): Promise<Semana | null> {
+  const [emCompra, paraRevisar] = await Promise.all([semanaEmCompra(), semanaParaRevisar()])
+  if (!emCompra || !paraRevisar || paraRevisar.status !== 'rascunho' || paraRevisar.id === emCompra.id) return null
+  return emCompra
+}
+/**
+ * O admin fecha a compra aberta de outra pessoa com os itens já marcados (segue para a fila de lançamento).
+ * Devolve false quando ela já estava fechada (o comprador fechou antes): nada mudou, valem os valores dele.
+ */
+export async function adminFecharCompra(id: string, comNota: boolean, total: number): Promise<boolean> {
+  const { data, error, status } = await supabase.rpc('admin_fechar_compra', { p_compra: id, p_com_nota: comNota, p_total: total })
+  if (error) throw new ErroApi(error.message, status, error.code)
+  return data !== false // só o false explícito do banco quer dizer "já estava fechada"
+}
 
 // ---------- M12: nome de quem comprou, em vez do e-mail
 export async function nomesEquipe(): Promise<Record<string, string>> {

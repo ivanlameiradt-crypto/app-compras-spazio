@@ -68,6 +68,22 @@ export function separarAbas(itens: ItemSemana[]) {
   }
 }
 
+/** Aba Conferir: itens com selo que o robô deixou fora da lista (as outras abas só mostram incluídos). */
+export function paraConferir(itens: ItemSemana[]): ItemSemana[] {
+  return itens.filter((i) => !i.incluido && i.selos.length > 0).sort(porNome)
+}
+
+/**
+ * Quantidade ao incluir um item que está fora da lista. Insumo negativo (aba Negativos ou achado pela busca) entra
+ * com o estoque mínimo, nunca com o "buraco" do SisChef (qtd_sugerida chega a milhares); os demais, com a sugestão
+ * do robô ou, sem sugestão, com um passo.
+ */
+export function qtdAoIncluir(item: ItemSemana): number {
+  const p = passo(item.unidade)
+  if (item.negativo) return Math.max(item.estoque_minimo, p)
+  return item.qtd_sugerida > 0 ? item.qtd_sugerida : p
+}
+
 /**
  * "1,2" → 1.2 · "R$ 1.234,50" → 1234.5 · "2.79" → 2.79 · "1.250" → 1250 (milhar, sem vírgula) · "0.500" → 0.5 ·
  * vazio/negativo/inválido → null
@@ -97,6 +113,15 @@ export function formatarQtd(v: number, unidade: Unidade): string {
 export function formatarData(iso: string): string {
   const [, m, d] = iso.slice(0, 10).split('-')
   return `${d}/${m}`
+}
+
+/** "2026-09-23T13:05:00Z" → "23/09 às 10h05" (horário de Brasília, onde a equipe compra). */
+export function formatarDataHora(iso: string): string {
+  const partes = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(iso))
+  const p = Object.fromEntries(partes.map((x) => [x.type, x.value]))
+  return `${p.day}/${p.month} às ${p.hour}h${p.minute}`
 }
 
 export function normalizar(s: string): string {

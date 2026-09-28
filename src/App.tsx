@@ -50,8 +50,8 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
   return (
     <Layout usuario={usuario} offline={offline}>
       <Routes>
-        {admin && <Route path="/lista" element={<Revisao />} />}
-        {admin && <Route path="/lancamentos" element={<Lancamentos />} />}
+        {admin && <Route path="/lista" element={<Revisao usuario={usuario} />} />}
+        {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
         {admin && <Route path="/resumo" element={<Resumo />} />}
         {admin && <Route path="/pessoas" element={<Pessoas usuario={usuario} />} />}
         <Route path="/comprar" element={<Comprar usuario={usuario} />} />

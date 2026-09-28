@@ -7,13 +7,17 @@ import { afterAll, beforeAll, beforeEach } from 'vitest'
 const AQUI = dirname(fileURLToPath(import.meta.url))
 const MIGRATIONS = join(AQUI, '../../supabase/migrations')
 
-/** Postgres em memória com o shim do Supabase e todas as migrations (menos storage, que só existe no Supabase). */
-export async function novoBanco(): Promise<PGlite> {
+/**
+ * Postgres em memória com o shim do Supabase e todas as migrations (menos storage, que só existe no Supabase).
+ * `antesDe` (nome de arquivo de migration) para antes dela: simula o banco de produção ainda sem as mais novas.
+ */
+export async function novoBanco(antesDe?: string): Promise<PGlite> {
   const db = new PGlite()
   await db.exec(readFileSync(join(AQUI, 'shim-supabase.sql'), 'utf8'))
   let arquivos: string[] = []
   try {
     arquivos = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && !f.includes('storage')).sort()
+      .filter((f) => antesDe === undefined || f < antesDe)
   } catch {
     arquivos = []
   }

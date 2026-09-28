@@ -201,3 +201,99 @@ describe('nomes_equipe (M12)', () => {
     await expect(como(db, ESTRANHO, 'select * from nomes_equipe()')).rejects.toThrow(/acesso/)
   })
 })
+
+describe('admin_fechar_compra (Fase 1A: compra aberta esquecida trava o encerrar)', () => {
+  async function abertaComItem() {
+    const x = await emCompra()
+    await como(x.db, JOAO, 'select abrir_compra($1, $2, $3)', [C1, x.s, 'ATACADÃO'])
+    await como(x.db, JOAO, 'select registrar_item($1, $2, $3, 52, 2.79, $4)', [L1, C1, x.coca, 'comprado'])
+    return x
+  }
+
+  it('comprador (nem o dono) não usa; anon não executa', async () => {
+    const { db } = await abertaComItem()
+    await expect(como(db, JOAO, 'select admin_fechar_compra($1, true, 145.08)', [C1])).rejects.toThrow(/administrador/)
+    await expect(como(db, MARIA, 'select admin_fechar_compra($1, true, 145.08)', [C1])).rejects.toThrow(/administrador/)
+    await expect(como(db, EX, 'select admin_fechar_compra($1, true, 145.08)', [C1])).rejects.toThrow(/administrador/)
+    await expect(como(db, 'anon', 'select admin_fechar_compra($1, true, 145.08)', [C1])).rejects.toThrow(/permission denied/)
+    const [c] = await como(db, ADMIN, 'select status from compras')
+    expect(c.status).toBe('aberta')
+  })
+
+  it('admin fecha a compra de outra pessoa com nota e total informados e grava o motivo no histórico', async () => {
+    const { db } = await abertaComItem()
+    const [r] = await como(db, ADMIN, 'select admin_fechar_compra($1, false, 145.08) as fechou', [C1])
+    expect(r.fechou).toBe(true) // esta chamada fechou a compra
+    const [c] = await como(db, ADMIN, 'select comprador, status, com_nota, total_pago, foto_cupom, fechada_em from compras')
+    expect([c.comprador, c.status, c.com_nota, Number(c.total_pago), c.foto_cupom]).toEqual([JOAO, 'fechada', false, 145.08, null])
+    expect(c.fechada_em).not.toBeNull()
+    const h = await como(db, ADMIN, 'select quem, tabela, registro, antes, depois from historico_alteracoes')
+    expect(h).toHaveLength(1)
+    expect([h[0].quem, h[0].tabela, h[0].registro]).toEqual([ADMIN, 'compras', C1])
+    expect([h[0].antes.status, h[0].antes.total_pago, h[0].antes.comprador]).toEqual(['aberta', null, JOAO])
+    expect([h[0].depois.status, h[0].depois.com_nota, Number(h[0].depois.total_pago)]).toEqual(['fechada', false, 145.08])
+    expect(h[0].depois.motivo).toBe('fechada pelo admin: compra aberta impedia encerrar a semana')
+    const linhas = await como(db, ADMIN, 'select qtd, preco_unit from compras_itens')
+    expect(linhas.map((l) => [Number(l.qtd), Number(l.preco_unit)])).toEqual([[52, 2.79]]) // itens marcados ficam como estão
+  })
+
+  it('compra sem itens: "use Cancelar"', async () => {
+    const { db, s } = await emCompra()
+    await como(db, JOAO, 'select abrir_compra($1, $2, $3)', [C1, s, 'FEIRA'])
+    await expect(como(db, ADMIN, 'select admin_fechar_compra($1, true, 0)', [C1])).rejects.toThrow(/compra sem itens: use Cancelar/)
+    const [c] = await como(db, ADMIN, 'select status from compras')
+    expect(c.status).toBe('aberta')
+  })
+
+  it('exige com/sem nota e total pago (como o fechar_compra)', async () => {
+    const { db } = await abertaComItem()
+    await expect(como(db, ADMIN, 'select admin_fechar_compra($1, null, 145.08)', [C1])).rejects.toThrow(/com nota ou sem nota/)
+    await expect(como(db, ADMIN, 'select admin_fechar_compra($1, true, null)', [C1])).rejects.toThrow(/informe o total pago/)
+    await expect(como(db, ADMIN, 'select admin_fechar_compra($1, true, -1)', [C1])).rejects.toThrow(/informe o total pago/)
+    const [c] = await como(db, ADMIN, 'select status from compras')
+    expect(c.status).toBe('aberta')
+    expect(await como(db, ADMIN, 'select * from historico_alteracoes')).toHaveLength(0)
+  })
+
+  it('compra inexistente: "compra não encontrada"', async () => {
+    const { db } = await emCompra()
+    await expect(como(db, ADMIN, 'select admin_fechar_compra($1, true, 1)', [C2])).rejects.toThrow(/compra não encontrada/)
+  })
+
+  it('compra já fechada (pelo comprador ou num reenvio): nada muda e devolve false (a tela avisa)', async () => {
+    const { db } = await abertaComItem()
+    await como(db, JOAO, 'select fechar_compra($1, true, 140, null)', [C1])
+    const antes = await como(db, ADMIN, 'select * from compras')
+    const [r] = await como(db, ADMIN, 'select admin_fechar_compra($1, false, 999) as fechou', [C1])
+    expect(r.fechou).toBe(false)
+    expect(await como(db, ADMIN, 'select * from compras')).toEqual(antes)
+    expect(await como(db, ADMIN, 'select * from historico_alteracoes')).toHaveLength(0)
+  })
+
+  it('reenvio pelo admin é idempotente: uma linha só no histórico', async () => {
+    const { db } = await abertaComItem()
+    const [r1] = await como(db, ADMIN, 'select admin_fechar_compra($1, true, 145.08) as fechou', [C1])
+    const [r2] = await como(db, ADMIN, 'select admin_fechar_compra($1, true, 145.08) as fechou', [C1])
+    expect([r1.fechou, r2.fechou]).toEqual([true, false])
+    expect(await como(db, ADMIN, 'select * from historico_alteracoes')).toHaveLength(1)
+  })
+
+  it('depois dela o encerrar_semana passa, e a compra segue para a fila de lançamento', async () => {
+    const { db, s } = await abertaComItem()
+    await expect(como(db, ADMIN, 'select encerrar_semana($1)', [s])).rejects.toThrow(/compras abertas/)
+    await como(db, ADMIN, 'select admin_fechar_compra($1, true, 145.08)', [C1])
+    await como(db, ADMIN, 'select encerrar_semana($1)', [s])
+    await como(db, ADMIN, 'select aprovar_compra($1)', [C1])
+    const [c] = await como(db, ADMIN, 'select status from compras')
+    expect(c.status).toBe('aprovada')
+    const [sem] = await como(db, ADMIN, 'select status from semanas')
+    expect(sem.status).toBe('encerrada')
+  })
+
+  it('search_path fixo e security definer', async () => {
+    const db = banco()
+    const [f] = await como(db, 'service', `select prosecdef, proconfig from pg_proc where proname = 'admin_fechar_compra'`)
+    expect(f.prosecdef).toBe(true)
+    expect(f.proconfig).toEqual(['search_path=public'])
+  })
+})

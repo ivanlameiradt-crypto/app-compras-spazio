@@ -37,6 +37,9 @@ input, select { font: inherit; padding: 10px 12px; border-radius: 10px; border: 
 .cabecalho { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }
 .pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--aviso-fundo); color: var(--aviso-texto); }
 .pill.ok { background: var(--ok-fundo); color: var(--ok-texto); }
+/* selos "conferir" do robô: o motivo escrito no cartão (aba Conferir) ou como etiquetas no item incluído */
+.selo { font-size: 13px; padding: 6px 10px; margin-top: 6px; border-radius: 10px; background: var(--aviso-fundo); color: var(--aviso-texto); }
+.etiquetas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .abas { display: flex; gap: 6px; margin: 8px 0; }
 .abas button { flex: 1; font: inherit; font-size: 14px; padding: 8px 4px; border-radius: 10px; border: 1px solid var(--linha); background: var(--cartao); color: var(--texto); }
 .abas button[aria-pressed='true'] { background: var(--marca); color: var(--marca-texto); border-color: var(--marca); }

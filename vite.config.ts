@@ -2,6 +2,12 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath } from 'node:url'
+
+// 15.3: testes com dados reais moram no repositório PRIVADO (compra-semanal/tests/app_real) e só
+// entram quando TESTES_PRIVADOS aponta para essa pasta (rodada local antes de publicar; nunca no CI
+// público). Eles usam o banco de teste daqui pelo apelido '@app-db' (tests/db).
+const TESTES_PRIVADOS = process.env.TESTES_PRIVADOS
 
 // M9: build de produção sem as variáveis do Supabase compila "com sucesso" apontando pro
 // localhost do dev — só falha em produção, silenciosamente. Falha cedo em vez disso. Dev e
@@ -70,6 +76,23 @@ export default defineConfig(({ command, mode }) => {
             environment: 'node',
           },
         },
+        ...(TESTES_PRIVADOS
+          ? [
+              {
+                extends: true,
+                resolve: { alias: { '@app-db': fileURLToPath(new URL('./tests/db', import.meta.url)) } },
+                test: {
+                  name: 'privado',
+                  dir: TESTES_PRIVADOS,
+                  include: ['*.test.ts'],
+                  environment: 'node',
+                  testTimeout: 60000,
+                  hookTimeout: 60000,
+                  fileParallelism: false,
+                },
+              },
+            ]
+          : []),
       ],
     },
   }
