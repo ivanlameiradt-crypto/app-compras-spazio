@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as api from '../lib/api'
-import type { ItemSemana, Semana, Usuario } from '../lib/tipos'
+import type { ItemSemana, PedidoRecente, Semana, Usuario, Vendedor } from '../lib/tipos'
 import {
   ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, lerNumero, mensagemDeErro, normalizar,
   paraConferir, passo, qtdAoIncluir, separarAbas, totalEstimado,
 } from '../lib/regras'
+import { ddmm, diaCurto, horaLocal, rotuloVendedor } from '../cotacao/mensagens'
 
 type Aba = 'conferir' | 'bebidas' | 'insumos' | 'negativos'
 /** Outra semana ainda em compra: só uma fica em compra por vez, então ela precisa ser encerrada antes de aprovar esta. */
@@ -24,6 +25,42 @@ async function semanaAnteriorEmCompra(s: Semana): Promise<SemanaAnterior | null>
   }
 }
 
+/** 00:00 de Brasília (UTC−3, sem horário de verão) de (data − 7 dias), em ISO: o início da janela dos pedidos recentes. */
+export function inicioPedidosRecentes(dataReferencia: string): string {
+  const [a, m, d] = dataReferencia.split('-').map(Number)
+  const dia = new Date(Date.UTC(a, m - 1, d - 7)).toISOString().slice(0, 10)
+  return `${dia}T03:00:00.000Z`
+}
+
+/**
+ * Fase 1B (spec 8.1): item que está num pedido confirmado a vendedor nos 7 dias antes da semana (ou depois) ganha a
+ * etiqueta informativa "Pedido com MATEUS em qua 21/10: a NF-e já entrou no SisChef?" — o pedido pode ainda estar
+ * chegando e o robô leu o estoque antes. Não é selo e não muda `incluido`. Mais de um pedido: vale o mais recente.
+ */
+export function etiquetasPedidoAnterior(pedidos: PedidoRecente[], vendedores: Vendedor[]): Map<number, string> {
+  const r = new Map<number, string>()
+  const ordem = [...pedidos].sort((a, b) => b.confirmado_em.localeCompare(a.confirmado_em))
+  for (const p of ordem) {
+    const v = vendedores.find((x) => x.id === p.vendedor_id)
+    const rotulo = v ? rotuloVendedor(v.empresa) : `vendedor ${p.vendedor_id}`
+    const dia = horaLocal(p.confirmado_em).data
+    for (const l of p.itens) {
+      if (!r.has(l.produto_id)) r.set(l.produto_id, `Pedido com ${rotulo} em ${diaCurto(dia)} ${ddmm(dia)}: a NF-e já entrou no SisChef?`)
+    }
+  }
+  return r
+}
+
+async function lerPedidosAnteriores(s: Semana): Promise<Map<number, string>> {
+  try {
+    const pedidos = (await api.pedidosRecentes(s.id, inicioPedidosRecentes(s.data_referencia))) ?? []
+    if (pedidos.length === 0) return new Map()
+    return etiquetasPedidoAnterior(pedidos, (await api.listarVendedores()) ?? [])
+  } catch {
+    return new Map() // sem a tabela (App publicado antes da migration) ou sem rede: a Revisão segue sem a etiqueta
+  }
+}
+
 export default function Revisao({ usuario }: { usuario: Usuario }) {
   const [semana, setSemana] = useState<Semana | null | undefined>(undefined)
   const [itens, setItens] = useState<ItemSemana[]>([])
@@ -31,6 +68,7 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
   const [anterior, setAnterior] = useState<SemanaAnterior | null>(null)
   const [busca, setBusca] = useState('')
   const [erro, setErro] = useState('')
+  const [pedidosAnteriores, setPedidosAnteriores] = useState<Map<number, string>>(() => new Map())
 
   useEffect(() => {
     (async () => {
@@ -41,6 +79,7 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
           setItens(lista)
           if (paraConferir(lista).length > 0) setAba('conferir') // a aba Conferir, quando existe, é a primeira
           if (s.status === 'rascunho') setAnterior(await semanaAnteriorEmCompra(s))
+          void lerPedidosAnteriores(s).then(setPedidosAnteriores)
         }
         setSemana(s)
       } catch (e) {
@@ -99,7 +138,13 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
         <h2>Semana {formatarData(s.data_referencia)}</h2>
         <span className={s.status === 'rascunho' ? 'pill' : 'pill ok'}>{ROTULO_STATUS[s.status]}</span>
       </div>
-      {!editavel && <p className="aviso">Lista aprovada e liberada para os compradores.</p>}
+      {!editavel && (
+        <div className="aviso">
+          Lista aprovada e liberada para os compradores.{' '}
+          {/* Fase 1B: depois de aprovar, o próximo passo é montar as cotações com os vendedores */}
+          {s.status === 'em_compra' && <a className="link" href="#/cotacoes">Ir para Cotações</a>}
+        </div>
+      )}
       {erro && <p className="erro">{erro}</p>}
 
       {editavel && anterior && (
@@ -137,7 +182,7 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
       )}
 
       {visiveis.map((i) => (
-        <Cartao key={i.id} item={i} editavel={editavel} onAjustar={ajustar} />
+        <Cartao key={i.id} item={i} editavel={editavel} onAjustar={ajustar} pedidoAnterior={pedidosAnteriores.get(i.produto_id)} />
       ))}
 
       {editavel && (
@@ -170,9 +215,11 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
   )
 }
 
-function Cartao({ item, editavel, onAjustar }: {
+function Cartao({ item, editavel, onAjustar, pedidoAnterior }: {
   item: ItemSemana
   editavel: boolean
+  /** Fase 1B: "Pedido com MATEUS em qua 21/10: a NF-e já entrou no SisChef?" (só informa) */
+  pedidoAnterior?: string
   onAjustar: (item: ItemSemana, qtd: number, incluido: boolean) => void
 }) {
   const [texto, setTexto] = useState(String(item.qtd_aprovada).replace('.', ','))
@@ -189,6 +236,7 @@ function Cartao({ item, editavel, onAjustar }: {
     <div className="cartao">
       <div className="nome">{item.produto}</div>
       {aConferir && item.selos.map((selo, n) => <div key={n} className="selo">{selo.texto}</div>)}
+      {pedidoAnterior && <div className="etiqueta-cotacao" data-testid={`pedido-anterior-${item.produto_id}`}>{pedidoAnterior}</div>}
       <div className="sub">
         Estoque {formatarQtd(item.estoque, item.unidade)} · Sugerido {formatarQtd(item.qtd_sugerida, item.unidade)}
         {item.preco_estimado != null && <> · Últ. compra {formatarReais(item.preco_estimado)}{item.data_ultima_compra && <> em {formatarData(item.data_ultima_compra)}</>}</>}

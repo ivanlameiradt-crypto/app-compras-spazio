@@ -26,8 +26,10 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }))
 import {
-  ErroApi, adminFecharCompra, aprovarCompra, comprasAbertasParaFechar, criarAcesso, entrarComSenha, escolherSenhaInicial,
-  executarOp, enviarOp, itensDaSemana, redefinirSenha, sair, semanaTravandoAprovacao, trocarMinhaSenha,
+  ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
+  cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
+  enviarOp, gravarPedido, itensDaSemana, itensDasCotacoes, marcasDaSemana, novaVersao, pedidosRecentes, prepararCotacoes,
+  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, trocarMinhaSenha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
@@ -242,7 +244,7 @@ describe('escolherSenhaInicial (P3 — primeiro acesso)', () => {
 /** Imita a consulta do supabase-js: cada filtro devolve a própria consulta e o await entrega a resposta. */
 function consulta(resposta: { data: unknown; error: { message: string } | null }) {
   const q: Record<string, unknown> = {}
-  for (const metodo of ['select', 'eq', 'neq', 'in', 'order', 'limit', 'maybeSingle']) q[metodo] = vi.fn(() => q)
+  for (const metodo of ['select', 'eq', 'neq', 'in', 'gte', 'or', 'order', 'limit', 'maybeSingle']) q[metodo] = vi.fn(() => q)
   q.then = (ok: (r: unknown) => unknown, falha?: (e: unknown) => unknown) => Promise.resolve(resposta).then(ok, falha)
   return q as Record<string, ReturnType<typeof vi.fn>>
 }
@@ -316,5 +318,121 @@ describe('Fase 1A: selos, compras abertas e admin_fechar_compra', () => {
   it('adminFecharCompra: recusa do banco vira erro com a mensagem', async () => {
     rpc.mockResolvedValue({ error: { message: 'compra sem itens: use Cancelar', code: 'P0001' }, status: 400 })
     await expect(adminFecharCompra('c1', true, 10)).rejects.toThrow('compra sem itens: use Cancelar')
+  })
+})
+
+describe('Fase 1B: cotações (contrato 8.2)', () => {
+  it('prepararCotacoes chama cot_preparar; "atravessados" ausente vira lista vazia', async () => {
+    rpc.mockResolvedValue({ data: { semana_id: 3, cartoes: [], itens: [] }, error: null })
+    const r = await prepararCotacoes(3)
+    expect(rpc).toHaveBeenCalledWith('cot_preparar', { p_semana: 3 })
+    expect(r.atravessados).toEqual([])
+  })
+
+  it('itensDasCotacoes: sem ids não chama o banco; com ids lê cot_itens_admin com nota e marca e converte os números', async () => {
+    expect(await itensDasCotacoes([])).toEqual([])
+    expect(from).not.toHaveBeenCalled()
+    const q = consulta({ data: [{ id: 1, cotacao_id: 7, qtd: '104', fator: '12', preco_convertido: '3.5000', delta: '0.1800', avisos_vendedor: null, avisos_ivan: null }], error: null })
+    from.mockReturnValue(q)
+    const [i] = await itensDasCotacoes([7, 8])
+    expect(from).toHaveBeenCalledWith('cot_itens_admin')
+    expect(q.in).toHaveBeenCalledWith('cotacao_id', [7, 8])
+    expect(q.select.mock.calls[0][0]).toMatch(/nota_vendedor/)
+    expect(q.select.mock.calls[0][0]).toMatch(/marca_informada/)
+    expect(i).toMatchObject({ qtd: 104, fator: 12, preco_convertido: 3.5, delta: 0.18, avisos_vendedor: [], avisos_ivan: [], nota_vendedor: null, marca_informada: null })
+  })
+
+  it('cotacoesAnterioresVivas: outras semanas, vivas ou fechadas sem resultado há menos de 7 dias', async () => {
+    const q = consulta({ data: [{ id: 5, semana_id: 2, pedido_minimo: '300', frete: null }], error: null })
+    from.mockReturnValue(q)
+    const r = await cotacoesAnterioresVivas(3)
+    expect(from).toHaveBeenCalledWith('cot_cotacoes')
+    expect(q.neq).toHaveBeenCalledWith('semana_id', 3)
+    const filtro = String(q.or.mock.calls[0][0])
+    expect(filtro.startsWith('status.in.(pronta,enviada,respondida),and(status.eq.fechada,resultado.is.null,fechada_em.gt.')).toBe(true)
+    expect(r[0]).toMatchObject({ pedido_minimo: 300, frete: null })
+  })
+
+  it('cotacoesSubstituidasPor: sem ids não chama o banco; com ids lê cot_cotacoes com substituida_por in ids', async () => {
+    expect(await cotacoesSubstituidasPor([])).toEqual([])
+    expect(from).not.toHaveBeenCalled()
+    const q = consulta({ data: [{ id: 4, semana_id: 2, status: 'substituida', substituida_por: 5, pedido_minimo: null, frete: '30' }], error: null })
+    from.mockReturnValue(q)
+    const r = await cotacoesSubstituidasPor([5, 9])
+    expect(from).toHaveBeenCalledWith('cot_cotacoes')
+    expect(q.in).toHaveBeenCalledWith('substituida_por', [5, 9])
+    expect(r[0]).toMatchObject({ id: 4, substituida_por: 5, frete: 30 })
+  })
+
+  it('codigosDasCotacoes: mapa id → código', async () => {
+    from.mockReturnValue(consulta({ data: [{ cotacao_id: 7, codigo: 'q7Lm2vT9xKp4RsW8nB3yZc6Hd1FjA5eG' }], error: null }))
+    expect(await codigosDasCotacoes([7])).toEqual({ 7: 'q7Lm2vT9xKp4RsW8nB3yZc6Hd1FjA5eG' })
+  })
+
+  it('definirNota, novaVersao, gravarPedido, responderComoAdmin e abrirComoVendedor chamam as funções com os nomes do contrato', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await definirNota(10, 'fardo c/12')
+    expect(rpc).toHaveBeenLastCalledWith('cot_definir_nota', { p_produto_id: 10, p_nota: 'fardo c/12' })
+    rpc.mockResolvedValue({ data: '12', error: null })
+    expect(await novaVersao(7)).toBe(12)
+    expect(rpc).toHaveBeenLastCalledWith('cot_nova_versao', { p_cotacao: 7 })
+    const linha = { numero: 2, qtd: 108, base: 'embalagem' as const, embalagens: 9, fator: 12, preco_combinado: 42 }
+    rpc.mockResolvedValue({ data: { cotacao_id: 7, confirmado_por: 'ivan@spazio.com', confirmado_em: 'x', itens: [{ ...linha, produto_id: 10, preco_convertido: '3.5', qtd: '108' }] }, error: null })
+    const p = await gravarPedido(7, [linha])
+    expect(rpc).toHaveBeenLastCalledWith('cot_gravar_pedido', { p_cotacao: 7, p_itens: [linha] })
+    expect(p.itens[0]).toMatchObject({ qtd: 108, preco_convertido: 3.5, marca: null })
+    rpc.mockResolvedValue({ data: { ok: true, reenvio: false, recebido_em: 'x', itens: [], gerais: null }, error: null })
+    await responderComoAdmin(7, 'e1', [{ numero: 1, rev_lida: 0, estado: 'nao_tem' }], null, 'ivan_colou')
+    expect(rpc).toHaveBeenLastCalledWith('cot_responder_admin', {
+      p_cotacao: 7, p_envio_id: 'e1', p_itens: [{ numero: 1, rev_lida: 0, estado: 'nao_tem' }], p_gerais: null, p_origem: 'ivan_colou',
+    })
+    rpc.mockResolvedValue({ data: { ok: false, erro: 'codigo_invalido', texto: 'Este link não vale mais.' }, error: null })
+    await abrirComoVendedor('q7Lm2vT9xKp4RsW8nB3yZc6Hd1FjA5eG')
+    expect(rpc).toHaveBeenLastCalledWith('cotacao_abrir', { p_codigo: 'q7Lm2vT9xKp4RsW8nB3yZc6Hd1FjA5eG', p_previa: true })
+  })
+
+  it('recusa do banco numa função de admin vira ErroApi com a mensagem exata', async () => {
+    rpc.mockResolvedValue({ error: { message: 'pedido já confirmado', code: 'P0001' }, status: 400 })
+    await expect(gravarPedido(7, [])).rejects.toThrow('pedido já confirmado')
+  })
+
+  it('marcasDaSemana: função ainda inexistente (App antes da migration) → sem etiqueta; outro erro sobe', async () => {
+    rpc.mockResolvedValue({ error: { message: 'Could not find the function', code: 'PGRST202' }, status: 404 })
+    expect(await marcasDaSemana(3)).toEqual([])
+    rpc.mockResolvedValue({ error: { message: 'usuário sem acesso ao app', code: '42501' }, status: 403 })
+    await expect(marcasDaSemana(3)).rejects.toBeInstanceOf(ErroApi)
+  })
+
+  it('economiaSemanas: view ausente → []; números convertidos, na ordem da semana', async () => {
+    const q = consulta({ data: [{ semana_id: 3, data_referencia: '2026-10-19', total_pedido: '2380', total_ultimo: '2520', diferenca: '-140' }], error: null })
+    from.mockReturnValue(q)
+    expect((await economiaSemanas())[0]).toMatchObject({ total_pedido: 2380, total_ultimo: 2520, diferenca: -140 })
+    expect(from).toHaveBeenCalledWith('cot_economia')
+    expect(q.order).toHaveBeenCalledWith('data_referencia')
+    from.mockReturnValue(consulta({ data: null, error: { message: 'relation "cot_economia" does not exist', code: '42P01' } as never }))
+    expect(await economiaSemanas()).toEqual([])
+    from.mockReturnValue(consulta({ data: null, error: { message: 'Could not find the table', code: 'PGRST205' } as never }))
+    expect(await economiaSemanas()).toEqual([])
+  })
+
+  it('pedidosRecentes: pedidos desde a data, de cotações de OUTRAS semanas, com semana e vendedor', async () => {
+    const pedidos = consulta({ data: [
+      { cotacao_id: 5, confirmado_por: 'ivan@spazio.com', confirmado_em: '2026-10-14T13:00:00Z', itens: [{ numero: 1, produto_id: 10, qtd: '60', base: 'un', embalagens: null, fator: null, preco_combinado: '2', preco_convertido: '2' }] },
+      { cotacao_id: 9, confirmado_por: 'ivan@spazio.com', confirmado_em: '2026-10-21T13:00:00Z', itens: [] },
+    ], error: null })
+    const cotacoes = consulta({ data: [{ id: 5, semana_id: 2, vendedor_id: 1 }, { id: 9, semana_id: 3, vendedor_id: 1 }], error: null })
+    from.mockReturnValueOnce(pedidos).mockReturnValueOnce(cotacoes)
+    const r = await pedidosRecentes(3, '2026-10-12T03:00:00.000Z')
+    expect(from.mock.calls.map((c) => c[0])).toEqual(['cot_pedidos', 'cot_cotacoes'])
+    expect(pedidos.gte).toHaveBeenCalledWith('confirmado_em', '2026-10-12T03:00:00.000Z')
+    expect(cotacoes.in).toHaveBeenCalledWith('id', [5, 9])
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ cotacao_id: 5, semana_id: 2, vendedor_id: 1 })
+    expect(r[0].itens[0]).toMatchObject({ produto_id: 10, qtd: 60, preco_combinado: 2, marca: null })
+  })
+
+  it('pedidosRecentes: tabela ausente → []', async () => {
+    from.mockReturnValue(consulta({ data: null, error: { message: 'Could not find the table', code: 'PGRST205' } as never }))
+    expect(await pedidosRecentes(3, '2026-10-12T03:00:00.000Z')).toEqual([])
   })
 })

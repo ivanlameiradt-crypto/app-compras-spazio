@@ -80,7 +80,13 @@ export default defineConfig(({ command, mode }) => {
           ? [
               {
                 extends: true,
-                resolve: { alias: { '@app-db': fileURLToPath(new URL('./tests/db', import.meta.url)) } },
+                // '@app' = src do App, para o teste privado da mensagem do Mateus (cotacao_mensagem.test.ts)
+                resolve: {
+                  alias: {
+                    '@app-db': fileURLToPath(new URL('./tests/db', import.meta.url)),
+                    '@app': fileURLToPath(new URL('./src', import.meta.url)),
+                  },
+                },
                 test: {
                   name: 'privado',
                   dir: TESTES_PRIVADOS,

@@ -3,7 +3,10 @@ import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
-import type { Compra, ItemSemana, LinhaCompra, Papel, Semana, Unidade, Usuario } from './tipos'
+import type {
+  Abertura, Compra, Cotacao, DadosEnvio, EconomiaSemana, EntradaGerais, EntradaItem, ItemCotacao, ItemPedidoEntrada, ItemSemana,
+  LinhaCompra, MarcaItem, Papel, Pedido, PedidoRecente, Preparo, ResultadoEnvio, ResumoCotacao, Semana, Unidade, Usuario, Vendedor,
+} from './tipos'
 
 /** Erro vindo do Supabase, com o status HTTP e o código (PostgREST/Postgres) para a fila saber se tenta de novo. */
 export class ErroApi extends Error {
@@ -206,6 +209,201 @@ export async function adminFecharCompra(id: string, comNota: boolean, total: num
   const { data, error, status } = await supabase.rpc('admin_fechar_compra', { p_compra: id, p_com_nota: comNota, p_total: total })
   if (error) throw new ErroApi(error.message, status, error.code)
   return data !== false // só o false explícito do banco quer dizer "já estava fechada"
+}
+
+// ---------- Fase 1B: cotações (admin) — contrato-1b.md 8.2
+/** Chama uma função do banco e devolve o que ela retorna (JSON ou escalar). */
+async function rpcDados<T>(nome: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error, status } = await supabase.rpc(nome, args)
+  if (error) throw new ErroApi(error.message, status, error.code)
+  return data as T
+}
+/** numeric do Postgres pode chegar como texto (valores grandes ou vindos de jsonb): a conta do App precisa de número. */
+const num = (v: unknown): number | null => (v == null || v === '' ? null : Number(v))
+
+const COLUNAS_VENDEDOR = 'id, codigo, nome, empresa, whatsapp, ativo'
+const COLUNAS_COTACAO = 'id, semana_id, vendedor_id, versao, complementar, status, resultado, substituida_por, ' +
+  'congelada_em, enviada_em, fechada_em, prazo, fechamento, primeiro_acesso, ultimo_acesso, acessos, envios_aceitos, ' +
+  'ultimo_envio_em, pagamento, validade, pedido_minimo, frete, entrega, observacao, gerais_rev, gerais_origem, ' +
+  'respostas_rev, cobranca_em, consolidado_em'
+const COLUNAS_ITEM_COTACAO = 'id, cotacao_id, item_semana_id, produto_id, numero, incluido, nome, unidade, rotulo, ' +
+  'vende_por_litro, qtd, qtd_sugerida, embalagem, fator, fator_confirmado, kg_por_litro, descricao_fornecedor, ' +
+  'codigo_fornecedor, nota_vendedor, ref_preco, ref_data, ref_situacao, estado, preco_digitado, base, emb_unidades, emb_gramas, ' +
+  'emb_ml, fator_informado, preco_convertido, tenho_so, similar_desc, similar_preco, a_partir_de, marca_informada, ' +
+  'avisos_vendedor, avisos_ivan, confirmado_pelo_vendedor, origem, copiada_da_versao, respondido_em, rev, delta'
+const COLUNAS_RESUMO = 'cotacao_id, itens, respondidos, tem, nao_tem, parciais, com_referencia, total_cotado, total_ultimo, gerais_respondidas'
+const COLUNAS_PEDIDO = 'cotacao_id, confirmado_por, confirmado_em, itens'
+const COLUNAS_ECONOMIA = 'semana_id, data_referencia, pedidos, itens_pedido, itens_com_referencia, itens_sem_comparacao, ' +
+  'total_pedido, total_ultimo, diferenca'
+/** Tabela ou view que ainda não existe no banco (App publicado antes da migration da cotação). */
+const tabelaInexistente = (code?: string) => code === 'PGRST205' || code === '42P01'
+
+function cotacaoLida(c: Cotacao): Cotacao {
+  return { ...c, pedido_minimo: num(c.pedido_minimo), frete: num(c.frete) }
+}
+function itemCotacaoLido(i: ItemCotacao): ItemCotacao {
+  return {
+    ...i,
+    qtd: Number(i.qtd), qtd_sugerida: Number(i.qtd_sugerida ?? 0), fator: num(i.fator), kg_por_litro: num(i.kg_por_litro),
+    ref_preco: num(i.ref_preco), preco_digitado: num(i.preco_digitado), emb_unidades: num(i.emb_unidades),
+    emb_gramas: num(i.emb_gramas), emb_ml: num(i.emb_ml), fator_informado: num(i.fator_informado),
+    preco_convertido: num(i.preco_convertido), tenho_so: num(i.tenho_so), similar_preco: num(i.similar_preco),
+    a_partir_de: num(i.a_partir_de), delta: num(i.delta),
+    nota_vendedor: i.nota_vendedor ?? null, marca_informada: i.marca_informada ?? null,
+    avisos_vendedor: i.avisos_vendedor ?? [], avisos_ivan: i.avisos_ivan ?? [],
+  }
+}
+/** Pedido gravado (jsonb): números do Postgres viram número, a marca ausente vira null. */
+function pedidoLido<T extends Pedido>(p: T): T {
+  return {
+    ...p,
+    itens: (p.itens ?? []).map((l) => ({
+      ...l, qtd: Number(l.qtd), embalagens: num(l.embalagens), fator: num(l.fator),
+      preco_combinado: Number(l.preco_combinado), preco_convertido: num(l.preco_convertido), marca: l.marca ?? null,
+    })),
+  }
+}
+
+export async function prepararCotacoes(semanaId: number): Promise<Preparo> {
+  const p = await rpcDados<Preparo>('cot_preparar', { p_semana: semanaId })
+  // "atravessados" é sempre presente (contrato 4.1); a lista vazia protege a tela contra um banco mais antigo
+  return { ...p, atravessados: p.atravessados ?? [] }
+}
+export async function listarVendedores(): Promise<Vendedor[]> {
+  return checar(await supabase.from('cot_vendedores').select(COLUNAS_VENDEDOR).order('empresa')) as Vendedor[]
+}
+export async function cotacoesDaSemana(semanaId: number): Promise<Cotacao[]> {
+  const r = checar(await supabase.from('cot_cotacoes').select(COLUNAS_COTACAO).eq('semana_id', semanaId)
+    .order('vendedor_id').order('versao', { ascending: false })) as unknown as Cotacao[]
+  return r.map(cotacaoLida)
+}
+/** Cotações de outras semanas ainda vivas, ou fechadas sem resultado há menos de 7 dias (8.2 da spec). */
+export async function cotacoesAnterioresVivas(semanaAtualId: number | null): Promise<Cotacao[]> {
+  const seteDias = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+  let q = supabase.from('cot_cotacoes').select(COLUNAS_COTACAO)
+    .or(`status.in.(pronta,enviada,respondida),and(status.eq.fechada,resultado.is.null,fechada_em.gt."${seteDias}")`)
+  if (semanaAtualId != null) q = q.neq('semana_id', semanaAtualId)
+  const r = checar(await q.order('semana_id', { ascending: false }).order('vendedor_id').order('versao', { ascending: false })) as unknown as Cotacao[]
+  return r.map(cotacaoLida)
+}
+/**
+ * As cotações que alguma de `ids` substituiu (`substituida_por in ids`). Não aparecem na tela, mas sem elas a v2 de uma
+ * semana anterior que substituiu a v1 pareceria "sem sinal de envio" (contrato 3.1) e a mensagem dela perderia o
+ * "substitui a v1": `cotacoesAnterioresVivas` não traz a substituída.
+ */
+export async function cotacoesSubstituidasPor(ids: number[]): Promise<Cotacao[]> {
+  if (ids.length === 0) return []
+  const r = checar(await supabase.from('cot_cotacoes').select(COLUNAS_COTACAO).in('substituida_por', ids)) as unknown as Cotacao[]
+  return r.map(cotacaoLida)
+}
+export async function itensDasCotacoes(ids: number[]): Promise<ItemCotacao[]> {
+  if (ids.length === 0) return []
+  const r = checar(await supabase.from('cot_itens_admin').select(COLUNAS_ITEM_COTACAO).in('cotacao_id', ids)
+    .order('cotacao_id').order('numero', { nullsFirst: false }).order('nome')) as unknown as ItemCotacao[]
+  return r.map(itemCotacaoLido)
+}
+export async function resumosDasCotacoes(ids: number[]): Promise<ResumoCotacao[]> {
+  if (ids.length === 0) return []
+  const r = checar(await supabase.from('cot_resumo').select(COLUNAS_RESUMO).in('cotacao_id', ids)) as ResumoCotacao[]
+  return r.map((x) => ({ ...x, total_cotado: Number(x.total_cotado ?? 0), total_ultimo: Number(x.total_ultimo ?? 0) }))
+}
+export async function codigosDasCotacoes(ids: number[]): Promise<Record<number, string>> {
+  if (ids.length === 0) return {}
+  const r = checar(await supabase.from('cot_codigos').select('cotacao_id, codigo').in('cotacao_id', ids)) as
+    { cotacao_id: number; codigo: string }[]
+  return Object.fromEntries(r.map((x) => [x.cotacao_id, x.codigo]))
+}
+export async function pedidoDaCotacao(id: number): Promise<Pedido | null> {
+  const r = checar(await supabase.from('cot_pedidos').select(COLUNAS_PEDIDO).eq('cotacao_id', id).maybeSingle()) as Pedido | null
+  return r ? pedidoLido(r) : null
+}
+export const definirVendedor = (produtoId: number, vendedorId: number) =>
+  chamar('cot_definir_vendedor', { p_produto_id: produtoId, p_vendedor_id: vendedorId })
+export const definirNota = (produtoId: number, nota: string | null) =>
+  chamar('cot_definir_nota', { p_produto_id: produtoId, p_nota: nota })
+/** Economia por semana (cot_economia, order data_referencia). */
+export async function economiaSemanas(): Promise<EconomiaSemana[]> {
+  const { data, error, status } = await supabase.from('cot_economia').select(COLUNAS_ECONOMIA).order('data_referencia')
+  if (error) {
+    // sem a migration da cotação, o Resumo (tela da Fase 1A) continua sem a linha de economia
+    if (tabelaInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as unknown as EconomiaSemana[]).map((e) => ({
+    ...e, total_pedido: Number(e.total_pedido ?? 0), total_ultimo: Number(e.total_ultimo ?? 0), diferenca: Number(e.diferenca ?? 0),
+  }))
+}
+/** Pedidos confirmados desde `desde` (ISO) em cotações de outras semanas que `semanaId` (cot_pedidos gte confirmado_em + cot_cotacoes in ids). */
+export async function pedidosRecentes(semanaId: number, desde: string): Promise<PedidoRecente[]> {
+  const ped = await supabase.from('cot_pedidos').select(COLUNAS_PEDIDO).gte('confirmado_em', desde).order('confirmado_em')
+  if (ped.error) {
+    // sem a migration da cotação, a Revisão (tela da Fase 1A) continua sem a etiqueta de pedido anterior
+    if (tabelaInexistente(ped.error.code)) return []
+    throw new ErroApi(ped.error.message, ped.status, ped.error.code)
+  }
+  const pedidos = (ped.data ?? []) as Pedido[]
+  if (pedidos.length === 0) return []
+  const cot = await supabase.from('cot_cotacoes').select('id, semana_id, vendedor_id').in('id', pedidos.map((p) => p.cotacao_id))
+  if (cot.error) {
+    if (tabelaInexistente(cot.error.code)) return []
+    throw new ErroApi(cot.error.message, cot.status, cot.error.code)
+  }
+  const deCotacao = new Map(((cot.data ?? []) as { id: number; semana_id: number; vendedor_id: number }[]).map((c) => [c.id, c]))
+  const r: PedidoRecente[] = []
+  for (const p of pedidos) {
+    const c = deCotacao.get(p.cotacao_id)
+    if (!c || c.semana_id === semanaId) continue
+    r.push(pedidoLido({ ...p, semana_id: c.semana_id, vendedor_id: c.vendedor_id }))
+  }
+  return r
+}
+export const marcarItemCotacao = (cotItem: number, incluido: boolean) =>
+  chamar('cot_marcar_item', { p_cot_item: cotItem, p_incluido: incluido })
+export async function congelarCotacao(id: number): Promise<DadosEnvio> {
+  return rpcDados<DadosEnvio>('cot_congelar', { p_cotacao: id })
+}
+export async function dadosEnvio(id: number): Promise<DadosEnvio> {
+  return rpcDados<DadosEnvio>('cot_dados_envio', { p_cotacao: id })
+}
+export const descongelarCotacao = (id: number) => chamar('cot_descongelar', { p_cotacao: id })
+export const confirmarEnvio = (id: number) => chamar('cot_confirmar_envio', { p_cotacao: id })
+export async function trocarCodigo(id: number): Promise<DadosEnvio> {
+  return rpcDados<DadosEnvio>('cot_trocar_codigo', { p_cotacao: id })
+}
+export async function responderComoAdmin(id: number, envioId: string, itens: EntradaItem[], gerais: EntradaGerais | null,
+  origem: 'ivan_digitou' | 'ivan_colou'): Promise<ResultadoEnvio> {
+  return rpcDados<ResultadoEnvio>('cot_responder_admin', {
+    p_cotacao: id, p_envio_id: envioId, p_itens: itens, p_gerais: gerais, p_origem: origem,
+  })
+}
+export async function novaVersao(id: number): Promise<number> {
+  return Number(await rpcDados<number>('cot_nova_versao', { p_cotacao: id }))
+}
+export const cancelarCotacao = (id: number) => chamar('cot_cancelar', { p_cotacao: id })
+export async function gravarPedido(id: number, itens: ItemPedidoEntrada[]): Promise<Pedido> {
+  return pedidoLido(await rpcDados<Pedido>('cot_gravar_pedido', { p_cotacao: id, p_itens: itens }))
+}
+/** "O vendedor não confirmou — desfazer pedido" (D67): o pedido volta a ser só cotação (refazer o mapa ou Obrigado). */
+export const desfazerPedido = (id: number) => chamar('cot_desfazer_pedido', { p_cotacao: id })
+export const dispensarCotacao = (id: number) => chamar('cot_dispensar', { p_cotacao: id })
+export const liberarLoja = (id: number) => chamar('cot_liberar_loja', { p_cotacao: id })
+export const voltarACotar = (id: number) => chamar('cot_voltar_a_cotar', { p_cotacao: id })
+/** "Ver como o vendedor vê" e checagem de saúde depois do Preparar: o mesmo caminho do vendedor, em prévia. */
+export async function abrirComoVendedor(codigo: string): Promise<Abertura> {
+  return rpcDados<Abertura>('cotacao_abrir', { p_codigo: codigo, p_previa: true })
+}
+
+// ---------- Fase 1B: etiquetas (comprador e admin)
+/** Função que ainda não existe no banco (App publicado antes da migration da cotação). */
+const funcaoInexistente = (code?: string) => code === 'PGRST202' || code === '42883'
+export async function marcasDaSemana(semanaId: number): Promise<MarcaItem[]> {
+  const { data, error, status } = await supabase.rpc('cot_marcas_semana', { p_semana: semanaId })
+  if (error) {
+    // sem a migration da cotação, Comprar e Resumo continuam sem etiqueta (como os selos no itensDaSemana)
+    if (funcaoInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return (data ?? []) as MarcaItem[]
 }
 
 // ---------- M12: nome de quem comprou, em vez do e-mail

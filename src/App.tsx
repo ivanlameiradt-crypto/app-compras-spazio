@@ -6,6 +6,7 @@ import TrocarSenha from './auth/TrocarSenha'
 import { trocaSenhaPendente } from './auth/usuarioGuardado'
 import Layout from './components/Layout'
 import Revisao from './admin/Revisao'
+import Cotacoes from './admin/Cotacoes'
 import Lancamentos from './admin/Lancamentos'
 import Resumo from './admin/Resumo'
 import Pessoas from './admin/Pessoas'
@@ -51,6 +52,7 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
     <Layout usuario={usuario} offline={offline}>
       <Routes>
         {admin && <Route path="/lista" element={<Revisao usuario={usuario} />} />}
+        {admin && <Route path="/cotacoes" element={<Cotacoes />} />}
         {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
         {admin && <Route path="/resumo" element={<Resumo />} />}
         {admin && <Route path="/pessoas" element={<Pessoas usuario={usuario} />} />}

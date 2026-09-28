@@ -66,3 +66,45 @@ input, select { font: inherit; padding: 10px 12px; border-radius: 10px; border: 
 .kpi b { display: block; font-size: 20px; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 td, th { padding: 6px 4px; border-bottom: 1px solid var(--linha); text-align: left; }
+
+/* Fase 1B: cotação com vendedores (aba Cotações, etiqueta em Comprar) */
+a.botao { display: inline-block; text-align: center; text-decoration: none; }
+.etiqueta-cotacao { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; padding: 4px 8px; border-radius: 8px; background: var(--aviso-fundo); color: var(--aviso-texto); }
+.secao { border-top: 1px solid var(--linha); margin-top: 10px; padding-top: 10px; }
+.acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.acoes .botao { font-size: 14px; padding: 10px 12px; }
+.bloco-envio { margin-top: 8px; padding: 10px; border-radius: 12px; background: var(--fundo); border: 1px solid var(--linha); }
+.mensagem { white-space: pre-wrap; word-break: break-word; font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 8px 0; }
+.rolagem { overflow-x: auto; margin-top: 8px; }
+.tabela-cot { font-size: 13px; min-width: 560px; }
+.tabela-cot td, .tabela-cot th { vertical-align: top; }
+.tabela-cot .pill { display: inline-block; margin: 0 4px 4px 0; }
+.delta { white-space: nowrap; }
+.delta.sobe { color: var(--alerta); font-weight: 700; }
+.delta.desce { color: var(--ok-texto); font-weight: 700; }
+.delta.antiga { color: var(--suave); }
+.delta.suspeita { color: var(--alerta); font-weight: 700; }
+.item-cot { padding: 8px 0; border-bottom: 1px solid var(--linha); display: flex; flex-direction: column; gap: 2px; }
+.item-cot select { margin-top: 4px; font-size: 14px; padding: 6px 8px; align-self: flex-start; }
+.marcar { flex-direction: row; align-items: center; gap: 8px; color: var(--texto); font-size: 15px; }
+.marcar input { width: 20px; height: 20px; }
+.formulario { margin-top: 10px; padding: 10px; border: 2px solid var(--marca); border-radius: 12px; }
+.linha-form { padding: 8px 0; border-bottom: 1px solid var(--linha); }
+.campos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.campos input, .campos select { font-size: 14px; padding: 8px; max-width: 170px; }
+.campos textarea, .formulario textarea { font: inherit; width: 100%; padding: 8px; border-radius: 10px; border: 1px solid var(--linha); background: var(--cartao); color: var(--texto); }
+.condicoes { margin-top: 8px; }
+.observacao { white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.nao-entendidas { font-size: 13px; color: var(--alerta); margin: 4px 0; padding-left: 18px; word-break: break-word; }
+.rodape-cotacoes { margin-top: 24px; }
+.nota-item { font-size: 13px; color: var(--aviso-texto); }
+.linha-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.amarelo { padding: 8px 10px; border-radius: 10px; background: var(--aviso-fundo); color: var(--aviso-texto); font-size: 14px; }
+.copiado { align-self: center; }
+.copiar-manual { flex-basis: 100%; }
+.copiar-manual textarea { font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; width: 100%; padding: 8px; border-radius: 10px; border: 1px solid var(--linha); background: var(--cartao); color: var(--texto); }
+.chave { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--linha); background: var(--cartao); color: var(--suave); cursor: pointer; white-space: nowrap; }
+.chave.on { background: var(--ok-fundo); color: var(--ok-texto); border-color: var(--ok-texto); font-weight: 700; }
+.mapa-pedido tr.cinza td { color: var(--suave); }
+.linha-form .amarelo { margin-top: 6px; }
+.campo-entrega { margin-top: 8px; }

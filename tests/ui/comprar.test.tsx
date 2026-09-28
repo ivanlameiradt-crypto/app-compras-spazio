@@ -436,3 +436,54 @@ describe('Comprar', () => {
     expect(await screen.findByText(/Comprado por Maria Silva \(30 un\)/)).toBeInTheDocument()
   })
 })
+
+describe('Comprar — etiqueta da cotação (Fase 1B, spec 8.3)', () => {
+  const marca = (item_semana_id: number, estado: 'pedido' | 'em_cotacao' | 'aguardando_cotacao', ate: string | null = null,
+    qtd: number | null = null) => ({ item_semana_id, estado, vendedor_id: 1, vendedor: 'FORNECEDOR A', ate, qtd })
+
+  it('cada item mostra no máximo uma etiqueta: Em cotação, Aguardando cotação (com a validade) ou Pedido', async () => {
+    abrirCompra()
+    m.marcasDaSemana.mockResolvedValue([marca(1, 'em_cotacao'), marca(2, 'aguardando_cotacao', '2026-09-22T15:00:00Z')])
+    render(<Comprar usuario={joao} />)
+    expect(await screen.findByTestId('etiqueta-1')).toHaveTextContent('Em cotação com FORNECEDOR A — não comprar na loja')
+    expect(screen.getByTestId('etiqueta-2')).toHaveTextContent('Aguardando cotação com FORNECEDOR A até ter 12h — não comprar na loja')
+    expect(m.marcasDaSemana).toHaveBeenCalledWith(7)
+  })
+
+  it('pedido: "Pedido com X — chega por entrega"; a etiqueta só informa (o item continua marcável)', async () => {
+    abrirCompra()
+    m.marcasDaSemana.mockResolvedValue([marca(1, 'pedido')])
+    render(<Comprar usuario={joao} />)
+    expect(await screen.findByTestId('etiqueta-1')).toHaveTextContent('Pedido com FORNECEDOR A — chega por entrega')
+    await userEvent.click(screen.getByRole('button', { name: /COCA COLA 350 ML/ }))
+    const quadro = screen.getByRole('group', { name: 'COCA COLA 350 ML' })
+    expect(within(quadro).getByText('Pedido com FORNECEDOR A — chega por entrega')).toBeInTheDocument()
+    await userEvent.click(within(quadro).getByRole('button', { name: 'Comprei' }))
+    expect(m.enviarOp.mock.calls[0][0]).toMatchObject({ tipo: 'registrar_item', args: { p_item: 1 } })
+  })
+
+  it('pedido ou "só tenho" que cobre parte do item: diz quanto, manda comprar o resto e o quadro já sugere só o resto (D63)', async () => {
+    abrirCompra()
+    m.marcasDaSemana.mockResolvedValue([marca(1, 'em_cotacao', null, 52), marca(2, 'pedido', null, 0.5)])
+    render(<Comprar usuario={joao} />)
+    expect(await screen.findByTestId('etiqueta-2')).toHaveTextContent('Pedido com FORNECEDOR A: 0,5 kg — comprar o resto (0,7 kg) na loja')
+    // a que cobre o item inteiro continua como sempre
+    expect(screen.getByTestId('etiqueta-1')).toHaveTextContent('Em cotação com FORNECEDOR A — não comprar na loja')
+    await userEvent.click(screen.getByRole('button', { name: /MOSTARDA/ }))
+    const quadro = screen.getByRole('group', { name: 'MOSTARDA - INSUMO (KG)' })
+    expect(within(quadro).getByLabelText('Quantidade')).toHaveValue('0,7')
+    await userEvent.click(within(quadro).getByRole('button', { name: 'Cancelar' }))
+    // a que cobre tudo não mexe na sugestão (a etiqueta só informa)
+    await userEvent.click(screen.getByRole('button', { name: /COCA COLA 350 ML/ }))
+    expect(within(screen.getByRole('group', { name: 'COCA COLA 350 ML' })).getByLabelText('Quantidade')).toHaveValue('52')
+  })
+
+  it('item sem etiqueta não mostra nada; falha ao ler as etiquetas não atrapalha a compra', async () => {
+    abrirCompra()
+    m.marcasDaSemana.mockRejectedValue(new Error('Failed to fetch'))
+    render(<Comprar usuario={joao} />)
+    expect(await screen.findByRole('button', { name: /COCA COLA 350 ML/ })).toBeInTheDocument()
+    expect(screen.queryByTestId('etiqueta-1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/não comprar na loja/)).not.toBeInTheDocument()
+  })
+})

@@ -5,15 +5,19 @@ import type { Marcacao } from './marcacoes'
 
 const virgula = (v: number | null) => (v == null ? '' : String(v).replace('.', ','))
 
-export default function QuadroItem({ item, marcacao, jaCompradoPorOutros, onConfirmar, onDesmarcar, onCancelar }: {
+export default function QuadroItem({ item, marcacao, jaCompradoPorOutros, etiqueta, cobertoPelaCotacao = 0, onConfirmar, onDesmarcar, onCancelar }: {
   item: ItemSemana
+  /** Fase 1B: "Em cotação com MATEUS — não comprar na loja" (só informa) */
+  etiqueta?: string
+  /** Fase 1B (D63): o que o pedido ou o "só tenho" do vendedor cobre quando é só parte do item; sai da sugestão */
+  cobertoPelaCotacao?: number
   marcacao?: Marcacao
   jaCompradoPorOutros: number
   onConfirmar: (qtd: number, preco: number | null, resultado: Resultado) => void
   onDesmarcar: () => void
   onCancelar: () => void
 }) {
-  const sugerida = Math.max(+(item.qtd_aprovada - jaCompradoPorOutros).toFixed(3), 0)
+  const sugerida = Math.max(+(item.qtd_aprovada - jaCompradoPorOutros - cobertoPelaCotacao).toFixed(3), 0)
   const [qtd, setQtd] = useState(virgula(marcacao && marcacao.resultado !== 'nao_achei' ? marcacao.qtd : sugerida))
   const [preco, setPreco] = useState(virgula(marcacao?.preco ?? item.preco_estimado))
   const [erro, setErro] = useState('')
@@ -31,6 +35,7 @@ export default function QuadroItem({ item, marcacao, jaCompradoPorOutros, onConf
     <div className="quadro" role="group" aria-label={item.produto}>
       <div className="nome">{item.produto}</div>
       <div className="sub">Pedido: {formatarQtd(item.qtd_aprovada, item.unidade)}</div>
+      {etiqueta && <div className="etiqueta-cotacao">{etiqueta}</div>}
       <div className="duas">
         <label>Quantidade<input aria-label="Quantidade" inputMode="decimal" value={qtd} onChange={(e) => setQtd(e.target.value)} /></label>
         <label>Preço unitário<input aria-label="Preço unitário" inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value)} /></label>

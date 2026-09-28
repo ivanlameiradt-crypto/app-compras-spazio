@@ -1,8 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
-import Revisao from '../../src/admin/Revisao'
-import { item } from '../fabricas'
+import Revisao, { inicioPedidosRecentes } from '../../src/admin/Revisao'
+import { item, vendedor } from '../fabricas'
 
 vi.mock('../../src/lib/api')
 const m = vi.mocked(api)
@@ -333,5 +333,40 @@ describe('Revisão — aba Conferir, negativos e semana anterior (Fase 1A)', () 
     expect(await screen.findByText(/Lista aprovada e liberada/)).toBeInTheDocument()
     expect(m.semanaEmCompra).not.toHaveBeenCalled()
     expect(screen.queryByRole('link', { name: /Antes, encerre/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('Revisão — Fase 1B', () => {
+  it('depois de aprovar, oferece "Ir para Cotações"', async () => {
+    render(<Revisao usuario={admin} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar lista' }))
+    expect(await screen.findByRole('link', { name: 'Ir para Cotações' })).toHaveAttribute('href', '#/cotacoes')
+  })
+
+  it('item de pedido recente a vendedor ganha a etiqueta "a NF-e já entrou no SisChef?" (sem mudar a lista)', async () => {
+    m.pedidosRecentes.mockResolvedValue([
+      { cotacao_id: 4, semana_id: 6, vendedor_id: 1, confirmado_por: 'ivan@spazio.com', confirmado_em: '2026-09-16T13:00:00Z',
+        itens: [{ numero: 1, produto_id: 1, qtd: 52, base: 'un', embalagens: null, fator: null, preco_combinado: 2.5, preco_convertido: 2.5, marca: null }] },
+      // mais de um pedido com o mesmo produto: vale o mais recente
+      { cotacao_id: 5, semana_id: 6, vendedor_id: 2, confirmado_por: 'ivan@spazio.com', confirmado_em: '2026-09-17T13:00:00Z',
+        itens: [{ numero: 3, produto_id: 1, qtd: 52, base: 'un', embalagens: null, fator: null, preco_combinado: 2.4, preco_convertido: 2.4, marca: null }] },
+    ])
+    m.listarVendedores.mockResolvedValue([vendedor({ empresa: 'MATEUS (Mix)' }), vendedor({ id: 2, empresa: 'FORNECEDOR B (Bairro)' })])
+    render(<Revisao usuario={admin} />)
+    expect(await screen.findByTestId('pedido-anterior-1')).toHaveTextContent('Pedido com FORNECEDOR B em qui 17/09: a NF-e já entrou no SisChef?')
+    // janela: 00:00 de Brasília de (data da semana − 7 dias)
+    expect(m.pedidosRecentes).toHaveBeenCalledWith(7, '2026-09-15T03:00:00.000Z')
+    expect(m.ajustarItem).not.toHaveBeenCalled()
+  })
+
+  it('sem a tabela de pedidos (App antes da migration) a Revisão não quebra', async () => {
+    m.pedidosRecentes.mockRejectedValue(new Error('Could not find the table'))
+    render(<Revisao usuario={admin} />)
+    expect(await screen.findByText('COCA COLA 350 ML')).toBeInTheDocument()
+    expect(screen.queryByText(/a NF-e já entrou no SisChef/)).not.toBeInTheDocument()
+  })
+
+  it('inicioPedidosRecentes: 00:00 BRT sete dias antes, virando mês', () => {
+    expect(inicioPedidosRecentes('2026-10-05')).toBe('2026-09-28T03:00:00.000Z')
   })
 })

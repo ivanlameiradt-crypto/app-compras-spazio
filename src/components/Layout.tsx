@@ -25,6 +25,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
       {admin && (
         <nav className="menu">
           <NavLink to="/lista">Lista</NavLink>
+          <NavLink to="/cotacoes">Cotações</NavLink>
           <NavLink to="/lancamentos">Lançamentos{aguardando > 0 && <span className="contador">{aguardando}</span>}</NavLink>
           <NavLink to="/resumo">Resumo</NavLink>
           <NavLink to="/pessoas">Pessoas</NavLink>

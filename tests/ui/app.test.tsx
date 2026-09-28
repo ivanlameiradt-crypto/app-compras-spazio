@@ -51,6 +51,20 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: /lançamentos/i })).toBeInTheDocument()
   })
 
+  it('Fase 1B: menu do admin é Lista · Cotações · Lançamentos · Resumo · Pessoas · Comprar', async () => {
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    render(<App />)
+    const menu = (await screen.findByRole('link', { name: /cotações/i })).closest('nav') as HTMLElement
+    expect([...menu.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Lista', 'Cotações', 'Lançamentos', 'Resumo', 'Pessoas', 'Comprar'])
+    expect(screen.getByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
+  })
+
+  it('comprador não vê a aba Cotações', async () => {
+    estado = { carregando: false, sessao, usuario: { email: 'joao@spazio.com', nome: 'João', papel: 'comprador', ativo: true } }
+    render(<App />)
+    expect(screen.queryByRole('link', { name: /cotações/i })).not.toBeInTheDocument()
+  })
+
   it('P3: senha padrão ainda não trocada mostra só "Escolha sua senha", sem menu', async () => {
     const sessaoPendente = { user: { email: 'joao@spazio.com', user_metadata: { trocar_senha: true } } } as never
     estado = { carregando: false, sessao: sessaoPendente, usuario: { email: 'joao@spazio.com', nome: 'João', papel: 'comprador', ativo: true } }
