@@ -28,6 +28,9 @@ export default defineConfig(({ command, mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
+        // Registro do service worker é feito à mão em src/main.tsx (com checagem periódica de versão);
+        // por isso desligamos a injeção automática, para não registrar duas vezes.
+        injectRegister: false,
         manifest: {
           name: 'Compras Spazio',
           short_name: 'Compras',
