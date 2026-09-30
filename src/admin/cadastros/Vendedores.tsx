@@ -22,6 +22,11 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
   const [nome, setNome] = useState('')
   const [whats, setWhats] = useState(grafiaInicial ? '' : '')
   const [grafiaNovo, setGrafiaNovo] = useState(grafiaInicial ?? '')
+  // edição de um vendedor já cadastrado (C.5): abre um formulário no próprio cartão, já preenchido
+  const [editId, setEditId] = useState<number | null>(null)
+  const [edEmpresa, setEdEmpresa] = useState('')
+  const [edNome, setEdNome] = useState('')
+  const [edWhats, setEdWhats] = useState('')
 
   async function carregar() {
     try {
@@ -54,6 +59,32 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
       const id = (r.id ?? (await cad.listarVendedores()).find((v) => v.empresa.trim() === empresa.trim())?.id) as number | undefined
       if (grafiaNovo.trim() && id) await cad.salvarGrafia(grafiaNovo.trim(), id)
       setEmpresa(''); setNome(''); setWhats(''); setGrafiaNovo('')
+      await carregar()
+    } catch (err) { setErro(mensagemDeErro(err)) }
+  }
+
+  function abrirEdicao(v: Vendedor) {
+    setErro('')
+    setEditId(v.id)
+    setEdEmpresa(v.empresa)
+    setEdNome(v.nome)
+    setEdWhats(formatarWhatsapp(v.whatsapp))
+  }
+
+  async function salvarEdicao(e: React.FormEvent) {
+    e.preventDefault()
+    setErro('')
+    const wpp = normalizarWhatsapp(edWhats)
+    if (!whatsappValido(wpp)) { setErro('WhatsApp inválido: use DDD + número, ex.: (91) 90000-1234'); return }
+    const p = { id: editId!, nome: edNome.trim(), empresa: edEmpresa.trim(), whatsapp: wpp }
+    try {
+      const r = await cad.salvarVendedor(p)
+      if (!r.ok && r.confirmar) {
+        const a = r.confirmar[0]
+        if (a.codigo === 'whatsapp_repetido' && !window.confirm(whatsappRepetido(a))) return
+        await cad.salvarVendedor({ ...p, confirmar: r.confirmar.map((x) => x.codigo) })
+      }
+      setEditId(null)
       await carregar()
     } catch (err) { setErro(mensagemDeErro(err)) }
   }
@@ -134,24 +165,41 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
 
       {vendedores.map((v) => (
         <div key={v.id} className="cartao" data-vendedor={v.id}>
-          <strong>{rotuloDe(v.empresa)}</strong> · {v.nome} · {mascararWhatsapp(v.whatsapp)} · <span className={v.ativo ? 'ligado' : 'desligado'}>{v.ativo ? 'Ligado' : 'Desligado'}</span>
-          <div className="grafias">
-            {grafias.filter((g) => g.vendedor_id === v.id).map((g) => (
-              <span key={g.nome_normalizado} className="pilula">{g.nome_original}
-                <button className="link" onClick={async () => { if (window.confirm(`Tirar a grafia ${g.nome_original}?`)) { await cad.removerGrafia(g.nome_normalizado); await carregar() } }}>tirar</button>
-              </span>
-            ))}
-          </div>
-          {cnpjs.filter((c) => c.vendedor_id === v.id).map((c) => (
-            <div key={c.cnpj} className="sub">{c.cnpj} · pela grafia da NF
-              <button className="link" onClick={async () => { if (window.confirm(`Tirar o CNPJ ${c.cnpj}?`)) { await cad.removerCnpj(c.cnpj); await carregar() } }}>tirar</button>
-            </div>
-          ))}
-          <div className="acoes">
-            <button className={v.ativo ? 'link perigo' : 'botao'} onClick={() => ligarDesligar(v, !v.ativo)}>{v.ativo ? 'Desligar' : 'Ligar'}</button>{' '}
-            <a className="link" href={`https://wa.me/${v.whatsapp}`} target="_blank" rel="noopener">Testar número</a>{' '}
-            <button className="link perigo" onClick={() => excluir(v)}>Excluir</button>
-          </div>
+          {editId === v.id ? (
+            <form className="coluna" onSubmit={salvarEdicao}>
+              <h3>Editar fornecedor</h3>
+              <label>Empresa<input aria-label="Editar empresa" required value={edEmpresa} onChange={(e) => setEdEmpresa(e.target.value)} /></label>
+              <label>Nome para o vendedor<input aria-label="Editar nome" required value={edNome} onChange={(e) => setEdNome(e.target.value)} /></label>
+              <label>WhatsApp<input aria-label="Editar WhatsApp" required value={edWhats} onChange={(e) => setEdWhats(e.target.value)} /></label>
+              {normalizarWhatsapp(edWhats) && whatsappValido(normalizarWhatsapp(edWhats)) && <p className="sub">Vai gravar: {formatarWhatsapp(normalizarWhatsapp(edWhats))}</p>}
+              <div className="acoes">
+                <button className="botao" type="submit">Salvar</button>{' '}
+                <button className="link" type="button" onClick={() => setEditId(null)}>Cancelar</button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <strong>{rotuloDe(v.empresa)}</strong> · {v.nome} · {mascararWhatsapp(v.whatsapp)} · <span className={v.ativo ? 'ligado' : 'desligado'}>{v.ativo ? 'Ligado' : 'Desligado'}</span>
+              <div className="grafias">
+                {grafias.filter((g) => g.vendedor_id === v.id).map((g) => (
+                  <span key={g.nome_normalizado} className="pilula">{g.nome_original}
+                    <button className="link" onClick={async () => { if (window.confirm(`Tirar a grafia ${g.nome_original}?`)) { await cad.removerGrafia(g.nome_normalizado); await carregar() } }}>tirar</button>
+                  </span>
+                ))}
+              </div>
+              {cnpjs.filter((c) => c.vendedor_id === v.id).map((c) => (
+                <div key={c.cnpj} className="sub">{c.cnpj} · pela grafia da NF
+                  <button className="link" onClick={async () => { if (window.confirm(`Tirar o CNPJ ${c.cnpj}?`)) { await cad.removerCnpj(c.cnpj); await carregar() } }}>tirar</button>
+                </div>
+              ))}
+              <div className="acoes">
+                <button className="link" onClick={() => abrirEdicao(v)}>Editar</button>{' '}
+                <button className={v.ativo ? 'link perigo' : 'botao'} onClick={() => ligarDesligar(v, !v.ativo)}>{v.ativo ? 'Desligar' : 'Ligar'}</button>{' '}
+                <a className="link" href={`https://wa.me/${v.whatsapp}`} target="_blank" rel="noopener">Testar número</a>{' '}
+                <button className="link perigo" onClick={() => excluir(v)}>Excluir</button>
+              </div>
+            </>
+          )}
         </div>
       ))}
     </div>

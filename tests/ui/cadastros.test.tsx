@@ -64,4 +64,38 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
     expect(await screen.findByText('MERCADÃO', { exact: false }).catch(() => null)).not.toBe(undefined) // re-render ocorreu
     expect(screen.queryByText(/ATACADAO S\.A\. — 23 produtos/)).not.toBeInTheDocument()
   })
+
+  it('Editar abre o formulário preenchido e salva com o id e os campos alterados', async () => {
+    render(<Vendedores />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    expect(screen.getByLabelText('Editar empresa')).toHaveValue('ATACADÃO (Loja)')
+    expect(screen.getByLabelText('Editar WhatsApp')).toHaveValue('+55 91 90000-1234')
+    const nome = screen.getByLabelText('Editar nome')
+    expect(nome).toHaveValue('Carlos')
+    await userEvent.clear(nome)
+    await userEvent.type(nome, 'Carlos Silva')
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(m.salvarVendedor).toHaveBeenCalledWith({ id: 1, nome: 'Carlos Silva', empresa: 'ATACADÃO (Loja)', whatsapp: '5591900001234' })
+  })
+
+  it('Editar com WhatsApp repetido só grava no segundo toque (confirmação)', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    m.salvarVendedor.mockResolvedValueOnce({ ok: false, confirmar: [{ codigo: 'whatsapp_repetido', empresa: 'Outro' }] })
+    m.salvarVendedor.mockResolvedValueOnce({ ok: true, id: 1, codigo: 'fulano' })
+    render(<Vendedores />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(m.salvarVendedor).toHaveBeenLastCalledWith({ id: 1, nome: 'Carlos', empresa: 'ATACADÃO (Loja)', whatsapp: '5591900001234', confirmar: ['whatsapp_repetido'] })
+    confirmSpy.mockRestore()
+  })
+
+  it('Cancelar a edição volta para o cartão sem gravar', async () => {
+    render(<Vendedores />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByLabelText('Editar nome')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument()
+    expect(m.salvarVendedor).not.toHaveBeenCalled()
+  })
 })
