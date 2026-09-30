@@ -33,6 +33,8 @@ export interface ItemSemana {
   negativo: boolean
   incluido: boolean
   selos: Selo[]
+  regra: 'barrar' | 'incluir' | null // C2: retrato da regra da lista na importação (null sem a migration)
+  regra_motivo: string | null
 }
 
 export type Resultado = 'comprado' | 'parcial' | 'nao_achei'
@@ -65,7 +67,7 @@ export type StatusCotacao = 'rascunho' | 'pronta' | 'enviada' | 'respondida' | '
 export type ResultadoCotacao = 'pedido' | 'dispensado'
 export type EstadoItemCotacao = 'sem_resposta' | 'tem' | 'nao_tem'
 export type BaseCotacao = 'un' | 'kg' | 'litro' | 'embalagem'
-export type OrigemResposta = 'vendedor' | 'ivan_digitou' | 'ivan_colou'
+export type OrigemResposta = 'vendedor' | 'ivan_digitou' | 'ivan_colou' | 'ivan_ia'
 export type RotuloItem = 'un' | 'kg' | 'saco'
 export type TipoEmbalagem = 'fardo' | 'caixa' | 'pacote' | 'saco'
 export type SituacaoReferencia = 'ok' | 'antiga' | 'sem_referencia'
@@ -79,6 +81,42 @@ export type ErroEnvio = 'codigo_invalido' | 'devagar' | 'limite' | 'formato' | '
 export type ErroItem = 'numero_inexistente' | 'sem_preco' | 'sem_embalagem' | 'valor_invalido' | 'base_incompativel' | 'texto_invalido'
 
 export interface Vendedor { id: number; codigo: string; nome: string; empresa: string; whatsapp: string; ativo: boolean }
+
+// ---------- Cadastros (Fase 2, Bloco C)
+export interface ProdutoCadastro {
+  produto_id: number; produto: string; nome_limpo: string; unidade: Unidade; bebida: boolean
+  fornecedor_ultima: string | null; data_ultima_compra: string | null
+  vendedor_id: number | null; via: 'catalogo' | 'ultima_compra' | null; motivo: string | null; vendedor_motivo_id: number | null
+  catalogo_origem: string | null; escolhido_em: string | null; nome_para_vendedor: string | null; nota_vendedor: string | null
+  embalagem: string | null; fator: number | null; fator_confirmado_em: string | null
+  vende_por_litro: boolean; kg_por_litro: number | null; kg_por_litro_confirmado_em: string | null
+  descricao_fornecedor: string | null; codigo_fornecedor: string | null; categoria: string
+  regra: 'barrar' | 'incluir' | null; regra_motivo: string | null; a_confirmar: number; disputa: unknown | null
+}
+export interface FornecedorSemVendedor { nome_original: string; nome_normalizado: string; produtos: number; ultima_compra: string | null }
+export interface AvisoConfirmar { codigo: string; [k: string]: unknown }
+export interface RespostaConfirmar { ok: boolean; confirmar?: AvisoConfirmar[]; id?: number; codigo?: string; avisos?: AvisoConfirmar[] }
+export interface CnpjAprendido { cnpj: string; vendedor_id: number; origem: 'nome' | 'ivan'; nome_na_nf: string }
+export interface Grafia { nome_normalizado: string; nome_original: string; vendedor_id: number }
+export interface Feriado { data: string; nome: string }
+export interface FatorAConfirmar {
+  produto_id: number; produto: string; unidade: Unidade; bebida: boolean; vendedor_id: number
+  fator: number; embalagem_sugerida: string; origem: 'resposta' | 'nfe'; ref: string; vezes: number; ultima: string | null
+  exemplos: { data_referencia: string; versao: number }[]
+  padrao_embalagem: string | null; padrao_fator: number | null; padrao_confirmado_em: string | null; conflito: boolean
+}
+export interface HistoricoSemana {
+  semana_id: number; data_referencia: string; vendedor_id: number; versoes: number; desfecho: string
+  itens: number; respondidos: number; tem: number; pedido_itens: number; comparados: number
+  total_pedido: number; total_ultimo: number; diferenca: number; pct: number | null
+  enviada_em: string | null; primeira_resposta_em: string | null; canais: string[] | null
+}
+export interface HistoricoItemLinha {
+  semana_id: number; data_referencia: string; vendedor_id: number; cotacao_id: number; versao: number; complementar: boolean
+  status: string; resultado: string | null; produto_id: number; nome: string; unidade: Unidade; qtd: number
+  estado: string; base: string | null; preco_digitado: number | null; preco_convertido: number | null
+  marca_informada: string | null; ref_preco: number | null; no_pedido: boolean; qtd_pedido: number | null; preco_pedido: number | null
+}
 
 export interface Gerais {
   pagamento: string | null; validade: string | null; pedido_minimo: number | null
@@ -200,6 +238,86 @@ export interface EconomiaSemana {
   total_pedido: number; total_ultimo: number; diferenca: number
 }
 
+// ---------- Fase 2, Bloco E1: painel de economia (cot_painel_economia, cot_historico_item — DESIGN-fase-2.md E.4.3)
+/** Métricas M de um grupo de linhas de pedido (E.4.2). */
+export interface Metricas {
+  pedidos: number; itens: number; comparados: number; sem_comparacao: number; acima: number
+  total_pedido: number; total_ultimo: number; diferenca: number; pct: number | null
+}
+export interface SemanaPainel extends Metricas {
+  semana_id: number; data_referencia: string; status: string; acumulado: number; acumulado_desde_inicio: number
+}
+export interface MesPainel extends Metricas { mes: string }
+export interface VendedorPainel extends Metricas { vendedor_id: number; rotulo: string; semanas: number }
+export interface CategoriaPainel extends Metricas { categoria: string }
+export interface PontoItem { data: string; vendedor: string; preco: number | null; ultimo: number | null }
+export interface ItemEconomia extends Metricas {
+  produto_id: number; produto: string; unidade: Unidade; categoria: string; qtd: number
+  preco_primeiro: number | null; preco_ultimo: number | null; variacao: number | null; pontos: PontoItem[]
+}
+export type MotivoSemComparacao = 'sem_conversao' | 'ultimo_preco_antigo' | 'sem_referencia'
+export interface SemComparacao { produto_id: number; produto: string; linhas: number; motivo: MotivoSemComparacao }
+export interface CompraSischef {
+  produto_id: number; produto: string; unidade: Unidade; compras: number
+  primeiro: { data: string; preco: number; fornecedor: string | null }
+  ultimo: { data: string; preco: number; fornecedor: string | null }
+  variacao: number
+}
+export interface PainelEconomia {
+  de: string; ate: string; inicio: string | null
+  total: Metricas; desde_inicio: { diferenca: number; semanas: number }
+  semanas: SemanaPainel[]; meses: MesPainel[]; vendedores: VendedorPainel[]; categorias: CategoriaPainel[]
+  itens: ItemEconomia[]; sem_comparacao: SemComparacao[]
+  sischef: { altas: CompraSischef[]; quedas: CompraSischef[] }
+}
+export interface HistoricoCompra { data: string; preco: number; fornecedor: string | null; conferir: boolean }
+export interface HistoricoCotacao {
+  data_referencia: string; vendedor: string; versao: number; preco: number | null; delta: number | null
+  marca: string | null; avisos: AvisoIvan[]; no_pedido: boolean
+}
+export interface HistoricoPedido {
+  data_referencia: string; vendedor: string; qtd: number; preco: number | null; preco_combinado: number
+  base: BaseCotacao; embalagens: number | null; fator: number | null; ultimo: number | null
+  comparavel: boolean; marca: string | null
+}
+export interface HistoricoItem {
+  produto_id: number; produto: string | null; unidade: Unidade | null; categoria: string; de: string; ate: string
+  compras_sischef: HistoricoCompra[]; cotacoes: HistoricoCotacao[]; pedidos: HistoricoPedido[]
+}
+
+// ---------- Fase 2, Bloco B: leitura com IA (cot-ler-resposta / DESIGN-fase-2.md B.7.2, B.8)
+export type CertezaIA = 'alta' | 'media' | 'baixa'
+export type SinalIA = 'nome' | 'print' | 'audio' | 'extenso'
+export interface ImagemIA { media_type: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string }
+/** A "entrada" lida pela IA de um item (a resposta que o App vai gravar, sem numero/rev). */
+export interface EntradaPropostaIA {
+  estado: 'tem' | 'nao_tem'; preco: number | null; base: BaseCotacao | null
+  emb_unidades: number | null; emb_gramas: number | null; emb_ml: number | null
+  tenho_so: number | null; a_partir_de: number | null
+  similar_desc: string | null; similar_preco: number | null; marca: string | null
+}
+export interface ItemPropostoIA {
+  numero: number; fonte: 'texto' | 'imagem'; casou_por: 'numero' | 'nome'
+  entrada: EntradaPropostaIA; trecho: string; certeza: CertezaIA; duvida: string | null; sinais: SinalIA[]
+}
+export interface CondicaoIA { valor: string | number; trecho: string; certeza: CertezaIA }
+export interface GeraisIA {
+  pagamento: CondicaoIA | null; validade: CondicaoIA | null; pedido_minimo: CondicaoIA | null
+  frete: CondicaoIA | null; entrega: CondicaoIA | null; observacao: CondicaoIA | null
+}
+export interface UsoIA { hoje: number; limite_dia: number; mes: number; limite_mes: number; custo_mes_usd: number }
+/** Retorno de cot-ler-resposta em caso de sucesso (B.7.2). */
+export interface LeituraIA {
+  ok: true; leitura_id: number; modelo: string; duracao_ms: number; custo_usd: number | null
+  itens: ItemPropostoIA[]; gerais: GeraisIA
+  fora_da_lista: { numero: number; trecho: string }[]
+  nao_entendidos: { trecho: string; motivo: string }[]
+  uso: UsoIA
+}
+/** cot_ia_status: o cartão "Ligar e desligar" (B.8, Chaves.tsx). */
+export interface IaStatus { ligada: boolean; liberada: boolean; liberada_em: string | null; modelo: string; uso: UsoIA }
+export interface ResumoIA { gravados: number; corrigidos: number; descartados: number; discordancias: number }
+
 /**
  * Etiqueta do item (cot_marcas_semana, contrato 4.15). `qtd` (D63) = quanto ela cobre, na unidade do SisChef: a do
  * pedido ou o "só tenho" do vendedor; null no "aguardando" (o item inteiro espera). Menor que a aprovada → o resto
@@ -227,3 +345,62 @@ export interface FalhaVendedor {
   estado?: EstadoEfetivo; nova?: { versao: number; codigo: string } | null
 }
 export type Abertura = AberturaOk | FalhaVendedor
+
+// ---------- Fase 2, Bloco D: recebimento e conferência da NF-e (DESIGN-fase-2.md, D.5 a D.10)
+export type Resto = 'vem_depois' | 'nao_vem'
+export type EstadoRecebimento = 'aguardando' | 'completo' | 'parcial' | 'com_falta'
+
+/** Item de um pedido a receber (cot_pedidos_a_receber) — sem preço, para a tela Receber (D.7.1). */
+export interface ItemAReceber {
+  numero: number; nome: string; unidade: Unidade; qtd: number
+  embalagens: number | null; fator: number | null; embalagem: string; marca: string | null
+  chegou: number; avaria: number; resto: Resto | null
+}
+export interface EntregaFeita { recebido_local: string; quem: string }
+export interface PedidoAReceber {
+  cotacao_id: number; vendedor: string; confirmado_em: string; confirmado_local: string
+  entrega_prevista: string | null; recebimento: EstadoRecebimento
+  itens: ItemAReceber[]; entregas: EntregaFeita[]
+}
+/** Item enviado no registro do recebimento (cot_registrar_recebimento). */
+export interface ItemRecebido { numero: number; chegou: number; avaria?: number; obs?: string | null; resto?: Resto | null }
+export interface FaltaRegistrada { numero: number; nome: string; falta: number; resto: Resto | null }
+export interface AvariaRegistrada { numero: number; nome: string; avaria: number; obs: string | null }
+export interface Recebimento {
+  recebimento_id: number; recebimento: EstadoRecebimento
+  faltas: FaltaRegistrada[]; avarias: AvariaRegistrada[]; reenvio?: boolean
+}
+
+export type SituacaoNfe = 'na_fila' | 'saiu_da_fila' | 'lancada'
+/** NF-e do espelho (cot_nfe), para o cartão do pedido e a lista de NF sem pedido (D.7.2). */
+export interface NfeResumo {
+  chave: string; numero: string; emissao: string; valor_nf: number; emitente: string
+  cnpj_emitente: string; situacao: SituacaoNfe; saiu_da_fila_em: string | null
+  lancada_em: string | null; nf_sischef: string | null
+  vendedor_id: number | null; cotacao_id: number | null; vinculo: 'auto' | 'ivan' | null
+}
+export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
+export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'
+export type MarcaNf = 'ok' | 'confira' | 'sem_marca' | null
+/** Uma linha da view cot_conferencia (D.5.2). */
+export interface LinhaConferencia {
+  cotacao_id: number; confirmado_em: string; entrega_prevista: string | null
+  numero: number; produto_id: number; nome: string; unidade: Unidade
+  qtd: number; base: BaseCotacao; embalagens: number | null; fator: number | null
+  preco_combinado: number; preco_convertido: number | null; marca: string | null
+  chegou: number | null; avaria: number | null; falta: number | null; resto: Resto | null; falta_definitiva: number
+  recebimento: EstadoRecebimento
+  nf_chaves: string[]; nf_qtd: number | null; qtd_nf: EstadoQtdNf; preco: EstadoPrecoNf
+  valor_acima: number; combinado_unit: number | null; cobrado_unit: number | null
+  imposto: number; marca_nf: MarcaNf; motivos: string[]
+}
+/** Linha de desempenho do vendedor (cot_desempenho_vendedores — D.10). */
+export interface Desempenho {
+  vendedor_id: number; rotulo: string; pedidos: number; com_prazo: number; sem_prazo: number
+  no_prazo: number; atrasados: number; atraso_medio_dias: number; sem_registro: number
+  nao_chegou: number; entregue_nf: number
+  itens: number; itens_completos: number; itens_com_falta: number; itens_com_avaria: number
+  itens_conferidos: number; itens_preco_igual: number; itens_acima: number; valor_acima: number; itens_abaixo: number
+}
+/** Última leitura das notas (cot_nfe_leituras — para "última leitura: hoje 12h"). */
+export interface LeituraNotas { lida_em: string; notas: number; completa: boolean; origem: 'agendada' | 'app' }

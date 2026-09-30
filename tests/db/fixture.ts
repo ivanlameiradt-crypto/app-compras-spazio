@@ -31,7 +31,7 @@ export const PAYLOAD = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function importar(db: PGlite, payload: any = PAYLOAD) {
   const [r] = await como(db, 'service', 'select importar_semana($1::jsonb) as r', [JSON.stringify(payload)])
-  return r.r as { resultado: string; semana_id: number; itens?: number; selos?: boolean }
+  return r.r as { resultado: string; semana_id: number; itens?: number; selos?: boolean; regras?: { barrados: number; incluidos: number } }
 }
 
 export async function idItem(db: PGlite, produtoId: number, dataRef = '2026-09-22'): Promise<number> {

@@ -108,3 +108,34 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .mapa-pedido tr.cinza td { color: var(--suave); }
 .linha-form .amarelo { margin-top: 6px; }
 .campo-entrega { margin-top: 8px; }
+
+/* Fase 2, Bloco E1 — painel de economia (segue a skill dataviz: cores por token, legível em claro e escuro) */
+.economia .chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; -webkit-overflow-scrolling: touch; }
+.chip { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--linha); background: var(--cartao); color: var(--texto); cursor: pointer; white-space: nowrap; }
+.chip.ativo, .chip[aria-selected='true'] { background: var(--marca); color: var(--marca-texto); border-color: var(--marca); font-weight: 700; }
+.cartao.principal { text-align: center; }
+.cartao.principal .valor { display: block; font-size: 32px; font-weight: 800; margin: 4px 0; }
+.valor.bom { color: var(--ok-texto); }
+.valor.ruim { color: var(--alerta); }
+.economia .busca { width: 100%; margin: 8px 0; }
+.cartao.item { display: block; width: 100%; text-align: left; cursor: pointer; }
+.cartao.item .nome { font-weight: 600; }
+.sem-comparacao { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--suave); }
+.sischef { list-style: none; margin: 4px 0 0; padding: 0; }
+.sischef li { padding: 6px 0; border-bottom: 1px solid var(--linha); font-size: 14px; }
+.economia .rodape { position: static; background: transparent; border: 0; border-top: 1px solid var(--linha); margin-top: 16px; padding: 12px 0 0; font-size: 12px; color: var(--suave); }
+/* gráficos SVG inline */
+.curva, .barras { width: 100%; height: auto; margin: 8px 0; overflow: visible; }
+.curva-zero { stroke: var(--linha); stroke-width: 1; }
+.curva-linha { stroke: var(--marca); stroke-width: 2; }
+.curva-ponto { fill: var(--marca); }
+.curva-rotulo { fill: var(--suave); font-size: 10px; }
+.curva-valor { fill: var(--texto); font-size: 11px; font-weight: 700; }
+.barra-economizou { fill: var(--marca); }
+.barra-pagou { fill: var(--alerta); }
+.faisca { width: 80px; height: 20px; margin-top: 6px; }
+.faisca-linha { stroke: var(--marca); stroke-width: 1.5; }
+.faisca-ultimo { stroke: var(--suave); stroke-width: 1; stroke-dasharray: 3 2; }
+/* histórico do item */
+.historico-item .tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
+.historico-item tr.no-pedido td { font-weight: 700; }

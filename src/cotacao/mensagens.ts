@@ -1,7 +1,7 @@
 // Mensagens de WhatsApp da cotação (spec seção 10), montadas no App a partir dos itens congelados. O Ivan envia pelo
 // WhatsApp dele: o App só abre a conversa com o texto pronto (wa.me). Os exemplos de preço são FIXOS e iguais em toda
 // mensagem, escolhidos sem olhar preço real (spec 2 e 10.1): a mensagem nunca troca o exemplo conforme a cotação.
-import type { Cotacao, DadosEnvio, Gerais, ItemCotacao, ItemSemana, MarcaItem, Pedido, TipoEmbalagem, Vendedor } from '../lib/tipos'
+import type { Cotacao, DadosEnvio, Gerais, ItemCotacao, ItemSemana, LinhaConferencia, MarcaItem, Pedido, TipoEmbalagem, Vendedor } from '../lib/tipos'
 import { formatarQtd } from '../lib/regras'
 import { embalagensPara } from './conversao'
 import { totalPedido } from './pedido'
@@ -253,6 +253,67 @@ export function textoEtiqueta(m: MarcaItem, item?: Pick<ItemSemana, 'qtd_aprovad
   if (m.estado === 'em_cotacao') return `Em cotação com ${m.vendedor} — não comprar na loja`
   const ate = m.ate ? horaLocal(m.ate) : null
   return `Aguardando cotação com ${m.vendedor}${ate ? ` até ${diaCurto(ate.data)} ${horaBr(ate)}` : ''} — não comprar na loja`
+}
+
+// ---------- 10.6 e 10.7 (Fase 2, Bloco D): diferença na NF, falta e avaria. Só saem com o toque do Ivan.
+// NUNCA citam o último preço, outro vendedor ou a economia: só o que foi combinado com este vendedor (D.8).
+
+const ARTIGO_BASE: Record<BaseConf, string> = { un: 'a unidade', kg: 'o kg', litro: 'o litro', embalagem: 'a embalagem' }
+type BaseConf = 'un' | 'kg' | 'litro' | 'embalagem'
+type LinhaConf = Pick<LinhaConferencia, 'numero' | 'nome' | 'base' | 'qtd' | 'embalagens' | 'preco_combinado' | 'valor_acima' | 'preco' | 'falta' | 'resto' | 'unidade' | 'fator' | 'avaria'>
+
+/** Quantidade de falta em embalagens inteiras quando a conta fecha (24 un ÷ 12 = 2 embalagens), senão na unidade. */
+function qtdFalta(falta: number, unidade: string, fator: number | null, embalagem?: string | null): string {
+  if (fator && fator > 0 && Math.abs(falta % fator) < 1e-9) {
+    const n = falta / fator
+    return `${numeroBr(n)} ${embalagem ? (n === 1 ? embalagem : PLURAL[embalagem as TipoEmbalagem] ?? embalagem + 's') : (n === 1 ? 'embalagem' : 'embalagens')}`
+  }
+  return `${numeroBr(falta)} ${unidade}`
+}
+
+/** 10.6 — diferença de preço na NF: uma linha por item ACIMA, na base combinada. Frete acima entra à parte. */
+export function mensagemDiferencaNf(
+  nome: string, nf: string, pedidoData: string, linhas: LinhaConf[],
+  frete?: { combinado: number | null; nf: number | null },
+): string {
+  const acima = linhas.filter((l) => l.preco === 'acima')
+  const freteAcima = frete && frete.nf != null && frete.combinado != null && frete.nf > frete.combinado + 0.01
+  if (acima.length === 0 && !freteAcima) return ''
+  const linha = (l: LinhaConf): string => {
+    const base = l.base as BaseConf
+    const qtdBase = base === 'embalagem' ? Number(l.embalagens ?? l.qtd) : Number(l.qtd)
+    const nfBase = l.preco_combinado + (qtdBase ? l.valor_acima / qtdBase : 0)
+    const unid = base === 'embalagem' ? `${numeroBr(qtdBase)} embalagens` : `${numeroBr(qtdBase)} ${base === 'kg' ? 'kg' : base === 'litro' ? 'L' : 'un'}`
+    return `${l.numero}. ${l.nome} – combinado ${reais(l.preco_combinado)} ${ARTIGO_BASE[base]}, na NF ${reais(nfBase)} (${unid}: ${reais(l.valor_acima)} a mais)`
+  }
+  const partes = [`${nome}, recebemos a NF ${nf} do pedido de ${diaCurto(pedidoData)} ${ddmm(pedidoData)}. Vi diferença no preço:`]
+  for (const l of acima) partes.push(linha(l))
+  if (freteAcima) partes.push(`Frete: combinado ${reais(frete!.combinado!)}, na NF ${reais(frete!.nf!)}`)
+  partes.push('Pode verificar, por favor? Obrigado!')
+  return partes.join('\n')
+}
+
+/** 10.7 — falta e avaria. O resto é por item (2ª revisão n.º 10): quem ainda vem em "Faltou:", quem não vem mais à parte. */
+export function mensagemFaltaAvaria(nome: string, pedidoData: string, linhas: LinhaConf[]): string {
+  const faltasVem = linhas.filter((l) => (l.falta ?? 0) > 0 && l.resto === 'vem_depois')
+  const faltasNao = linhas.filter((l) => (l.falta ?? 0) > 0 && l.resto === 'nao_vem')
+  const avarias = linhas.filter((l) => (l.avaria ?? 0) > 0)
+  const partes = [`${nome}, chegou o pedido de ${diaCurto(pedidoData)} ${ddmm(pedidoData)}, obrigado!`]
+  if (faltasVem.length) {
+    partes.push('Faltou: ' + faltasVem.map((l) => `${qtdFalta(Number(l.falta), l.unidade, l.fator)} de ${l.nome}`).join('; ') + '.')
+  }
+  if (faltasNao.length) {
+    partes.push('Não precisa mandar: ' + faltasNao.map((l) => `${qtdFalta(Number(l.falta), l.unidade, l.fator)} de ${l.nome}`).join('; ') + ' (compramos por aqui).')
+  }
+  for (const a of avarias) {
+    partes.push(`Com avaria: ${qtdFalta(Number(a.avaria), a.unidade, a.fator)} de ${a.nome}.`)
+  }
+  if (faltasVem.length) {
+    partes.push(`Vai mandar o que faltou? A Spazio recebe ${RECEBIMENTO}.`)
+  } else if (faltasNao.length) {
+    partes.push('Tudo bem, compramos o que faltou por aqui.')
+  }
+  return partes.join('\n')
 }
 
 // ---------- 10.4 e 10.5

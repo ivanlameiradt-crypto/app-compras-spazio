@@ -4,8 +4,10 @@ import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
-  Abertura, Compra, Cotacao, DadosEnvio, EconomiaSemana, EntradaGerais, EntradaItem, ItemCotacao, ItemPedidoEntrada, ItemSemana,
-  LinhaCompra, MarcaItem, Papel, Pedido, PedidoRecente, Preparo, ResultadoEnvio, ResumoCotacao, Semana, Unidade, Usuario, Vendedor,
+  Abertura, Compra, Cotacao, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
+  IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
+  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
+  Preparo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
 /** Erro vindo do Supabase, com o status HTTP e o código (PostgREST/Postgres) para a fila saber se tenta de novo. */
@@ -21,13 +23,19 @@ export class ErroApi extends Error {
 }
 
 type Resposta<T> = { data: T | null; error: { message: string; code?: string } | null; status?: number }
-function checar<T>(r: Resposta<T>): T {
+export function checar<T>(r: Resposta<T>): T {
   if (r.error) throw new ErroApi(r.error.message, r.status, r.error.code)
   return r.data as T
 }
-async function chamar(nome: string, args: Record<string, unknown>): Promise<void> {
+export async function chamar(nome: string, args: Record<string, unknown>): Promise<void> {
   const { error, status } = await supabase.rpc(nome, args)
   if (error) throw new ErroApi(error.message, status, error.code)
+}
+/** Como `chamar`, mas devolve o que a função retornou (jsonb, tabela): para as funções de cadastro com retorno. */
+export async function chamarRet<T>(nome: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error, status } = await supabase.rpc(nome, args)
+  if (error) throw new ErroApi(error.message, status, error.code)
+  return data as T
 }
 
 // ---------- login (usuário + senha — P1)
@@ -113,8 +121,9 @@ export async function listarSemanas(): Promise<Semana[]> {
 }
 export async function itensDaSemana(semanaId: number): Promise<ItemSemana[]> {
   const r = checar(await supabase.from('itens_semana').select('*').eq('semana_id', semanaId).order('produto')) as ItemSemana[]
-  // selos e custo_medio chegam com a migration 20260928000001; sem eles, o item vale como "sem selo" e "sem custo médio"
-  return r.map((i) => ({ ...i, selos: i.selos ?? [], custo_medio: i.custo_medio ?? null }))
+  // selos e custo_medio chegam com a 20260928000001; regra/regra_motivo com a C2. Sem elas, o item vale como
+  // "sem selo", "sem custo médio" e "sem regra" (o padrão da 1A), e a Revisão fica igual à de hoje.
+  return r.map((i) => ({ ...i, selos: i.selos ?? [], custo_medio: i.custo_medio ?? null, regra: i.regra ?? null, regra_motivo: i.regra_motivo ?? null }))
 }
 export async function linhasDaSemana(semanaId: number): Promise<LinhaCompra[]> {
   const r = checar(await supabase.from('compras_itens').select('*, compras!inner(semana_id)').eq('compras.semana_id', semanaId)) as
@@ -371,10 +380,78 @@ export async function trocarCodigo(id: number): Promise<DadosEnvio> {
   return rpcDados<DadosEnvio>('cot_trocar_codigo', { p_cotacao: id })
 }
 export async function responderComoAdmin(id: number, envioId: string, itens: EntradaItem[], gerais: EntradaGerais | null,
-  origem: 'ivan_digitou' | 'ivan_colou'): Promise<ResultadoEnvio> {
+  origem: 'ivan_digitou' | 'ivan_colou' | 'ivan_ia'): Promise<ResultadoEnvio> {
   return rpcDados<ResultadoEnvio>('cot_responder_admin', {
     p_cotacao: id, p_envio_id: envioId, p_itens: itens, p_gerais: gerais, p_origem: origem,
   })
+}
+
+// ---------- Fase 2, Bloco B: leitura com IA (DESIGN-fase-2.md B.8)
+/** Erro da leitura com IA, com o código de B.13 (o texto já vem pronto para a tela). */
+export class ErroIA extends Error {
+  codigo: string
+  constructor(codigo: string, mensagem: string) {
+    super(mensagem)
+    this.name = 'ErroIA'
+    this.codigo = codigo
+  }
+}
+
+/** Lê o corpo JSON {erro, mensagem} de um erro da Edge Function (status ≠ 2xx). */
+async function corpoDaFuncaoIA(erro: unknown): Promise<{ erro?: string; mensagem?: string }> {
+  const contexto = (erro as { context?: Response }).context
+  if (contexto && typeof contexto.json === 'function') {
+    try { return await contexto.json() } catch { /* corpo não era JSON */ }
+  }
+  return {}
+}
+
+/**
+ * Chama a Edge Function cot-ler-resposta (B.7). Devolve a prévia (LeituraIA) ou lança ErroIA com o texto de B.13. O App
+ * cancela aos 140 s pelo `sinal`. Os erros "brandos" (recusa, incompleta, tempo…) voltam com status 200 e ok: false;
+ * os "duros" (admin, desligada, limite, cotação, sessão) voltam com status ≠ 2xx.
+ */
+export async function lerComIA(
+  cotacaoId: number,
+  entrada: { texto: string | null; imagens: ImagemIA[]; transcricao: boolean; pendentes?: number[] },
+  sinal?: AbortSignal,
+): Promise<LeituraIA> {
+  const chamada = supabase.functions.invoke('cot-ler-resposta', {
+    body: { cotacao_id: cotacaoId, ...entrada },
+  })
+  const resultado = sinal
+    ? await Promise.race([
+      chamada,
+      new Promise<never>((_, rej) => sinal.addEventListener('abort', () => rej(new ErroIA('cancelado', 'Leitura cancelada.')), { once: true })),
+    ])
+    : await chamada
+  const { data, error } = resultado as { data: unknown; error: unknown }
+  if (error) {
+    const corpo = await corpoDaFuncaoIA(error)
+    throw new ErroIA(corpo.erro ?? 'api', corpo.mensagem ?? (error instanceof Error ? error.message : 'A IA não respondeu.'))
+  }
+  const corpo = data as LeituraIA & { ok: boolean; erro?: string; mensagem?: string }
+  if (!corpo || corpo.ok !== true) throw new ErroIA(corpo?.erro ?? 'api', corpo?.mensagem ?? 'A IA não respondeu.')
+  return corpo
+}
+
+/** Registra a gravação por IA (melhor esforço: a falha não aparece para o Ivan). */
+export async function iaGravada(leitura: number, envioId: string, resumo: ResumoIA): Promise<void> {
+  await chamar('cot_ia_gravada', { p_leitura: leitura, p_envio_id: envioId, p_resumo: resumo })
+}
+
+/** cot_ia_status; null quando a função ainda não existe no banco (App publicado antes da migration). */
+export async function iaStatus(): Promise<IaStatus | null> {
+  const { data, error, status } = await supabase.rpc('cot_ia_status')
+  if (error) {
+    if (funcaoInexistente(error.code)) return null
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return data as IaStatus
+}
+
+export async function iaLigar(ligada: boolean): Promise<IaStatus> {
+  return rpcDados<IaStatus>('cot_ia_ligar', { p_ligada: ligada })
 }
 export async function novaVersao(id: number): Promise<number> {
   return Number(await rpcDados<number>('cot_nova_versao', { p_cotacao: id }))
@@ -404,6 +481,113 @@ export async function marcasDaSemana(semanaId: number): Promise<MarcaItem[]> {
     throw new ErroApi(error.message, status, error.code)
   }
   return (data ?? []) as MarcaItem[]
+}
+
+// ---------- Fase 2, Bloco E1: painel de economia (DESIGN-fase-2.md E.6)
+/** cot_painel_economia; null quando a função ainda não existe no banco (App publicado antes da migration). */
+export async function painelEconomia(de: string | null, ate: string | null): Promise<PainelEconomia | null> {
+  const { data, error, status } = await supabase.rpc('cot_painel_economia', { p_de: de, p_ate: ate })
+  if (error) {
+    if (funcaoInexistente(error.code)) return null
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return data as PainelEconomia
+}
+/** cot_historico_item; null quando a função ainda não existe no banco. */
+export async function historicoItem(produtoId: number, de: string | null, ate: string | null): Promise<HistoricoItem | null> {
+  const { data, error, status } = await supabase.rpc('cot_historico_item', { p_produto_id: produtoId, p_de: de, p_ate: ate })
+  if (error) {
+    if (funcaoInexistente(error.code)) return null
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return data as HistoricoItem
+}
+
+// ---------- Fase 2, Bloco D: recebimento e conferência da NF-e (DESIGN-fase-2.md, D.7)
+const COLUNAS_NFE = 'chave, numero, emissao, valor_nf, emitente, cnpj_emitente, situacao, saiu_da_fila_em, ' +
+  'lancada_em, nf_sischef, vendedor_id, cotacao_id, vinculo'
+const COLUNAS_CONFERENCIA = 'cotacao_id, confirmado_em, entrega_prevista, numero, produto_id, nome, unidade, qtd, base, embalagens, fator, ' +
+  'preco_combinado, preco_convertido, marca, chegou, avaria, falta, resto, falta_definitiva, recebimento, ' +
+  'nf_chaves, nf_qtd, qtd_nf, preco, valor_acima, combinado_unit, cobrado_unit, imposto, marca_nf, motivos'
+
+const nfeLida = (n: NfeResumo): NfeResumo => ({ ...n, valor_nf: Number(n.valor_nf ?? 0) })
+const conferenciaLida = (l: LinhaConferencia): LinhaConferencia => ({
+  ...l, qtd: Number(l.qtd), embalagens: num(l.embalagens), fator: num(l.fator),
+  preco_combinado: Number(l.preco_combinado), preco_convertido: num(l.preco_convertido),
+  chegou: num(l.chegou), avaria: num(l.avaria), falta: num(l.falta), falta_definitiva: Number(l.falta_definitiva ?? 0),
+  nf_qtd: num(l.nf_qtd), valor_acima: Number(l.valor_acima ?? 0),
+  combinado_unit: num(l.combinado_unit), cobrado_unit: num(l.cobrado_unit), imposto: Number(l.imposto ?? 0),
+  nf_chaves: l.nf_chaves ?? [], motivos: l.motivos ?? [],
+})
+
+export async function pedidosAReceber(): Promise<PedidoAReceber[]> {
+  const { data, error, status } = await supabase.rpc('cot_pedidos_a_receber')
+  if (error) {
+    if (funcaoInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return (data ?? []) as PedidoAReceber[]
+}
+export async function registrarRecebimento(cotacao: number, envioId: string, recebidoEm: string | null,
+  itens: ItemRecebido[], resto: 'vem_depois' | 'nao_vem' | null, observacao: string | null): Promise<Recebimento> {
+  return rpcDados<Recebimento>('cot_registrar_recebimento', {
+    p_cotacao: cotacao, p_envio_id: envioId, p_recebido_em: recebidoEm, p_itens: itens, p_resto: resto, p_observacao: observacao,
+  })
+}
+export const desfazerRecebimento = (id: number) => chamar('cot_desfazer_recebimento', { p_recebimento: id })
+export const definirEntrega = (id: number, data: string | null) => chamar('cot_definir_entrega', { p_cotacao: id, p_data: data })
+export const marcarEntrada = (id: number, entrou: boolean) => chamar('cot_marcar_entrada', { p_cotacao: id, p_entrou: entrou })
+
+export async function conferencia(cotacaoIds: number[]): Promise<LinhaConferencia[]> {
+  if (cotacaoIds.length === 0) return []
+  const { data, error, status } = await supabase.from('cot_conferencia').select(COLUNAS_CONFERENCIA)
+    .in('cotacao_id', cotacaoIds).order('cotacao_id').order('numero')
+  if (error) {
+    if (tabelaInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as unknown as LinhaConferencia[]).map(conferenciaLida)
+}
+export async function nfesDosPedidos(cotacaoIds: number[]): Promise<NfeResumo[]> {
+  if (cotacaoIds.length === 0) return []
+  const { data, error, status } = await supabase.from('cot_nfe').select(COLUNAS_NFE).in('cotacao_id', cotacaoIds)
+  if (error) {
+    if (tabelaInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as unknown as NfeResumo[]).map(nfeLida)
+}
+/** NF-e sem pedido casado, do vendedor (ou de emitente sem vendedor, com vendedorId null), emitidas desde `desde` (AAAA-MM-DD). */
+export async function nfesSemPedido(vendedorId: number | null, desde: string): Promise<NfeResumo[]> {
+  let q = supabase.from('cot_nfe').select(COLUNAS_NFE).is('cotacao_id', null).eq('nao_e_pedido', false).gte('emissao', desde)
+  q = vendedorId == null ? q.is('vendedor_id', null) : q.eq('vendedor_id', vendedorId)
+  const { data, error, status } = await q.order('emissao', { ascending: false })
+  if (error) {
+    if (tabelaInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as unknown as NfeResumo[]).map(nfeLida)
+}
+export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
+export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })
+export const moverCnpj = (cnpj: string, vendedorId: number) => chamar('cot_cnpj_mover', { p_cnpj: cnpj, p_vendedor: vendedorId })
+export const removerCnpj = (cnpj: string) => chamar('cot_cnpj_remover', { p_cnpj: cnpj })
+export async function desempenho(): Promise<Desempenho[]> {
+  const { data, error, status } = await supabase.rpc('cot_desempenho_vendedores')
+  if (error) {
+    if (funcaoInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as Desempenho[]).map((d) => ({ ...d, valor_acima: Number(d.valor_acima ?? 0) }))
+}
+export async function ultimaLeituraNotas(): Promise<LeituraNotas | null> {
+  const { data, error, status } = await supabase.from('cot_nfe_leituras').select('lida_em, notas, completa, origem')
+    .order('lida_em', { ascending: false }).limit(1).maybeSingle()
+  if (error) {
+    if (tabelaInexistente(error.code)) return null
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return (data ?? null) as LeituraNotas | null
 }
 
 // ---------- M12: nome de quem comprou, em vez do e-mail

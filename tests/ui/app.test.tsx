@@ -51,11 +51,12 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: /lançamentos/i })).toBeInTheDocument()
   })
 
-  it('Fase 1B: menu do admin é Lista · Cotações · Lançamentos · Resumo · Pessoas · Comprar', async () => {
+  it('Fase 2 C: menu do admin é Lista · Cotações · Receber · Lançamentos · Resumo · Economia · Cadastros · Comprar', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     render(<App />)
     const menu = (await screen.findByRole('link', { name: /cotações/i })).closest('nav') as HTMLElement
-    expect([...menu.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Lista', 'Cotações', 'Lançamentos', 'Resumo', 'Pessoas', 'Comprar'])
+    // §8.5: Pessoas deixa o menu e vira uma aba de Cadastros (#/pessoas continua abrindo)
+    expect([...menu.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Lista', 'Cotações', 'Receber', 'Lançamentos', 'Resumo', 'Economia', 'Cadastros', 'Comprar'])
     expect(screen.getByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
   })
 

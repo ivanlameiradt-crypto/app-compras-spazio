@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import * as api from '../lib/api'
 import type { ItemSemana, PedidoRecente, Semana, Usuario, Vendedor } from '../lib/tipos'
 import {
-  ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, lerNumero, mensagemDeErro, normalizar,
-  paraConferir, passo, qtdAoIncluir, separarAbas, totalEstimado,
+  ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, foraDaListaPorRegra, lerNumero,
+  mensagemDeErro, normalizar, paraConferir, passo, qtdAoIncluir, separarAbas, totalEstimado,
 } from '../lib/regras'
 import { ddmm, diaCurto, horaLocal, rotuloVendedor } from '../cotacao/mensagens'
+import * as cad from '../cadastros/api'
+import { tirarSempre as textoTirarSempre } from '../cadastros/textos'
 
 type Aba = 'conferir' | 'bebidas' | 'insumos' | 'negativos'
 /** Outra semana ainda em compra: só uma fica em compra por vez, então ela precisa ser encerrada antes de aprovar esta. */
@@ -91,6 +93,7 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
 
   const abas = useMemo(() => separarAbas(itens), [itens])
   const conferir = useMemo(() => paraConferir(itens), [itens])
+  const fora = useMemo(() => foraDaListaPorRegra(itens), [itens])
   if (semana === undefined) return <p className="centro">Carregando…</p>
   if (!semana) return <p className="vazio">{erro || 'Nenhuma lista nova. A próxima chega segunda às 6h.'}</p>
   const s = semana
@@ -110,10 +113,36 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
     }
   }
 
+  // C2: "Tirar sempre…" cria a regra de barrar; "Apagar regra" a tira. Só valem no rascunho.
+  async function tirarSempre(item: ItemSemana) {
+    const motivo = window.prompt(textoTirarSempre(item.produto))
+    if (motivo == null || motivo.trim() === '') return
+    try {
+      await cad.listaRegraSalvar(item.produto_id, 'barrar', motivo.trim())
+      setItens((l) => l.map((i) => (i.id === item.id ? { ...i, regra: 'barrar', regra_motivo: motivo.trim(), incluido: false, qtd_aprovada: 0 } : i)))
+      setErro('')
+    } catch (e) { setErro(mensagemDeErro(e)) }
+  }
+  async function apagarRegra(item: ItemSemana) {
+    try {
+      await cad.listaRegraRemover(item.produto_id)
+      setItens((l) => l.map((i) => (i.id === item.id ? { ...i, regra: null, regra_motivo: null } : i)))
+      setErro('')
+    } catch (e) { setErro(mensagemDeErro(e)) }
+  }
+  // C2: o cartão cujo único selo é linha_alta ganha "Incluir sempre": cria a regra de incluir e entra na lista já nesta semana.
+  async function incluirSempre(item: ItemSemana) {
+    try {
+      await cad.listaRegraSalvar(item.produto_id, 'incluir', null)
+      setItens((l) => l.map((i) => (i.id === item.id ? { ...i, regra: 'incluir', incluido: true, qtd_aprovada: qtdAoIncluir(i) } : i)))
+      setErro('')
+    } catch (e) { setErro(mensagemDeErro(e)) }
+  }
+
   async function aprovar() {
-    const fora = paraConferir(itens)
-    const pergunta = fora.length > 0
-      ? `Ainda há ${fora.length} ${fora.length === 1 ? 'item' : 'itens'} para conferir fora da lista (${fora.map((i) => i.produto).join(', ')}). Aprovar e liberar para os compradores assim mesmo?`
+    const paraConf = paraConferir(itens)
+    const pergunta = paraConf.length > 0
+      ? `Ainda há ${paraConf.length} ${paraConf.length === 1 ? 'item' : 'itens'} para conferir fora da lista (${paraConf.map((i) => i.produto).join(', ')}). Aprovar e liberar para os compradores assim mesmo?`
       : 'Aprovar a lista e liberar para os compradores?'
     if (!window.confirm(pergunta)) return
     try {
@@ -182,8 +211,21 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
       )}
 
       {visiveis.map((i) => (
-        <Cartao key={i.id} item={i} editavel={editavel} onAjustar={ajustar} pedidoAnterior={pedidosAnteriores.get(i.produto_id)} />
+        <Cartao key={i.id} item={i} editavel={editavel} onAjustar={ajustar} onTirarSempre={tirarSempre} onIncluirSempre={incluirSempre} pedidoAnterior={pedidosAnteriores.get(i.produto_id)} />
       ))}
+
+      {fora.length > 0 && (
+        <details className="cartao" data-testid="fora-por-regra">
+          <summary>Fora da lista por regra ({fora.length})</summary>
+          {fora.map((i) => (
+            <div key={i.id} className="linha" data-produto={i.produto_id}>
+              <span>{i.produto}{i.regra_motivo && ` — ${i.regra_motivo}`}{i.incluido && ' · fora por regra, incluído nesta semana'}</span>
+              {editavel && !i.incluido && <button className="link" onClick={() => ajustar(i, qtdAoIncluir(i), true)}>Incluir só nesta semana</button>}
+              {editavel && <button className="link" onClick={() => apagarRegra(i)}>Apagar regra</button>}
+            </div>
+          ))}
+        </details>
+      )}
 
       {editavel && (
         <div className="cartao">
@@ -215,17 +257,21 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
   )
 }
 
-function Cartao({ item, editavel, onAjustar, pedidoAnterior }: {
+function Cartao({ item, editavel, onAjustar, onTirarSempre, onIncluirSempre, pedidoAnterior }: {
   item: ItemSemana
   editavel: boolean
   /** Fase 1B: "Pedido com MATEUS em qua 21/10: a NF-e já entrou no SisChef?" (só informa) */
   pedidoAnterior?: string
   onAjustar: (item: ItemSemana, qtd: number, incluido: boolean) => void
+  onTirarSempre: (item: ItemSemana) => void
+  onIncluirSempre: (item: ItemSemana) => void
 }) {
   const [texto, setTexto] = useState(String(item.qtd_aprovada).replace('.', ','))
   useEffect(() => { setTexto(String(item.qtd_aprovada).replace('.', ',')) }, [item.qtd_aprovada])
   const p = passo(item.unidade)
   const aConferir = !item.incluido && item.selos.length > 0
+  // C2: valor alto de sempre — único selo linha_alta vira "Incluir sempre" (sem pedir conferência de valor alto).
+  const soLinhaAlta = aConferir && item.selos.length === 1 && item.selos[0].codigo === 'linha_alta'
   const qtdIncluir = qtdAoIncluir(item)
   const confirmarTexto = () => {
     const v = lerNumero(texto)
@@ -242,6 +288,7 @@ function Cartao({ item, editavel, onAjustar, pedidoAnterior }: {
         {item.preco_estimado != null && <> · Últ. compra {formatarReais(item.preco_estimado)}{item.data_ultima_compra && <> em {formatarData(item.data_ultima_compra)}</>}</>}
       </div>
       {item.fornecedor_ultima && <div className="sub">Fornecedor: {item.fornecedor_ultima}</div>}
+      {item.regra === 'incluir' && <div className="etiquetas"><span className="pill">na lista pela sua regra</span></div>}
       {item.incluido && item.selos.length > 0 && (
         <div className="etiquetas">
           {item.selos.map((selo, n) => <span key={n} className="pill">{selo.texto}</span>)}
@@ -250,11 +297,21 @@ function Cartao({ item, editavel, onAjustar, pedidoAnterior }: {
       <div className="linha" style={{ marginTop: 8 }}>
         {editavel ? (
           item.incluido
-            ? <button className="link perigo" onClick={() => onAjustar(item, item.qtd_aprovada, false)}>Tirar</button>
+            ? (
+              <span>
+                <button className="link perigo" onClick={() => onAjustar(item, item.qtd_aprovada, false)}>Tirar</button>{' '}
+                <button className="link perigo" onClick={() => onTirarSempre(item)}>Tirar sempre…</button>
+              </span>
+            )
             : (
-              <button className="link" onClick={() => onAjustar(item, qtdIncluir, true)}>
-                {aConferir ? `Incluir (${formatarQtd(qtdIncluir, item.unidade)})` : 'Incluir'}
-              </button>
+              <span>
+                <button className="link" onClick={() => onAjustar(item, qtdIncluir, true)}>
+                  {aConferir ? `Incluir (${formatarQtd(qtdIncluir, item.unidade)})` : 'Incluir'}
+                </button>
+                {soLinhaAlta && <>{' '}
+                  <button className="link" onClick={() => onIncluirSempre(item)}>Incluir sempre (sem pedir conferência de valor alto)</button>
+                </>}
+              </span>
             )
         ) : <span />}
         {editavel && item.incluido ? (

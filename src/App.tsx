@@ -9,8 +9,12 @@ import Revisao from './admin/Revisao'
 import Cotacoes from './admin/Cotacoes'
 import Lancamentos from './admin/Lancamentos'
 import Resumo from './admin/Resumo'
+import Economia from './admin/Economia'
 import Pessoas from './admin/Pessoas'
+import Cadastros from './admin/Cadastros'
+import Historico from './admin/Historico'
 import Comprar from './comprador/Comprar'
+import Receber from './recebimento/Recebimento'
 import { sair } from './lib/api'
 import type { Usuario } from './lib/tipos'
 
@@ -55,8 +59,13 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
         {admin && <Route path="/cotacoes" element={<Cotacoes />} />}
         {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
         {admin && <Route path="/resumo" element={<Resumo />} />}
+        {admin && <Route path="/economia" element={<Economia />} />}
+        {admin && <Route path="/cadastros" element={<Cadastros usuario={usuario} />} />}
+        {admin && <Route path="/cadastros/produto/:id" element={<Cadastros usuario={usuario} />} />}
+        {admin && <Route path="/historico" element={<Historico />} />}
         {admin && <Route path="/pessoas" element={<Pessoas usuario={usuario} />} />}
         <Route path="/comprar" element={<Comprar usuario={usuario} />} />
+        <Route path="/receber" element={<Receber usuario={usuario} />} />
         <Route path="/senha" element={<TrocarSenha forcada={false} />} />
         <Route path="*" element={<Navigate to={admin ? '/lista' : '/comprar'} replace />} />
       </Routes>

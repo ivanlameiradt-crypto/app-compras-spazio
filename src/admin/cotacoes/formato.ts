@@ -91,7 +91,7 @@ export function respostaGravada(i: ItemCotacao, agora: Date): string {
   if (i.marca_informada) partes.push(`marca ${i.marca_informada}`)
   if (i.confirmado_pelo_vendedor) partes.push('vendedor confirmou')
   if (i.origem) {
-    const de = { vendedor: 'pelo link', ivan_digitou: 'digitado', ivan_colou: 'colado' }[i.origem]
+    const de = { vendedor: 'pelo link', ivan_digitou: 'digitado', ivan_colou: 'colado', ivan_ia: 'lido pela IA' }[i.origem]
     const copiada = i.copiada_da_versao != null ? ` (da v${i.copiada_da_versao})` : ''
     partes.push(`${de}${copiada}${i.respondido_em ? ` ${quando(i.respondido_em, agora)}` : ''}`)
   }
@@ -135,7 +135,7 @@ export function referencia(i: Pick<ItemCotacao, 'ref_preco' | 'ref_data' | 'ref_
 
 export function textoOrigem(origem: OrigemResposta | null, copiada: number | null): string {
   if (!origem) return ''
-  const t = { vendedor: 'link', ivan_digitou: 'digitado', ivan_colou: 'colado' }[origem]
+  const t = { vendedor: 'link', ivan_digitou: 'digitado', ivan_colou: 'colado', ivan_ia: 'IA' }[origem]
   return copiada != null ? `${t} (da v${copiada})` : t
 }
 

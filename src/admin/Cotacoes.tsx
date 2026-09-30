@@ -13,6 +13,7 @@ import {
   dadosEnvioDe, ddmm, diaCurto, horaBr, horaLocal, linkCotacao, mensagemCotacao, numeroBr, rotuloVendedor,
 } from '../cotacao/mensagens'
 import CartaoVendedor, { AvisoTamanho, preparadaEm } from './cotacoes/CartaoVendedor'
+import Chaves from './cotacoes/Chaves'
 import { chaveCot, ContextoCotacoes, useCotacoes, type Contexto, type Sessao } from './cotacoes/contexto'
 import { BotoesCopiar, LinkWhatsApp } from './cotacoes/Copiar'
 import { prontaSemSinal } from './cotacoes/estado'
@@ -212,6 +213,7 @@ export default function Cotacoes() {
       <section className="cotacoes">
         <div className="cabecalho">
           <h2>Cotações{semana ? ` · semana ${formatarData(semana.data_referencia)}` : ''}</h2>
+          <a className="link" href="#/historico">Histórico</a>
           <button className="botao secundario" disabled={ocupado} onClick={() => void atualizar()}>Atualizar</button>
         </div>
         {erroCarga && <p className="erro" role="alert">Não consegui atualizar: {erroCarga}</p>}
@@ -228,6 +230,7 @@ export default function Cotacoes() {
           Atualizado às {horaBr(horaLocal(dados.atualizadoEm))}. As respostas aparecem aqui ao atualizar (sozinho a cada 30 s).
           O e-mail avisa nas coletas de seg a sex (8h17, 12h17, 16h17); o GitHub costuma atrasar de 5 a 30 min.
         </p>
+        <Chaves />
       </section>
     </ContextoCotacoes.Provider>
   )

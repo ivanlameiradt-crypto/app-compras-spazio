@@ -13,6 +13,7 @@
 import type { BaseCotacao, EntradaItem, ItemCotacao } from '../lib/tipos'
 import { lerNumero } from '../lib/regras'
 import { validar } from './conversao'
+import { basePresumida } from './ia'
 import {
   AVISO_COTACAO, CHAMADA_LINK, CHAMADA_LISTA, COMO_NAO_TEM, EXEMPLO_FARDO, EXEMPLO_KG, linhaLiquidos, linhaVersao,
   textoQtd, URL_PAGINA,
@@ -44,6 +45,14 @@ const CABECALHOS = [
   /^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?\s*m\.?)?,\s*\d{1,2}\/\d{1,2}\/\d{2,4})\]\s*(?:[^\d\s:[][^:]{0,59}:\s*)?/i,
   /^\s*(\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?)\s+-\s+[^:]{1,60}:\s*/,
 ]
+/** Tira os cabeçalhos do WhatsApp linha a linha (B.8: usado por ia.ts textoParaIA e pela limpeza da Edge Function). */
+export function tirarCabecalhos(texto: string): string {
+  return texto.split(/\r?\n/).map((linha) => {
+    for (const c of CABECALHOS) { const m = linha.match(c); if (m) linha = linha.slice(m[0].length) }
+    return linha
+  }).join('\n')
+}
+
 /** Número do item no começo da linha: "1.", "1 -", "1)", "1:", "item 1", "1 " (mas não "1.250" nem "22/09"). O
  * separador fica no grupo 2: separado só por espaço, o resto precisa parecer resposta (pareceResposta). */
 const NUMERO = /^(?:item\s*)?(\d{1,3})(\s*[)\-:–—]\s*|\s*\.(?!\d)\s*|\s+)(.*)$/i
@@ -210,13 +219,14 @@ function lerResposta(texto: string, item: ItemCotacao): Lida {
   } else if (porLitro) base = 'litro'
   else if (porKg) base = 'kg'
   else if (porUn) base = 'un'
-  else if (item.fator_confirmado && item.fator != null) {
-    // só o preço, num item com embalagem confirmada ("104 un (9 fd c/12)"): vale a embalagem, como na página (lá a
-    // embalagem confirmada já vem marcada). A conferência mostra "fardo c/12" antes de gravar.
-    base = 'embalagem'
-    if (item.unidade === 'un') embUnidades = Number(item.fator)
-    else embGramas = Math.round(Number(item.fator) * 1000 * 1000) / 1000
-  } else base = item.unidade === 'un' ? 'un' : item.vende_por_litro ? 'litro' : 'kg'
+  else {
+    // só o preço: base presumida (a MESMA regra compartilhada com a IA, ia.ts basePresumida, B.5.5): num item com
+    // embalagem confirmada ("104 un (9 fd c/12)") vale a embalagem, como na página; senão un/litro/kg.
+    const bp = basePresumida(item)
+    base = bp.base
+    embUnidades = bp.emb_unidades
+    embGramas = bp.emb_gramas
+  }
 
   return {
     resposta: {

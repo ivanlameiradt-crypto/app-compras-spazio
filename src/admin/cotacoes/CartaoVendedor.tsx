@@ -18,6 +18,7 @@ import {
 } from './formato'
 import ColarResposta from './ColarResposta'
 import ConfirmarPedido from './ConfirmarPedido'
+import EntregaNfe from './EntregaNfe'
 import DigitarPrecos from './DigitarPrecos'
 import LimparRespostas from './LimparRespostas'
 
@@ -308,6 +309,7 @@ function SecaoViva({ c, v, daSemana }: { c: Cotacao; v: Vendedor; daSemana: bool
           </div>
         </div>
       )}
+      {c.resultado === 'pedido' && <EntregaNfe cotacao={c.id} vendedor={v} />}
 
       {aberto === 'digitar' && <DigitarPrecos c={c} onFechar={() => setAberto(null)} />}
       {aberto === 'colar' && <ColarResposta c={c} onFechar={() => setAberto(null)} />}

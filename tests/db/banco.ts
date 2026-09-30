@@ -31,7 +31,20 @@ export async function limpar(db: PGlite): Promise<void> {
   await db.exec(
     'truncate usuarios, semanas, itens_semana, compras, compras_itens, historico_alteracoes, ' +
       'cot_vendedores, cot_fornecedores, cot_catalogo, cot_feriados, cot_cadastros_aplicados, cot_cotacoes, ' +
-      'cot_codigos, cot_itens, cot_envios, cot_pedidos, cot_limites, cot_avisos restart identity cascade',
+      'cot_codigos, cot_itens, cot_envios, cot_pedidos, cot_limites, cot_avisos, cot_leituras_ia, ' +
+      // Fase 2, D: tabelas de recebimento e NF-e (cot_nfe_leituras não é alcançada por cascade)
+      'cot_pedidos_acomp, cot_recebimentos, cot_fornecedores_cnpj, cot_nfe, cot_nfe_leituras, ' +
+      // Fase 2, C2: regras da lista e fatores descartados
+      'lista_regras, cot_fator_descartes restart identity cascade',
+  )
+  // cot_ia_config (Fase 2, B) tem uma linha só. O truncate de usuarios acima leva ela junto (FK mudado_por → usuarios),
+  // então o upsert a recria com os padrões (nasce desligada). Sem a tabela (banco em base 1B nos testes de "antesDe"),
+  // o bloco é ignorado.
+  await db.exec(
+    "do $$ begin if to_regclass('public.cot_ia_config') is not null then " +
+      "insert into public.cot_ia_config (id) values (1) on conflict (id) do update " +
+      "set ligada = false, liberada_em = null, modelo = 'claude-opus-5', esforco = 'low', " +
+      'limite_dia = 30, limite_mes = 150, mudado_por = null, atualizado_em = null; end if; end $$',
   )
   await fixarRelogio(db, null)
 }

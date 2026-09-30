@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import Cotacoes from '../../src/admin/Cotacoes'
-import type { Cotacao, ItemCotacao, Pedido, Preparo, ResumoCotacao } from '../../src/lib/tipos'
+import type { Cotacao, IaStatus, ItemCotacao, LeituraIA, Pedido, Preparo, ResumoCotacao } from '../../src/lib/tipos'
 import {
   dadosEnvioDe, linkCotacao, linkWhatsApp, mensagemCobranca, mensagemCotacao, mensagemObrigado,
 } from '../../src/cotacao/mensagens'
@@ -90,6 +90,11 @@ beforeEach(() => {
   m.marcarItemCotacao.mockResolvedValue()
   m.liberarLoja.mockResolvedValue()
   m.voltarACotar.mockResolvedValue()
+  // Fase 2 D: o cartão do pedido monta <EntregaNfe>, que lê estas funções; vazias por padrão nos testes de cotação.
+  m.conferencia.mockResolvedValue([])
+  m.nfesDosPedidos.mockResolvedValue([])
+  m.desempenho.mockResolvedValue([])
+  m.nfesSemPedido.mockResolvedValue([])
   m.novaVersao.mockResolvedValue(8)
   m.dispensarCotacao.mockImplementation(async (id) => { mudarCot(id, { status: 'fechada', resultado: 'dispensado' }) })
   m.trocarCodigo.mockImplementation(async (id) => {
@@ -1362,5 +1367,134 @@ describe('Cotações — mapa do pedido', () => {
     const mapa = await abrirMapa()
     await userEvent.click(within(mapa).getByRole('button', { name: 'Item 1: No pedido' }))
     expect(within(mapa).getByRole('button', { name: 'Nenhum item no pedido: use Obrigado, desta vez não' })).toBeDisabled()
+  })
+})
+
+// ---------- Fase 2, Bloco B: leitura com IA (B.14.3)
+function statusLigada(over: Partial<IaStatus> = {}): IaStatus {
+  return { ligada: true, liberada: true, liberada_em: '2026-10-01T00:00:00Z', modelo: 'claude-opus-5',
+    uso: { hoje: 1, limite_dia: 30, mes: 1, limite_mes: 150, custo_mes_usd: 0.07 }, ...over }
+}
+function iaLinha(numero: number, preco: number, base = 'un'): LeituraIA['itens'][number] {
+  return { numero, fonte: 'texto', casou_por: 'numero', trecho: `${numero} item ${preco}`, certeza: 'alta', duvida: null, sinais: [],
+    entrada: { estado: 'tem', preco, base: base as 'un', emb_unidades: null, emb_gramas: null, emb_ml: null,
+      tenho_so: null, a_partir_de: null, similar_desc: null, similar_preco: null, marca: null } }
+}
+function leituraMock(itens: LeituraIA['itens']): LeituraIA {
+  return { ok: true, leitura_id: 88, modelo: 'claude-opus-5', duracao_ms: 9000, custo_usd: 0.07, itens,
+    gerais: { pagamento: null, validade: null, pedido_minimo: null, frete: null, entrega: null, observacao: null },
+    fora_da_lista: [], nao_entendidos: [], uso: statusLigada().uso }
+}
+async function abrirColar() {
+  render(<Cotacoes />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Colar resposta' }))
+  await screen.findByTestId('ler-ia')
+}
+async function clicarLerIA() {
+  await waitFor(() => expect(screen.getByTestId('ler-ia')).toBeEnabled())
+  await userEvent.click(screen.getByTestId('ler-ia'))
+}
+
+describe('Cotações — leitura com IA', () => {
+  it('Ler com IA: quando o leitor comum entende tudo, a IA não é chamada e grava como ivan_colou', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada())
+    comViva({ status: 'enviada', enviada_em: SEG_15H }, [{ nome: 'AGUA MINERAL 500ML' }])
+    await abrirColar()
+    await userEvent.click(screen.getByRole('textbox', { name: 'Resposta colada' }))
+    await userEvent.paste('1 - 2,50')
+    await clicarLerIA()
+    expect(m.lerComIA).not.toHaveBeenCalled()
+    expect(screen.getByTestId('sem-custo')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Gravar 1 item' }))
+    expect(m.responderComoAdmin).toHaveBeenCalledWith(7, expect.any(String),
+      [expect.objectContaining({ numero: 1, preco: 2.5 })], null, 'ivan_colou')
+  })
+
+  it('Ler com IA: com linha não entendida chama a função, mostra os cartões e grava como ivan_ia', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada())
+    m.lerComIA.mockResolvedValue(leituraMock([iaLinha(1, 2.5)]))
+    m.iaGravada.mockResolvedValue()
+    comViva({ status: 'enviada', enviada_em: SEG_15H }, [{ nome: 'AGUA MINERAL 500ML' }])
+    await abrirColar()
+    await userEvent.click(screen.getByRole('textbox', { name: 'Resposta colada' }))
+    await userEvent.paste('cebola ta cara demais')
+    await clicarLerIA()
+    await screen.findByTestId('previa-ia')
+    expect(m.lerComIA).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('cartao-ia-1')).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('gravar-ia'))
+    expect(m.responderComoAdmin).toHaveBeenCalledWith(7, expect.any(String),
+      [expect.objectContaining({ numero: 1, preco: 2.5, base: 'un' })], null, 'ivan_ia')
+    expect(m.iaGravada).toHaveBeenCalledWith(88, expect.any(String), expect.objectContaining({ gravados: 1 }))
+  })
+
+  it('Ler com IA numa cotação grande (>25 itens): manda só os números que o leitor comum não leu (B.5.3)', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada())
+    m.lerComIA.mockResolvedValue(leituraMock([]))
+    m.iaGravada.mockResolvedValue()
+    const itens = Array.from({ length: 30 }, (_, k) => ({ nome: `ITEM ${k + 1}`, unidade: 'un' as const, rotulo: 'un' as const }))
+    comViva({ status: 'enviada', enviada_em: SEG_15H }, itens)
+    await abrirColar()
+    await userEvent.click(screen.getByRole('textbox', { name: 'Resposta colada' }))
+    // o leitor comum lê 1..27; sobra a linha "não entendida" (força a IA) e os itens 28..30 ficam pendentes
+    const lidas = Array.from({ length: 27 }, (_, k) => `${k + 1} - 2,50`).join('\n')
+    await userEvent.paste(`${lidas}\nxxxx nao entendi`)
+    await clicarLerIA()
+    await waitFor(() => expect(m.lerComIA).toHaveBeenCalledTimes(1))
+    expect(m.lerComIA).toHaveBeenCalledWith(7, expect.objectContaining({ pendentes: [28, 29, 30] }), expect.anything())
+  })
+
+  it('Ler com IA numa cotação pequena: não manda pendentes (a IA lê e os dois leitores se conferem)', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada())
+    m.lerComIA.mockResolvedValue(leituraMock([iaLinha(1, 2.5)]))
+    m.iaGravada.mockResolvedValue()
+    comViva({ status: 'enviada', enviada_em: SEG_15H }, [{ nome: 'AGUA MINERAL 500ML' }])
+    await abrirColar()
+    await userEvent.click(screen.getByRole('textbox', { name: 'Resposta colada' }))
+    await userEvent.paste('cebola ta cara demais')
+    await clicarLerIA()
+    await waitFor(() => expect(m.lerComIA).toHaveBeenCalledTimes(1))
+    expect(m.lerComIA).toHaveBeenCalledWith(7, expect.objectContaining({ pendentes: undefined }), expect.anything())
+  })
+
+  it('Ler com IA: item com resposta do link só entra no Gravar com "substituir"', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada())
+    m.lerComIA.mockResolvedValue(leituraMock([iaLinha(1, 3.2, 'kg')]))
+    m.iaGravada.mockResolvedValue()
+    comViva({ status: 'respondida', enviada_em: SEG_15H, respostas_rev: 1 }, [
+      { numero: 1, nome: 'CEBOLA', unidade: 'kg', rotulo: 'kg', qtd: 5, estado: 'tem', preco_digitado: 3, base: 'kg',
+        preco_convertido: 3, origem: 'vendedor', respondido_em: SEG_15H, rev: 2 },
+    ])
+    await abrirColar()
+    await userEvent.click(screen.getByRole('textbox', { name: 'Resposta colada' }))
+    await userEvent.paste('xxxx nao entendi')
+    await clicarLerIA()
+    await screen.findByTestId('previa-ia')
+    expect(screen.getByTestId('gravar-ia')).toBeDisabled() // protegido, desmarcado
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Substituir a resposta do link do item 1' }))
+    await userEvent.click(screen.getByTestId('gravar-ia'))
+    expect(m.responderComoAdmin).toHaveBeenCalledWith(7, expect.any(String),
+      [expect.objectContaining({ numero: 1, rev_lida: 2 })], null, 'ivan_ia')
+  })
+
+  it('Cartão "Leitura com IA": mostra o estado e liga', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada({ ligada: false }))
+    m.iaLigar.mockResolvedValue(statusLigada({ ligada: true }))
+    comRascunho()
+    render(<Cotacoes />)
+    const chaves = await screen.findByTestId('chaves-ia')
+    expect(within(chaves).getByTestId('chaves-linha')).toHaveTextContent('Desligada')
+    await userEvent.click(within(chaves).getByRole('button', { name: 'Ligar' }))
+    expect(m.iaLigar).toHaveBeenCalledWith(true)
+    await waitFor(() => expect(within(chaves).getByTestId('chaves-linha')).toHaveTextContent('Ligada'))
+  })
+
+  it('Ler com IA desligada: o botão fica desabilitado', async () => {
+    m.iaStatus.mockResolvedValue(statusLigada({ ligada: false, liberada: false }))
+    comViva({ status: 'enviada', enviada_em: SEG_15H }, [{ nome: 'AGUA MINERAL 500ML' }])
+    render(<Cotacoes />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Colar resposta' }))
+    await waitFor(() => expect(screen.getByTestId('ler-ia')).toBeDisabled())
+    expect(screen.getByText('Leitura com IA desligada')).toBeInTheDocument()
   })
 })

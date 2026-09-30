@@ -60,17 +60,25 @@ export function resumirSemana(itens: ItemSemana[], linhas: LinhaCompra[]): Resum
 }
 
 const porNome = (a: ItemSemana, b: ItemSemana) => a.produto.localeCompare(b.produto, 'pt-BR')
+/** C2: item barrado que não foi incluído nesta semana sai das abas (vai para "Fora da lista por regra"). */
+const foraPorRegra = (i: ItemSemana) => i.regra === 'barrar' && !i.incluido
 export function separarAbas(itens: ItemSemana[]) {
+  const visiveis = itens.filter((i) => !foraPorRegra(i))
   return {
-    bebidas: itens.filter((i) => i.bebida).sort(porNome),
-    insumos: itens.filter((i) => !i.bebida && !i.negativo).sort(porNome),
-    negativos: itens.filter((i) => i.negativo).sort(porNome),
+    bebidas: visiveis.filter((i) => i.bebida).sort(porNome),
+    insumos: visiveis.filter((i) => !i.bebida && !i.negativo).sort(porNome),
+    negativos: visiveis.filter((i) => i.negativo).sort(porNome),
   }
 }
 
-/** Aba Conferir: itens com selo que o robô deixou fora da lista (as outras abas só mostram incluídos). */
+/** Aba Conferir: itens com selo que o robô deixou fora da lista (as outras abas só mostram incluídos). O barrado sai. */
 export function paraConferir(itens: ItemSemana[]): ItemSemana[] {
-  return itens.filter((i) => !i.incluido && i.selos.length > 0).sort(porNome)
+  return itens.filter((i) => !i.incluido && i.selos.length > 0 && i.regra !== 'barrar').sort(porNome)
+}
+
+/** C2: itens fora da lista por uma regra de barrar (o bloco recolhível "Fora da lista por regra" da Revisão). */
+export function foraDaListaPorRegra(itens: ItemSemana[]): ItemSemana[] {
+  return itens.filter((i) => i.regra === 'barrar').sort(porNome)
 }
 
 /**

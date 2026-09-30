@@ -1,11 +1,14 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
+import * as cad from '../../src/cadastros/api'
 import Revisao, { inicioPedidosRecentes } from '../../src/admin/Revisao'
 import { item, vendedor } from '../fabricas'
 
 vi.mock('../../src/lib/api')
+vi.mock('../../src/cadastros/api')
 const m = vi.mocked(api)
+const mcad = vi.mocked(cad)
 const sp = (s: string | null) => (s ?? '').replace(/\s/g, ' ')
 const admin = { email: 'admin@spazio.com', nome: 'Admin', papel: 'admin' as const, ativo: true }
 
@@ -368,5 +371,95 @@ describe('Revisão — Fase 1B', () => {
 
   it('inicioPedidosRecentes: 00:00 BRT sete dias antes, virando mês', () => {
     expect(inicioPedidosRecentes('2026-10-05')).toBe('2026-09-28T03:00:00.000Z')
+  })
+})
+
+describe('Revisão — regras da lista (C2)', () => {
+  it('"Tirar sempre…" cria a regra de barrar e o item vai para "Fora da lista por regra"', async () => {
+    mcad.listaRegraSalvar.mockResolvedValue({ semana_rascunho: 7, efeito: 'tirado' })
+    vi.spyOn(window, 'prompt').mockReturnValue('É da Kūkan')
+    render(<Revisao usuario={admin} />)
+    const cartao = (await screen.findByText('COCA COLA 350 ML')).closest('.cartao') as HTMLElement
+    await userEvent.click(within(cartao).getByRole('button', { name: 'Tirar sempre…' }))
+    expect(mcad.listaRegraSalvar).toHaveBeenCalledWith(1, 'barrar', 'É da Kūkan')
+    const bloco = await screen.findByTestId('fora-por-regra')
+    expect(within(bloco).getByText(/COCA COLA 350 ML — É da Kūkan/)).toBeInTheDocument()
+  })
+
+  it('item barrado não aparece em Conferir nem em Negativos', async () => {
+    m.itensDaSemana.mockResolvedValue([
+      item({ id: 1, produto: 'KANI (KG)', bebida: false, unidade: 'kg', negativo: true, incluido: false, regra: 'barrar', regra_motivo: 'É da Kūkan' }),
+      item({ id: 2, produto: 'CACHACA', selos: [{ codigo: 'linha_alta', texto: 'valor alto' }], incluido: false, regra: 'barrar', regra_motivo: 'não usar' }),
+      item({ id: 3, produto: 'ÁGUA', incluido: true }),
+    ])
+    render(<Revisao usuario={admin} />)
+    await screen.findByText('ÁGUA')
+    expect(screen.getByRole('button', { name: 'Negativos 0' })).toBeInTheDocument() // KANI barrado saiu
+    expect(screen.queryByRole('button', { name: /Conferir/ })).not.toBeInTheDocument() // CACHACA barrada não vai a Conferir
+  })
+
+  it('"Incluir só nesta semana" chama ajustarItem', async () => {
+    m.itensDaSemana.mockResolvedValue([
+      item({ id: 1, produto: 'KANI (KG)', bebida: false, unidade: 'kg', incluido: false, qtd_sugerida: 2, regra: 'barrar', regra_motivo: 'É da Kūkan' }),
+    ])
+    render(<Revisao usuario={admin} />)
+    const bloco = await screen.findByTestId('fora-por-regra')
+    await userEvent.click(within(bloco).getByRole('button', { name: 'Incluir só nesta semana' }))
+    expect(m.ajustarItem).toHaveBeenCalledWith(1, 2, true)
+  })
+
+  it('com a lista aprovada, o bloco "Fora da lista por regra" é só leitura', async () => {
+    m.semanaParaRevisar.mockResolvedValue({ ...semana, status: 'em_compra' })
+    m.itensDaSemana.mockResolvedValue([
+      item({ id: 1, produto: 'KANI (KG)', bebida: false, unidade: 'kg', incluido: false, regra: 'barrar', regra_motivo: 'É da Kūkan' }),
+    ])
+    render(<Revisao usuario={admin} />)
+    const bloco = await screen.findByTestId('fora-por-regra')
+    expect(within(bloco).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('sem as colunas regra, a Revisão fica sem o bloco (igual à de hoje)', async () => {
+    render(<Revisao usuario={admin} />) // os itens padrão têm regra = null
+    await screen.findByText('COCA COLA 350 ML')
+    expect(screen.queryByTestId('fora-por-regra')).not.toBeInTheDocument()
+  })
+
+  it('o cartão cujo único selo é linha_alta ganha "Incluir sempre" e cria a regra de incluir', async () => {
+    mcad.listaRegraSalvar.mockResolvedValue({ semana_rascunho: 7, efeito: 'incluido' })
+    m.itensDaSemana.mockResolvedValue([
+      // bebida: fica na aba Conferir e, depois de incluída, volta para Bebidas (visível para a pílula)
+      item({ id: 5, produto: 'REFRI ALTO 2L', produto_id: 55, incluido: false, qtd_sugerida: 10,
+        selos: [{ codigo: 'linha_alta', texto: '≈ R$ 1.040,00 nesta linha (acima de R$ 1.000)' }] }),
+    ])
+    render(<Revisao usuario={admin} />)
+    const cartaoConferir = (await screen.findByText('REFRI ALTO 2L')).closest('.cartao') as HTMLElement
+    await userEvent.click(within(cartaoConferir).getByRole('button', { name: 'Incluir sempre (sem pedir conferência de valor alto)' }))
+    expect(mcad.listaRegraSalvar).toHaveBeenCalledWith(55, 'incluir', null)
+    // some da aba Conferir e aparece na aba dele com a pílula
+    const cartao = (await screen.findByText('REFRI ALTO 2L')).closest('.cartao') as HTMLElement
+    expect(within(cartao).getByText('na lista pela sua regra')).toBeInTheDocument()
+  })
+
+  it('o cartão com dois selos NÃO ganha "Incluir sempre"', async () => {
+    m.itensDaSemana.mockResolvedValue([
+      item({ id: 6, produto: 'LEITE ALTO', produto_id: 66, incluido: false, qtd_sugerida: 40,
+        selos: [
+          { codigo: 'linha_alta', texto: 'valor alto' },
+          { codigo: 'preco_fora', texto: 'preço fora' },
+        ] }),
+    ])
+    render(<Revisao usuario={admin} />)
+    const cartao = (await screen.findByText('LEITE ALTO')).closest('.cartao') as HTMLElement
+    expect(within(cartao).getByRole('button', { name: /^Incluir/ })).toBeInTheDocument() // tem o Incluir normal
+    expect(within(cartao).queryByRole('button', { name: /Incluir sempre/ })).not.toBeInTheDocument()
+  })
+
+  it('item já com regra de incluir mostra a pílula "na lista pela sua regra"', async () => {
+    m.itensDaSemana.mockResolvedValue([
+      item({ id: 7, produto: 'ÁGUA COM REGRA', produto_id: 77, incluido: true, regra: 'incluir' }),
+    ])
+    render(<Revisao usuario={admin} />)
+    const cartao = (await screen.findByText('ÁGUA COM REGRA')).closest('.cartao') as HTMLElement
+    expect(within(cartao).getByText('na lista pela sua regra')).toBeInTheDocument()
   })
 })

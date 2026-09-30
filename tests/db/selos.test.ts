@@ -34,7 +34,7 @@ function comItem(item: Record<string, unknown>) {
 describe('importar_semana com selos (Fase 1A)', () => {
   it('item com selo chega fora da lista (incluido = false, qtd_aprovada = 0) e guarda os selos', async () => {
     const db = await banco()
-    expect(await importar(db, COM_SELOS)).toEqual({ resultado: 'criada', semana_id: expect.any(Number), itens: 5, selos: true })
+    expect(await importar(db, COM_SELOS)).toEqual({ resultado: 'criada', semana_id: expect.any(Number), itens: 5, selos: true, regras: { barrados: 0, incluidos: 0 } })
     const l = await linhas(db)
     expect([l[11].incluido, l[11].qtd_aprovada]).toEqual([false, 0])
     expect(l[11].selos).toEqual([SELO_LINHA, SELO_PRECO])
@@ -64,7 +64,7 @@ describe('importar_semana com selos (Fase 1A)', () => {
   it('payload sem selos nem custo_medio (formato antigo) se comporta como hoje', async () => {
     const db = await banco()
     // o payload antigo continua aceito; a resposta traz "selos": true do mesmo jeito (identifica o banco, não o payload)
-    expect(await importar(db)).toEqual({ resultado: 'criada', semana_id: expect.any(Number), itens: 5, selos: true })
+    expect(await importar(db)).toEqual({ resultado: 'criada', semana_id: expect.any(Number), itens: 5, selos: true, regras: { barrados: 0, incluidos: 0 } })
     const r = await como(db, ADMIN, 'select produto_id, unidade, negativo, incluido, qtd_aprovada, selos, custo_medio from itens_semana order by produto_id')
     expect(r.map((i) => [Number(i.produto_id), i.unidade, i.negativo, i.incluido, Number(i.qtd_aprovada), i.selos, i.custo_medio])).toEqual([
       [1, 'un', false, true, 52, [], null],
@@ -151,7 +151,7 @@ describe('importar_semana com selos (Fase 1A)', () => {
       ],
     }
     const r = await importar(db, novo)
-    expect(r).toEqual({ resultado: 'substituida', semana_id: expect.any(Number), itens: 2, selos: true })
+    expect(r).toEqual({ resultado: 'substituida', semana_id: expect.any(Number), itens: 2, selos: true, regras: { barrados: 0, incluidos: 0 } })
     expect(await como(db, ADMIN, 'select * from semanas')).toHaveLength(1)
     const l = await linhas(db)
     expect(Object.keys(l).map(Number)).toEqual([11, 15])

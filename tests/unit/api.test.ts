@@ -28,7 +28,7 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  enviarOp, gravarPedido, itensDaSemana, itensDasCotacoes, marcasDaSemana, novaVersao, pedidosRecentes, prepararCotacoes,
+  enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, marcasDaSemana, novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, trocarMinhaSenha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
@@ -434,5 +434,32 @@ describe('Fase 1B: cotações (contrato 8.2)', () => {
   it('pedidosRecentes: tabela ausente → []', async () => {
     from.mockReturnValue(consulta({ data: null, error: { message: 'Could not find the table', code: 'PGRST205' } as never }))
     expect(await pedidosRecentes(3, '2026-10-12T03:00:00.000Z')).toEqual([])
+  })
+})
+
+describe('Fase 2 E1: painel de economia', () => {
+  it('painelEconomia chama cot_painel_economia com de/ate e devolve o JSON', async () => {
+    rpc.mockResolvedValue({ data: { de: '2026-10-01', ate: '2026-10-31', total: { diferenca: -20 } }, error: null })
+    const p = await painelEconomia('2026-10-01', '2026-10-31')
+    expect(rpc).toHaveBeenCalledWith('cot_painel_economia', { p_de: '2026-10-01', p_ate: '2026-10-31' })
+    expect(p).toMatchObject({ de: '2026-10-01', total: { diferenca: -20 } })
+  })
+
+  it('painelEconomia: função ausente (App antes da migration) → null; outro erro sobe', async () => {
+    rpc.mockResolvedValue({ error: { message: 'Could not find the function', code: 'PGRST202' }, status: 404 })
+    expect(await painelEconomia(null, null)).toBeNull()
+    rpc.mockResolvedValue({ error: { message: 'function does not exist', code: '42883' }, status: 404 })
+    expect(await painelEconomia(null, null)).toBeNull()
+    rpc.mockResolvedValue({ error: { message: 'apenas o administrador pode fazer isso', code: '42501' }, status: 403 })
+    await expect(painelEconomia(null, null)).rejects.toBeInstanceOf(ErroApi)
+  })
+
+  it('historicoItem chama cot_historico_item; função ausente → null', async () => {
+    rpc.mockResolvedValue({ data: { produto_id: 101, cotacoes: [], pedidos: [], compras_sischef: [] }, error: null })
+    const h = await historicoItem(101, null, null)
+    expect(rpc).toHaveBeenCalledWith('cot_historico_item', { p_produto_id: 101, p_de: null, p_ate: null })
+    expect(h).toMatchObject({ produto_id: 101 })
+    rpc.mockResolvedValue({ error: { message: 'Could not find the function', code: 'PGRST202' }, status: 404 })
+    expect(await historicoItem(101, null, null)).toBeNull()
   })
 })

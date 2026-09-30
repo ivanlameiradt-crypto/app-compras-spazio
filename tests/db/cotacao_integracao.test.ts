@@ -126,35 +126,30 @@ function conferirCarimbos(o: Json, onde = 'coleta'): void {
   }
 }
 
-// ---------- cadastros como o cot_cadastros.py manda: uma chamada só, {"p": {arquivo: [linhas com todas as colunas
-// como texto (vazio = "") + "linha"]}}
-const linha = (n: number, o: Record<string, string>) => ({ linha: n, ...o })
-const linhaCatalogo = (n: number, o: Record<string, string>) => linha(n, {
-  produto_id: '', vendedor_codigo: '', nome_para_vendedor: '', embalagem: '', fator: '', fator_confirmado_em: '',
-  vende_por_litro: '', kg_por_litro: '', kg_por_litro_confirmado_em: '', descricao_fornecedor: '', codigo_fornecedor: '',
-  descricao_de_fornecedor: '', nota_vendedor: '', ...o,
-})
-const CADASTROS = {
-  vendedores: [
-    linha(2, { codigo: FULANO.codigo, nome: FULANO.nome, empresa: FULANO.empresa, whatsapp: FULANO.whatsapp, ativo: 'true' }),
-    linha(3, { codigo: BELTRANO.codigo, nome: BELTRANO.nome, empresa: BELTRANO.empresa, whatsapp: BELTRANO.whatsapp, ativo: 'true' }),
-  ],
-  fornecedores: [
-    linha(2, { nome_fornecedor: 'FORNECEDOR A LTDA', vendedor_codigo: 'fulano' }),
-    linha(3, { nome_fornecedor: 'FORNECEDOR B LTDA', vendedor_codigo: 'beltrano' }),
-  ],
-  catalogo: [
-    linhaCatalogo(2, { produto_id: '101', vendedor_codigo: 'fulano', embalagem: 'fardo', fator: '12', fator_confirmado_em: '2026-10-01',
-      vende_por_litro: 'false', descricao_fornecedor: 'AGUA MIN S/GAS 500ML', codigo_fornecedor: '7890001',
-      descricao_de_fornecedor: 'FORNECEDOR A LTDA' }),
-    linhaCatalogo(3, { produto_id: '104', vende_por_litro: 'true', kg_por_litro: '1', kg_por_litro_confirmado_em: '2026-09-27' }),
-  ],
-  feriados: [linha(2, { data: '2026-10-12', nome: 'Nossa Senhora Aparecida' })],
+// ---------- cadastros: depois da virada (C1) o cot_aplicar_cadastros saiu do service_role (a virada aposenta o
+// CSV do robô), então o seed grava o estado direto (o mesmo que o robô gravava): 2 vendedores (ids 1 e 2), 2
+// grafias, o catálogo do 101 (fardo c/12, descrição e código da NF-e) e do 104 (por litro, 1 L = 1 kg) e o feriado.
+async function semearCadastros(): Promise<void> {
+  await db.exec(`
+    insert into cot_vendedores (codigo, nome, empresa, whatsapp, ativo) values
+      ('${FULANO.codigo}', '${FULANO.nome}', '${FULANO.empresa}', '${FULANO.whatsapp}', true),
+      ('${BELTRANO.codigo}', '${BELTRANO.nome}', '${BELTRANO.empresa}', '${BELTRANO.whatsapp}', true);
+    insert into cot_fornecedores (nome_normalizado, nome_original, vendedor_id) values
+      ('FORNECEDOR A LTDA', 'FORNECEDOR A LTDA', ${V_FULANO}),
+      ('FORNECEDOR B LTDA', 'FORNECEDOR B LTDA', ${V_BELTRANO});
+    insert into cot_catalogo (produto_id, vendedor_id, origem, embalagem, fator, fator_confirmado_em,
+                              vende_por_litro, descricao_fornecedor, codigo_fornecedor, descricao_de_fornecedor, atualizado_em)
+      values (101, ${V_FULANO}, 'seed', 'fardo', 12, '2026-10-01T03:00:00Z', false,
+              'AGUA MIN S/GAS 500ML', '7890001', 'FORNECEDOR A LTDA', '2026-10-01T03:00:00Z');
+    insert into cot_catalogo (produto_id, vendedor_id, origem, vende_por_litro, kg_por_litro, kg_por_litro_confirmado_em, atualizado_em)
+      values (104, null, 'seed', true, 1, '2026-09-27T03:00:00Z', '2026-09-27T03:00:00Z');
+    insert into cot_feriados (data, nome) values ('2026-10-12', 'Nossa Senhora Aparecida');
+  `)
 }
 
 /** Cadastros e semana (robô) e aprovação (App) às 08h de seg 19/10; relógio às 15h. Devolve o id da semana. */
 async function semanaAprovada(): Promise<number> {
-  await robo('cot_aplicar_cadastros', { p: CADASTROS })
+  await semearCadastros()
   const imp = await robo('importar_semana', { p: PAYLOAD_COTACAO }) // app_envio.py: POST rpc/importar_semana com {"p": payload}
   const id = Number(imp.semana_id)
   await api.aprovarSemana(id)
@@ -175,13 +170,8 @@ let codigoB = ''
 let envio1 = ''
 
 describe('fluxo completo: App → página → App → robô, com os formatos de cada um', () => {
-  it('robô: cadastros (cot_cadastros.py) e a lista da semana (app_envio.py); App aprova', async () => {
-    expect(await robo('cot_aplicar_cadastros', { p: CADASTROS })).toEqual({
-      vendedores: { linhas: 2, aplicadas: 2 }, fornecedores: { linhas: 2, aplicadas: 2 },
-      catalogo: { linhas: 2, aplicadas: 2 }, feriados: { linhas: 1, aplicadas: 1 },
-    })
-    // o mesmo push de novo não reaplica nada (hash por linha)
-    expect((await robo('cot_aplicar_cadastros', { p: CADASTROS })).catalogo).toEqual({ linhas: 2, aplicadas: 0 })
+  it('cadastros (App, depois da virada) e a lista da semana (app_envio.py); App aprova', async () => {
+    await semearCadastros()
 
     // app_envio.py: POST rpc/importar_semana com {"p": payload}
     const imp = await robo('importar_semana', { p: PAYLOAD_COTACAO })
