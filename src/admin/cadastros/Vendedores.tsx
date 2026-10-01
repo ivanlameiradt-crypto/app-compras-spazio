@@ -31,6 +31,7 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
   const [edWhats, setEdWhats] = useState('')
   // achar rápido sem rolar: busca no topo e seções ("novo" / "sem vendedor") recolhidas por padrão
   const [busca, setBusca] = useState('')
+  const [cadAberto, setCadAberto] = useState(false)
   const [novoAberto, setNovoAberto] = useState(!!grafiaInicial)
   const [semAberto, setSemAberto] = useState(false)
 
@@ -147,18 +148,22 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
         </div>
       )}
 
-      <input
-        className="busca"
-        aria-label="Procurar fornecedor"
-        placeholder="Procurar fornecedor pelo nome…"
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-      />
-
-      {filtrados.length === 0 && (
-        <p className="sub">{vendedores.length === 0 ? 'Nenhum fornecedor cadastrado ainda.' : 'Nenhum fornecedor com esse nome.'}</p>
-      )}
-      {filtrados.map((v) => (
+      <button type="button" className="secao" aria-expanded={cadAberto} onClick={() => setCadAberto((a) => !a)}>
+        <span>Fornecedores cadastrados</span><span className="conta">{vendedores.length}{' '}{cadAberto ? '−' : '+'}</span>
+      </button>
+      {cadAberto && (
+        <>
+          <input
+            className="busca"
+            aria-label="Procurar fornecedor"
+            placeholder="Procurar fornecedor pelo nome…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+          {filtrados.length === 0 && (
+            <p className="sub">{vendedores.length === 0 ? 'Nenhum fornecedor cadastrado ainda.' : 'Nenhum fornecedor com esse nome.'}</p>
+          )}
+          {filtrados.map((v) => (
         <div key={v.id} className="cartao" data-vendedor={v.id}>
           {editId === v.id ? (
             <form className="coluna" onSubmit={salvarEdicao}>
@@ -197,6 +202,8 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
           )}
         </div>
       ))}
+        </>
+      )}
 
       <button type="button" className="secao" aria-expanded={novoAberto} onClick={() => setNovoAberto((a) => !a)}>
         <span>Cadastrar novo fornecedor</span><span className="conta">{novoAberto ? '−' : '+'}</span>

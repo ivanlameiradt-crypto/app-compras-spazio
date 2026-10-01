@@ -8,6 +8,9 @@ const m = vi.mocked(cad)
 
 const fulano = { id: 1, codigo: 'fulano', nome: 'Carlos', empresa: 'ATACADÃO (Loja)', whatsapp: '5591900001234', ativo: false }
 
+// a lista de cadastrados começa recolhida; abri-la antes de mexer nos cartões
+const abrirCadastrados = async () => userEvent.click(await screen.findByRole('button', { name: /Fornecedores cadastrados/ }))
+
 beforeEach(() => {
   vi.resetAllMocks()
   m.listarVendedores.mockResolvedValue([fulano])
@@ -21,6 +24,7 @@ beforeEach(() => {
 describe('Cadastros — Vendedores (C.5, C.6)', () => {
   it('o cartão mostra o WhatsApp mascarado e "Desligado"', async () => {
     render(<Vendedores />)
+    await abrirCadastrados()
     const cartao = (await screen.findByText('ATACADÃO')).closest('.cartao') as HTMLElement
     expect(cartao.textContent).toContain('+55 91 9····-1234')
     expect(within(cartao).getByText('Desligado')).toBeInTheDocument()
@@ -39,6 +43,7 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
 
   it('"Testar número" é um link wa.me sem texto', async () => {
     render(<Vendedores />)
+    await abrirCadastrados()
     const link = await screen.findByRole('link', { name: 'Testar número' })
     expect(link).toHaveAttribute('href', 'https://wa.me/5591900001234')
   })
@@ -46,6 +51,7 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
   it('Ligar mostra o aviso com os itens e a hora, e só grava no segundo toque', async () => {
     m.salvarVendedor.mockResolvedValueOnce({ ok: false, confirmar: [{ codigo: 'aguardando', itens: 3, ate: '2026-10-20T15:00:00Z' }] })
     render(<Vendedores />)
+    await abrirCadastrados()
     await userEvent.click(await screen.findByRole('button', { name: 'Ligar' }))
     // o texto do aviso, com os itens e a hora
     expect(await screen.findByText(/em 3 itens até .*20\/10 12h/)).toBeInTheDocument()
@@ -68,6 +74,7 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
 
   it('Editar abre o formulário preenchido e salva com o id e os campos alterados', async () => {
     render(<Vendedores />)
+    await abrirCadastrados()
     await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
     expect(screen.getByLabelText('Editar empresa')).toHaveValue('ATACADÃO (Loja)')
     expect(screen.getByLabelText('Editar WhatsApp')).toHaveValue('+55 91 90000-1234')
@@ -84,6 +91,7 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
     m.salvarVendedor.mockResolvedValueOnce({ ok: false, confirmar: [{ codigo: 'whatsapp_repetido', empresa: 'Outro' }] })
     m.salvarVendedor.mockResolvedValueOnce({ ok: true, id: 1, codigo: 'fulano' })
     render(<Vendedores />)
+    await abrirCadastrados()
     await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(confirmSpy).toHaveBeenCalled()
@@ -97,6 +105,7 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
       { id: 2, codigo: 'mercadao', nome: 'Ana', empresa: 'MERCADÃO', whatsapp: '5591988887777', ativo: false },
     ])
     render(<Vendedores />)
+    await abrirCadastrados()
     expect(await screen.findByText('ATACADÃO')).toBeInTheDocument()
     expect(screen.getByText('MERCADÃO')).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('Procurar fornecedor'), 'merc')
@@ -106,6 +115,7 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
 
   it('Cancelar a edição volta para o cartão sem gravar', async () => {
     render(<Vendedores />)
+    await abrirCadastrados()
     await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(screen.queryByLabelText('Editar nome')).not.toBeInTheDocument()
