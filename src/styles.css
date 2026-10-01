@@ -46,6 +46,12 @@ input, select { font: inherit; padding: 10px 12px; border-radius: 10px; border: 
 .cartao { background: var(--cartao); border: 1px solid var(--linha); border-radius: 14px; padding: 12px; margin: 8px 0; }
 .nome { font-weight: 700; font-size: 15px; }
 .sub { font-size: 13px; color: var(--suave); }
+/* Cadastros: busca no topo e seções recolhíveis (para achar rápido sem rolar). */
+.busca { width: 100%; box-sizing: border-box; margin: 4px 0 6px; }
+.secao { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px;
+  background: var(--cartao); border: 1px solid var(--linha); border-radius: 14px; padding: 12px; margin: 8px 0;
+  font: inherit; font-weight: 700; color: var(--texto); text-align: left; cursor: pointer; }
+.secao .conta { font-weight: 400; font-size: 13px; color: var(--suave); }
 .linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .passo { display: flex; align-items: center; gap: 6px; }
 .passo button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--linha); background: var(--fundo); color: var(--texto); font-size: 18px; }

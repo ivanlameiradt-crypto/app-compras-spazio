@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as cad from '../../src/cadastros/api'
 import Vendedores from '../../src/admin/cadastros/Vendedores'
@@ -28,7 +28,8 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
 
   it('cadastrar com "(91) 90000-1234" chama salvarVendedor com o número normalizado', async () => {
     render(<Vendedores />)
-    await userEvent.type(await screen.findByLabelText('Empresa'), 'MERCADÃO')
+    await userEvent.click(await screen.findByRole('button', { name: /Cadastrar novo fornecedor/ }))
+    await userEvent.type(screen.getByLabelText('Empresa'), 'MERCADÃO')
     await userEvent.type(screen.getByLabelText('Nome para o vendedor'), 'Ana')
     await userEvent.type(screen.getByLabelText('WhatsApp'), '(91) 90000-1234')
     expect(screen.getByText('Vai gravar: +55 91 90000-1234')).toBeInTheDocument()
@@ -58,11 +59,11 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
     m.fornecedoresSemVendedor.mockResolvedValueOnce([{ nome_original: 'ATACADAO S.A.', nome_normalizado: 'ATACADAO S.A.', produtos: 23, ultima_compra: '2026-09-18' }])
     m.fornecedoresSemVendedor.mockResolvedValue([]) // depois da atribuição, some
     render(<Vendedores />)
+    await userEvent.click(await screen.findByRole('button', { name: /Fornecedores do SisChef sem vendedor/ }))
     const seletor = await screen.findByLabelText('Atribuir a ATACADAO S.A.')
     await userEvent.selectOptions(seletor, '1')
     expect(m.salvarGrafia).toHaveBeenCalledWith('ATACADAO S.A.', 1)
-    expect(await screen.findByText('MERCADÃO', { exact: false }).catch(() => null)).not.toBe(undefined) // re-render ocorreu
-    expect(screen.queryByText(/ATACADAO S\.A\. — 23 produtos/)).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(/ATACADAO S\.A\. — 23 produtos/)).not.toBeInTheDocument())
   })
 
   it('Editar abre o formulário preenchido e salva com o id e os campos alterados', async () => {
@@ -88,6 +89,19 @@ describe('Cadastros — Vendedores (C.5, C.6)', () => {
     expect(confirmSpy).toHaveBeenCalled()
     expect(m.salvarVendedor).toHaveBeenLastCalledWith({ id: 1, nome: 'Carlos', empresa: 'ATACADÃO (Loja)', whatsapp: '5591900001234', confirmar: ['whatsapp_repetido'] })
     confirmSpy.mockRestore()
+  })
+
+  it('a busca filtra os fornecedores pelo nome', async () => {
+    m.listarVendedores.mockResolvedValue([
+      fulano,
+      { id: 2, codigo: 'mercadao', nome: 'Ana', empresa: 'MERCADÃO', whatsapp: '5591988887777', ativo: false },
+    ])
+    render(<Vendedores />)
+    expect(await screen.findByText('ATACADÃO')).toBeInTheDocument()
+    expect(screen.getByText('MERCADÃO')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Procurar fornecedor'), 'merc')
+    expect(screen.queryByText('ATACADÃO')).not.toBeInTheDocument()
+    expect(screen.getByText('MERCADÃO')).toBeInTheDocument()
   })
 
   it('Cancelar a edição volta para o cartão sem gravar', async () => {

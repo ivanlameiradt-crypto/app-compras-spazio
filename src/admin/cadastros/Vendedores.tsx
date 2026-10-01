@@ -6,6 +6,8 @@ import { formatarWhatsapp, mascararWhatsapp, normalizarWhatsapp, whatsappValido 
 import { ligarAguardando, desligarCotacaoViva, whatsappRepetido, NOVO_VENDEDOR } from '../../cadastros/textos'
 
 const rotuloDe = (empresa: string) => empresa.split('(')[0].trim()
+/** minúsculas e sem acento, para a busca casar "João" com "joao". */
+const semAcento = (s: string) => (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 /** Um aviso pendente que precisa de segundo toque (C.4.2). */
 interface Pendente { vendedorId: number; ativo?: boolean; texto: string; codigos: string[] }
@@ -27,6 +29,10 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
   const [edEmpresa, setEdEmpresa] = useState('')
   const [edNome, setEdNome] = useState('')
   const [edWhats, setEdWhats] = useState('')
+  // achar rápido sem rolar: busca no topo e seções ("novo" / "sem vendedor") recolhidas por padrão
+  const [busca, setBusca] = useState('')
+  const [novoAberto, setNovoAberto] = useState(!!grafiaInicial)
+  const [semAberto, setSemAberto] = useState(false)
 
   async function carregar() {
     try {
@@ -125,6 +131,11 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
     catch (err) { setErro(mensagemDeErro(err)) }
   }
 
+  const filtrados = vendedores.filter((v) => {
+    const q = semAcento(busca.trim())
+    return !q || semAcento(v.empresa).includes(q) || semAcento(v.nome).includes(q)
+  })
+
   return (
     <div className="coluna">
       {erro && <p className="erro">{erro}</p>}
@@ -136,34 +147,18 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
         </div>
       )}
 
-      {semVendedor.length > 0 && (
-        <div className="cartao">
-          <h3>Fornecedores do SisChef sem vendedor</h3>
-          {semVendedor.map((f) => (
-            <div key={f.nome_normalizado} className="linha-sem-vendedor">
-              <span>{f.nome_original} — {f.produtos} produtos{f.ultima_compra && ` (última compra ${f.ultima_compra})`}</span>
-              <select aria-label={`Atribuir a ${f.nome_original}`} defaultValue="" onChange={(e) => e.target.value && atribuir(f, Number(e.target.value))}>
-                <option value="" disabled>Atribuir a…</option>
-                {vendedores.map((v) => <option key={v.id} value={v.id}>{rotuloDe(v.empresa)}</option>)}
-              </select>
-              <button className="link" onClick={() => setGrafiaNovo(f.nome_original)}>Novo vendedor para este</button>
-            </div>
-          ))}
-        </div>
+      <input
+        className="busca"
+        aria-label="Procurar fornecedor"
+        placeholder="Procurar fornecedor pelo nome…"
+        value={busca}
+        onChange={(e) => setBusca(e.target.value)}
+      />
+
+      {filtrados.length === 0 && (
+        <p className="sub">{vendedores.length === 0 ? 'Nenhum fornecedor cadastrado ainda.' : 'Nenhum fornecedor com esse nome.'}</p>
       )}
-
-      <form className="coluna cartao" onSubmit={salvarNovo}>
-        <h3>Novo vendedor</h3>
-        <p className="sub">{NOVO_VENDEDOR}</p>
-        <label>Empresa<input aria-label="Empresa" required value={empresa} onChange={(e) => setEmpresa(e.target.value)} /></label>
-        <label>Nome para o vendedor<input aria-label="Nome para o vendedor" required value={nome} onChange={(e) => setNome(e.target.value)} /></label>
-        <label>WhatsApp<input aria-label="WhatsApp" required value={whats} onChange={(e) => setWhats(e.target.value)} /></label>
-        {normalizarWhatsapp(whats) && whatsappValido(normalizarWhatsapp(whats)) && <p className="sub">Vai gravar: {formatarWhatsapp(normalizarWhatsapp(whats))}</p>}
-        {grafiaNovo.trim() && <p className="sub">Grafia junto: {grafiaNovo}</p>}
-        <button className="botao" type="submit">Cadastrar vendedor</button>
-      </form>
-
-      {vendedores.map((v) => (
+      {filtrados.map((v) => (
         <div key={v.id} className="cartao" data-vendedor={v.id}>
           {editId === v.id ? (
             <form className="coluna" onSubmit={salvarEdicao}>
@@ -202,6 +197,43 @@ export default function Vendedores({ grafiaInicial }: { grafiaInicial?: string |
           )}
         </div>
       ))}
+
+      <button type="button" className="secao" aria-expanded={novoAberto} onClick={() => setNovoAberto((a) => !a)}>
+        <span>Cadastrar novo fornecedor</span><span className="conta">{novoAberto ? '−' : '+'}</span>
+      </button>
+      {novoAberto && (
+        <form className="coluna cartao" onSubmit={salvarNovo}>
+          <p className="sub">{NOVO_VENDEDOR}</p>
+          <label>Empresa<input aria-label="Empresa" required value={empresa} onChange={(e) => setEmpresa(e.target.value)} /></label>
+          <label>Nome para o vendedor<input aria-label="Nome para o vendedor" required value={nome} onChange={(e) => setNome(e.target.value)} /></label>
+          <label>WhatsApp<input aria-label="WhatsApp" required value={whats} onChange={(e) => setWhats(e.target.value)} /></label>
+          {normalizarWhatsapp(whats) && whatsappValido(normalizarWhatsapp(whats)) && <p className="sub">Vai gravar: {formatarWhatsapp(normalizarWhatsapp(whats))}</p>}
+          {grafiaNovo.trim() && <p className="sub">Grafia junto: {grafiaNovo}</p>}
+          <button className="botao" type="submit">Cadastrar vendedor</button>
+        </form>
+      )}
+
+      {semVendedor.length > 0 && (
+        <>
+          <button type="button" className="secao" aria-expanded={semAberto} onClick={() => setSemAberto((a) => !a)}>
+            <span>Fornecedores do SisChef sem vendedor</span><span className="conta">{semVendedor.length}{' '}{semAberto ? '−' : '+'}</span>
+          </button>
+          {semAberto && (
+            <div className="cartao">
+              {semVendedor.map((f) => (
+                <div key={f.nome_normalizado} className="linha-sem-vendedor">
+                  <span>{f.nome_original} — {f.produtos} produtos{f.ultima_compra && ` (última compra ${f.ultima_compra})`}</span>
+                  <select aria-label={`Atribuir a ${f.nome_original}`} defaultValue="" onChange={(e) => e.target.value && atribuir(f, Number(e.target.value))}>
+                    <option value="" disabled>Atribuir a…</option>
+                    {vendedores.map((v) => <option key={v.id} value={v.id}>{rotuloDe(v.empresa)}</option>)}
+                  </select>
+                  <button className="link" onClick={() => { setGrafiaNovo(f.nome_original); setNovoAberto(true) }}>Novo vendedor para este</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
