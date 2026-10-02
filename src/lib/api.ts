@@ -4,10 +4,10 @@ import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
-  Abertura, Compra, Cotacao, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
+  Abertura, Compra, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
   IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
-  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
-  Preparo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoIA, Semana, Unidade, Usuario, Vendedor,
+  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
+  Preparo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
 /** Erro vindo do Supabase, com o status HTTP e o código (PostgREST/Postgres) para a fila saber se tenta de novo. */
@@ -628,4 +628,31 @@ export async function executarOp(op: Op): Promise<void> {
 export async function enviarOp(op: Op): Promise<void> {
   await enfileirar(op)
   void processar(executarOp).catch(() => undefined)
+}
+
+// ---------- Sub-fase 3: cupom fiscal (o app só captura e envia; a escrita é service_role na Edge Function)
+/**
+ * Sobe a foto reduzida ao bucket privado `cupons`. "já existe" (retry/reenvio) não é erro — o servidor dedup por foto_path.
+ * Sem `upsert` de propósito: o bucket só tem policy de INSERT (e SELECT de admin), sem UPDATE; um upsert no reenvio seria negado pela RLS.
+ */
+export async function subirFotoCupom(caminho: string, foto: Blob): Promise<void> {
+  const up = await supabase.storage.from('cupons').upload(caminho, foto, { contentType: foto.type || 'image/jpeg' })
+  if (up.error && !/exists|duplicate/i.test(up.error.message)) {
+    throw new ErroApi(up.error.message, (up.error as { status?: number }).status)
+  }
+}
+
+/** Chama a Edge Function enviar-cupom (service_role lê a foto, lê com IA, casa o confirmado, grava e dispara). */
+export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom, teste = false): Promise<ResumoEnvioCupom> {
+  const { data, error } = await supabase.functions.invoke('enviar-cupom', { body: { foto_path: fotoPath, pagamento, teste } })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+  return data as ResumoEnvioCupom
+}
+
+/** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
+export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
+  const r = checar(await supabase.from('cupom')
+    .select('id, estado, emitente_nome, valor_a_pagar, criado_em, motivo, teste')
+    .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
+  return r.map((c) => ({ ...c, valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar) }))
 }

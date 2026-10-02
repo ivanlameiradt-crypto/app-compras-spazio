@@ -3,6 +3,7 @@ import { AuthRetryableFetchError } from '@supabase/supabase-js'
 
 const rpc = vi.fn()
 const upload = vi.fn()
+const storageFrom = vi.fn() // registra o bucket pedido a storage.from(...): sem isso o mock aceitaria qualquer bucket
 const signOut = vi.fn()
 const getSession = vi.fn()
 const signInWithPassword = vi.fn()
@@ -14,7 +15,7 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...a: unknown[]) => rpc(...a),
     from: (...a: unknown[]) => from(...a),
-    storage: { from: () => ({ upload: (...a: unknown[]) => upload(...a) }) },
+    storage: { from: (...a: unknown[]) => { storageFrom(...a); return { upload: (...b: unknown[]) => upload(...b) } } },
     functions: { invoke: (...a: unknown[]) => invoke(...a) },
     auth: {
       signOut: () => signOut(),
@@ -27,15 +28,15 @@ vi.mock('../../src/lib/supabase', () => ({
 }))
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
-  cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, marcasDaSemana, novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
-  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, trocarMinhaSenha,
+  cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
+  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, marcasDaSemana, novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
+  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
 
 beforeEach(async () => {
-  rpc.mockReset(); upload.mockReset(); signOut.mockReset(); getSession.mockReset()
+  rpc.mockReset(); upload.mockReset(); storageFrom.mockReset(); signOut.mockReset(); getSession.mockReset()
   signInWithPassword.mockReset(); updateUser.mockReset(); refreshSession.mockReset(); invoke.mockReset(); from.mockReset()
   getSession.mockResolvedValue({ data: { session: { access_token: 'x' } }, error: null })
   localStorage.clear()
@@ -461,5 +462,67 @@ describe('Fase 2 E1: painel de economia', () => {
     expect(h).toMatchObject({ produto_id: 101 })
     rpc.mockResolvedValue({ error: { message: 'Could not find the function', code: 'PGRST202' }, status: 404 })
     expect(await historicoItem(101, null, null)).toBeNull()
+  })
+})
+
+describe('Sub-fase 3: cupom', () => {
+  it('enviarCupom chama a Edge Function com foto_path, pagamento e teste; devolve o resumo', async () => {
+    invoke.mockResolvedValue({ data: { cupom_id: 'c1', resumo: 'enviado para lançar', estado: 'PENDENTE', disparo_ok: true }, error: null })
+    const r = await enviarCupom('cupom/abc.jpg', { forma: 'pix', conta: 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA' }, true)
+    expect(invoke).toHaveBeenCalledWith('enviar-cupom', {
+      body: { foto_path: 'cupom/abc.jpg', pagamento: { forma: 'pix', conta: 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA' }, teste: true },
+    })
+    expect(r).toMatchObject({ cupom_id: 'c1', estado: 'PENDENTE' })
+  })
+
+  it('enviarCupom: erro da função (corpo JSON) vira a mensagem certa', async () => {
+    const context = { json: async () => ({ erro: 'apenas o administrador pode fazer isso' }) } as unknown as Response
+    invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context } })
+    await expect(enviarCupom('cupom/abc.jpg', { forma: 'sem_cartao' })).rejects.toThrow('apenas o administrador pode fazer isso')
+  })
+
+  it('subirFotoCupom sobe ao bucket cupons; "já existe" não é erro', async () => {
+    upload.mockResolvedValue({ error: null })
+    await subirFotoCupom('cupom/abc.jpg', new Blob([new Uint8Array(3)], { type: 'image/jpeg' }))
+    expect(storageFrom).toHaveBeenCalledWith('cupons') // o bucket de onde a Edge Function lê a foto (index.ts: storage.from('cupons').download)
+    expect(upload.mock.calls[0][0]).toBe('cupom/abc.jpg')
+    // sem upsert: o bucket cupons não tem policy de UPDATE (upsert seria negado pela RLS); o reenvio cai em "já existe"
+    expect(upload.mock.calls[0][2]).toEqual({ contentType: 'image/jpeg' })
+    upload.mockResolvedValue({ error: { message: 'The resource already exists' } })
+    await expect(subirFotoCupom('cupom/abc.jpg', new Blob([new Uint8Array(3)], { type: 'image/jpeg' }))).resolves.toBeUndefined()
+  })
+
+  it('subirFotoCupom: erro real sobe como ErroApi', async () => {
+    upload.mockResolvedValue({ error: { message: 'mime type not supported', status: 415 } })
+    await expect(subirFotoCupom('cupom/abc.jpg', new Blob([new Uint8Array(3)], { type: 'image/jpeg' }))).rejects.toBeInstanceOf(ErroApi)
+  })
+
+  it('cuponsRecentes lê cupom por criado_em desc, limita e converte valor_a_pagar', async () => {
+    const q = consulta({ data: [
+      { id: 'c1', estado: 'REVISAR', emitente_nome: 'ATACADAO', valor_a_pagar: '123.45', criado_em: '2026-10-01T12:00:00Z', motivo: 'item sem casamento', teste: false },
+    ], error: null })
+    from.mockReturnValue(q)
+    const r = await cuponsRecentes(5)
+    expect(from).toHaveBeenCalledWith('cupom')
+    expect(q.order).toHaveBeenCalledWith('criado_em', { ascending: false })
+    expect(q.limit).toHaveBeenCalledWith(5)
+    expect(r[0]).toMatchObject({ id: 'c1', estado: 'REVISAR', valor_a_pagar: 123.45 })
+  })
+
+  it('cuponsRecentes pede TODAS as colunas que a tela lê (o PostgREST devolve só as pedidas: coluna esquecida = campo undefined)', async () => {
+    const q = consulta({ data: [], error: null })
+    from.mockReturnValue(q)
+    await cuponsRecentes()
+    const colunas = String(q.select.mock.calls[0][0]).split(',').map((c) => c.trim())
+    expect(colunas).toEqual(expect.arrayContaining(['id', 'estado', 'emitente_nome', 'valor_a_pagar', 'criado_em', 'motivo', 'teste']))
+  })
+
+  it('cuponsRecentes: valor_a_pagar nulo continua null (não vira 0, que a tela mostraria como "R$ 0,00")', async () => {
+    from.mockReturnValue(consulta({ data: [
+      { id: 'c2', estado: 'PENDENTE', emitente_nome: null, valor_a_pagar: null, criado_em: '2026-10-01T12:05:00Z', motivo: null, teste: false },
+    ], error: null }))
+    const r = await cuponsRecentes()
+    expect(r[0].valor_a_pagar).toBeNull()
+    expect(r[0]).toMatchObject({ id: 'c2', estado: 'PENDENTE', emitente_nome: null })
   })
 })

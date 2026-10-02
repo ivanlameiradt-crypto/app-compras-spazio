@@ -31,6 +31,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
           <NavLink to="/resumo">Resumo</NavLink>
           <NavLink to="/economia">Economia</NavLink>
           <NavLink to="/cadastros">Cadastros</NavLink>
+          <NavLink to="/cupom">Cupom</NavLink>
           <NavLink to="/comprar">Comprar</NavLink>
         </nav>
       ) : (

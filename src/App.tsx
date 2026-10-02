@@ -13,6 +13,7 @@ import Economia from './admin/Economia'
 import Pessoas from './admin/Pessoas'
 import Cadastros from './admin/Cadastros'
 import Historico from './admin/Historico'
+import Cupom from './admin/Cupom'
 import Comprar from './comprador/Comprar'
 import Receber from './recebimento/Recebimento'
 import { sair } from './lib/api'
@@ -64,6 +65,7 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
         {admin && <Route path="/cadastros/produto/:id" element={<Cadastros usuario={usuario} />} />}
         {admin && <Route path="/historico" element={<Historico />} />}
         {admin && <Route path="/pessoas" element={<Pessoas usuario={usuario} />} />}
+        {admin && <Route path="/cupom" element={<Cupom />} />}
         <Route path="/comprar" element={<Comprar usuario={usuario} />} />
         <Route path="/receber" element={<Receber usuario={usuario} />} />
         <Route path="/senha" element={<TrocarSenha forcada={false} />} />

@@ -404,3 +404,29 @@ export interface Desempenho {
 }
 /** Última leitura das notas (cot_nfe_leituras — para "última leitura: hoje 12h"). */
 export interface LeituraNotas { lida_em: string; notas: number; completa: boolean; origem: 'agendada' | 'app' }
+
+// ---------- Sub-fase 3: cupom fiscal (captura + envio)
+export type FormaCupom = 'dinheiro' | 'tesouraria' | 'pix' | 'sem_cartao'
+/** O que o app manda ao servidor: a forma e, nas à vista/pix, a conta exata do Sischef (= MAPA_PIX do robô). */
+export type PagamentoCupom =
+  | { forma: 'dinheiro' | 'tesouraria' | 'pix'; conta: string }
+  | { forma: 'sem_cartao' }
+export type EstadoCupom = 'PENDENTE' | 'PROCESSANDO' | 'LANCADO' | 'REVISAR' | 'TESTE'
+/** Resposta da Edge Function enviar-cupom. */
+export interface ResumoEnvioCupom {
+  cupom_id: string
+  resumo: string
+  estado?: EstadoCupom
+  disparo_ok?: boolean
+  duplicado?: boolean
+}
+/** Linha de "Últimos envios" (SELECT por RLS de admin — e_admin() do Plano 1). */
+export interface CupomRecente {
+  id: string
+  estado: EstadoCupom
+  emitente_nome: string | null
+  valor_a_pagar: number | null
+  criado_em: string
+  motivo: string | null
+  teste: boolean
+}

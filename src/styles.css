@@ -145,3 +145,12 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 /* histórico do item */
 .historico-item .tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
 .historico-item tr.no-pedido td { font-weight: 700; }
+
+/* Sub-fase 3 — tela "Lançar cupom" (3 passos + últimos envios) */
+.cupom p { margin: 0; }
+.cupom fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.cupom .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cupom .chip:disabled { opacity: .5; cursor: default; }
+.cupom .ok { padding: 8px 10px; border-radius: 10px; background: var(--ok-fundo); color: var(--ok-texto); font-size: 14px; }
+.cupom .recentes { list-style: none; margin: 0; padding: 0; }
+.cupom .recentes li { padding: 8px 0; border-bottom: 1px solid var(--linha); font-size: 14px; }
