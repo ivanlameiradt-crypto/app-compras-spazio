@@ -105,14 +105,14 @@ Deno.serve(async (req: Request) => {
         }
       },
       async buscarAprendizado(eans, chaves) {
-        // Só o CONFIRMADO, só o que pode casar com esta leitura (por EAN ou pelo CNPJ do emitente). Sem chave nenhuma
-        // para procurar, nada pode casar: não traz a tabela inteira.
+        // Só o CONFIRMADO. Sempre traz os SINÔNIMOS GLOBAIS (emitente_cnpj null — o mesmo produto com descrições de
+        // fornecedores diferentes, lista curada pequena), mais o que casa com esta leitura por EAN e pelo CNPJ do emitente.
+        // O recorte `emitente_cnpj.is.null` garante que nunca se traz a tabela inteira, mesmo sem EAN/CNPJ na leitura.
         const codigos = [...new Set(eans.filter(ehEan))]
         const cnpjs = [...new Set(chaves.map((k) => k.cnpj).filter(ehCnpj))]
-        const filtro: string[] = []
+        const filtro: string[] = ['emitente_cnpj.is.null']
         if (codigos.length) filtro.push(`codigo_barras.in.(${codigos.map((e) => `"${e}"`).join(',')})`)
         if (cnpjs.length) filtro.push(`emitente_cnpj.in.(${cnpjs.map((c) => `"${c}"`).join(',')})`)
-        if (filtro.length === 0) return []
         const { data, error } = await admin.from('cupom_aprendizado')
           .select('codigo_barras, emitente_cnpj, descricao_norm, insumo_id, insumo_nome, fator_conversao, unidade_destino, confirmado')
           .eq('confirmado', true).or(filtro.join(','))

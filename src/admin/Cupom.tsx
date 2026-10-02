@@ -130,7 +130,7 @@ export default function Cupom() {
           <input type="file" accept="image/*" aria-label="Anexar arquivo do cupom" onChange={aoEscolherArquivo} />
         </label>
         {preparando && <p className="sub">Preparando a foto…</p>}
-        {foto && !preparando && <p className="sub">Foto pronta.</p>}
+        {foto && !preparando && <p className="ok" data-testid="foto-pronta">✓ Foto anexada</p>}
 
         <label className="marcar">
           <input type="checkbox" checked={teste} onChange={(e) => setTeste(e.target.checked)} />

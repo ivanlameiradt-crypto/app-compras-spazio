@@ -160,3 +160,49 @@ describe('casarItens — a conversão de unidade preserva o valor da linha (I-1)
     }
   })
 })
+
+// Regra do Ivan (02/10): fornecedores diferentes descrevem o mesmo produto de jeitos diferentes (tomate italiano/salada/
+// saladete; tomate cereja/grape/sweet grape) e todos casam com UM insumo. O aprendizado GLOBAL (emitente_cnpj = null) casa
+// pela descrição normalizada independente do CNPJ do emitente — assim o sinônimo vale venha de qualquer fornecedor.
+describe('casarItens — sinônimo global (emitente_cnpj null, qualquer fornecedor)', () => {
+  const global = (descricao_norm: string, o: Partial<Aprendizado> & { insumo_id: string }) =>
+    apr({ emitente_cnpj: null, descricao_norm, ...o })
+
+  it('casa por descricao_norm vindo de um fornecedor QUALQUER (CNPJ nunca visto)', () => {
+    const itens = [item({ descricao: 'TOMATE SALADETE', quantidade: 2, unidade: 'KG', valor_unitario: 9.99 })]
+    const [r] = casarItens(itens, '99999999000199',
+      [global('tomate saladete', { insumo_id: '3482196', insumo_nome: 'TOMATE ITALIANO - INSUMOS', unidade_destino: 'KG' })])
+    expect(r.sugestao_produto).toEqual({ id: '3482196' })
+    expect(r.casado_por).toBe('descricao')
+    expect(r.entrada_estoque).toBe(2) // fator 1
+  })
+
+  it('o sinônimo global casa mesmo sem CNPJ na leitura', () => {
+    const [r] = casarItens([item({ descricao: 'TOMATE GRAPE', unidade: 'KG' })], null,
+      [global('tomate grape', { insumo_id: '3476544', insumo_nome: 'TOMATE CEREJA - INSUMOS' })])
+    expect(r.sugestao_produto).toEqual({ id: '3476544' })
+    expect(r.casado_por).toBe('descricao')
+  })
+
+  it('o aprendizado por fornecedor (cnpj+desc) tem PRECEDÊNCIA sobre o global', () => {
+    const itens = [item({ descricao: 'TOMATE SALADA', unidade: 'KG' })]
+    const [r] = casarItens(itens, CNPJ, [
+      global('tomate salada', { insumo_id: 'GLOBAL' }),
+      apr({ insumo_id: 'FORNECEDOR', emitente_cnpj: CNPJ, descricao_norm: 'tomate salada' }),
+    ])
+    expect(r.sugestao_produto).toEqual({ id: 'FORNECEDOR' })
+  })
+
+  it('sinônimo global NÃO confirmado não auto-casa → incerto', () => {
+    const [r] = casarItens([item({ descricao: 'TOMATE GRAPE' })], CNPJ,
+      [global('tomate grape', { insumo_id: 'X', confirmado: false })])
+    expect(r.sugestao_produto).toBeNull()
+  })
+
+  it('aplica a conversão de unidade no sinônimo global (fator ≠ 1 preserva o valor da linha)', () => {
+    const [r] = casarItens([item({ descricao: 'CHOCOLATE 80G', quantidade: 5, valor_unitario: 7.99 })], '99999999000199',
+      [global('chocolate 80g', { insumo_id: '3476366', fator_conversao: 0.08, unidade_destino: 'KG' })])
+    expect(r.entrada_estoque).toBeCloseTo(0.4, 6)
+    expect(r.valor_unitario).toBeCloseTo(99.875, 9)
+  })
+})

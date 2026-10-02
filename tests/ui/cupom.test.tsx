@@ -144,7 +144,7 @@ describe('Cupom — o botão Enviar só habilita quando está tudo válido', () 
     const enviar = await screen.findByRole('button', { name: /^Enviar/ })
     expect(enviar).toBeDisabled() // nada escolhido
     await anexar()
-    expect(await screen.findByText('Foto pronta.')).toBeInTheDocument()
+    expect(await screen.findByText(/Foto anexada/)).toBeInTheDocument()
     expect(enviar).toBeDisabled() // só a foto
     await escolher('Sem cartão')
     await waitFor(() => expect(enviar).toBeEnabled()) // forma + foto
@@ -173,7 +173,7 @@ describe('Cupom — o botão Enviar só habilita quando está tudo válido', () 
     expect(screen.getByRole('button', { name: 'Sem cartão' })).toBeDisabled()
 
     pronta(new Blob([new Uint8Array(2)], { type: 'image/jpeg' }))
-    expect(await screen.findByText('Foto pronta.')).toBeInTheDocument()
+    expect(await screen.findByText(/Foto anexada/)).toBeInTheDocument()
     expect(enviar).toBeEnabled()
     expect(screen.getByLabelText('Anexar arquivo do cupom')).toBeEnabled() // liberou
     expect(screen.getByRole('button', { name: 'Sem cartão' })).toBeEnabled()
@@ -291,7 +291,7 @@ describe('Cupom — depois do envio', () => {
 
     expect(screen.getByRole('button', { name: /^Enviar/ })).toBeDisabled() // sem foto de novo
     expect(screen.getByRole('button', { name: 'Sem cartão' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.queryByText('Foto pronta.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Foto anexada/)).not.toBeInTheDocument()
     expect(m.cuponsRecentes).toHaveBeenCalledTimes(2) // carga inicial + depois do envio
   })
 
@@ -305,7 +305,7 @@ describe('Cupom — depois do envio', () => {
 
     await escolher('Sem cartão')
     await anexar(f) // num navegador de verdade, sem limpar o seletor, o mesmo arquivo nem dispararia "change"
-    expect(await screen.findByText('Foto pronta.')).toBeInTheDocument()
+    expect(await screen.findByText(/Foto anexada/)).toBeInTheDocument()
     await enviarPronto()
   })
 

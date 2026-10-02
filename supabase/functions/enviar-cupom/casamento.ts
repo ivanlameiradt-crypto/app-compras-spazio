@@ -33,18 +33,23 @@ export interface ItemCasado {
   proposta: { insumo_id: string; insumo_nome: string } | null
 }
 
-/** Índice dos aprendizados CONFIRMADOS: por EAN e por `cnpj|descricao_norm`. */
+/** Índice dos aprendizados CONFIRMADOS: por EAN, por `cnpj|descricao_norm` (do fornecedor) e por `descricao_norm` (sinônimo global). */
 export function indexarAprendizado(aprendizados: Aprendizado[]): {
-  porEan: Map<string, Aprendizado>; porDesc: Map<string, Aprendizado>
+  porEan: Map<string, Aprendizado>; porDesc: Map<string, Aprendizado>; porDescGlobal: Map<string, Aprendizado>
 } {
   const porEan = new Map<string, Aprendizado>()
   const porDesc = new Map<string, Aprendizado>()
+  const porDescGlobal = new Map<string, Aprendizado>()
   for (const a of aprendizados) {
     if (!a.confirmado) continue
     if (a.codigo_barras) porEan.set(a.codigo_barras, a)
-    if (a.emitente_cnpj && a.descricao_norm) porDesc.set(`${a.emitente_cnpj}|${a.descricao_norm}`, a)
+    if (a.descricao_norm) {
+      // com CNPJ: aprendizado daquele fornecedor. Sem CNPJ: sinônimo global (mesmo produto, descrições de fornecedores diferentes → um insumo).
+      if (a.emitente_cnpj) porDesc.set(`${a.emitente_cnpj}|${a.descricao_norm}`, a)
+      else porDescGlobal.set(a.descricao_norm, a)
+    }
   }
-  return { porEan, porDesc }
+  return { porEan, porDesc, porDescGlobal }
 }
 
 /** Melhor candidato do catálogo pela descrição normalizada — SÓ proposta (pré-preenchimento), nunca auto-casa. */
@@ -108,15 +113,17 @@ export function casarItem(item: ItemLidoIA, emitenteCnpj: string | null,
     const porEan = idx.porEan.get(item.codigo_barras)
     if (porEan) return aplicar(porEan, item, 'ean')
   }
-  // 2. (emitente_cnpj, descricao_norm) confirmado.
+  const descNorm = normalizar(item.descricao)
+  // cross-check: EAN presente que diverge do aprendizado por descrição → não confia, vai a REVISAR.
+  const eanDiverge = (a: Aprendizado) => !!(item.codigo_barras && a.codigo_barras && a.codigo_barras !== item.codigo_barras)
+  // 2. (emitente_cnpj, descricao_norm) confirmado daquele fornecedor.
   if (emitenteCnpj) {
-    const porDesc = idx.porDesc.get(`${emitenteCnpj}|${normalizar(item.descricao)}`)
-    if (porDesc) {
-      // cross-check: EAN presente que diverge do aprendizado por descrição → não confia, vai a REVISAR.
-      if (item.codigo_barras && porDesc.codigo_barras && porDesc.codigo_barras !== item.codigo_barras) return incerto(item)
-      return aplicar(porDesc, item, 'descricao')
-    }
+    const porDesc = idx.porDesc.get(`${emitenteCnpj}|${descNorm}`)
+    if (porDesc) return eanDiverge(porDesc) ? incerto(item) : aplicar(porDesc, item, 'descricao')
   }
+  // 2.5. sinônimo global (descricao_norm, qualquer fornecedor) — o aprendizado do próprio fornecedor acima tem precedência.
+  const porDescGlobal = idx.porDescGlobal.get(descNorm)
+  if (porDescGlobal) return eanDiverge(porDescGlobal) ? incerto(item) : aplicar(porDescGlobal, item, 'descricao')
   // 3. nada confirmado → incerto (REVISAR), com proposta p/ pré-preencher.
   return incerto(item)
 }

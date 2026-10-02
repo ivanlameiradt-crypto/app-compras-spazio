@@ -69,7 +69,9 @@ const h = vi.hoisted(() => {
         const listas = [...this.orFiltro.matchAll(/(\w+)\.in\.\(([^)]*)\)/g)].map((m) => ({
           coluna: m[1], valores: m[2].split(',').map((s) => s.replace(/"/g, '')),
         }))
-        linhas = linhas.filter((l) => listas.some((x) => x.valores.includes(String(l[x.coluna]))))
+        const nulos = [...this.orFiltro.matchAll(/(\w+)\.is\.null/g)].map((m) => m[1])
+        linhas = linhas.filter((l) =>
+          listas.some((x) => x.valores.includes(String(l[x.coluna]))) || nulos.some((c) => l[c] == null))
       }
       return { data: linhas, error: null }
     }
@@ -285,8 +287,8 @@ describe('enviar-cupom/index.ts — caminho feliz e disparo', () => {
       sugestao_produto: { id: '333' }, entrada_estoque: 2, valor_unitario: 4.5, desconto_item: 0, casado_por: 'ean',
     })
 
-    // o aprendizado foi buscado só pelo que a leitura trouxe (EAN e CNPJ, só dígitos, entre aspas)
-    expect(h.banco.consultasAprendizado).toEqual([`codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`])
+    // o aprendizado foi buscado pelos sinônimos globais (emitente_cnpj null) + o que a leitura trouxe (EAN e CNPJ, só dígitos)
+    expect(h.banco.consultasAprendizado).toEqual([`emitente_cnpj.is.null,codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`])
 
     // disparo: POST no workflow certo, ref master, cupom_id, PAT no cabeçalho (e só lá)
     expect(fetchFalso).toHaveBeenCalledTimes(1)
@@ -488,17 +490,34 @@ describe('enviar-cupom/index.ts — o que a IA devolve é dado não confiável',
     })
     await handler(envio())
     expect(h.banco.consultasAprendizado).toHaveLength(1)
-    expect(h.banco.consultasAprendizado[0]).toBe(`codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`)
+    expect(h.banco.consultasAprendizado[0]).toBe(`emitente_cnpj.is.null,codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`)
     expect(h.banco.consultasAprendizado[0]).not.toContain('confirmado')
   })
 
-  it('sem nenhum EAN válido nem CNPJ para procurar: não consulta o aprendizado (não traz a tabela inteira) e vai a REVISAR', async () => {
+  it('sem EAN válido nem CNPJ: consulta SÓ os sinônimos globais (não a tabela inteira) e, sem match global, vai a REVISAR', async () => {
     h.ia.resposta = iaResponde({
       ...LEITURA, emitente_cnpj: '123', itens: [{ ...LEITURA.itens[0], codigo_barras: null }],
     })
     const corpo = await corpoDe(await handler(envio()))
-    expect(h.banco.consultasAprendizado).toHaveLength(0)
-    expect(corpo).toMatchObject({ estado: 'REVISAR' })
+    // ainda consulta, mas recortada nos globais (emitente_cnpj null) — nunca a tabela inteira
+    expect(h.banco.consultasAprendizado).toEqual(['emitente_cnpj.is.null'])
+    expect(corpo).toMatchObject({ estado: 'REVISAR' }) // o único aprendizado do banco é por fornecedor, não global
     expect(fetchFalso).not.toHaveBeenCalled()
+  })
+
+  it('sinônimo GLOBAL (emitente_cnpj null) casa item de um fornecedor NOVO → PENDENTE e dispara', async () => {
+    // fornecedor nunca visto e sem EAN: só um sinônimo global pela descrição faz casar
+    h.banco.aprendizado = [{
+      codigo_barras: null, emitente_cnpj: null, descricao_norm: 'arroz 5kg', insumo_id: '777', insumo_nome: 'ARROZ',
+      fator_conversao: '1', unidade_destino: 'un', confirmado: true,
+    }]
+    h.ia.resposta = iaResponde({
+      ...LEITURA, emitente_cnpj: '98.765.432/0001-10', itens: [{ ...LEITURA.itens[0], codigo_barras: null }],
+    })
+    const corpo = await corpoDe(await handler(envio()))
+    expect(h.banco.consultasAprendizado).toEqual([`emitente_cnpj.is.null,emitente_cnpj.in.("98765432000110")`])
+    expect(corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(h.banco.cupons[0]).toMatchObject({ itens: [{ sugestao_produto: { id: '777' }, casado_por: 'descricao', entrada_estoque: 4 }] })
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
   })
 })
