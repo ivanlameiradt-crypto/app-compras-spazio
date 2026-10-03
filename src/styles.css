@@ -20,6 +20,20 @@ body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.4 
 .menu a { padding: 8px 12px; border-radius: 999px; color: var(--texto); text-decoration: none; white-space: nowrap; background: var(--cartao); border: 1px solid var(--linha); }
 .menu a.active { background: var(--marca); color: var(--marca-texto); border-color: var(--marca); }
 .contador { margin-left: 6px; background: var(--alerta); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 12px; }
+/* Abas do topo: 3 seções (Compra · Lançamento de cupom · Lançamento de nota SEFAZ) */
+.abas-topo { display: flex; gap: 6px; padding: 8px 16px 10px; }
+.abas-topo a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-height: 62px; padding: 8px 4px; border-radius: 12px; border: 1px solid var(--linha); background: var(--cartao);
+  color: var(--texto); text-decoration: none; font-size: 12px; font-weight: 700; text-align: center; line-height: 1.2; }
+.abas-topo a .ic { font-size: 20px; }
+.abas-topo a.ativo { background: var(--marca); color: var(--marca-texto); border-color: var(--marca); }
+/* Menu em grade da aba Compra (no lugar da barra de rolagem lateral) */
+.grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.grade a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  text-decoration: none; background: var(--cartao); border: 1px solid var(--linha); border-radius: 14px;
+  padding: 20px 10px; color: var(--texto); font-weight: 700; font-size: 15px; text-align: center; }
+.grade a .ic { font-size: 28px; }
+.voltar-menu { display: inline-flex; align-items: center; gap: 4px; margin: 10px 16px 0; color: var(--marca); font-weight: 700; text-decoration: none; }
 .conteudo { padding: 0 16px; }
 .centro, .vazio { text-align: center; color: var(--suave); padding: 32px 16px; }
 .login { max-width: 360px; margin: 15vh auto 0; padding: 0 16px; display: flex; flex-direction: column; gap: 16px; }

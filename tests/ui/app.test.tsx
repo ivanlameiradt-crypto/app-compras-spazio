@@ -18,6 +18,9 @@ beforeEach(async () => {
 })
 
 describe('App', () => {
+  // isola cada teste (sem isso, HashRouters de renders anteriores disputam o mesmo window.location.hash)
+  afterEach(() => { cleanup(); window.location.hash = '' })
+
   it('sem sessão mostra o login', () => {
     estado = { carregando: false, sessao: null }
     render(<App />)
@@ -51,14 +54,16 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: /lançamentos/i })).toBeInTheDocument()
   })
 
-  it('Fase 2 C + Sub-fase 3: menu do admin é Lista · Cotações · Receber · Lançamentos · Resumo · Economia · Cadastros · Cupom · Comprar', async () => {
+  it('Fase 1 app unificado: topo tem 3 abas e a Compra abre o menu em grade com as telas de compra', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     render(<App />)
-    const menu = (await screen.findByRole('link', { name: /cotações/i })).closest('nav') as HTMLElement
-    // §8.5: Pessoas deixa o menu e vira uma aba de Cadastros (#/pessoas continua abrindo)
-    expect([...menu.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Lista', 'Cotações', 'Receber', 'Lançamentos', 'Resumo', 'Economia', 'Cadastros', 'Cupom', 'Comprar'])
-    expect(screen.getByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
-    expect(screen.getByRole('link', { name: 'Cupom' })).toHaveAttribute('href', '#/cupom')
+    // 3 abas no topo: Compra · Lançamento de cupom · Lançamento de nota SEFAZ
+    const topo = (await screen.findByRole('link', { name: 'Lançamento de cupom' })).closest('nav') as HTMLElement
+    expect([...topo.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/compra', '#/cupom', '#/nota-sefaz'])
+    // a aba Compra (rota padrão do admin) abre o menu em grade com as telas de compra (findBy: espera o redirect p/ /compra)
+    expect(await screen.findByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
+    expect(screen.getByRole('link', { name: 'Lançamentos' })).toHaveAttribute('href', '#/lancamentos')
+    expect(screen.getByRole('link', { name: 'Comprar' })).toHaveAttribute('href', '#/comprar')
   })
 
   it('comprador não vê a aba Cotações', async () => {
@@ -95,7 +100,7 @@ describe('rota /cupom (Sub-fase 3)', () => {
     window.location.hash = '#/cupom'
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Lançar cupom' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Cupom' })).toHaveClass('active') // o item do menu fica marcado
+    expect(screen.getByRole('link', { name: 'Lançamento de cupom' })).toHaveClass('ativo') // a aba do topo fica marcada
   })
 
   it('comprador não abre #/cupom: cai em Comprar e nem vê o item no menu', async () => {
@@ -104,6 +109,6 @@ describe('rota /cupom (Sub-fase 3)', () => {
     render(<App />)
     await waitFor(() => expect(window.location.hash).toBe('#/comprar'))
     expect(screen.queryByRole('heading', { name: 'Lançar cupom' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Cupom' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /lançamento de cupom/i })).not.toBeInTheDocument()
   })
 })

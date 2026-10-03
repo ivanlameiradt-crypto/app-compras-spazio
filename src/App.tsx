@@ -14,6 +14,8 @@ import Pessoas from './admin/Pessoas'
 import Cadastros from './admin/Cadastros'
 import Historico from './admin/Historico'
 import Cupom from './admin/Cupom'
+import CompraHome from './admin/CompraHome'
+import NotaSefaz from './admin/NotaSefaz'
 import Comprar from './comprador/Comprar'
 import Receber from './recebimento/Recebimento'
 import { sair } from './lib/api'
@@ -56,6 +58,8 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
   return (
     <Layout usuario={usuario} offline={offline}>
       <Routes>
+        {admin && <Route path="/compra" element={<CompraHome />} />}
+        {admin && <Route path="/nota-sefaz" element={<NotaSefaz />} />}
         {admin && <Route path="/lista" element={<Revisao usuario={usuario} />} />}
         {admin && <Route path="/cotacoes" element={<Cotacoes />} />}
         {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
@@ -69,7 +73,7 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
         <Route path="/comprar" element={<Comprar usuario={usuario} />} />
         <Route path="/receber" element={<Receber usuario={usuario} />} />
         <Route path="/senha" element={<TrocarSenha forcada={false} />} />
-        <Route path="*" element={<Navigate to={admin ? '/lista' : '/comprar'} replace />} />
+        <Route path="*" element={<Navigate to={admin ? '/compra' : '/comprar'} replace />} />
       </Routes>
     </Layout>
   )
