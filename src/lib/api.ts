@@ -652,7 +652,11 @@ export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom, t
 /** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
   const r = checar(await supabase.from('cupom')
-    .select('id, estado, emitente_nome, valor_a_pagar, criado_em, motivo, teste')
+    .select('id, estado, emitente_nome, valor_a_pagar, pedido_sischef, criado_em, motivo, teste, itens')
     .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
-  return r.map((c) => ({ ...c, valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar) }))
+  return r.map((c) => ({
+    ...c,
+    valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar),
+    itens: Array.isArray(c.itens) ? c.itens : [], // JSONB pode vir null; a UI espera lista
+  }))
 }

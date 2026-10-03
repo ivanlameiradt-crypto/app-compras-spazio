@@ -514,7 +514,7 @@ describe('Sub-fase 3: cupom', () => {
     from.mockReturnValue(q)
     await cuponsRecentes()
     const colunas = String(q.select.mock.calls[0][0]).split(',').map((c) => c.trim())
-    expect(colunas).toEqual(expect.arrayContaining(['id', 'estado', 'emitente_nome', 'valor_a_pagar', 'criado_em', 'motivo', 'teste']))
+    expect(colunas).toEqual(expect.arrayContaining(['id', 'estado', 'emitente_nome', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens']))
   })
 
   it('cuponsRecentes: valor_a_pagar nulo continua null (não vira 0, que a tela mostraria como "R$ 0,00")', async () => {

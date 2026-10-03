@@ -5,7 +5,8 @@ import * as api from '../lib/api'
 import { reduzirFoto } from '../lib/foto'
 import { formatarReais } from '../lib/regras'
 import { CONTAS_PIX, CONTA_DINHEIRO, CONTA_TESOURARIA, FORMAS } from '../cupom/formasPagamento'
-import type { CupomRecente, EstadoCupom, FormaCupom, PagamentoCupom, ResumoEnvioCupom } from '../lib/tipos'
+import type { CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ResumoEnvioCupom } from '../lib/tipos'
+import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
   PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
@@ -37,6 +38,10 @@ function valorDaLinha(c: CupomRecente): string | null {
 /** Envio que não está "tudo certo": foi para REVISAR, ou ficou PENDENTE porque o disparo automático falhou. */
 const pedeAtencao = (r: ResumoEnvioCupom): boolean => r.estado === 'REVISAR' || r.disparo_ok === false
 
+/** Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade que entrou · valor). */
+const linhaDoItem = (it: ItemCupomRecente): LinhaDetalhe =>
+  ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, valor: it.valor_unitario })
+
 export default function Cupom() {
   const [forma, setForma] = useState<FormaCupom | null>(null)
   const [contaPix, setContaPix] = useState<string | null>(null)
@@ -50,6 +55,7 @@ export default function Cupom() {
   const [recentes, setRecentes] = useState<CupomRecente[]>([])
   // a última carga dos "Últimos envios" falhou? (não pode aparecer como lista vazia: esconderia migração/coluna faltando ou RLS errada)
   const [falhaRecentes, setFalhaRecentes] = useState(false)
+  const [expandido, setExpandido] = useState<string | null>(null) // qual "Últimos envios" está aberto mostrando o detalhe
 
   function carregarRecentes() {
     api.cuponsRecentes()
@@ -151,11 +157,16 @@ export default function Cupom() {
         <ul className="recentes">
           {recentes.map((c) => {
             const valor = valorDaLinha(c)
+            const aberto = expandido === c.id
             return (
               <li key={c.id} data-testid="cupom-recente">
-                <b>{ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}
-                {valor && ` · ${valor}`}
+                <button type="button" className="recente-linha" aria-expanded={aberto}
+                  onClick={() => setExpandido(aberto ? null : c.id)}>
+                  <span><b>{ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}{valor && ` · ${valor}`}</span>
+                  <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
+                </button>
                 {c.estado === 'REVISAR' && c.motivo && <div className="sub">{c.motivo}</div>}
+                {aberto && <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} />}
               </li>
             )
           })}

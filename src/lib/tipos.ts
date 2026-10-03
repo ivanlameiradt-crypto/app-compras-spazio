@@ -420,13 +420,25 @@ export interface ResumoEnvioCupom {
   disparo_ok?: boolean
   duplicado?: boolean
 }
+/** Um item do cupom como está no `itens` (JSONB) — para o detalhe clicável de "Últimos envios". */
+export interface ItemCupomRecente {
+  descricao_cupom: string | null
+  entrada_estoque: number | null
+  unidade_cupom: string | null
+  valor_unitario: number | null
+  desconto_item: number | null
+  sugestao_produto: { id: string } | null
+  casado_por: string | null
+}
 /** Linha de "Últimos envios" (SELECT por RLS de admin — e_admin() do Plano 1). */
 export interface CupomRecente {
   id: string
   estado: EstadoCupom
   emitente_nome: string | null
   valor_a_pagar: number | null
+  pedido_sischef: string | null
   criado_em: string
   motivo: string | null
   teste: boolean
+  itens: ItemCupomRecente[]
 }

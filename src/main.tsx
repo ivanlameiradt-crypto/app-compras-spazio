@@ -15,7 +15,13 @@ import './styles.css'
 registerSW({
   immediate: true,
   onRegisteredSW(_swUrl, registro) {
-    if (registro) setInterval(() => { registro.update().catch(() => {}) }, 60_000)
+    if (!registro) return
+    const procurar = () => { registro.update().catch(() => {}) }
+    procurar()                        // procura versão nova já na abertura
+    setInterval(procurar, 60_000)     // e a cada minuto, mesmo com o app aberto
+    // REABRIR / trazer o app pra frente (PWA instalado volta do fundo sem recarregar a página) também
+    // procura — é isso que faz "sair e entrar" sempre pegar a versão nova (autoUpdate recarrega quando o SW novo assume)
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') procurar() })
   },
 })
 

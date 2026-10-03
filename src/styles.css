@@ -168,3 +168,13 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .ok { padding: 8px 10px; border-radius: 10px; background: var(--ok-fundo); color: var(--ok-texto); font-size: 14px; }
 .cupom .recentes { list-style: none; margin: 0; padding: 0; }
 .cupom .recentes li { padding: 8px 0; border-bottom: 1px solid var(--linha); font-size: 14px; }
+/* "Últimos envios" clicável → detalhe do que foi lançado (cupom; a Nota SEFAZ vai reusar) */
+.cupom .recentes li { padding: 0; }
+.recente-linha { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; background: none; border: 0; font: inherit; color: var(--texto); text-align: left; cursor: pointer; padding: 8px 0; }
+.recente-linha .seta { color: var(--suave); font-size: 12px; flex: none; }
+.detalhe { padding: 2px 0 10px; }
+.detalhe-pedido { font-size: 14px; margin: 0 0 6px; }
+.detalhe-itens { list-style: none; margin: 0; padding: 0; }
+.detalhe-itens li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--linha); font-size: 13px; }
+.detalhe-itens li:last-child { border-bottom: 0; }
+.detalhe-itens .nums { color: var(--suave); white-space: nowrap; }

@@ -52,7 +52,7 @@ describe('Cupom', () => {
 
   it('"Últimos envios" mostra o estado REVISAR como "precisa de você"', async () => {
     m.cuponsRecentes.mockResolvedValue([
-      { id: 'c9', estado: 'REVISAR', emitente_nome: 'ATACADAO', valor_a_pagar: 42.9, criado_em: '2026-10-01T12:00:00Z', motivo: 'item sem casamento', teste: false },
+      { id: 'c9', estado: 'REVISAR', emitente_nome: 'ATACADAO', valor_a_pagar: 42.9, pedido_sischef: null, criado_em: '2026-10-01T12:00:00Z', motivo: 'item sem casamento', teste: false, itens: [] },
     ])
     render(<Cupom />)
     expect(await screen.findByText(/precisa de você/)).toBeInTheDocument()
@@ -82,7 +82,8 @@ const enviarPronto = async () => {
   return botao
 }
 const recente = (extra: Partial<CupomRecente>): CupomRecente => ({
-  id: 'c1', estado: 'LANCADO', emitente_nome: 'ATACADAO', valor_a_pagar: 42.9, criado_em: '2026-10-01T12:00:00Z', motivo: null, teste: false, ...extra,
+  id: 'c1', estado: 'LANCADO', emitente_nome: 'ATACADAO', valor_a_pagar: 42.9, pedido_sischef: null,
+  criado_em: '2026-10-01T12:00:00Z', motivo: null, teste: false, itens: [], ...extra,
 })
 
 describe('Cupom — foto_path estável por cupom (a dedup do servidor depende disso)', () => {
@@ -393,6 +394,22 @@ describe('Cupom — "Últimos envios"', () => {
     await userEvent.click(await enviarPronto())
     expect(await screen.findByTestId('cupom-recente')).toHaveTextContent('ASSAI')
     expect(screen.queryByText('Não consegui carregar os últimos envios.')).not.toBeInTheDocument()
+  })
+
+  it('clicar num lançado abre o detalhe com o nº do pedido e os itens que entraram', async () => {
+    m.cuponsRecentes.mockResolvedValue([
+      recente({ id: 'c1', estado: 'LANCADO', emitente_nome: 'ATACADAO', valor_a_pagar: 327.83, pedido_sischef: '163377325', itens: [
+        { descricao_cupom: 'REF.COCA-COLA PET 1X2L', entrada_estoque: 18, unidade_cupom: 'UND', valor_unitario: 10.79, desconto_item: 0, sugestao_produto: { id: '1836997' }, casado_por: 'descricao' },
+        { descricao_cupom: 'ALFACE CRESPA HID.', entrada_estoque: 8, unidade_cupom: 'UND', valor_unitario: 3.7, desconto_item: 0, sugestao_produto: { id: '3469718' }, casado_por: 'descricao' },
+      ] }),
+    ])
+    render(<Cupom />)
+    const linha = await screen.findByTestId('cupom-recente')
+    expect(screen.queryByText(/163377325/)).not.toBeInTheDocument() // fechado: detalhe escondido
+    await userEvent.click(within(linha).getByRole('button'))
+    expect(await screen.findByText(/163377325/)).toBeInTheDocument() // abre com o pedido
+    expect(screen.getByText('REF.COCA-COLA PET 1X2L')).toBeInTheDocument()
+    expect(screen.getByText('ALFACE CRESPA HID.')).toBeInTheDocument()
   })
 
   it('o motivo aparece só na linha REVISAR (nas outras seria resto de um estado antigo)', async () => {
