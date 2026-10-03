@@ -1,8 +1,10 @@
 /// <reference types="vitest/config" />
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath } from 'node:url'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // 15.3: testes com dados reais moram no repositório PRIVADO (compra-semanal/tests/app_real) e só
 // entram quando TESTES_PRIVADOS aponta para essa pasta (rodada local antes de publicar; nunca no CI
@@ -20,15 +22,34 @@ function exigirEnvDeProducao(mode: string) {
   }
 }
 
+// Identidade desta publicação: um código único por build. Vai embutido no app (via `define` -> __BUILD_ID__) e também
+// num version.json servido na raiz. O app compara os dois (src/lib/versao.ts) para saber se há versão nova no ar.
+const BUILD_ID = Date.now().toString(36)
+
+// Grava o version.json DEPOIS do service worker (enforce:'post' + último na lista) para ele NÃO entrar no precache:
+// o version.json precisa vir sempre da rede, nunca do cache, senão o app nunca perceberia a versão nova.
+function emitirVersao(id: string): Plugin {
+  let outDir = 'dist'
+  return {
+    name: 'spazio-emitir-version-json',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) { outDir = config.build.outDir },
+    closeBundle() { writeFileSync(join(outDir, 'version.json'), JSON.stringify({ id })) },
+  }
+}
+
 export default defineConfig(({ command, mode }) => {
   if (command === 'build' && mode === 'production') exigirEnvDeProducao(mode)
   return {
     base: '/app-compras-spazio/',
+    // __BUILD_ID__ fica embutido no pacote; o app compara com o version.json da rede para trocar de versão sozinho.
+    define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
     plugins: [
       react(),
       VitePWA({
         registerType: 'autoUpdate',
-        // Registro do service worker é feito à mão em src/main.tsx (com checagem periódica de versão);
+        // Registro do service worker é feito à mão em src/main.tsx (com checagem de versão pela rede);
         // por isso desligamos a injeção automática, para não registrar duas vezes.
         injectRegister: false,
         manifest: {
@@ -42,8 +63,11 @@ export default defineConfig(({ command, mode }) => {
           theme_color: '#1f6f4a',
           icons: [{ src: 'icone.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
         },
-        workbox: { navigateFallback: '/app-compras-spazio/index.html' },
+        // clientsClaim: o service worker novo assume as telas JÁ abertas (sem isto, "sair e entrar" num app instalado
+        // continuava no velho, porque o novo só assumiria ao fechar tudo). Com skipWaiting, ele troca na hora.
+        workbox: { navigateFallback: '/app-compras-spazio/index.html', clientsClaim: true, skipWaiting: true },
       }),
+      emitirVersao(BUILD_ID), // por último: grava version.json fora do precache
     ],
     test: {
       globals: true,
