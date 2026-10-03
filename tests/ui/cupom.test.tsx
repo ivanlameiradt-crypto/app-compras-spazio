@@ -396,10 +396,10 @@ describe('Cupom — "Últimos envios"', () => {
     expect(screen.queryByText('Não consegui carregar os últimos envios.')).not.toBeInTheDocument()
   })
 
-  it('clicar num lançado abre o detalhe com o nº do pedido e os itens que entraram', async () => {
+  it('clicar num lançado abre o detalhe: nº do pedido, itens e a unidade do lado da quantidade', async () => {
     m.cuponsRecentes.mockResolvedValue([
       recente({ id: 'c1', estado: 'LANCADO', emitente_nome: 'ATACADAO', valor_a_pagar: 327.83, pedido_sischef: '163377325', itens: [
-        { descricao_cupom: 'REF.COCA-COLA PET 1X2L', entrada_estoque: 18, unidade_cupom: 'UND', valor_unitario: 10.79, desconto_item: 0, sugestao_produto: { id: '1836997' }, casado_por: 'descricao' },
+        { descricao_cupom: 'LIMAO TAITI TROPICAL', entrada_estoque: 3.86, unidade_cupom: 'KG', valor_unitario: 9.9, desconto_item: 0, sugestao_produto: { id: '3469643' }, casado_por: 'descricao' },
         { descricao_cupom: 'ALFACE CRESPA HID.', entrada_estoque: 8, unidade_cupom: 'UND', valor_unitario: 3.7, desconto_item: 0, sugestao_produto: { id: '3469718' }, casado_por: 'descricao' },
       ] }),
     ])
@@ -408,8 +408,11 @@ describe('Cupom — "Últimos envios"', () => {
     expect(screen.queryByText(/163377325/)).not.toBeInTheDocument() // fechado: detalhe escondido
     await userEvent.click(within(linha).getByRole('button'))
     expect(await screen.findByText(/163377325/)).toBeInTheDocument() // abre com o pedido
-    expect(screen.getByText('REF.COCA-COLA PET 1X2L')).toBeInTheDocument()
+    expect(screen.getByText('LIMAO TAITI TROPICAL')).toBeInTheDocument()
     expect(screen.getByText('ALFACE CRESPA HID.')).toBeInTheDocument()
+    // a unidade vem do cupom, colada na quantidade — sem ela o número não diz nada (3,86 é kg? unidade?)
+    expect(screen.getByText(/qtd 3,86 kg/)).toBeInTheDocument()
+    expect(screen.getByText(/qtd 8 und/)).toBeInTheDocument()
   })
 
   it('o motivo aparece só na linha REVISAR (nas outras seria resto de um estado antigo)', async () => {

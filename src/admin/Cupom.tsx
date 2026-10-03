@@ -38,9 +38,9 @@ function valorDaLinha(c: CupomRecente): string | null {
 /** Envio que não está "tudo certo": foi para REVISAR, ou ficou PENDENTE porque o disparo automático falhou. */
 const pedeAtencao = (r: ResumoEnvioCupom): boolean => r.estado === 'REVISAR' || r.disparo_ok === false
 
-/** Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade que entrou · valor). */
+/** Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade + unidade que entrou · valor). */
 const linhaDoItem = (it: ItemCupomRecente): LinhaDetalhe =>
-  ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, valor: it.valor_unitario })
+  ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, unidade: it.unidade_cupom, valor: it.valor_unitario })
 
 export default function Cupom() {
   const [forma, setForma] = useState<FormaCupom | null>(null)
