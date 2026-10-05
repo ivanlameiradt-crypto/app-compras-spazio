@@ -6,7 +6,7 @@ import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
   Abertura, Compra, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
   IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
-  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
+  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
   Preparo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
@@ -567,6 +567,30 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
     throw new ErroApi(error.message, status, error.code)
   }
   return ((data ?? []) as unknown as NfeResumo[]).map(nfeLida)
+}
+// ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
+const COLUNAS_NOTA = 'chave, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
+const notaListaLida = (n: NotaSefazLista): NotaSefazLista =>
+  ({ ...n, valor_nf: n.valor_nf == null ? null : Number(n.valor_nf), itens: Array.isArray(n.itens) ? n.itens : [] })
+/** Notas pendentes da fila da SEFAZ (situacao 'na_fila'), para "Notas a lançar". */
+export async function notasALancar(): Promise<NotaSefazLista[]> {
+  const { data, error, status } = await supabase.from('cot_nfe').select(COLUNAS_NOTA)
+    .eq('situacao', 'na_fila').order('emissao', { ascending: false })
+  if (error) {
+    if (tabelaInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
+}
+/** Notas já lançadas (situacao 'lancada'), mais recentes primeiro, para "Últimos lançamentos". */
+export async function notasLancadas(limite = 10): Promise<NotaSefazLista[]> {
+  const { data, error, status } = await supabase.from('cot_nfe').select(COLUNAS_NOTA)
+    .eq('situacao', 'lancada').order('lancada_em', { ascending: false, nullsFirst: false }).limit(limite)
+  if (error) {
+    if (tabelaInexistente(error.code)) return []
+    throw new ErroApi(error.message, status, error.code)
+  }
+  return ((data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
 }
 export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
 export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })

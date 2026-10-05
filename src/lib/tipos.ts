@@ -379,6 +379,25 @@ export interface NfeResumo {
   lancada_em: string | null; nf_sischef: string | null
   vendedor_id: number | null; cotacao_id: number | null; vinculo: 'auto' | 'ivan' | null
 }
+/** Item da NF-e (cot_nfe.itens) para a aba Lançamento de nota SEFAZ (Fase 3). */
+export interface ItemNotaSefaz {
+  descricao: string
+  qtd: number | null
+  unidade_sischef: string | null
+  produto_id: number | null
+}
+/** Linha da aba Lançamento de nota SEFAZ (lê cot_nfe por RLS de admin). */
+export interface NotaSefazLista {
+  chave: string
+  emitente: string
+  numero: string
+  emissao: string
+  valor_nf: number | null
+  situacao: SituacaoNfe
+  lancada_em: string | null
+  nf_sischef: string | null
+  itens: ItemNotaSefaz[]
+}
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'
 export type MarcaNf = 'ok' | 'confira' | 'sem_marca' | null

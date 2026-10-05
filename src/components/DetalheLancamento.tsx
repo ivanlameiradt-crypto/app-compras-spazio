@@ -13,10 +13,10 @@ const qtd = (q: number): string => new Intl.NumberFormat('pt-BR', { maximumFract
 /** Unidade exata do cupom (UND, KG, PCT…), só em minúscula para ler melhor — nunca inventada: vazio quando não veio. */
 const unid = (u: string | null): string => (u ? u.trim().toLowerCase() : '')
 
-export default function DetalheLancamento({ pedido, itens }: { pedido: string | null; itens: LinhaDetalhe[] }) {
+export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no SisChef' }: { pedido: string | null; itens: LinhaDetalhe[]; rotulo?: string }) {
   return (
     <div className="detalhe">
-      {pedido && <p className="detalhe-pedido">Pedido no SisChef: <b>{pedido}</b></p>}
+      {pedido && <p className="detalhe-pedido">{rotulo}: <b>{pedido}</b></p>}
       {itens.length === 0 ? (
         <p className="sub">Sem itens para mostrar.</p>
       ) : (
