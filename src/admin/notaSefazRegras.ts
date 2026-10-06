@@ -88,8 +88,11 @@ export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>
 // ---------- bloqueios
 export const AVISO_ITEM_SEM_PRODUTO = 'Item sem produto no SisChef: associe lá antes de lançar'
 export const AVISO_CONTA_ESPECIAL = 'Conta especial: essa nota não é lançada pelo app'
-/** Nota que a leitura do SisChef trouxe sem itens (a tela de importação não abriu): não há o que conferir, e o robô também recusa. */
-export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: o robô não conseguiu lê-la no SisChef, então não dá para conferir. Veja na próxima leitura (07h40, 12h40 ou 17h40) ou confira a nota lá'
+/**
+ * Nota que a leitura do SisChef trouxe sem itens: não há o que conferir, e o robô também recusa. No SisChef ela costuma aparecer como
+ * "XML resumido": a SEFAZ só entrega o resumo da nota até o destinatário registrar a ciência da operação; só depois vem o XML completo.
+ */
+export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: no SisChef ela costuma aparecer como “XML resumido” (a SEFAZ só entregou o resumo da nota, e o XML completo só vem depois da ciência da operação). Sem os itens não dá para conferir nem lançar. Se ela não vai ser lançada, descarte-a.'
 
 const itemSemProduto = (it: ItemNotaSefaz): boolean =>
   it.produto_id == null || String(it.produto_id).trim() === '' || (it.associacao ?? '').trim().toLowerCase() === 'painel'
@@ -103,6 +106,37 @@ export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   if (n.itens.some(itemSemProduto)) b.push(AVISO_ITEM_SEM_PRODUTO)
   return b
 }
+
+// ---------- descartar nota que não dá para lançar (regra 3 do Ivan)
+/** Início do motivo guardado quando a nota foi descartada por não ter itens (a lista de descartadas o reconhece por ele). */
+export const MOTIVO_SEM_ITENS = 'Sem itens (XML resumido)'
+
+/**
+ * Regra 3 do Ivan (06/10): nota que NÃO dá para lançar do jeito que está — o app a trava (sem itens/"XML resumido", item sem produto,
+ * conta especial) ou o robô parou nela ('revisar') — pode ser DESCARTADA: sai da lista e o robô nunca a lança; nada muda no SisChef nem
+ * na SEFAZ e dá para desfazer. Nunca a pela metade ('erro': o pedido já existe no SisChef, a nota fica à vista até alguém conferir) nem a
+ * que o robô está lançando agora. O banco confere tudo de novo (cot_nfe_descartar).
+ */
+export function podeDescartar(n: NotaSefazLista): boolean {
+  const estado = n.lancamento_estado ?? null
+  if (estado === 'erro') return false
+  if (estado === 'lancando' && !lancandoPresa(n)) return false
+  return bloqueiosDaNota(n).length > 0 || estado === 'revisar'
+}
+
+/** Por que a nota está sendo descartada (guardado na nota, até 300 letras): o(s) motivo(s) pelos quais ela não dá para lançar. */
+export function motivoDoDescarte(n: NotaSefazLista): string {
+  const partes: string[] = []
+  if (n.itens.length === 0) partes.push(MOTIVO_SEM_ITENS)
+  if (n.itens.some(itemSemProduto)) partes.push('Item sem produto no SisChef')
+  if (contaEspecial(n.emitente)) partes.push('Conta especial')
+  if (n.lancamento_estado === 'revisar') partes.push(`O robô parou: ${traduzirMotivo(n.lancamento_motivo) || 'confira a nota'}`)
+  return partes.join('; ').slice(0, 300)
+}
+
+/** Nota descartada por não ter itens que AGORA veio com itens (o XML completo chegou): vale avisar o Ivan para ele reconsiderar. */
+export const descartadaVoltouComItens = (n: NotaSefazLista): boolean =>
+  (n.descartada_motivo ?? '').startsWith(MOTIVO_SEM_ITENS) && n.itens.length > 0
 
 // ---------- 'lancando' preso
 /** Mesmo limite da Edge Function lancar-nfe (MINUTOS_TRAVA): uma reserva 'lancando' mais velha que isto é dada como presa (o run

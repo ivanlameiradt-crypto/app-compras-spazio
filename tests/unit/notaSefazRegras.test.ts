@@ -1,6 +1,7 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
+  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -68,6 +69,48 @@ describe('notaSefazRegras', () => {
     const b = bloqueiosDaNota(nota({ itens: [] }))
     expect(b).toHaveLength(1)
     expect(b[0]).toContain('chegou sem itens')
+  })
+
+  describe('descartar nota que não dá para lançar (regra 3)', () => {
+    const semProduto = { descricao: 'Y', qtd: 1, unidade_sischef: 'KG', produto_id: null }
+
+    it('pode descartar quando o app a trava (sem itens, item sem produto, conta especial) ou o robô parou nela (revisar)', () => {
+      expect(podeDescartar(nota({ itens: [] }))).toBe(true)
+      expect(podeDescartar(nota({ itens: [semProduto] }))).toBe(true)
+      expect(podeDescartar(nota({ emitente: 'KONDO COMERCIO' }))).toBe(true)
+      expect(podeDescartar(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' }))).toBe(true)
+    })
+
+    it('nota em ordem (pronta, com a forma de pagamento a escolher, ensaio ok) NÃO tem o descartar', () => {
+      expect(podeDescartar(nota())).toBe(false)
+      expect(podeDescartar(nota({ parcelas: [] }))).toBe(false)
+      expect(podeDescartar(nota({ lancamento_estado: 'ensaio_ok' }))).toBe(false)
+    })
+
+    it('NUNCA a pela metade (erro) nem a que o robô está lançando agora; a reserva presa (> 30 min) pode', () => {
+      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'erro' }))).toBe(false)
+      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }))).toBe(false)
+      const minAtras = (min: number) => new Date(Date.now() - min * 60_000).toISOString() // relógio real: podeDescartar usa Date.now()
+      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'lancando', lancamento_estado_em: minAtras(5) }))).toBe(false)
+      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'lancando', lancamento_estado_em: minAtras(31) }))).toBe(true) // reserva presa
+    })
+
+    it('motivoDoDescarte: diz o que impede de lançar (e cabe nos 300 do banco)', () => {
+      expect(motivoDoDescarte(nota({ itens: [] }))).toBe(MOTIVO_SEM_ITENS)
+      expect(motivoDoDescarte(nota({ itens: [semProduto] }))).toBe('Item sem produto no SisChef')
+      expect(motivoDoDescarte(nota({ emitente: 'MERCADO LIVRE LTDA', itens: [semProduto] }))).toBe('Item sem produto no SisChef; Conta especial')
+      expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'sem boletos na nota — pagamento manual' })))
+        .toBe('O robô parou: A nota não tem boleto: escolha como pagar')
+      expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: null }))).toBe('O robô parou: confira a nota')
+      expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'x'.repeat(900) })).length).toBe(300)
+    })
+
+    it('descartadaVoltouComItens: só a descartada por falta de itens que agora tem itens', () => {
+      expect(descartadaVoltouComItens(nota({ descartada_motivo: MOTIVO_SEM_ITENS }))).toBe(true)
+      expect(descartadaVoltouComItens(nota({ descartada_motivo: MOTIVO_SEM_ITENS, itens: [] }))).toBe(false)
+      expect(descartadaVoltouComItens(nota({ descartada_motivo: 'Item sem produto no SisChef' }))).toBe(false)
+      expect(descartadaVoltouComItens(nota({ descartada_motivo: null }))).toBe(false)
+    })
   })
 
   it('textoDoEstado', () => {

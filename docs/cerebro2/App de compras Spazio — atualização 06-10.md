@@ -31,6 +31,12 @@
 - **Como informar o boleto:** na nota aparece um editor para você digitar as parcelas (vencimento e valor). O Lançar só libera quando a soma fecha com o valor da nota. O robô escreve essas parcelas na tela de pagamento do Sischef e confere antes de gravar.
 - **Ainda não foi provado ao vivo.** O primeiro teste deve ser a menor nota da MATEUS (000089282, R$ 430,20).
 
+## Regra 3 (Ivan, 06/10/2026): nota que não dá para lançar pode ser descartada
+- Nota sem itens ("xml resumido"), com item sem produto, conta especial ou parada pelo robô ganha o botão **Descartar nota** (2 toques).
+- Descartar **só tira a nota da lista do app**: nada muda no SisChef nem na SEFAZ, a compra continua pendente lá e **sem entrada no estoque nem no financeiro**.
+- Desfaz em **Notas descartadas → Voltar para a fila**. Se o XML completo chegar depois, o app avisa.
+- Nunca vale para nota "pela metade" (erro) nem para a que o robô está lançando. Falta publicar o app para o botão aparecer.
+
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
 
@@ -46,8 +52,9 @@
 2. Fila de 06/10 (7 notas, leitura das 15h55). **Só 2 estão com todos os itens associados**: MERCURIO 002270842 (3 boletos do XML:
    pronta, só Lançar) e MATEUS 000089282 (itens ok, mas o XML não traz boletos: você digita a parcela).
    Precisam de associação (item sem produto): SEARA 000187105, MERCURIO 002270833, MATEUS 000089283 e 000089284.
-   **MC CONTENTE 000002278 NÃO está pronta**: chegou sem nenhum item e sem XML lido (o robô não conseguiu ler essa nota no SisChef;
-   causa ainda não confirmada — hipótese: fornecedor novo, não cadastrado no SisChef). O app trava o Lançar dela.
+   **MC CONTENTE 000002278 NÃO está pronta**: chegou sem nenhum item e sem XML lido. Causa (print do SisChef, 06/10): a nota está como
+   **"xml resumido"** — a SEFAZ só entregou o resumo; o XML completo só vem depois da ciência da operação. Não é XML corrompido.
+   O app trava o Lançar dela e oferece "Descartar nota".
    (Uma versão anterior deste texto listava a MC CONTENTE como pronta: errado, "todos os itens têm produto" era verdade só porque a lista veio vazia.)
 3. Ligar `MOTOR_NFE_LIGADO=ON` (só você consegue, é secret do GitHub) e lançar a 1ª nota real em Boleto.
 4. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).

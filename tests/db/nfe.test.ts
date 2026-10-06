@@ -547,6 +547,106 @@ describe('Fase 3 — boletos do XML na cot_nfe (cot_nfe_anexar_parcelas)', () =>
   })
 })
 
+describe('Fase 3 — descartar a nota que não dá para lançar (cot_nfe_descartar / cot_nfe_restaurar)', () => {
+  const atualF3E = bancoRecebimento(null)
+  const bancoF3E = async () => atualF3E()
+  const descartar = (db: PGlite, quem: string, chave = CHAVE, motivo: string | null = 'Sem itens (XML resumido)') =>
+    chamar(db, quem, 'cot_nfe_descartar($1, $2)', [chave, motivo])
+  async function situacao(db: PGlite, chave = CHAVE): Promise<Json> {
+    const [r] = await como(db, ADMIN, `select situacao, descartada_em, descartada_por, descartada_motivo, lancamento_estado
+      from cot_nfe where chave = $1`, [chave])
+    return r
+  }
+
+  it('o admin descarta: a nota segue na_fila, com quem, quando e por quê; sem motivo vira NULL e o motivo longo é cortado em 300', async () => {
+    const db = await bancoF3E()
+    await sync(db, [nota()])
+    expect((await situacao(db)).descartada_em).toBeNull()
+    await descartar(db, ADMIN)
+    let s = await situacao(db)
+    expect(s.situacao).toBe('na_fila')
+    expect(s.descartada_em).not.toBeNull()
+    expect(String(s.descartada_por)).toContain('@')
+    expect(s.descartada_motivo).toBe('Sem itens (XML resumido)')
+    await descartar(db, ADMIN, CHAVE, '   ')
+    expect((await situacao(db)).descartada_motivo).toBeNull()
+    await descartar(db, ADMIN, CHAVE, 'x'.repeat(500))
+    s = await situacao(db)
+    expect(String(s.descartada_motivo).length).toBe(300)
+    await expect(db.query('update cot_nfe set descartada_motivo = $1 where chave = $2', ['y'.repeat(301), CHAVE])).rejects.toThrow(/check/)
+  })
+
+  it('a leitura da SEFAZ NUNCA desfaz o descarte (nem com o XML lido depois); ao sair da fila vira saiu_da_fila e continua descartada', async () => {
+    const db = await bancoF3E()
+    await sync(db, [nota()])
+    await descartar(db, ADMIN)
+    const antes = (await situacao(db)).descartada_em
+    await sync(db, [nota()])                                                  // nova leitura, mesma nota ainda na fila
+    await sync(db, [nota({ itens: [nfeItem({ produto_id: 7, associacao: 'sischef', qtd: 9 })] })]) // e agora com itens
+    let s = await situacao(db)
+    expect([s.situacao, s.descartada_em]).toEqual(['na_fila', antes])
+    await sync(db, [nota({ chave: CHAVE2, emitente: 'OUTRO LTDA', numero: '9' })])  // leitura completa sem a nossa nota
+    s = await situacao(db)
+    expect(s.situacao).toBe('saiu_da_fila')
+    expect(s.descartada_em).toEqual(antes) // mesma data (objeto Date: compara pelo valor)
+  })
+
+  it('restaurar desfaz (e é idempotente); chave desconhecida é recusada', async () => {
+    const db = await bancoF3E()
+    await sync(db, [nota()])
+    await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])                 // não estava descartada: não faz nada e não dá erro
+    await descartar(db, ADMIN)
+    await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])
+    const s = await situacao(db)
+    expect([s.situacao, s.descartada_em, s.descartada_por, s.descartada_motivo]).toEqual(['na_fila', null, null, null])
+    await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])
+    expect(await erroDe(chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE2]))).toBe('nota não encontrada')
+    expect(await erroDe(descartar(db, ADMIN, CHAVE2))).toBe('nota não encontrada')
+  })
+
+  it('recusa nota lançada, nota pela metade (erro) e nota que o robô está lançando agora; aceita revisar, ensaio_ok e reserva presa (> 30 min)', async () => {
+    const db = await bancoF3E()
+    await fixarRelogio(db, '2026-10-20T15:00:00Z')
+    await sync(db, [nota()])
+    const marcar = (estado: string | null, minutosAtras: number | null) => db.query(
+      `update cot_nfe set lancamento_estado = $1, lancamento_em = case when $2::int is null then null else cot_agora() - make_interval(mins => $2::int) end where chave = $3`,
+      [estado, minutosAtras, CHAVE])
+    await marcar('erro', null)
+    expect(await erroDe(descartar(db, ADMIN))).toBe('esta nota ficou pela metade: confira no SisChef antes de descartar')
+    await marcar('lancando', 5)
+    expect(await erroDe(descartar(db, ADMIN))).toBe('o robô está lançando esta nota agora: aguarde terminar')
+    await marcar('lancando', null)                                            // sem carimbo: na dúvida, recusa
+    expect(await erroDe(descartar(db, ADMIN))).toBe('o robô está lançando esta nota agora: aguarde terminar')
+    expect((await situacao(db)).descartada_em).toBeNull()
+    for (const [estado, min] of [['revisar', null], ['ensaio_ok', null], ['lancando', 31]] as const) {
+      await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])
+      await marcar(estado, min)
+      await descartar(db, ADMIN)
+      expect([estado, (await situacao(db)).descartada_em === null]).toEqual([estado, false])
+    }
+    await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])
+    await marcar(null, null)
+    await chamar(db, 'anon', 'cot_nfe_marcar_lancadas($1, $2::jsonb)',
+      [SEGREDO, JSON.stringify([{ chave: CHAVE, nf_sischef: 'NF 9', lancada_em: '2026-10-20T14:00:00Z' }])])
+    expect(await erroDe(descartar(db, ADMIN))).toBe('esta nota não está mais na fila: não dá para descartar')
+  })
+
+  it('só o admin descarta e restaura (comprador é recusado) e a anon nem executa; cada mudança fica no histórico', async () => {
+    const db = await bancoF3E()
+    await sync(db, [nota()])
+    expect(await erroDe(descartar(db, JOAO))).toBe('apenas o administrador pode fazer isso')
+    expect(await erroDe(chamar(db, JOAO, 'cot_nfe_restaurar($1)', [CHAVE]))).toBe('apenas o administrador pode fazer isso')
+    await expect(como(db, 'anon', `select cot_nfe_descartar($1, 'x')`, [CHAVE])).rejects.toThrow(/permission denied/)
+    await expect(como(db, 'anon', `select cot_nfe_restaurar($1)`, [CHAVE])).rejects.toThrow(/permission denied/)
+    expect((await situacao(db)).descartada_em).toBeNull()
+    await descartar(db, ADMIN)
+    await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])
+    const h = await como(db, ADMIN, `select antes, depois from historico_alteracoes where tabela = 'cot_nfe' and registro = $1 order by id`, [CHAVE])
+    expect(h.map((x) => (x.depois as Json).descartada)).toEqual([true, false])
+    expect((h[0].depois as Json).motivo).toBe('Sem itens (XML resumido)')
+  })
+})
+
 describe('Fase 3 — parcelas digitadas pelo Ivan (cot_nfe.parcelas_manuais)', () => {
   const atualF3D = bancoRecebimento(null)
   const bancoF3D = async () => atualF3D()

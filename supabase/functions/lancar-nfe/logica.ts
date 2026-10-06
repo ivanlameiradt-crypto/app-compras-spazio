@@ -156,7 +156,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   }
   const nota = await deps.reservar(chave, forma, agora.toISOString(), limite.toISOString(), manuais)
   if (!nota) {
-    return { status: 409, corpo: { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando ou pela metade)' } }
+    return { status: 409, corpo: { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' } }
   }
 
   // 4. dispara o robô; se não der, solta a reserva (senão a nota ficaria 'lançando' à toa por 30 min).

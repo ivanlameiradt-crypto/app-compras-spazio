@@ -26,6 +26,9 @@ beforeEach(() => {
   m.lancarNota.mockResolvedValue(undefined)
   m.formasPadraoPorFornecedor.mockResolvedValue({})
   m.lancamentosSeguidosEmBoleto.mockResolvedValue({})
+  m.notasDescartadas.mockResolvedValue([])
+  m.descartarNota.mockResolvedValue(undefined)
+  m.restaurarNota.mockResolvedValue(undefined)
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -678,5 +681,136 @@ describe('NotaSefaz', () => {
     expect(await screen.findByTestId('aviso-forma')).toHaveTextContent(/ainda não foi testada ao vivo/)
     await userEvent.selectOptions(comoPagar(), 'boleto')
     expect(screen.queryByTestId('aviso-forma')).not.toBeInTheDocument()
+  })
+})
+
+describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do Ivan)', () => {
+  const semItens = (extra: Partial<NotaSefazLista> = {}) =>
+    nota({ emitente: 'MC CONTENTE LTDA', numero: '2278', valor_nf: 1275, itens: [], parcelas: null, ...extra })
+  const k = (c: string) => c.repeat(44)
+
+  it('"Descartar nota" aparece só na nota que não dá para lançar (sem itens, item sem produto, conta especial, robô parou)', async () => {
+    aLancar(
+      semItens({ chave: k('1') }),
+      nota({ chave: k('2'), itens: [item({ produto_id: null })] }),
+      nota({ chave: k('3'), emitente: 'KONDO COMERCIO' }),
+      nota({ chave: k('4'), lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' }),
+      nota({ chave: k('5') }),
+    )
+    render(<NotaSefaz />)
+    const linhas = await screen.findAllByTestId('nota-a-lancar')
+    expect(linhas.map((l) => within(l).queryByTestId('descartar-nota') !== null)).toEqual([true, true, true, true, false])
+  })
+
+  it('nunca na nota pela metade (erro) nem na que o robô está lançando agora', async () => {
+    aLancar(
+      semItens({ chave: k('1'), lancamento_estado: 'erro', lancamento_motivo: 'pedido gerado' }),
+      semItens({ chave: k('2'), lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }),
+    )
+    render(<NotaSefaz />)
+    const linhas = await screen.findAllByTestId('nota-a-lancar')
+    for (const l of linhas) expect(within(l).queryByTestId('descartar-nota')).not.toBeInTheDocument()
+  })
+
+  it('descartar em 2 toques: a pergunta diz o que muda e o que NÃO muda, manda ao banco com o motivo e a nota passa para "Notas descartadas"', async () => {
+    const n = semItens({ chave: k('1') })
+    m.notasALancar.mockResolvedValueOnce([n]).mockResolvedValue([])
+    m.notasDescartadas.mockResolvedValueOnce([]).mockResolvedValue([{ ...n, descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)' }])
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    const pergunta = within(linha).getByTestId('confirmar-descarte')
+    expect(pergunta).toHaveTextContent('Descartar a NF 2278 de MC CONTENTE LTDA?')
+    expect(pergunta).toHaveTextContent('nada é lançado')
+    expect(pergunta).toHaveTextContent('Não muda nada no SisChef nem na SEFAZ')
+    expect(pergunta).toHaveTextContent('Dá para desfazer em “Notas descartadas”')
+    expect(pergunta).toHaveTextContent('Se o XML completo chegar depois')
+    expect(m.descartarNota).not.toHaveBeenCalled() // o 1º toque só pergunta
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Descartar' }))
+    expect(m.descartarNota).toHaveBeenCalledWith(k('1'), 'Sem itens (XML resumido)')
+    await waitFor(() => expect(screen.queryByTestId('nota-a-lancar')).not.toBeInTheDocument())
+    const secao = await screen.findByTestId('descartadas')
+    expect(secao).toHaveTextContent('Notas descartadas (1)')
+    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('MC CONTENTE LTDA · NF 2278')
+    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('Motivo: Sem itens (XML resumido)')
+  })
+
+  it('"Cancelar" fecha a pergunta sem descartar nada', async () => {
+    aLancar(semItens())
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    await userEvent.click(within(linha).getByRole('button', { name: 'Cancelar' }))
+    expect(within(linha).queryByTestId('confirmar-descarte')).not.toBeInTheDocument()
+    expect(within(linha).getByTestId('descartar-nota')).toBeInTheDocument()
+    expect(m.descartarNota).not.toHaveBeenCalled()
+  })
+
+  it('motivo guardado para item sem produto não fala em "XML completo" (só a nota sem itens fala)', async () => {
+    aLancar(nota({ itens: [item({ produto_id: null })] }))
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    expect(within(linha).getByTestId('confirmar-descarte')).not.toHaveTextContent('XML completo')
+    await userEvent.click(within(linha).getByRole('button', { name: 'Descartar' }))
+    expect(m.descartarNota).toHaveBeenCalledWith(CHAVE, 'Item sem produto no SisChef')
+  })
+
+  it('se o banco recusar, mostra o motivo em português, fecha a pergunta e a nota continua na lista', async () => {
+    aLancar(semItens())
+    m.descartarNota.mockRejectedValue(new Error('Esta nota ficou pela metade: confira no SisChef antes de descartar.'))
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    await userEvent.click(within(linha).getByRole('button', { name: 'Descartar' }))
+    expect(await within(linha).findByRole('alert')).toHaveTextContent('ficou pela metade')
+    expect(within(linha).queryByTestId('confirmar-descarte')).not.toBeInTheDocument()
+    expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
+  })
+
+  it('Notas descartadas: lista com o motivo; "Voltar para a fila" desfaz e a nota volta para "Notas a lançar"', async () => {
+    const d = semItens({ chave: k('1'), itens: [item({ produto_id: null })], descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Item sem produto no SisChef' })
+    m.notasDescartadas.mockResolvedValueOnce([d]).mockResolvedValue([])
+    m.notasALancar.mockResolvedValueOnce([]).mockResolvedValue([{ ...d, descartada_em: null, descartada_motivo: null }])
+    render(<NotaSefaz />)
+    const secao = await screen.findByTestId('descartadas')
+    expect(secao).toHaveTextContent('Notas descartadas (1)')
+    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('Motivo: Item sem produto no SisChef')
+    expect(screen.queryByTestId('descartadas-aviso')).not.toBeInTheDocument()
+    await userEvent.click(within(secao).getByRole('button', { name: 'Voltar para a fila' }))
+    expect(m.restaurarNota).toHaveBeenCalledWith(k('1'))
+    expect(await screen.findByTestId('nota-a-lancar')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('descartadas')).not.toBeInTheDocument())
+  })
+
+  it('descartada por falta de itens que AGORA veio com itens: avisa no resumo e na própria nota', async () => {
+    const d = nota({ chave: k('1'), descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)', itens: [item(), item({ descricao: 'OUTRO' })] })
+    m.notasDescartadas.mockResolvedValue([d, semItens({ chave: k('2'), descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)' })])
+    render(<NotaSefaz />)
+    const secao = await screen.findByTestId('descartadas')
+    expect(within(secao).getByTestId('descartadas-aviso')).toHaveTextContent('uma delas agora veio com itens')
+    const avisos = within(secao).getAllByTestId('descartada-com-itens')
+    expect(avisos).toHaveLength(1) // só a que tem itens
+    expect(avisos[0]).toHaveTextContent('Esta nota agora veio com 2 itens (o XML completo chegou)')
+  })
+
+  it('erro ao voltar para a fila mostra a mensagem e a nota continua descartada', async () => {
+    const d = semItens({ chave: k('1'), descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)' })
+    m.notasDescartadas.mockResolvedValue([d])
+    m.restaurarNota.mockRejectedValue(new Error('Não consegui voltar a nota para a fila agora. Confira a internet e tente de novo.'))
+    render(<NotaSefaz />)
+    const secao = await screen.findByTestId('descartadas')
+    await userEvent.click(within(secao).getByRole('button', { name: 'Voltar para a fila' }))
+    expect(await within(secao).findByRole('alert')).toHaveTextContent('Não consegui voltar a nota para a fila')
+    expect(screen.getByTestId('descartadas')).toBeInTheDocument()
+  })
+
+  it('falha ao ler as descartadas não derruba a lista de notas a lançar', async () => {
+    aLancar(nota({ chave: k('1') }))
+    m.notasDescartadas.mockRejectedValue(new Error('sem rede'))
+    render(<NotaSefaz />)
+    expect(await screen.findByTestId('nota-a-lancar')).toBeInTheDocument()
+    expect(screen.queryByText('Não consegui carregar as notas.')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('descartadas')).not.toBeInTheDocument()
   })
 })
