@@ -22,7 +22,7 @@
 ## Regra 2 (Ivan, 06/10/2026): nota pronta = só Lançar
 - Nota toda correta (itens associados conforme o XML, pagamento em boleto, financeiro batendo) vem com **só o botão Lançar**, mais uma área para **abrir e conferir** itens associados e financeiro.
 - Quando você tiver certeza de que um fornecedor já "aprendeu", só confirma. Critério combinado: 3 notas seguidas do fornecedor lançadas sem erro e sem você mudar nada.
-- **Ainda não construído** (a leitura precisa trazer boletos e totais do XML).
+- **No ar desde 06/10 (18h).** A leitura baixa o XML de todas as notas e grava os boletos. Nota pronta mostra o selo e só o Lançar; o painel "Conferir itens e financeiro" abre itens e parcelas. Notas de supermercado (MATEUS) vêm sem boleto (à vista): você escolhe como pagar.
 
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
