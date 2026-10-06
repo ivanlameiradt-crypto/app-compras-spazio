@@ -60,7 +60,7 @@
 
 ## Pedidos de 06/10 à noite — prontos em prévia, aguardando o seu OK para publicar
 - A aba passa a se chamar **"Lançamento fiscal"** (sem o "de"; "Lançamento de cupom" não muda).
-- **Últimos lançamentos:** cada item mostra o **número do produto no SisChef** (o código do fornecedor, "CÓD. FOR", saiu) e o detalhe mostra **"Lançada em dia/mês às hora"**.
+- **Últimos lançamentos:** cada item mostra o **número do produto no SisChef** (o código do fornecedor, "CÓD. FOR", saiu) e o detalhe mostra **"Lançada em dia/mês às hora"**. A quantidade vem só como número e unidade ("3,09 kg", "180 un"), sem "qtd" (no cupom ainda aparece "qtd").
 - **Caixa de associação de produto (etapa 1):** em cada item sem produto você digita o produto (lista de insumos que já está no app), escolhe, toca em **Confirmar** e o item ganha o **✓ verde
   "confirmado no app"** (dá para Trocar ou Desfazer). Se a unidade da nota difere da do produto (UN × KG) o app avisa que a conversão será pedida na etapa do robô.
 - **Atenção: a etapa 1 só guarda a sua escolha.** O Lançar dessas notas continua travado até a **etapa 2** (o robô aplicar a associação no SisChef), que precisa do seu OK e de um teste acompanhado.

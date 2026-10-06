@@ -69,6 +69,7 @@ describe('NotaSefaz', () => {
     expect(await screen.findByText(/NF no SisChef/)).toBeInTheDocument()
     expect(screen.getByText(/63980/)).toBeInTheDocument()
     expect(screen.getByText('TOMATE ITALIANO')).toBeInTheDocument()
+    expect(screen.getByText('8 kg')).toBeInTheDocument()                                 // só o peso e a unidade, sem "qtd"
     expect(screen.getByTestId('detalhe-quando')).toHaveTextContent('Lançada em: 05/10 às 09h00') // 12:00 UTC = 09h00 em Brasília/Belém
   })
 
@@ -79,6 +80,7 @@ describe('NotaSefaz', () => {
       itens: [
         { descricao: 'CÓD. FOR: 28236 ## GUARANÁ ANTARC. 350ML', qtd: 180, unidade_sischef: 'UN', produto_id: '1836986' as unknown as number, associacao: 'sischef', produto_nome: 'GUARANÁ ANTARC. 350ML' },
         { descricao: 'CÓD. FOR: 55 SEM PRODUTO NO REGISTRO', qtd: 2, unidade_sischef: 'KG', produto_id: null },
+        { descricao: 'CÓD. FOR: 11570 Q. GORGONZOLA - INSUMOS', qtd: 3.09, unidade_sischef: 'KG', produto_id: 3474203, associacao: 'sischef' },
       ],
     })])
     render(<NotaSefaz />)
@@ -86,10 +88,12 @@ describe('NotaSefaz', () => {
     const detalhe = (await screen.findByText(/NF no SisChef/)).closest('.detalhe') as HTMLElement
     const linhas = within(detalhe).getAllByRole('listitem')
     expect(linhas[0]).toHaveTextContent('1836986 ## GUARANÁ ANTARC. 350ML')
-    expect(linhas[0]).toHaveTextContent(/qtd 180 un/)
+    expect(linhas[0]).toHaveTextContent(/180 un$/)                                   // só a quantidade e a unidade, sem a abreviação "qtd"
+    expect(detalhe).not.toHaveTextContent(/qtd/i)
     expect(linhas[0].querySelector('b.cod')).toHaveTextContent('1836986')           // o número do produto fica em destaque
     expect(linhas[1]).toHaveTextContent('SEM PRODUTO NO REGISTRO')                  // sem produto_id: sem número, e mesmo assim sem o código do fornecedor
     expect(linhas[1].querySelector('b.cod')).toBeNull()
+    expect(linhas[2]).toHaveTextContent(/3474203 Q\. GORGONZOLA - INSUMOS3,09 kg$/)  // peso com vírgula e a unidade cadastrada, sem "qtd"
     expect(detalhe).not.toHaveTextContent(/CÓD\. FOR/)
     expect(detalhe).not.toHaveTextContent('28236')                                   // o código do fornecedor sumiu de vez
     expect(within(detalhe).getByTestId('detalhe-quando')).toHaveTextContent('Lançada em: 06/10 às 19h05') // 22:05 UTC = 19h05 em Belém

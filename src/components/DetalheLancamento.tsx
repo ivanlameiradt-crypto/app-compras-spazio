@@ -15,8 +15,10 @@ const qtd = (q: number): string => new Intl.NumberFormat('pt-BR', { maximumFract
 /** Unidade exata do cupom (UND, KG, PCT…), só em minúscula para ler melhor — nunca inventada: vazio quando não veio. */
 const unid = (u: string | null): string => (u ? u.trim().toLowerCase() : '')
 
-export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no SisChef', quando = null, rotuloQuando = 'Lançada em' }: {
+export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no SisChef', quando = null, rotuloQuando = 'Lançada em', rotuloQtd = true }: {
   pedido: string | null; itens: LinhaDetalhe[]; rotulo?: string
+  /** Escreve "qtd" na frente da quantidade (padrão: sim, como o cupom sempre fez). `false` = só o número e a unidade ("3,09 kg"). */
+  rotuloQtd?: boolean
   /** Dia e hora em que o lançamento foi feito no sistema, já formatado (ex.: "06/10 às 19h05"). Vazio = não mostra a linha. */
   quando?: string | null; rotuloQuando?: string
 }) {
@@ -34,7 +36,7 @@ export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no S
               <li key={i}>
                 <span className="desc">{it.codigo ? <><b className="cod">{it.codigo}</b> {it.descricao}</> : it.descricao}</span>
                 <span className="nums">
-                  {it.quantidade != null && `qtd ${qtd(it.quantidade)}${u ? ` ${u}` : ''}`}
+                  {it.quantidade != null && `${rotuloQtd ? 'qtd ' : ''}${qtd(it.quantidade)}${u ? ` ${u}` : ''}`}
                   {it.quantidade != null && it.valor != null && ' · '}
                   {it.valor != null && formatarReais(it.valor)}
                 </span>

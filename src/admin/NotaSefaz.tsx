@@ -477,7 +477,7 @@ export default function NotaSefaz() {
                     <span><b>lançada ✓</b> · {n.emitente} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
                     <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                   </button>
-                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} itens={n.itens.map(linhaDoItem)} />}
+                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map(linhaDoItem)} />}
                 </li>
               )
             })}
