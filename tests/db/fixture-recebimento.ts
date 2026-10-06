@@ -1,6 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, beforeEach } from 'vitest'
-import { novoBanco, como } from './banco'
+import { novoBanco, como, limpar } from './banco'
 import { fixarRelogio } from './relogio'
 import {
   semearCotacao, aprovar, preparar, cotacaoDe, congelar, responder, resp, chamar,
@@ -17,19 +17,24 @@ const ATE_D2 = '20261104000001_ia_leitura.sql' // exclusivo: aplica tudo que vem
 // Segredo do robô de NF-e (256 bits em hex). Inventado (repositório público).
 export const SEGREDO = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
 
-/** Um banco por arquivo, cadeia até a D2, com o segredo do robô no Vault e a cotação semeada a cada teste. */
-export function bancoRecebimento(): () => PGlite {
+/** Um banco por arquivo, cadeia até a D2 (ou, com `ate = null`, TODAS as migrations — para os blocos que vêm depois
+ * da D, como a Fase 3), com o segredo do robô no Vault e a cotação semeada a cada teste. */
+export function bancoRecebimento(ate: string | null = ATE_D2): () => PGlite {
   let db: PGlite | undefined
-  beforeAll(async () => { db = await novoBanco(ATE_D2) })
+  beforeAll(async () => { db = await novoBanco(ate ?? undefined) })
   beforeEach(async () => {
-    // truncate próprio (a cadeia até a D2 não tem as tabelas da B que o limpar() compartilhado trunca)
-    await db!.exec(
-      'truncate usuarios, semanas, itens_semana, compras, compras_itens, historico_alteracoes, ' +
-        'cot_vendedores, cot_fornecedores, cot_catalogo, cot_feriados, cot_cadastros_aplicados, cot_cotacoes, ' +
-        'cot_codigos, cot_itens, cot_envios, cot_pedidos, cot_limites, cot_avisos, cot_categorias, ' +
-        'cot_pedidos_acomp, cot_recebimentos, cot_fornecedores_cnpj, cot_nfe, cot_nfe_leituras restart identity cascade',
-    )
-    await fixarRelogio(db!, null)
+    if (ate === null) {
+      await limpar(db!) // a cadeia inteira: o limpar() compartilhado conhece todas as tabelas (e zera o relógio)
+    } else {
+      // truncate próprio (a cadeia até a D2 não tem as tabelas da B que o limpar() compartilhado trunca)
+      await db!.exec(
+        'truncate usuarios, semanas, itens_semana, compras, compras_itens, historico_alteracoes, ' +
+          'cot_vendedores, cot_fornecedores, cot_catalogo, cot_feriados, cot_cadastros_aplicados, cot_cotacoes, ' +
+          'cot_codigos, cot_itens, cot_envios, cot_pedidos, cot_limites, cot_avisos, cot_categorias, ' +
+          'cot_pedidos_acomp, cot_recebimentos, cot_fornecedores_cnpj, cot_nfe, cot_nfe_leituras restart identity cascade',
+      )
+      await fixarRelogio(db!, null)
+    }
     await db!.exec('truncate vault.decrypted_secrets')
     await db!.exec(`insert into vault.decrypted_secrets (name, decrypted_secret) values ('cot_nfe_robo', '${SEGREDO}')`)
     await semearCotacao(db!)

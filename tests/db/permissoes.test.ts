@@ -103,9 +103,11 @@ const DO_APP = [
   'cot_descartar_fator(bigint,bigint,numeric)',
 ]
 
-/** A página do vendedor (chave anônima): estas duas + as 3 do robô de NF-e (só com o segredo, Fase 2 D). */
+/** A página do vendedor (chave anônima): estas duas + as 4 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,
+ * cot_nfe_marcar_estado, é da Fase 3 — o robô grava 'revisar'/'erro'/'ensaio_ok' no fim do disparo do "Lançar"). */
 const DA_PAGINA = ['cotacao_abrir(text,boolean)', 'cotacao_responder(text,uuid,jsonb,jsonb)']
-const DO_ROBO_NFE = ['cot_nfe_sincronizar(text,jsonb)', 'cot_nfe_marcar_notificado(text,text,text,text)', 'cot_nfe_marcar_lancadas(text,jsonb)']
+const DO_ROBO_NFE = ['cot_nfe_sincronizar(text,jsonb)', 'cot_nfe_marcar_notificado(text,text,text,text)', 'cot_nfe_marcar_lancadas(text,jsonb)',
+  'cot_nfe_marcar_estado(text,jsonb)']
 const ANON = [...DA_PAGINA, ...DO_ROBO_NFE]
 
 /** Chamadas pelo robô com a chave de serviço (grant explícito). */
@@ -251,7 +253,7 @@ describe('tabelas: leitura pela RLS, escrita só pelas funções', () => {
 })
 
 describe('funções: lista completa de grants', () => {
-  it('anon executa as 2 da página do vendedor + as 3 do robô de NF-e (Fase 2 D)', async () => {
+  it('anon executa as 2 da página do vendedor + as 4 do robô de NF-e (Fase 2 D + Fase 3)', async () => {
     const db = await banco()
     expect(await funcoesQue(db, 'anon')).toEqual([...ANON].sort())
     await expect(como(db, 'anon', 'select eh_admin()')).rejects.toThrow(/permission denied/)
