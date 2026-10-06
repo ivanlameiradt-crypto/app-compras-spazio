@@ -743,6 +743,27 @@ describe('Fase 3 — associar o produto de um item pelo app (cot_nfe_associar)',
     expect(await erroDe(associar(db, ADMIN, 1, OLEO))).toBe('esta nota não está mais na fila: não dá para associar')
   })
 
+  it('produto novo (criado no SisChef depois da lista semanal): vale o palpite do robô PARA ESSE ITEM; nome do palpite, unidade em branco; só o palpite daquele item autoriza', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    const BIS = 3476455
+    await sync(db, [nota({ itens: [
+      nfeItem({ sugestao: { id: String(BIS), nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS' } }),
+      nfeItem({ n: 2, cod_forn: '99', descricao: 'OUTRO', sugestao: { id: '3469626', nome: 'LEITE CONDENSADO - INSUMOS' } }),
+      nfeItem({ n: 3, cod_forn: '98', descricao: 'SEM PALPITE' }),
+    ] })])
+    expect((await como(db, ADMIN, 'select count(*)::int as n from itens_semana where produto_id = $1', [BIS]))[0].n).toBe(0) // não está na lista semanal
+    expect(await erroDe(associar(db, ADMIN, 2, BIS))).toBe('produto fora da lista de insumos')   // o palpite do item 1 não vale para o item 2
+    expect(await erroDe(associar(db, ADMIN, 3, BIS))).toBe('produto fora da lista de insumos')   // item sem palpite
+    expect(await erroDe(associar(db, ADMIN, 1, 3476456))).toBe('produto fora da lista de insumos') // outro código que não é o palpite
+    await associar(db, ADMIN, 1, BIS)
+    const d = (await decisoes(db)).associacoes_app['1']
+    expect(d).toMatchObject({ produto_id: BIS, produto_nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS', unidade: null, origem: 'sugestao' })
+    await associar(db, ADMIN, 2, 3469626)                                                         // este está na lista semanal: vale a lista (com a unidade)
+    expect((await decisoes(db)).associacoes_app['2']).toMatchObject({ produto_id: 3469626, unidade: 'kg', origem: 'lista' })
+    expect((await decisoes(db)).associacoes_app['2'].produto_nome).toBe('LEITE CONDESSADO - INSUMOS (KG)')
+  })
+
   it('a leitura da SEFAZ NUNCA apaga a decisão (ela reescreve os itens a cada rodada); se o item passa a ter produto no SisChef, a decisão fica guardada mas o item já vem associado', async () => {
     const db = await bancoF3F()
     await catalogo(db)

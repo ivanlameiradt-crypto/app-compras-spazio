@@ -36,9 +36,17 @@ export function unidadesDiferem(unidadeNota: string | null | undefined, unidadeP
   return a !== '' && b !== '' && a !== b
 }
 
-/** O palpite do robô de leitura para o item (item.sugestao), se esse produto está na lista de insumos do app; senão null. */
+/**
+ * O palpite do robô de leitura para o item (item.sugestao). Se o produto está na lista de insumos do app, devolve o da lista (nome e unidade
+ * dela). Se NÃO está — produto novo, criado no SisChef depois da lista semanal (ex.: CHOCOLATE BIS) —, devolve o palpite mesmo assim, marcado
+ * `novo`, com o nome do palpite e sem unidade: o banco aceita esse produto só para ESTE item (cot_nfe_associar confere o código). Sem palpite
+ * utilizável (sem código inteiro positivo ou sem nome): null.
+ */
 export function sugestaoNoCatalogo(it: ItemNotaSefaz, catalogo: ProdutoCatalogo[]): ProdutoCatalogo | null {
   const id = Number(it.sugestao?.id)
-  if (!Number.isFinite(id)) return null
-  return catalogo.find((p) => p.produto_id === id) ?? null
+  if (!Number.isInteger(id) || id <= 0) return null
+  const daLista = catalogo.find((p) => p.produto_id === id)
+  if (daLista) return daLista
+  const nome = (it.sugestao?.nome ?? '').replace(/\s+/g, ' ').trim()
+  return nome === '' ? null : { produto_id: id, nome, unidade: null, novo: true }
 }

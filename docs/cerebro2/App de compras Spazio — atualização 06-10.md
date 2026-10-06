@@ -65,7 +65,8 @@
   "confirmado no app"** (dá para Trocar ou Desfazer). Se a unidade da nota difere da do produto (UN × KG) o app avisa que a conversão será pedida na etapa do robô.
 - **Atenção: a etapa 1 só guarda a sua escolha.** O Lançar dessas notas continua travado até a **etapa 2** (o robô aplicar a associação no SisChef), que precisa do seu OK e de um teste acompanhado.
   Cuidado: o SisChef guarda a associação para as próximas notas do fornecedor, então uma associação errada se repete.
-- Só entram produtos da lista de insumos do app. Produto novo (ex.: CHOC LACTA BIS da MATEUS 89284) só aparece depois de entrar na lista semanal; até lá, cadastrar/associar no SisChef.
+- A busca digitada acha os produtos da lista de insumos do app (renovada toda segunda-feira). **Produto novo criado no SisChef no meio da semana** (ex.: CHOCOLATE BIS ORIGINAL, cód. 3476455, que você
+  ajustou em 06/10) aparece pela **"Sugestão do robô"** do item, marcado "produto novo no SisChef": o robô já enxerga o produto no SisChef. A unidade desse produto fica em branco.
 
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.

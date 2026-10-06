@@ -9,13 +9,16 @@
 --
 -- Desenho: uma coluna jsonb em cot_nfe em vez de mexer em `itens`. A leitura da SEFAZ (cot_nfe_sincronizar) reescreve `itens` a cada rodada
 -- e apagaria a decisão; a coluna nova a leitura nunca toca (o `on conflict do update` dela só lista as colunas dela).
---   associacoes_app = { "<n do item na NF>": { "produto_id": 3138573, "produto_nome": "...", "unidade": "un", "por": "email", "em": "timestamp" } }
--- O nome e a unidade do produto vêm do servidor (itens_semana, a semana mais nova em que o produto aparece), nunca do aparelho.
+--   associacoes_app = { "<n do item na NF>": { "produto_id": 3138573, "produto_nome": "...", "unidade": "un", "origem": "lista", "por": "email", "em": "timestamp" } }
+-- O nome e a unidade do produto vêm do servidor (itens_semana, a semana mais nova em que o produto aparece; ou, para produto novo, o palpite do
+-- robô gravado no próprio item), nunca do aparelho. `origem`: 'lista' (itens_semana) ou 'sugestao' (palpite do robô).
 --
 -- cot_nfe_associar (admin): só nota 'na_fila' que não está descartada, não ficou pela metade ('erro') e que o robô não está lançando agora
 -- (reserva 'lancando' de menos de 30 min — o mesmo limite da Edge Function lancar-nfe); só item que ainda NÃO tem produto de verdade no SisChef
--- (item "decidido só pelo painel" pode ser refeito); só produto que existe em itens_semana. Escolher de novo troca a decisão; com
--- p_produto_id nulo a decisão é desfeita (não dá erro se não havia). Grava o antes/depois em historico_alteracoes.
+-- (item "decidido só pelo painel" pode ser refeito); só produto que existe em itens_semana OU que é o palpite do robô PARA ESSE ITEM
+-- (item.sugestao: o robô lê o cadastro do SisChef; vale para produto novo, criado no SisChef depois da lista semanal — ex.: CHOCOLATE BIS —,
+-- que só entra em itens_semana na semana seguinte; nesse caso o nome vem do palpite e a unidade fica em branco). Escolher de novo troca a
+-- decisão; com p_produto_id nulo a decisão é desfeita (não dá erro se não havia). Grava o antes/depois em historico_alteracoes.
 
 alter table public.cot_nfe
   add column if not exists associacoes_app jsonb
@@ -26,7 +29,9 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_nf cot_nfe;
   v_item jsonb;
-  v_prod record;
+  v_nome text;
+  v_unidade text;
+  v_origem text;
   v_antes jsonb;
   v_depois jsonb;
 begin
@@ -56,10 +61,17 @@ begin
   if coalesce(btrim(v_item ->> 'produto_id'), '') <> '' and coalesce(lower(btrim(v_item ->> 'associacao')), '') <> 'painel' then
     raise exception 'este item já está associado no SisChef';
   end if;
-  select i.produto, i.unidade into v_prod from itens_semana i where i.produto_id = p_produto_id order by i.semana_id desc, i.id desc limit 1;
-  if not found then raise exception 'produto fora da lista de insumos'; end if;
+  select i.produto, i.unidade into v_nome, v_unidade from itens_semana i where i.produto_id = p_produto_id order by i.semana_id desc, i.id desc limit 1;
+  if found then
+    v_origem := 'lista';
+  elsif coalesce(v_item #>> '{sugestao,id}', '') = p_produto_id::text and btrim(coalesce(v_item #>> '{sugestao,nome}', '')) <> '' then
+    v_nome := left(btrim(v_item #>> '{sugestao,nome}'), 200); v_unidade := null; v_origem := 'sugestao'; -- produto novo: ainda fora de itens_semana
+  else
+    raise exception 'produto fora da lista de insumos';
+  end if;
 
-  v_depois := jsonb_build_object('produto_id', p_produto_id, 'produto_nome', v_prod.produto, 'unidade', v_prod.unidade,
+  v_nome := regexp_replace(btrim(v_nome), '\s+', ' ', 'g'); -- o cadastro às vezes traz espaço duplo ("LEITE CONDESSADO  - INSUMOS"): guarda com espaço simples
+  v_depois := jsonb_build_object('produto_id', p_produto_id, 'produto_nome', v_nome, 'unidade', v_unidade, 'origem', v_origem,
                                  'por', email_atual(), 'em', cot_agora());
   update cot_nfe set associacoes_app = coalesce(associacoes_app, '{}'::jsonb) || jsonb_build_object(p_n::text, v_depois), atualizado_em = cot_agora()
    where chave = p_chave;

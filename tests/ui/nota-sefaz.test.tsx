@@ -989,8 +989,22 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 3469626))
     })
 
-    it('palpite que não está na lista de insumos do app não aparece como sugestão', async () => {
-      aLancar(nota({ itens: [sem(1, { sugestao: { id: '999', nome: 'NÃO ESTÁ NA LISTA' } })] }))
+    it('produto NOVO (o robô já o vê no SisChef, mas ele não está na lista semanal do app): a sugestão aparece marcada como nova e dá para confirmar', async () => {
+      aLancar(nota({ itens: [sem(1, { sugestao: { id: '3476455', nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS' } })] }))
+      render(<NotaSefaz />)
+      const sug = await screen.findByTestId('sugestao-robo')
+      expect(sug).toHaveTextContent('Sugestão do robô: CHOCOLATE BIS ORIGINAL - INSUMOS · produto novo no SisChef')
+      await userEvent.click(within(sug).getByRole('button', { name: 'CHOCOLATE BIS ORIGINAL - INSUMOS' }))
+      const escolhido = await screen.findByTestId('produto-escolhido')
+      expect(escolhido).toHaveTextContent('CHOCOLATE BIS ORIGINAL - INSUMOS')
+      expect(escolhido).toHaveTextContent('cód. 3476455 · novo, ainda fora da lista semanal')
+      expect(screen.queryByTestId('aviso-unidade')).not.toBeInTheDocument()            // sem unidade conhecida, não há como comparar
+      await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 3476455))
+    })
+
+    it('palpite sem código válido não vira sugestão', async () => {
+      aLancar(nota({ itens: [sem(1, { sugestao: { id: 'abc', nome: 'SEM CÓDIGO' } })] }))
       render(<NotaSefaz />)
       await campo()
       expect(screen.queryByTestId('sugestao-robo')).not.toBeInTheDocument()
@@ -1038,7 +1052,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       const itens = (await painel()).getAllByTestId('conferir-item')
       expect(within(itens[0]).getByTestId('item-confirmado')).toBeInTheDocument()
       expect(within(itens[1]).queryByTestId('item-confirmado')).not.toBeInTheDocument()
-      expect(within(itens[1]).getByLabelText('Produto do SisChef')).toBeInTheDocument()
+      expect(await within(itens[1]).findByLabelText('Produto do SisChef')).toBeInTheDocument()   // o campo só aparece quando a lista de produtos termina de carregar
       expect(screen.getByTestId('bloqueio-nota')).toHaveClass('erro')
       expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef: associe lá antes de lançar')
     })

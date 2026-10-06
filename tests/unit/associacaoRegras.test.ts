@@ -70,11 +70,17 @@ describe('sugestaoNoCatalogo (o palpite do robô)', () => {
     expect(sugestaoNoCatalogo(item({ sugestao: { id: '3469626', nome: 'LEITE CONDENSADO - INSUMOS' } }), CATALOGO)?.produto_id).toBe(3469626)
     expect(sugestaoNoCatalogo(item({ sugestao: { id: 3138573, nome: 'x' } }), CATALOGO)?.nome).toBe('ÓLEO DE SOJA - INSUMOS (UN)')
   })
-  it('null quando não há palpite, o código não é número ou o produto não está na lista de insumos', () => {
+  it('palpite de produto que NÃO está na lista de insumos (produto novo no SisChef): vale mesmo assim, marcado como "novo", com o nome do palpite e sem unidade', () => {
+    expect(sugestaoNoCatalogo(item({ sugestao: { id: '3476455', nome: ' CHOCOLATE  BIS ORIGINAL - INSUMOS ' } }), CATALOGO))
+      .toEqual({ produto_id: 3476455, nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS', unidade: null, novo: true })
+    expect(sugestaoNoCatalogo(item({ sugestao: { id: 3469626, nome: 'x' } }), [])).toMatchObject({ produto_id: 3469626, novo: true })
+    expect(sugestaoNoCatalogo(item({ sugestao: { id: '3469626', nome: 'LEITE CONDENSADO - INSUMOS' } }), CATALOGO)?.novo).toBeUndefined() // o da lista não é "novo"
+  })
+  it('null quando não há palpite, o código não é inteiro positivo ou o palpite veio sem nome', () => {
     expect(sugestaoNoCatalogo(item({}), CATALOGO)).toBeNull()
     expect(sugestaoNoCatalogo(item({ sugestao: null }), CATALOGO)).toBeNull()
-    expect(sugestaoNoCatalogo(item({ sugestao: { id: 'abc', nome: 'x' } }), CATALOGO)).toBeNull()
-    expect(sugestaoNoCatalogo(item({ sugestao: { id: 999, nome: 'x' } }), CATALOGO)).toBeNull()
-    expect(sugestaoNoCatalogo(item({ sugestao: { id: 3469626, nome: 'x' } }), [])).toBeNull()
+    for (const id of ['abc', '', '0', '-5', '12.5']) expect(sugestaoNoCatalogo(item({ sugestao: { id, nome: 'x' } }), CATALOGO)).toBeNull()
+    expect(sugestaoNoCatalogo(item({ sugestao: { id: 999, nome: '   ' } }), CATALOGO)).toBeNull()
+    expect(sugestaoNoCatalogo(item({ sugestao: { id: null as unknown as string, nome: 'x' } }), CATALOGO)).toBeNull()
   })
 })

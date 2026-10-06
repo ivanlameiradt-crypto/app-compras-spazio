@@ -69,6 +69,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             <p className="sub" data-testid="sugestao-robo">
               Sugestão do robô:{' '}
               <button type="button" className="link" disabled={enviando} onClick={() => { setEscolhido(sugestao); setTexto('') }}>{sugestao.nome}</button>
+              {sugestao.novo && <> <span className="sem-quebra">· produto novo no SisChef</span></>}
             </p>
           )}
           {busca.itens.length > 0 && (
@@ -97,7 +98,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
           <div className="escolhido" data-testid="produto-escolhido">
             <b>{escolhido.nome}</b>{' '}
             <span className="sub">
-              <span className="sem-quebra">cód. {escolhido.produto_id}{escolhido.unidade ? ` · ${unid(escolhido.unidade)}` : ''}</span>{' · '}
+              <span className="sem-quebra">cód. {escolhido.produto_id}{escolhido.unidade ? ` · ${unid(escolhido.unidade)}` : ''}{escolhido.novo ? ' · novo, ainda fora da lista semanal' : ''}</span>{' · '}
               <button type="button" className="link" disabled={enviando} onClick={() => setEscolhido(null)}>Escolher outro</button>
             </span>
           </div>

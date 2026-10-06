@@ -398,7 +398,11 @@ export interface ItemNotaSefaz {
  *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 1: só guardado; o robô ainda não aplica no SisChef. */
 export interface AssociacaoApp { produto_id: number; produto_nome: string; unidade: string | null; por?: string | null; em?: string | null }
 /** Produto da lista de insumos do app (itens_semana; o código é o do SisChef): o que o Ivan pode escolher ao associar um item da nota. */
-export interface ProdutoCatalogo { produto_id: number; nome: string; unidade: string | null }
+export interface ProdutoCatalogo {
+  produto_id: number; nome: string; unidade: string | null
+  /** Produto NOVO: o robô já o vê no SisChef (palpite do item), mas ele ainda não entrou na lista semanal de insumos do app; sem unidade conhecida. */
+  novo?: boolean
+}
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
 /** Parcela que o Ivan digita quando o XML não traz as duplicatas: vencimento aaaa-mm-dd e valor em reais. */
