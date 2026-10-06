@@ -21,7 +21,8 @@
 
 ## Regras
 - **No lançamento real, use só Boleto** até as outras formas serem testadas ao vivo.
-- O lançamento real só acontece com a **trava dupla** ligada (`MOTOR_NFE_LIGADO`). Fora do teste acompanhado ela fica desligada.
+- **REGRA (Ivan, 06/10/2026): nota que você revisou no app, com a forma de pagamento escolhida e confirmada (Lançar → Confirmar), é para ser lançada de verdade.** Não pedir nova autorização. A trava `MOTOR_NFE_LIGADO` fica **ligada**.
+- O robô ainda para a nota quando algo não bate (item sem produto, conta especial, total diferente, nota que já saiu da fila). Isso protege você, não é falta de autorização.
 - Nota "pela metade" (erro) **nunca** se lança de novo pelo app: conferir no Sischef.
 - Item sem produto no Sischef ou conta especial (KONDO, Mercado Livre) bloqueia o Lançar.
 
@@ -29,7 +30,7 @@
 1. Publicar a correção da nota presa.
 2. Fila de 06/10: 7 notas. Prontas para lançar: MERCURIO 002270842, MATEUS 000089282, MC CONTENTE 000002278.
    Precisam de associação no Sischef: SEARA 000187105, MERCURIO 002270833, MATEUS 000089284 e 000089283.
-3. Teste acompanhado: primeiro o ensaio, depois 1 nota real em Boleto.
+3. Ligar `MOTOR_NFE_LIGADO=ON` (só você consegue, é secret do GitHub) e lançar a 1ª nota real em Boleto.
 4. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
 5. **Renovar o GITHUB_PAT antes de 27/10.**
 6. Cotação com vendedores: ensaio 09/10 e piloto 19/10 (sem mudança no app desde 30/09).

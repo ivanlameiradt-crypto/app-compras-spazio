@@ -63,7 +63,11 @@ vigia do PC espera `lancar-cupom.yml`/`lancar-nfe.yml`; passo com limite de 15 m
 ## Regras que não podem ser quebradas
 - O robô da NF-e **nunca** usa a service_role — só a chave anônima + o segredo `cot_nfe_robo`. A reserva é feita pela Edge
   Function com a service_role.
-- Lançamento real só com a **trava dupla** (`modo=real` E `MOTOR_NFE_LIGADO=ON`); fora do teste supervisionado ela fica OFF.
+- **REGRA DO IVAN (06/10/2026, vale acima do que está escrito sobre a trava):** nota que o Ivan revisou no app, com a forma de
+  pagamento escolhida e confirmada no "Lançar → Confirmar", **é para ser lançada de verdade**. Não pedir nova autorização nem
+  deixar a trava `MOTOR_NFE_LIGADO` desligada fora de teste. A trava dupla (`modo=real` E `MOTOR_NFE_LIGADO=ON`) continua
+  existindo, mas ligada. As travas de consistência do robô (item sem produto, conta especial, total que não bate, nota que
+  já saiu da fila) seguem parando a nota: elas não são "pedir permissão", protegem o Ivan de lançar errado.
 - Nunca adivinhar forma de pagamento nem unidade.
 - Função nova no Supabase: reaplicar a lista completa de grants no fim da migração e declará-la nos testes
   (`permissoes`/`nfe`).
