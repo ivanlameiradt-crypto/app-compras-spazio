@@ -8,8 +8,9 @@ import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
   AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  FORNECEDORES_XML_SEM_PAGAMENTO, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, lancandoPresa, lembrarForma, linhasIniciais,
-  parseValorBr, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado, traduzirMotivo, validarParcelasDigitadas,
+  FORNECEDORES_XML_SEM_PAGAMENTO, descartadaVoltouComItens, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, lancandoPresa, lembrarForma,
+  linhasIniciais, motivoDoDescarte, parseValorBr, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
+  traduzirMotivo, validarParcelasDigitadas,
   type LinhaParcela, type ResultadoParcelas,
 } from './notaSefazRegras'
 
@@ -28,6 +29,9 @@ const ddmm = (iso: string): string => { const p = iso.split('-'); return p.lengt
 const dataBr = (iso: string | null): string => { const p = (iso ?? '').split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—' }
 /** Tira o prefixo "CÓD. FOR: 123456 " que o SisChef põe na descrição, para o painel de conferir ficar legível. */
 const semCodFor = (d: string): string => d.replace(/^CÓD\. FOR:\s*\S+\s*/i, '').trim() || d
+/** Quantidade no jeito brasileiro: 19,918 (e não 19.918, que no Brasil lê-se como dezenove mil) e 1.000,5; sem quantidade, "?". */
+const qtdBr = (q: number | null | undefined): string =>
+  q == null || !Number.isFinite(Number(q)) ? '?' : Number(q).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
 const nomeDoProduto = (it: ItemNotaSefaz): string =>
   it.produto_nome?.trim() || (it.produto_id != null && String(it.produto_id).trim() !== '' ? `produto ${it.produto_id}` : 'sem produto')
 
@@ -38,10 +42,11 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
     <details className="conferir" data-testid="conferir">
       <summary>Conferir itens e financeiro</summary>
       <div className="grupo">Itens e produtos associados</div>
+      {nota.itens.length === 0 && <p className="sub" data-testid="conferir-sem-itens">Nenhum item lido: no SisChef esta nota costuma aparecer como “XML resumido” (só o resumo da nota, sem os itens).</p>}
       <ul className="conferir-itens">
         {nota.itens.map((it, i) => (
           <li key={i} data-testid="conferir-item">
-            <span>{semCodFor(it.descricao)} · {it.qtd ?? '?'} {it.unidade_sischef ?? ''}</span>
+            <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
             <b>{nomeDoProduto(it)}</b>
             <span className="sub">{(it.associacao ?? '') === 'sischef' ? 'associado no SisChef' : (it.associacao ?? '') === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>
           </li>
@@ -49,7 +54,7 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
       </ul>
       <div className="grupo">Financeiro</div>
       {!f.lido ? <p className="sub" data-testid="fin-nao-lido">Os boletos ainda não foram lidos do XML. Aparecem na próxima leitura do SisChef.</p>
-        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">A nota não tem boletos (duplicatas). Escolha como pagar.</p>
+        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">O XML da nota não traz boletos (duplicatas). Digite as parcelas do boleto ou escolha outra forma de pagamento.</p>
         : (
           <>
             <ul className="conferir-itens">
@@ -125,7 +130,8 @@ interface PropsNota {
   padroes: Record<string, string>
   /** Notas seguidas lançadas em boleto por fornecedor (CNPJ): 3 ou mais = fornecedor "aprendido". */
   seguidas: Record<string, number>
-  aoLancar: () => Promise<void>
+  /** Recarrega as listas (depois de lançar ou de descartar uma nota). */
+  recarregar: () => Promise<void>
   /** Outra nota está 'lancando' (o robô é um por vez: o GitHub guarda só 1 disparo pendente e cancelaria o resto). */
   outraLancando: boolean
   /** Algum "Confirmar" está enviando agora (nesta ou em outra nota). */
@@ -134,13 +140,15 @@ interface PropsNota {
   iniciarEnvio: () => boolean
   fimEnvio: () => void
 }
-function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio, iniciarEnvio, fimEnvio }: PropsNota) {
+function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnvio, iniciarEnvio, fimEnvio }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
+  const [descartando, setDescartando] = useState(false) // aberta a pergunta "Descartar a nota?"
+  const [descartandoEnvio, setDescartandoEnvio] = useState(false)
   const [linhas, setLinhas] = useState<LinhaParcela[]>(() => linhasIniciais(nota)) // parcelas digitadas (boleto sem duplicatas no XML)
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
@@ -178,7 +186,7 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
       else await api.lancarNota(nota.chave, forma)
       lembrarForma(nota.emitente, forma)
       setConfirmando(false)
-      await aoLancar() // recarrega: a nota passa a aparecer como "lançando"
+      await recarregar() // recarrega: a nota passa a aparecer como "lançando"
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui lançar agora. Tente de novo.')
       setConfirmando(false)
@@ -186,6 +194,22 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
       trancado.current = false
       setEnviando(false)
       fimEnvio()
+    }
+  }
+
+  // Regra 3: nota que não dá para lançar pode ser descartada (sai da lista; nada muda no SisChef). Nunca a pela metade nem a lançando agora.
+  const descartavel = podeDescartar(nota) && !enviando
+  async function descartar() {
+    if (descartandoEnvio) return
+    setDescartandoEnvio(true); setErro('')
+    try {
+      await api.descartarNota(nota.chave, motivoDoDescarte(nota))
+      await recarregar() // a nota sai de "Notas a lançar" e passa a aparecer em "Notas descartadas"
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não consegui descartar agora. Tente de novo.')
+      setDescartando(false)
+    } finally {
+      setDescartandoEnvio(false)
     }
   }
 
@@ -259,6 +283,23 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
           <button type="button" className="botao" disabled={!podeLancar} onClick={() => { setErro(''); setConfirmando(true) }}>Lançar</button>
         </div>
       )}
+      {descartavel && !confirmando && (descartando ? (
+        <div className="bloco-envio" data-testid="confirmar-descarte">
+          <p>Descartar a NF {nota.numero} de {nota.emitente}?</p>
+          <p className="sub">
+            Ela sai desta lista e nada é lançado. Não muda nada no SisChef nem na SEFAZ: a compra continua pendente lá, sem entrada no estoque nem no
+            financeiro. Dá para desfazer em “Notas descartadas”.{nota.itens.length === 0 && ' Se o XML completo chegar depois, você vê um aviso lá.'}
+          </p>
+          <div className="acoes">
+            <button type="button" className="botao perigo" disabled={descartandoEnvio} onClick={() => void descartar()}>
+              {descartandoEnvio ? 'Descartando…' : 'Descartar'}
+            </button>
+            <button type="button" className="botao secundario" disabled={descartandoEnvio} onClick={() => setDescartando(false)}>Cancelar</button>
+          </div>
+        </div>
+      ) : (
+        <div><button type="button" className="link perigo" data-testid="descartar-nota" onClick={() => { setErro(''); setDescartando(true) }}>Descartar nota</button></div>
+      ))}
       {erro && <p className="erro" role="alert">{erro}</p>}
     </li>
   )
@@ -267,6 +308,9 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
 export default function NotaSefaz() {
   const [aLancar, setALancar] = useState<NotaSefazLista[]>([])
   const [lancadas, setLancadas] = useState<NotaSefazLista[]>([])
+  const [descartadas, setDescartadas] = useState<NotaSefazLista[]>([]) // as que o Ivan descartou (ainda na fila do SisChef)
+  const [voltando, setVoltando] = useState<string | null>(null) // chave da descartada que está voltando para a fila
+  const [erroDescartadas, setErroDescartadas] = useState('')
   const envioRef = useRef(false)
   const [emEnvio, setEmEnvio] = useState(false)
   const iniciarEnvio = (): boolean => { if (envioRef.current) return false; envioRef.current = true; setEmEnvio(true); return true }
@@ -284,12 +328,28 @@ export default function NotaSefaz() {
     // O padrão por fornecedor é só uma sugestão: se falhar, a tela segue sem ele (Boleto).
     const padrao = Promise.resolve(api.formasPadraoPorFornecedor()).catch(() => ({}))
     const aprendidos = Promise.resolve(api.lancamentosSeguidosEmBoleto()).catch(() => ({}))
-    return Promise.all([api.notasALancar(), api.notasLancadas(), padrao, aprendidos])
-      .then(([a, l, p, s]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setFalha(false) })
+    // As descartadas também são só um complemento: se a leitura delas falhar, a lista de notas a lançar segue normal.
+    const descartadasLidas = Promise.resolve(api.notasDescartadas()).catch(() => [] as NotaSefazLista[])
+    return Promise.all([api.notasALancar(), api.notasLancadas(), padrao, aprendidos, descartadasLidas])
+      .then(([a, l, p, s, d]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setDescartadas(d ?? []); setFalha(false) })
       .catch(() => { if (!silencioso) setFalha(true) })
       .finally(() => setCarregando(false))
   }
   useEffect(() => { void carregar() }, [])
+
+  /** Desfaz o descarte: a nota volta para "Notas a lançar". */
+  async function voltar(chave: string) {
+    if (voltando) return
+    setVoltando(chave); setErroDescartadas('')
+    try {
+      await api.restaurarNota(chave)
+      await carregar(true)
+    } catch (e) {
+      setErroDescartadas(e instanceof Error ? e.message : 'Não consegui voltar a nota para a fila. Tente de novo.')
+    } finally {
+      setVoltando(null)
+    }
+  }
 
   // Enquanto o robô trabalha em alguma nota, olha de novo a cada ~15 s (e para quando nenhuma estiver 'lancando' — presa não conta).
   const algumaLancando = aLancar.some((n) => n.lancamento_estado === 'lancando' && !lancandoPresa(n))
@@ -311,13 +371,40 @@ export default function NotaSefaz() {
         : (
           <>
             <ul className="recentes">
-              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} aoLancar={() => carregar(true)}
+              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
                 emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
           </>
         ))}
+
+      {!falha && descartadas.length > 0 && (
+        <details className="conferir descartadas" data-testid="descartadas">
+          <summary>
+            Notas descartadas ({descartadas.length})
+            {descartadas.some(descartadaVoltouComItens) && <b data-testid="descartadas-aviso"> · uma delas agora veio com itens</b>}
+          </summary>
+          <p className="sub">Estas notas saíram de “Notas a lançar” e o robô não as lança. Nada foi mudado no SisChef nem na SEFAZ.</p>
+          <ul className="conferir-itens">
+            {descartadas.map((n) => (
+              <li key={n.chave} data-testid="nota-descartada">
+                <span><b>{n.emitente}</b> · NF {n.numero} · {ddmm(n.emissao)}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
+                {n.descartada_motivo && <span className="sub">Motivo: {n.descartada_motivo}</span>}
+                {descartadaVoltouComItens(n) && (
+                  <span className="ok" data-testid="descartada-com-itens">
+                    Esta nota agora veio com {n.itens.length} {n.itens.length === 1 ? 'item' : 'itens'} (o XML completo chegou). Volte para a fila para conferir e lançar.
+                  </span>
+                )}
+                <button type="button" className="link" disabled={voltando !== null} onClick={() => void voltar(n.chave)}>
+                  {voltando === n.chave ? 'Voltando…' : 'Voltar para a fila'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {erroDescartadas && <p className="erro" role="alert">{erroDescartadas}</p>}
+        </details>
+      )}
 
       <div className="grupo">Últimos lançamentos</div>
       {!falha && (lancadas.length === 0

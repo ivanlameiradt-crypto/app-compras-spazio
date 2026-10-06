@@ -101,6 +101,9 @@ const DO_APP = [
   'lista_regra_remover(bigint)',
   'cot_fatores_a_confirmar()',
   'cot_descartar_fator(bigint,bigint,numeric)',
+  // Fase 3: descartar a nota que não dá para lançar (admin) e desfazer
+  'cot_nfe_descartar(text,text)',
+  'cot_nfe_restaurar(text)',
 ]
 
 /** A página do vendedor (chave anônima): estas duas + as 4 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,

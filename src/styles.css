@@ -45,6 +45,8 @@ input, select { font: inherit; padding: 10px 12px; border-radius: 10px; border: 
 .botao:disabled { opacity: .5; }
 .link { background: none; border: 0; color: var(--marca); font: inherit; cursor: pointer; padding: 4px; }
 .link.perigo { color: var(--alerta); }
+.cupom button.link.perigo { color: var(--alerta); }
+.botao.perigo { background: var(--alerta); }
 .faixa { margin: 0 16px 8px; padding: 8px 12px; border-radius: 10px; background: var(--aviso-fundo); color: var(--aviso-texto); font-size: 14px; }
 .erro { color: var(--alerta); }
 .aviso { color: var(--suave); font-size: 14px; }
@@ -188,6 +190,7 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .conferir-itens { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
 .cupom .conferir-itens li { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; font-size: 13px; }
 .cupom .conferir-itens li b { font-weight: 600; word-break: break-word; }
+.cupom .conferir-itens li button.link { align-self: flex-start; }
 .cupom button.link { background: none; border: 0; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font: inherit; }
 .cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }
 .cupom .linha-parcela { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }

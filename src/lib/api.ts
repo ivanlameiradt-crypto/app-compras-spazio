@@ -571,7 +571,7 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
 // ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
 const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
 // As colunas novas (migrações 20261206000001 e 20261207000001 — esta traz `parcelas`) só existem depois de aplicada: sem elas a leitura cai para as antigas.
-const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais`
+const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais, descartada_em, descartada_motivo`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -587,24 +587,42 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   parcelas_manuais: Array.isArray(n.parcelas_manuais)
     ? n.parcelas_manuais.map((p) => ({ vencimento: String(p?.vencimento ?? ''), valor: Number(p?.valor ?? 0) }))
     : null,
+  descartada_em: n.descartada_em ?? null,
+  descartada_motivo: n.descartada_motivo ?? null,
 })
 /** Coluna que não existe (Postgres 42703, ou a mensagem "column ... does not exist"): migração ainda não aplicada. */
 const colunaInexistente = (e: { message?: string; code?: string }): boolean =>
   e.code === '42703' || /column .* does not exist/i.test(e.message ?? '')
 type RespostaNotas = { data: unknown; error: { message: string; code?: string } | null; status: number }
-/** Lê as notas com as colunas novas; se o banco ainda não as tem, repete com as antigas (a aba não pode quebrar). */
-async function lerNotas(consulta: (colunas: string) => PromiseLike<RespostaNotas>): Promise<NotaSefazLista[]> {
-  let r = await consulta(COLUNAS_NOTA)
-  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_ANTIGAS)
+/**
+ * Lê as notas com as colunas novas; se o banco ainda não as tem, repete com as antigas (a aba não pode quebrar). `novas` diz a
+ * `consulta` qual das duas tentativas é: com as colunas antigas ela também não pode filtrar pelas colunas do descarte.
+ */
+async function lerNotas(consulta: (colunas: string, novas: boolean) => PromiseLike<RespostaNotas>): Promise<NotaSefazLista[]> {
+  let r = await consulta(COLUNAS_NOTA, true)
+  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_ANTIGAS, false)
   if (r.error) {
     if (tabelaInexistente(r.error.code)) return []
     throw new ErroApi(r.error.message, r.status, r.error.code)
   }
   return ((r.data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
 }
-/** Notas pendentes da fila da SEFAZ (situacao 'na_fila'), para "Notas a lançar". */
+/** Notas pendentes da fila da SEFAZ (situacao 'na_fila') que o Ivan NÃO descartou, para "Notas a lançar". */
 export const notasALancar = (): Promise<NotaSefazLista[]> =>
-  lerNotas((colunas) => supabase.from('cot_nfe').select(colunas).eq('situacao', 'na_fila').order('emissao', { ascending: false }))
+  lerNotas((colunas, novas) => {
+    const q = supabase.from('cot_nfe').select(colunas).eq('situacao', 'na_fila')
+    return (novas ? q.is('descartada_em', null) : q).order('emissao', { ascending: false })
+  })
+/** Notas que o Ivan descartou e que ainda estão na fila do SisChef (as que já saíram de lá não aparecem), a mais nova primeiro. */
+export async function notasDescartadas(): Promise<NotaSefazLista[]> {
+  const r = await supabase.from('cot_nfe').select(COLUNAS_NOTA).eq('situacao', 'na_fila').not('descartada_em', 'is', null)
+    .order('descartada_em', { ascending: false })
+  if (r.error) {
+    if (colunaInexistente(r.error) || tabelaInexistente(r.error.code)) return [] // migração do descarte ainda não aplicada
+    throw new ErroApi(r.error.message, r.status, r.error.code)
+  }
+  return ((r.data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
+}
 /** Notas já lançadas (situacao 'lancada'), mais recentes primeiro, para "Últimos lançamentos". */
 export const notasLancadas = (limite = 10): Promise<NotaSefazLista[]> =>
   lerNotas((colunas) => supabase.from('cot_nfe').select(colunas)
@@ -652,7 +670,7 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
   const t = texto.toLowerCase()
   if (status === 403 || t.includes('administrador')) return 'Só o administrador pode lançar notas.'
   if (t.includes('outra nota')) return 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'
-  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'
+  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi descartada. Atualize a tela e confira.'
   if (t.includes('parcelas digitadas')) {
     if (t.includes('não fecham')) return 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'
     if (t.includes('já tem boletos')) return 'Esta nota já tem boletos no XML. Atualize a tela e confira.'
@@ -681,6 +699,29 @@ export async function lancarNota(chave: string, forma: string, parcelas?: Parcel
     try { const corpo = await contexto.json(); if (corpo && typeof corpo.erro === 'string') texto = corpo.erro } catch { /* corpo não era JSON */ }
   }
   throw new ErroApi(mensagemDoLancar(status, texto), status)
+}
+/**
+ * Texto claro para o erro de descartar/restaurar. As mensagens do banco (cot_nfe_descartar) já são em português e dizem o motivo
+ * (pela metade, robô lançando…): passam como vieram; falha de rede ou erro desconhecido vira um texto genérico.
+ */
+function mensagemDoDescarte(e: unknown, acao: string): string {
+  const texto = e instanceof Error ? e.message : ''
+  if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
+  if (/nota não encontrada|não está mais na fila|pela metade|lançando esta nota/i.test(texto)) return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
+  return `Não consegui ${acao} agora. Confira a internet e tente de novo.`
+}
+/**
+ * Descarta UMA nota da fila (cot_nfe_descartar, admin): ela sai de "Notas a lançar" e o robô não a lança. NADA muda no SisChef nem na
+ * SEFAZ. Não vale para nota pela metade nem para a que o robô está lançando (o banco recusa). `motivo` fica guardado (até 300 letras).
+ */
+export async function descartarNota(chave: string, motivo: string): Promise<void> {
+  try { await chamar('cot_nfe_descartar', { p_chave: chave, p_motivo: motivo }) }
+  catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'descartar a nota'), e instanceof ErroApi ? e.status : undefined) }
+}
+/** Desfaz o descarte: a nota volta para "Notas a lançar". */
+export async function restaurarNota(chave: string): Promise<void> {
+  try { await chamar('cot_nfe_restaurar', { p_chave: chave }) }
+  catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'voltar a nota para a fila'), e instanceof ErroApi ? e.status : undefined) }
 }
 export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
 export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })

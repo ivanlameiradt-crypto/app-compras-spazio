@@ -64,6 +64,7 @@ Deno.serve(async (req: Request) => {
           .update({ forma_pagamento: forma, parcelas_manuais: parcelasManuais, lancamento_em: agoraIso, lancamento_estado: 'lancando',
                     lancamento_motivo: null, lancamento_estado_em: agoraIso, atualizado_em: agoraIso })
           .eq('chave', chave).eq('situacao', 'na_fila')
+          .is('descartada_em', null) // nota que o Ivan descartou (migração 20261209000001) não é lançada, nem por uma tela velha
           .or(filtroReservavel(limiteIso))
           .select(COLUNAS)
         if (error) throw new Error(error.message)

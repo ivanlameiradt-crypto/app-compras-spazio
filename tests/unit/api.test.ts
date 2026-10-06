@@ -29,7 +29,7 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasLancadas, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
+  descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
@@ -533,7 +533,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   /** Cadeia do PostgREST (select/eq/order/limit) que, ao ser aguardada, devolve `resp`. */
   const cadeia = (resp: Resp) => {
     const c: Record<string, unknown> = {}
-    for (const metodo of ['select', 'eq', 'order', 'limit']) c[metodo] = vi.fn(() => c)
+    for (const metodo of ['select', 'eq', 'is', 'not', 'order', 'limit']) c[metodo] = vi.fn(() => c)
     c.then = (ok: (r: Resp) => unknown, ko: (e: unknown) => unknown) => Promise.resolve(resp).then(ok, ko)
     return c as { select: ReturnType<typeof vi.fn> } & Record<string, unknown>
   }
@@ -666,7 +666,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   }
   it.each([
     [403, { erro: 'apenas o administrador pode fazer isso' }, 'Só o administrador pode lançar notas.'],
-    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando ou pela metade)' }, 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'],
+    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' }, 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi descartada. Atualize a tela e confira.'],
     [409, { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' }, 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'],
     [400, { erro: 'escolha como pagar (forma de pagamento inválida)' }, 'Escolha como pagar: a forma de pagamento não é válida.'],
     [400, { erro: 'as parcelas digitadas não fecham com o valor da nota' }, 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'],
@@ -685,5 +685,67 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Só o administrador pode lançar notas.')
     invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
     await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Não consegui lançar agora. Confira a internet e tente de novo.')
+  })
+
+  it('"Notas a lançar" deixa de fora as descartadas (filtro no banco) e lê as colunas do descarte', async () => {
+    const c = cadeia({ data: [{ ...linha, descartada_em: null, descartada_motivo: null }], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(c.select.mock.calls[0][0]).toContain('descartada_em, descartada_motivo')
+    expect(c.eq).toHaveBeenCalledWith('situacao', 'na_fila')
+    expect(c.is).toHaveBeenCalledWith('descartada_em', null)
+    expect(r[0]).toMatchObject({ descartada_em: null, descartada_motivo: null })
+  })
+
+  it('migração do descarte ainda não aplicada: a lista cai para as colunas antigas SEM filtrar por descartada_em (a aba não quebra)', async () => {
+    const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.descartada_em does not exist' }, status: 400 })
+    const antiga = cadeia({ data: [linha], error: null, status: 200 })
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(antiga)
+    const r = await notasALancar()
+    expect(falha.is).toHaveBeenCalledWith('descartada_em', null)
+    expect(antiga.is).not.toHaveBeenCalled()
+    expect(antiga.select.mock.calls[0][0]).not.toContain('descartada')
+    expect(r).toHaveLength(1)
+  })
+
+  it('notasDescartadas: só as na_fila com descartada_em, a descartada mais nova primeiro, normalizadas; sem a coluna = lista vazia', async () => {
+    const c = cadeia({ data: [{ ...linha, valor_nf: '12.5', itens: null, descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)' }], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasDescartadas()
+    expect(c.eq).toHaveBeenCalledWith('situacao', 'na_fila')
+    expect(c.not).toHaveBeenCalledWith('descartada_em', 'is', null)
+    expect(c.order).toHaveBeenCalledWith('descartada_em', { ascending: false })
+    expect(r[0]).toMatchObject({ valor_nf: 12.5, itens: [], descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)' })
+    from.mockReset()
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
+    expect(await notasDescartadas()).toEqual([])
+    from.mockReset()
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 }))
+    await expect(notasDescartadas()).rejects.toMatchObject({ name: 'ErroApi', status: 403 })
+  })
+
+  it('descartarNota e restaurarNota chamam as funções do banco com a chave (e o motivo)', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await descartarNota('d'.repeat(44), 'Sem itens (XML resumido)')
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_descartar', { p_chave: 'd'.repeat(44), p_motivo: 'Sem itens (XML resumido)' })
+    await restaurarNota('d'.repeat(44))
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_restaurar', { p_chave: 'd'.repeat(44) })
+  })
+
+  it.each([
+    ['apenas o administrador pode fazer isso', 'Só o administrador pode fazer isso.'],
+    ['esta nota ficou pela metade: confira no SisChef antes de descartar', 'Esta nota ficou pela metade: confira no SisChef antes de descartar.'],
+    ['o robô está lançando esta nota agora: aguarde terminar', 'O robô está lançando esta nota agora: aguarde terminar.'],
+    ['esta nota não está mais na fila: não dá para descartar', 'Esta nota não está mais na fila: não dá para descartar.'],
+    ['nota não encontrada', 'Nota não encontrada.'],
+    ['TypeError: Failed to fetch', 'Não consegui descartar a nota agora. Confira a internet e tente de novo.'],
+  ])('descartarNota: erro do banco "%s" vira texto claro', async (msg, esperado) => {
+    rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })
+    await expect(descartarNota('d'.repeat(44), 'x')).rejects.toThrow(esperado)
+  })
+
+  it('restaurarNota: falha vira texto claro em português', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'qualquer coisa', code: 'XX000' }, status: 500 })
+    await expect(restaurarNota('d'.repeat(44))).rejects.toThrow('Não consegui voltar a nota para a fila agora. Confira a internet e tente de novo.')
   })
 })

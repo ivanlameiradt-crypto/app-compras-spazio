@@ -417,6 +417,9 @@ export interface NotaSefazLista {
   parcelas?: ParcelaNota[] | null
   /** Parcelas que o Ivan digitou (XML sem duplicatas): o que foi mandado ao robô. null = nada digitado. Migração 20261208000001. */
   parcelas_manuais?: ParcelaDigitada[] | null
+  /** Descartada pelo Ivan (some de "Notas a lançar"; dá para desfazer). null/ausente = na lista normal. Migração 20261209000001. */
+  descartada_em?: string | null
+  descartada_motivo?: string | null
 }
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'
