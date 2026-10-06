@@ -35,7 +35,9 @@
 - Nota sem itens ("xml resumido"), com item sem produto, conta especial ou parada pelo robô ganha o botão **Descartar nota** (2 toques).
 - Descartar **só tira a nota da lista do app**: nada muda no SisChef nem na SEFAZ, a compra continua pendente lá e **sem entrada no estoque nem no financeiro**.
 - Desfaz em **Notas descartadas → Voltar para a fila**. Se o XML completo chegar depois, o app avisa.
-- Nunca vale para nota "pela metade" (erro) nem para a que o robô está lançando. Falta publicar o app para o botão aparecer.
+- Nunca vale para nota "pela metade" (erro) nem para a que o robô está lançando.
+- Decisão do Ivan: nota com informação faltando (XML incompleto, feita errada pelo fornecedor) **não é lançada no sistema**: ele descarta.
+  (Alternativa que ele dispensou: pedir a ciência da operação no SisChef ou o XML ao fornecedor.)
 
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
