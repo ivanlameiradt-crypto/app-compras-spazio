@@ -773,6 +773,93 @@ describe('NotaSefaz', () => {
       expect(botaoLancar()).toBeEnabled()
     })
 
+    describe('nota que ainda espera produto ser associado no SisChef (bug do Ivan, 06/10): dá para digitar as parcelas já', () => {
+      const semProduto = (extra: Partial<NotaSefazLista> = {}) => semDuplicata({ itens: [item({ produto_id: null, associacao: null, n: 1 })], ...extra })
+
+      it('o editor de parcelas e o Como pagar ABREM mesmo com item sem produto; o Lançar continua travado, com o aviso', async () => {
+        aLancar(semProduto())
+        render(<NotaSefaz />)
+        const editor = await screen.findByTestId('editor-parcelas')
+        expect(within(editor).getByTestId('parcelas-aguardando')).toHaveTextContent('Pode digitar as parcelas já: elas ficam guardadas neste aparelho')
+        expect(comoPagar()).toBeEnabled()
+        expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef: associe lá antes de lançar')
+        await digitar(1, '2026-11-05', '100,00')
+        expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('bate')
+        expect(botaoLancar()).toBeDisabled()                                            // a soma fecha, mas falta produto: não lança
+      })
+
+      it('com os produtos confirmados no app (aviso amarelo) também abre, e o Lançar segue travado', async () => {
+        aLancar(semProduto({ associacoes_app: { '1': { produto_id: 1854713, produto_nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg' } } }))
+        render(<NotaSefaz />)
+        expect(await screen.findByTestId('editor-parcelas')).toBeInTheDocument()
+        expect(screen.getByTestId('bloqueio-nota')).toHaveClass('amarelo')
+        await digitar(1, '2026-11-05', '100,00')
+        expect(botaoLancar()).toBeDisabled()
+      })
+
+      it('o que foi digitado fica guardado: recarregar a página (e a leitura trazer o produto já associado) não perde as parcelas; ao lançar, o rascunho some', async () => {
+        aLancar(semProduto())
+        const { unmount } = render(<NotaSefaz />)
+        await screen.findByTestId('editor-parcelas')
+        await digitar(1, '2026-11-05', '60,00')
+        await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+        fireEvent.change(screen.getByLabelText('Vencimento da parcela 2'), { target: { value: '2026-11-12' } })
+        await userEvent.type(screen.getByLabelText('Valor da parcela 2'), '40,00')
+        expect(localStorage.getItem(`spazio.notaSefaz.parcelas.${CHAVE}`)).not.toBeNull()   // guardou no aparelho
+        unmount()                                                                         // fecha o app...
+
+        aLancar(semDuplicata())                                                           // ...e reabre depois de o Ivan associar no SisChef (todos os itens com produto)
+        render(<NotaSefaz />)
+        await screen.findByTestId('editor-parcelas')
+        expect((screen.getByLabelText('Vencimento da parcela 1') as HTMLInputElement).value).toBe('2026-11-05')
+        expect((screen.getByLabelText('Valor da parcela 1') as HTMLInputElement).value).toBe('60,00')
+        expect((screen.getByLabelText('Valor da parcela 2') as HTMLInputElement).value).toBe('40,00')
+        expect(screen.queryByTestId('parcelas-aguardando')).not.toBeInTheDocument()       // não está mais esperando produto
+        expect(botaoLancar()).toBeEnabled()
+        await userEvent.click(botaoLancar())
+        await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto', [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }]))
+        await waitFor(() => expect(localStorage.getItem(`spazio.notaSefaz.parcelas.${CHAVE}`)).toBeNull()) // lançou: o rascunho não fica para trás
+      })
+
+      it('o rascunho é por nota: outra nota abre em branco', async () => {
+        aLancar(semProduto(), semProduto({ chave: '9'.repeat(44), numero: '999' }))
+        render(<NotaSefaz />)
+        await screen.findAllByTestId('editor-parcelas')
+        fireEvent.change(screen.getAllByLabelText('Vencimento da parcela 1')[0], { target: { value: '2026-11-05' } })
+        expect((screen.getAllByLabelText('Vencimento da parcela 1')[1] as HTMLInputElement).value).toBe('')
+        expect(localStorage.getItem(`spazio.notaSefaz.parcelas.${CHAVE}`)).not.toBeNull()
+        expect(localStorage.getItem(`spazio.notaSefaz.parcelas.${'9'.repeat(44)}`)).toBeNull()
+      })
+
+      it('trava por outro motivo (conta especial, nota sem itens, robô lançando, nota pela metade): nada para preparar, sem editor e sem trocar a forma', async () => {
+        const agora = new Date().toISOString()
+        const casos: Partial<NotaSefazLista>[] = [
+          { emitente: 'KONDO COMERCIO', cnpj_emitente: '11111111000111' },
+          { itens: [] },
+          { lancamento_estado: 'lancando', lancamento_estado_em: agora, lancamento_em: agora } as Partial<NotaSefazLista>,
+          { lancamento_estado: 'erro', lancamento_estado_em: agora } as Partial<NotaSefazLista>,
+        ]
+        for (const extra of casos) {
+          aLancar(semProduto(extra))
+          const { unmount } = render(<NotaSefaz />)
+          await screen.findByTestId('nota-a-lancar')
+          expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+          expect(comoPagar()).toBeDisabled()
+          unmount()
+        }
+      })
+
+      it('nota com boleto no XML e item sem produto: continua sem editor (não precisa digitar nada), com o Como pagar liberado', async () => {
+        aLancar(semProduto({ parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 100 }] }))
+        render(<NotaSefaz />)
+        await screen.findByTestId('nota-a-lancar')
+        expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+        expect(comoPagar()).toBeEnabled()
+        expect(botaoLancar()).toBeDisabled()
+      })
+    })
+
     it('nunca é "pronta" nem mostra o aviso financeiro duplicado', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)

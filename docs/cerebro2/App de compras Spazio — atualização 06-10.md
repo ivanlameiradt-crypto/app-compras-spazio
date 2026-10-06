@@ -68,6 +68,9 @@
 - A busca digitada acha os produtos da lista de insumos do app (renovada toda segunda-feira). **Produto novo criado no SisChef no meio da semana** (ex.: CHOCOLATE BIS ORIGINAL, cód. 3476455, que você
   ajustou em 06/10) aparece pela **"Sugestão do robô"** do item, marcado "produto novo no SisChef": o robô já enxerga o produto no SisChef. A unidade desse produto fica em branco.
 
+- **Ajuste (06/10, noite):** o editor das parcelas do boleto (MATEUS) e o "Como pagar" não abriam enquanto a nota esperava produto no SisChef. Agora abrem; o Lançar continua travado até os produtos
+  estarem associados. O que você digita fica guardado neste aparelho e sobrevive a recarregar a página.
+
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
    **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (depois trocada por "Lançamento fiscal", 3ª publicação) e o ✓ verde no painel de conferir.

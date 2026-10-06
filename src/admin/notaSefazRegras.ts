@@ -107,6 +107,8 @@ export function decisaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz): AssociacaoA
   if (it.n == null || !n.associacoes_app || !itemSemProduto(it)) return null
   return n.associacoes_app[String(it.n)] ?? null
 }
+/** Bloqueio que só diz "falta produto no SisChef": a nota ainda NÃO pode ser lançada, mas dá para preparar o resto (forma de pagamento e parcelas). */
+export const bloqueioDeProduto = (b: string): boolean => b === AVISO_ITEM_SEM_PRODUTO || b === AVISO_ASSOCIACAO_SO_NO_APP
 const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.test(emitente.toUpperCase())
 
 /** Motivos (em português) pelos quais esta nota NÃO pode ser lançada pelo app; lista vazia = pode. */
@@ -278,6 +280,39 @@ export function linhasIniciais(n: NotaSefazLista): LinhaParcela[] {
   return antigas.length > 0
     ? antigas.map((p) => ({ vencimento: p.vencimento, valor: formatarValorBr(p.valor) }))
     : [{ vencimento: '', valor: '' }]
+}
+
+// ---------- rascunho das parcelas (no aparelho)
+// O Ivan pode digitar as parcelas ANTES de o Lançar liberar (a nota ainda espera produto no SisChef) e a página pode ser recarregada no meio
+// (a leitura do SisChef é atualizada, ele fecha o app...): sem rascunho, o que ele digitou se perdia. Fica só neste aparelho, por nota.
+const chaveRascunho = (chave: string): string => `spazio.notaSefaz.parcelas.${chave}`
+const rascunhoVazio = (ls: LinhaParcela[]): boolean => ls.every((l) => l.vencimento.trim() === '' && l.valor.trim() === '')
+
+/** O que o Ivan já digitou nesta nota, ou null (nada guardado, ou o que estava guardado não presta). */
+export function rascunhoDasParcelas(chave: string): LinhaParcela[] | null {
+  try {
+    const bruto = localStorage.getItem(chaveRascunho(chave))
+    if (!bruto) return null
+    const x: unknown = JSON.parse(bruto)
+    if (!Array.isArray(x) || x.length < 1 || x.length > 60) return null
+    const linhas: LinhaParcela[] = []
+    for (const l of x) {
+      const { vencimento, valor } = (l ?? {}) as Record<string, unknown>
+      if (typeof vencimento !== 'string' || typeof valor !== 'string' || vencimento.length > 10 || valor.length > 20) return null
+      linhas.push({ vencimento, valor })
+    }
+    return rascunhoVazio(linhas) ? null : linhas
+  } catch { return null }
+}
+/** Guarda o que está no editor (editor em branco = apaga o rascunho). */
+export function guardarRascunhoDasParcelas(chave: string, linhas: LinhaParcela[]): void {
+  try {
+    if (rascunhoVazio(linhas)) localStorage.removeItem(chaveRascunho(chave))
+    else localStorage.setItem(chaveRascunho(chave), JSON.stringify(linhas.map((l) => ({ vencimento: l.vencimento, valor: l.valor }))))
+  } catch { /* sem armazenamento: segue sem rascunho */ }
+}
+export function limparRascunhoDasParcelas(chave: string): void {
+  try { localStorage.removeItem(chaveRascunho(chave)) } catch { /* idem */ }
 }
 
 export interface ResultadoParcelas {
