@@ -44,12 +44,13 @@ const C2 = '20261126000001_cadastros_regras.sql'
 const F3A = '20261205000001_nfe_lancamento.sql'
 const F3B = '20261206000001_nfe_lancar.sql'
 const F3C = '20261207000001_nfe_parcelas.sql'
+const F3D = '20261208000001_nfe_parcelas_manuais.sql'
 // A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 vem depois da B; as da Fase 3 são as últimas por nome.
 const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [

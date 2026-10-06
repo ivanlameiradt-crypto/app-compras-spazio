@@ -1,6 +1,6 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
-  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
+  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -136,7 +136,7 @@ describe('notaSefazRegras', () => {
 
     it.each([
       ['XML ainda não lido', null, 'Boletos ainda não lidos do XML (próxima leitura)'],
-      ['nota sem boleto (à vista)', [], 'A nota não tem boletos: escolha como pagar'],
+      ['nota sem boleto (à vista)', [], 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'],
       ['boletos que não fecham', boletos(10), 'Os boletos não fecham com o valor da nota'],
     ])('prontidaoDaNota: %s não é pronta e explica', (_n, parcelas, motivo) => {
       const r = prontidaoDaNota(nota({ valor_nf: 100, parcelas }))
@@ -159,6 +159,70 @@ describe('notaSefazRegras', () => {
       expect(fornecedorAprendido(n, { '999': 9 })).toBe(0)
       expect(fornecedorAprendido(nota({ cnpj_emitente: null }), { '111': 9 })).toBe(0)
       expect(fornecedorAprendido(n, undefined)).toBe(0)
+    })
+  })
+
+  describe('parcelas digitadas (boleto cujo XML não traz as duplicatas)', () => {
+    it('parseValorBr: pt-BR com milhar e vírgula; o resto é recusado', () => {
+      expect(parseValorBr('1.234,56')).toBe(1234.56)
+      expect(parseValorBr('1234,5')).toBe(1234.5)
+      expect(parseValorBr('R$ 100')).toBe(100)
+      expect(parseValorBr(' 430,20 ')).toBe(430.2)
+      for (const ruim of ['', 'abc', '0', '0,00', '-5', '1,234.56', '12,345', '1.2', '1.23', '10000000,01', '1..000,00']) expect([ruim, parseValorBr(ruim)]).toEqual([ruim, null])
+    })
+
+    it('formatarValorBr: duas casas, milhar com ponto', () => {
+      expect(formatarValorBr(1234.5)).toBe('1.234,50')
+      expect(formatarValorBr(430.2)).toBe('430,20')
+    })
+
+    it('a regra provisória cobre a MATEUS pelo CNPJ (e só ela)', () => {
+      expect(FORNECEDORES_XML_SEM_PAGAMENTO).toEqual({ '03995515011363': 'MATEUS SUPERMERCADOS' })
+    })
+
+    it('precisaDigitarParcelas: só boleto com XML lido e sem duplicatas', () => {
+      const n = (parcelas: NotaSefazLista['parcelas']) => nota({ parcelas })
+      expect(precisaDigitarParcelas(n([]), 'boleto')).toBe(true)
+      expect(precisaDigitarParcelas(n([]), 'dinheiro')).toBe(false)
+      expect(precisaDigitarParcelas(n([]), 'cartao')).toBe(false)
+      expect(precisaDigitarParcelas(n(null), 'boleto')).toBe(false)                      // XML ainda não lido
+      expect(precisaDigitarParcelas(n([{ numero: '1', vencimento: '2026-11-05', valor: 1 }]), 'boleto')).toBe(false)
+    })
+
+    it('linhasIniciais: uma linha em branco, ou o que o Ivan já tinha digitado', () => {
+      expect(linhasIniciais(nota({}))).toEqual([{ vencimento: '', valor: '' }])
+      expect(linhasIniciais(nota({ parcelas_manuais: [{ vencimento: '2026-11-05', valor: 1234.5 }] }))).toEqual([{ vencimento: '2026-11-05', valor: '1.234,50' }])
+    })
+
+    describe('validarParcelasDigitadas', () => {
+      const L = (vencimento: string, valor: string) => ({ vencimento, valor })
+      it('fecha com o valor da nota: ok e devolve as parcelas no formato da função', () => {
+        const r = validarParcelasDigitadas([L('2026-11-05', '60,00'), L('2026-11-12', '40')], 100, '2026-10-05')
+        expect(r).toEqual({ ok: true, motivo: '', parcelas: [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }], soma: 100, falta: 0 })
+      })
+      it('1 centavo de diferença ainda fecha; 2 centavos não', () => {
+        expect(validarParcelasDigitadas([L('2026-11-05', '100,01')], 100, '2026-10-05').ok).toBe(true)
+        expect(validarParcelasDigitadas([L('2026-11-05', '100,02')], 100, '2026-10-05').ok).toBe(false)
+      })
+      it('diz o que falta ou o que passou', () => {
+        expect(validarParcelasDigitadas([L('2026-11-05', '60,00')], 100, '2026-10-05')).toMatchObject({ ok: false, falta: 40, motivo: 'Faltam 40,00 para fechar com o valor da nota' })
+        expect(validarParcelasDigitadas([L('2026-11-05', '130,50')], 100, '2026-10-05')).toMatchObject({ ok: false, falta: -30.5, motivo: 'Passou 30,50 do valor da nota' })
+      })
+      it('linha incompleta ou inválida trava com o motivo da 1ª linha ruim', () => {
+        expect(validarParcelasDigitadas([L('', '100,00')], 100, '2026-10-05').motivo).toBe('Parcela 1: informe o vencimento')
+        expect(validarParcelasDigitadas([L('2026-02-30', '100,00')], 100, '2026-10-05').motivo).toBe('Parcela 1: informe o vencimento')
+        expect(validarParcelasDigitadas([L('2026-11-05', '')], 100, '2026-10-05').motivo).toBe('Parcela 1: informe o valor (ex.: 1.234,56)')
+        expect(validarParcelasDigitadas([L('2026-11-05', '50'), L('2026-11-12', 'x')], 100, '2026-10-05').motivo).toBe('Parcela 2: informe o valor (ex.: 1.234,56)')
+        expect(validarParcelasDigitadas([L('2026-11-05', '50'), L('2026-11-12', 'x')], 100, '2026-10-05').ok).toBe(false)
+      })
+      it('vencimento anterior à emissão é recusado (erro de digitação de data)', () => {
+        expect(validarParcelasDigitadas([L('2025-11-05', '100,00')], 100, '2026-10-05').motivo).toBe('Parcela 1: o vencimento é anterior à emissão da nota')
+        expect(validarParcelasDigitadas([L('2026-10-05', '100,00')], 100, '2026-10-05').ok).toBe(true) // no dia da emissão vale
+      })
+      it('sem linhas ou sem valor da nota não libera', () => {
+        expect(validarParcelasDigitadas([], 100, '2026-10-05')).toMatchObject({ ok: false, motivo: 'Digite ao menos uma parcela' })
+        expect(validarParcelasDigitadas([L('2026-11-05', '100,00')], null, '2026-10-05')).toMatchObject({ ok: false, falta: null })
+      })
     })
   })
 })

@@ -1,4 +1,4 @@
-import { CONTAS_PIX, filtroReservavel, montarNotaJson, normalizarForma, tratar, type Deps, type NotaReservada } from './logica'
+import { CONTAS_PIX, filtroReservavel, montarNotaJson, normalizarForma, normalizarParcelas, somaParcelas, tratar, type Deps, type NotaReservada } from './logica'
 
 const CHAVE = '15261002164629000100550010014159761121141360'
 const AGORA = new Date('2026-10-06T12:00:00.000Z')
@@ -18,6 +18,7 @@ function fakeDeps(over: Partial<Deps> = {}): Deps & { reservas: unknown[][]; dis
     async buscarUsuario() { return { papel: 'admin', ativo: true } },
     async reservar(...a) { reservas.push(a); return { ...NOTA, forma_pagamento: a[1] as string } },
     async outraLancando() { return false },
+    async notaParaParcelas() { return { valor_nf: 100, parcelas: [] } },
     async soltar(chave) { soltas.push(chave) },
     async disparar(notaJson) { disparos.push(notaJson) },
     agora: () => AGORA,
@@ -61,7 +62,7 @@ describe('tratar (o "Lançar" de uma nota)', () => {
     const d = fakeDeps()
     const r = await tratar({ chave: CHAVE, forma: 'PIX:Bradesco|IJ' }, 'Ivan@Spazio.com ', d)
     expect(r).toEqual({ status: 202, corpo: { ok: true, chave: CHAVE, forma: 'pix:bradesco|ij' } })
-    expect(d.reservas).toEqual([[CHAVE, 'pix:bradesco|ij', '2026-10-06T12:00:00.000Z', '2026-10-06T11:30:00.000Z']])
+    expect(d.reservas).toEqual([[CHAVE, 'pix:bradesco|ij', '2026-10-06T12:00:00.000Z', '2026-10-06T11:30:00.000Z', null]])
     expect(JSON.parse(d.disparos[0]).forma_pagamento).toBe('pix:bradesco|ij')
   })
 
@@ -110,5 +111,89 @@ describe('tratar (o "Lançar" de uma nota)', () => {
       async soltar() { throw new Error('banco fora') },
     })
     expect((await tratar({ chave: CHAVE, forma: 'boleto' }, 'a@b', d2)).status).toBe(502)
+  })
+})
+
+describe('normalizarParcelas / somaParcelas (parcelas digitadas pelo Ivan)', () => {
+  it('aceita 1 a 60 parcelas válidas e normaliza o valor em centavos', () => {
+    expect(normalizarParcelas([{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40.5 }]))
+      .toEqual([{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40.5 }])
+    expect(normalizarParcelas(Array.from({ length: 60 }, () => ({ vencimento: '2026-11-05', valor: 1 })))).toHaveLength(60)
+  })
+  it.each([
+    [null], [undefined], ['x'], [[]], [[1]], [[null]],
+    [[{ vencimento: '2026-02-30', valor: 10 }]], [[{ vencimento: '05/11/2026', valor: 10 }]], [[{ valor: 10 }]],
+    [[{ vencimento: '2026-11-05', valor: 0 }]], [[{ vencimento: '2026-11-05', valor: -1 }]], [[{ vencimento: '2026-11-05', valor: '10' }]],
+    [[{ vencimento: '2026-11-05', valor: NaN }]], [[{ vencimento: '2026-11-05', valor: Infinity }]],
+    [[{ vencimento: '2026-11-05', valor: 10.005 }]], [[{ vencimento: '2026-11-05', valor: 10_000_001 }]],
+    [Array.from({ length: 61 }, () => ({ vencimento: '2026-11-05', valor: 1 }))],
+  ])('recusa %j', (x) => { expect(normalizarParcelas(x)).toBeNull() })
+  it('soma em centavos, sem erro de ponto flutuante', () => {
+    expect(somaParcelas([{ vencimento: '2026-11-05', valor: 0.1 }, { vencimento: '2026-11-05', valor: 0.2 }])).toBe(0.3)
+  })
+})
+
+describe('tratar com parcelas digitadas (boleto sem duplicatas no XML)', () => {
+  const P = [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }]
+  const nota = (over: Partial<NotaReservada> = {}) => ({ ...NOTA, valor_nf: 100, ...over })
+
+  it('parcelas que fecham com o valor da nota e o XML sem boletos: reserva gravando as parcelas e as manda ao robô', async () => {
+    const d = fakeDeps({ async reservar(...a) { return nota({ forma_pagamento: a[1] as string, parcelas_manuais: a[4] as never }) } })
+    const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
+    expect(r.status).toBe(202)
+    expect(JSON.parse(d.disparos[0]).parcelas_manuais).toEqual(P)
+  })
+
+  it('o 5º argumento da reserva leva as parcelas normalizadas (e null quando nada foi digitado)', async () => {
+    const d = fakeDeps()
+    await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
+    expect(d.reservas[0][4]).toEqual(P)
+    const d2 = fakeDeps()
+    await tratar({ chave: CHAVE, forma: 'boleto' }, 'a@b', d2)
+    expect(d2.reservas[0][4]).toBeNull()
+    expect(JSON.parse(d2.disparos[0])).not.toHaveProperty('parcelas_manuais')
+  })
+
+  it.each([['dinheiro'], ['tesouraria'], ['cartao'], ['pix:bradesco|ij']])('parcelas com a forma %s: 400, sem reservar', async (forma) => {
+    const d = fakeDeps()
+    const r = await tratar({ chave: CHAVE, forma, parcelas: P }, 'a@b', d)
+    expect([r.status, JSON.stringify(r.corpo)]).toEqual([400, expect.stringContaining('só valem para boleto')])
+    expect(d.reservas).toEqual([])
+  })
+
+  it('parcelas fora do formato: 400, sem reservar nem disparar', async () => {
+    const d = fakeDeps()
+    for (const parcelas of ['x', [], [{ vencimento: 'amanhã', valor: 100 }], [{ vencimento: '2026-11-05', valor: -1 }]]) {
+      expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas }, 'a@b', d)).status).toBe(400)
+    }
+    expect(d.reservas).toEqual([])
+    expect(d.disparos).toEqual([])
+  })
+
+  it('soma diferente do valor da nota: 400 e NÃO reserva', async () => {
+    const d = fakeDeps()
+    const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: [{ vencimento: '2026-11-05', valor: 99 }] }, 'a@b', d)
+    expect(r.status).toBe(400)
+    expect(JSON.stringify(r.corpo)).toContain('não fecham com o valor da nota')
+    expect(d.reservas).toEqual([])
+  })
+
+  it('XML que JÁ traz boletos (ou ainda não foi lido): as digitadas não se aplicam, 400', async () => {
+    for (const parcelas of [[{ numero: '1', vencimento: '2026-12-01', valor: 100 }], null]) {
+      const d = fakeDeps({ async notaParaParcelas() { return { valor_nf: 100, parcelas } } })
+      const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
+      expect([r.status, JSON.stringify(r.corpo)]).toEqual([400, expect.stringContaining('já tem boletos no XML')])
+      expect(d.reservas).toEqual([])
+    }
+  })
+
+  it('nota que não existe: segue para a reserva, que devolve 409', async () => {
+    const d = fakeDeps({ async notaParaParcelas() { return null }, async reservar() { return null } })
+    expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)).status).toBe(409)
+  })
+
+  it('soma com ruído de 1 centavo no valor da nota ainda fecha', async () => {
+    const d = fakeDeps({ async notaParaParcelas() { return { valor_nf: '100.01', parcelas: [] } } })
+    expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)).status).toBe(202)
   })
 })

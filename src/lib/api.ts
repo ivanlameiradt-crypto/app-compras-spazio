@@ -6,7 +6,7 @@ import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
   Abertura, Compra, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
   IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
-  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
+  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
   Preparo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
@@ -571,7 +571,7 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
 // ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
 const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
 // As colunas novas (migrações 20261206000001 e 20261207000001 — esta traz `parcelas`) só existem depois de aplicada: sem elas a leitura cai para as antigas.
-const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas`
+const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -583,6 +583,9 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   lancamento_estado_em: n.lancamento_estado_em ?? null,
   parcelas: Array.isArray(n.parcelas)
     ? n.parcelas.map((p) => ({ numero: p?.numero ?? null, vencimento: p?.vencimento ?? null, valor: Number(p?.valor ?? 0) }))
+    : null,
+  parcelas_manuais: Array.isArray(n.parcelas_manuais)
+    ? n.parcelas_manuais.map((p) => ({ vencimento: String(p?.vencimento ?? ''), valor: Number(p?.valor ?? 0) }))
     : null,
 })
 /** Coluna que não existe (Postgres 42703, ou a mensagem "column ... does not exist"): migração ainda não aplicada. */
@@ -650,6 +653,12 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
   if (status === 403 || t.includes('administrador')) return 'Só o administrador pode lançar notas.'
   if (t.includes('outra nota')) return 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'
   if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'
+  if (t.includes('parcelas digitadas')) {
+    if (t.includes('não fecham')) return 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'
+    if (t.includes('já tem boletos')) return 'Esta nota já tem boletos no XML. Atualize a tela e confira.'
+    if (t.includes('só valem para boleto')) return 'Parcelas digitadas só valem para a forma Boleto.'
+    return 'Confira o vencimento e o valor de cada parcela.'
+  }
   if (status === 400 || t.includes('inválid')) {
     return t.includes('chave') ? 'A chave da nota não é válida. Atualize a tela e tente de novo.' : 'Escolha como pagar: a forma de pagamento não é válida.'
   }
@@ -660,8 +669,10 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
  * Manda lançar UMA nota (Edge Function lancar-nfe: admin, reserva a nota e dispara o robô). A função só responde 202 quando o robô
  * foi chamado; o resultado de verdade aparece depois, no estado da nota (lancamento_estado). Erros viram texto em português.
  */
-export async function lancarNota(chave: string, forma: string): Promise<void> {
-  const { error } = await supabase.functions.invoke('lancar-nfe', { body: { chave, forma } })
+export async function lancarNota(chave: string, forma: string, parcelas?: ParcelaDigitada[]): Promise<void> {
+  // `parcelas` só vai quando o Ivan digitou (boleto cujo XML não traz as duplicatas); sem ela o corpo é o de sempre
+  const body = parcelas && parcelas.length > 0 ? { chave, forma, parcelas } : { chave, forma }
+  const { error } = await supabase.functions.invoke('lancar-nfe', { body })
   if (!error) return
   const contexto = (error as { context?: Response }).context
   const status = typeof contexto?.status === 'number' ? contexto.status : undefined

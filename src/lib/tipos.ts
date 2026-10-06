@@ -392,6 +392,8 @@ export interface ItemNotaSefaz {
 }
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
+/** Parcela que o Ivan digita quando o XML não traz as duplicatas: vencimento aaaa-mm-dd e valor em reais. */
+export interface ParcelaDigitada { vencimento: string; valor: number }
 /** Situação do último "Lançar" de uma nota (cot_nfe.lancamento_estado, migração 20261206000001). null = nunca disparada. */
 export type EstadoLancamentoNfe = 'lancando' | 'revisar' | 'erro' | 'ensaio_ok'
 /** Linha da aba Lançamento de nota SEFAZ (lê cot_nfe por RLS de admin). */
@@ -413,6 +415,8 @@ export interface NotaSefazLista {
   lancamento_estado_em?: string | null
   /** Boletos do XML. null/ausente = XML ainda não lido; [] = lido e sem duplicatas (à vista). Migração 20261207000001. */
   parcelas?: ParcelaNota[] | null
+  /** Parcelas que o Ivan digitou (XML sem duplicatas): o que foi mandado ao robô. null = nada digitado. Migração 20261208000001. */
+  parcelas_manuais?: ParcelaDigitada[] | null
 }
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'

@@ -8,8 +8,9 @@ import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
   AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  formaPadraoDoFornecedor, fornecedorAprendido, lancandoPresa, lembrarForma, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
-  traduzirMotivo,
+  FORNECEDORES_XML_SEM_PAGAMENTO, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, lancandoPresa, lembrarForma, linhasIniciais,
+  parseValorBr, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado, traduzirMotivo, validarParcelasDigitadas,
+  type LinhaParcela, type ResultadoParcelas,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -66,6 +67,59 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
   )
 }
 
+/**
+ * Editor das parcelas do boleto quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS): o Ivan digita o vencimento e o
+ * valor de cada parcela e o robô as aplica no SisChef. O Lançar só destrava quando a soma fecha com o valor da nota.
+ */
+function EditorParcelas({ nota, linhas, resultado, desabilitado, onChange }: {
+  nota: NotaSefazLista; linhas: LinhaParcela[]; resultado: ResultadoParcelas; desabilitado: boolean; onChange: (l: LinhaParcela[]) => void
+}) {
+  const fornecedor = nota.cnpj_emitente ? FORNECEDORES_XML_SEM_PAGAMENTO[nota.cnpj_emitente] : undefined
+  const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
+  const completar = () => {
+    if (resultado.falta == null || resultado.falta <= 0 || linhas.length === 0) return
+    const ult = linhas.length - 1
+    const atual = parseValorBr(linhas[ult].valor) ?? 0 // o que a última já tem (0 se vazia ou ilegível: aí não entrou na soma)
+    onChange(linhas.map((l, j) => (j === ult ? { ...l, valor: formatarValorBr(Math.round((atual + (resultado.falta ?? 0)) * 100) / 100) } : l)))
+  }
+  return (
+    <div className="editor-parcelas" data-testid="editor-parcelas">
+      <div className="amarelo">
+        {fornecedor
+          ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
+          : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef.
+      </div>
+      {linhas.map((l, i) => (
+        <div key={i} className="linha-parcela" data-testid="linha-parcela">
+          <label>Vencimento da parcela {i + 1}
+            <input type="date" value={l.vencimento} disabled={desabilitado} onChange={(e) => mudar(i, 'vencimento', e.target.value)} />
+          </label>
+          <label>Valor da parcela {i + 1}
+            <input type="text" inputMode="decimal" placeholder="0,00" value={l.valor} disabled={desabilitado} onChange={(e) => mudar(i, 'valor', e.target.value)} />
+          </label>
+          {linhas.length > 1 && (
+            <button type="button" className="link" disabled={desabilitado} onClick={() => onChange(linhas.filter((_, j) => j !== i))}>
+              Remover parcela {i + 1}
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="acoes">
+        <button type="button" className="botao secundario" disabled={desabilitado || linhas.length >= 60} onClick={() => onChange([...linhas, { vencimento: '', valor: '' }])}>
+          Adicionar parcela
+        </button>
+        {resultado.falta != null && resultado.falta > 0.01 && (
+          <button type="button" className="botao secundario" disabled={desabilitado} onClick={completar}>Preencher o que falta na última</button>
+        )}
+      </div>
+      <p className={resultado.ok ? 'ok' : 'sub'} data-testid="resumo-parcelas">
+        Soma {formatarReais(resultado.soma)} · nota {nota.valor_nf == null ? '?' : formatarReais(nota.valor_nf)}
+        {resultado.ok ? ' · bate' : resultado.motivo ? ` · ${resultado.motivo}` : ''}
+      </p>
+    </div>
+  )
+}
+
 interface PropsNota {
   nota: NotaSefazLista
   padroes: Record<string, string>
@@ -87,6 +141,7 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
+  const [linhas, setLinhas] = useState<LinhaParcela[]>(() => linhasIniciais(nota)) // parcelas digitadas (boleto sem duplicatas no XML)
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
   const forma = escolha ?? formaInicial(nota, padroes)
@@ -104,7 +159,10 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
   const travada = estado === 'erro' || (estado === 'lancando' && !presa) || bloqueios.length > 0
   const outraOcupando = outraLancando || (emEnvio && !enviando)
-  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando
+  // Boleto cujo XML não traz as duplicatas: o Ivan digita as parcelas e o Lançar só destrava quando a soma fecha com o valor da nota.
+  const exigeParcelas = precisaDigitarParcelas(nota, forma)
+  const resultadoParcelas = validarParcelasDigitadas(linhas, nota.valor_nf, nota.emissao)
+  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok)
 
   function escolher(nova: string) {
     setEscolha(nova); setConfirmando(false); setErro('')
@@ -116,7 +174,8 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
     trancado.current = true
     setEnviando(true); setErro('')
     try {
-      await api.lancarNota(nota.chave, forma)
+      if (exigeParcelas) await api.lancarNota(nota.chave, forma, resultadoParcelas.parcelas)
+      else await api.lancarNota(nota.chave, forma)
       lembrarForma(nota.emitente, forma)
       setConfirmando(false)
       await aoLancar() // recarrega: a nota passa a aparecer como "lançando"
@@ -142,7 +201,7 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
           {aprendido > 0 && <> Fornecedor aprendido ({aprendido} notas seguidas lançadas em boleto sem problema): pode só confirmar.</>}
         </div>
       )}
-      {!soLancar && prontidao.financeiro && !bloqueios.length && estado == null && (
+      {!soLancar && !exigeParcelas && prontidao.financeiro && !bloqueios.length && estado == null && (
         <div className="amarelo" data-testid="aviso-financeiro">{prontidao.financeiro}</div>
       )}
       <PainelConferir nota={nota} />
@@ -170,6 +229,9 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
         </select>
       </label>
       )}
+      {exigeParcelas && !travada && (
+        <EditorParcelas nota={nota} linhas={linhas} resultado={resultadoParcelas} desabilitado={enviando || confirmando} onChange={setLinhas} />
+      )}
       {padraoDoFornecedor && escolha === null && forma === padraoDoFornecedor && (
         <div className="sub" data-testid="padrao-fornecedor">Padrão deste fornecedor: {rotuloForma(padraoDoFornecedor)} (a forma da última nota lançada dele).</div>
       )}
@@ -178,6 +240,13 @@ function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio
       {confirmando ? (
         <div className="bloco-envio">
           <p>Vai lançar a NF {nota.numero} de {nota.emitente} — pagamento: {rotuloForma(forma)}. Confirmar?</p>
+          {exigeParcelas && (
+            <ul className="conferir-itens" data-testid="parcelas-confirmar">
+              {resultadoParcelas.parcelas.map((p, i) => (
+                <li key={i}><span>Parcela {i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>
+              ))}
+            </ul>
+          )}
           <div className="acoes">
             <button type="button" className="botao" disabled={!podeLancar} onClick={() => void confirmar()}>
               {enviando ? 'Enviando…' : 'Confirmar'}
