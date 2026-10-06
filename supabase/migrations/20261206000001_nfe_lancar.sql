@@ -105,3 +105,14 @@ grant execute on function
   public.cot_fechar_vencidas(), public.cot_reservar_consolidado(bigint), public.cot_liberar_consolidado(jsonb),
   public.cot_exportar_cadastros()
   to service_role;
+
+-- e_admin() NÃO nasceu em migração do repo (foi criada à mão em produção, junto com as tabelas do cupom) e as policies
+-- cupom_sel_admin / cupom_aprend_sel_admin dependem dela. O `revoke ... on all functions` lá em cima a tiraria do
+-- authenticated e a tela "Últimos envios" do cupom quebraria ("permission denied for function e_admin"). Devolve o grant
+-- só se a função existir (no banco de teste/CI ela não existe — um grant seco falharia).
+do $$
+begin
+  if to_regprocedure('public.e_admin()') is not null then
+    grant execute on function public.e_admin() to authenticated;
+  end if;
+end $$;
