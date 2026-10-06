@@ -569,13 +569,14 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
   return ((data ?? []) as unknown as NfeResumo[]).map(nfeLida)
 }
 // ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
-const COLUNAS_NOTA_ANTIGAS = 'chave, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
+const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
 // As colunas novas (migração 20261206000001) só existem depois de aplicada: sem elas a leitura cai para as antigas.
 const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
   itens: Array.isArray(n.itens) ? n.itens : [],
+  cnpj_emitente: n.cnpj_emitente ?? null,
   forma_pagamento: n.forma_pagamento ?? null,
   lancamento_estado: n.lancamento_estado ?? null,
   lancamento_motivo: n.lancamento_motivo ?? null,
@@ -602,6 +603,23 @@ export const notasALancar = (): Promise<NotaSefazLista[]> =>
 export const notasLancadas = (limite = 10): Promise<NotaSefazLista[]> =>
   lerNotas((colunas) => supabase.from('cot_nfe').select(colunas)
     .eq('situacao', 'lancada').order('lancada_em', { ascending: false, nullsFirst: false }).limit(limite))
+
+/**
+ * Forma de pagamento padrão por fornecedor (chave = CNPJ do emitente): a da última nota LANÇADA dele, lida do banco (vale em qualquer
+ * aparelho; a Edge Function lancar-nfe já grava a forma na nota). Devolve a forma crua; quem decide se pode vir PRÉ-MARCADA é
+ * notaSefazRegras (PIX e cartão nunca). Falha de leitura ou coluna ainda inexistente = sem padrão (a tela segue com Boleto).
+ */
+export async function formasPadraoPorFornecedor(): Promise<Record<string, string>> {
+  const { data, error } = await supabase.from('cot_nfe').select('cnpj_emitente, forma_pagamento, lancada_em')
+    .eq('situacao', 'lancada').order('lancada_em', { ascending: false, nullsFirst: false }).limit(300)
+  if (error) return {}
+  const ultima: Record<string, string> = {}
+  for (const r of (data ?? []) as { cnpj_emitente: string | null; forma_pagamento: string | null }[]) {
+    if (!r.cnpj_emitente || !r.forma_pagamento || r.cnpj_emitente in ultima) continue // a 1ª de cada CNPJ é a mais recente
+    ultima[r.cnpj_emitente] = r.forma_pagamento
+  }
+  return ultima
+}
 
 /** Texto claro (em português) para o erro do "Lançar": pelo status HTTP da Edge Function lancar-nfe, ou pelo texto que ela devolveu. */
 function mensagemDoLancar(status: number | undefined, texto: string): string {

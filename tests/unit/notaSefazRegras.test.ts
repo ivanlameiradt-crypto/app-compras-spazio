@@ -1,6 +1,6 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
-  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA,
+  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -87,5 +87,28 @@ describe('notaSefazRegras', () => {
     expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: null }), agora)).toBe(false)
     expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: 'lixo' }), agora)).toBe(false)
     expect(lancandoPresa(nota({ lancamento_estado: 'erro', lancamento_estado_em: em(120) }), agora)).toBe(false)
+  })
+
+  it('formaInicial: gravada na nota > padrão do banco > lembrada no celular > Boleto', () => {
+    localStorage.clear()
+    const n = nota({ cnpj_emitente: '111' })
+    expect(formaInicial(n, { '111': 'tesouraria' })).toBe('tesouraria')
+    lembrarForma(n.emitente, 'dinheiro')
+    expect(formaInicial(n, { '111': 'tesouraria' })).toBe('tesouraria') // banco vale mais que o celular
+    expect(formaInicial(n, {})).toBe('dinheiro')                         // sem padrão no banco: o do celular
+    expect(formaInicial(nota({ cnpj_emitente: '111', forma_pagamento: 'boleto' }), { '111': 'tesouraria' })).toBe('boleto') // a da própria nota vence
+    localStorage.clear()
+    expect(formaInicial(n, undefined)).toBe('boleto')
+  })
+
+  it('PIX e cartão nunca vêm pré-marcados nem são memorizados', () => {
+    localStorage.clear()
+    expect(['boleto', 'dinheiro', 'tesouraria'].every(podeVirMarcada)).toBe(true)
+    expect(['pix:bradesco|ij', 'cartao', '', null, undefined].some(podeVirMarcada)).toBe(false)
+    lembrarForma('ATACADAO S.A.', 'pix:bradesco|ij')
+    lembrarForma('ATACADAO S.A.', 'cartao')
+    expect(formaLembrada('ATACADAO S.A.')).toBeNull()
+    expect(formaPadraoDoFornecedor(nota({ cnpj_emitente: '222' }), { '222': 'cartao' })).toBeNull()
+    expect(formaPadraoDoFornecedor(nota({ cnpj_emitente: null }), { '222': 'boleto' })).toBeNull()
   })
 })

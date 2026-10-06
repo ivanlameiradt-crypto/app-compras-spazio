@@ -8,7 +8,7 @@ import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
   AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  lancandoPresa, lembrarForma, rotuloForma, textoDoEstado, traduzirMotivo,
+  formaPadraoDoFornecedor, lancandoPresa, lembrarForma, rotuloForma, textoDoEstado, traduzirMotivo,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -22,7 +22,7 @@ const linhaDoItem = (it: ItemNotaSefaz): LinhaDetalhe =>
 const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
 
 /** Uma nota a lançar: "Como pagar", estado do robô, avisos de bloqueio e o botão Lançar em dois toques. */
-function NotaALancar({ nota, aoLancar }: { nota: NotaSefazLista; aoLancar: () => Promise<void> }) {
+function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroes: Record<string, string>; aoLancar: () => Promise<void> }) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -30,7 +30,8 @@ function NotaALancar({ nota, aoLancar }: { nota: NotaSefazLista; aoLancar: () =>
   const [erro, setErro] = useState('')
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
-  const forma = escolha ?? formaInicial(nota)
+  const forma = escolha ?? formaInicial(nota, padroes)
+  const padraoDoFornecedor = formaPadraoDoFornecedor(nota, padroes)
   const estado = nota.lancamento_estado ?? null
   const bloqueios = bloqueiosDaNota(nota)
   const presa = lancandoPresa(nota)
@@ -85,6 +86,9 @@ function NotaALancar({ nota, aoLancar }: { nota: NotaSefazLista; aoLancar: () =>
           {OPCOES_DEPOIS_DO_PIX.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
         </select>
       </label>
+      {padraoDoFornecedor && escolha === null && forma === padraoDoFornecedor && (
+        <div className="sub" data-testid="padrao-fornecedor">Padrão deste fornecedor: {rotuloForma(padraoDoFornecedor)} (a forma da última nota lançada dele).</div>
+      )}
       {formaNaoProvada(forma) && <div className="amarelo" data-testid="aviso-forma">{AVISO_FORMA_NAO_PROVADA}</div>}
 
       {confirmando ? (
@@ -110,6 +114,7 @@ function NotaALancar({ nota, aoLancar }: { nota: NotaSefazLista; aoLancar: () =>
 export default function NotaSefaz() {
   const [aLancar, setALancar] = useState<NotaSefazLista[]>([])
   const [lancadas, setLancadas] = useState<NotaSefazLista[]>([])
+  const [padroes, setPadroes] = useState<Record<string, string>>({}) // forma padrão por CNPJ (última nota lançada), vem do banco
   const [falha, setFalha] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [expandido, setExpandido] = useState<string | null>(null) // qual lançada está aberta mostrando o detalhe
@@ -118,8 +123,10 @@ export default function NotaSefaz() {
   // `silencioso` (releitura automática / depois do Lançar): uma falha passageira não esconde a lista que já está na tela.
   function carregar(silencioso = false): Promise<void> {
     if (!silencioso) setCarregando(true)
-    return Promise.all([api.notasALancar(), api.notasLancadas()])
-      .then(([a, l]) => { setALancar(a); setLancadas(l); setFalha(false) })
+    // O padrão por fornecedor é só uma sugestão: se falhar, a tela segue sem ele (Boleto).
+    const padrao = Promise.resolve(api.formasPadraoPorFornecedor()).catch(() => ({}))
+    return Promise.all([api.notasALancar(), api.notasLancadas(), padrao])
+      .then(([a, l, p]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setFalha(false) })
       .catch(() => { if (!silencioso) setFalha(true) })
       .finally(() => setCarregando(false))
   }
@@ -145,7 +152,7 @@ export default function NotaSefaz() {
         : (
           <>
             <ul className="recentes">
-              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} aoLancar={() => carregar(true)} />)}
+              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} aoLancar={() => carregar(true)} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
           </>

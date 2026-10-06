@@ -13,6 +13,12 @@
 - Se uma nota ficar "Lançando…" por mais de 30 min, o app avisa para conferir no Sischef e deixa tentar de novo
   (correção de 06/10, falta publicar).
 
+## Pagamento da nota (decisão de 06/10)
+- O app pré-marca a forma da **última nota lançada** do fornecedor (guardada no banco, vale em qualquer celular). Sem histórico: Boleto.
+- **PIX e cartão nunca são pré-marcados nem lembrados**: a conta/forma é escolhida a cada nota.
+- Nota sem boleto: o robô para e você escolhe. Cartão = só estoque, sem pagamento no Sischef.
+- Próxima forma a provar depois do Boleto: Dinheiro à vista.
+
 ## Regras
 - **No lançamento real, use só Boleto** até as outras formas serem testadas ao vivo.
 - O lançamento real só acontece com a **trava dupla** ligada (`MOTOR_NFE_LIGADO`). Fora do teste acompanhado ela fica desligada.
