@@ -178,3 +178,6 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .detalhe-itens li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--linha); font-size: 13px; }
 .detalhe-itens li:last-child { border-bottom: 0; }
 .detalhe-itens .nums { color: var(--suave); white-space: nowrap; }
+
+/* Fase 3 — nota a lançar: "Como pagar", estado do robô e botão Lançar empilhados dentro do item da lista */
+.cupom .recentes li.nota-lancar { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; }
