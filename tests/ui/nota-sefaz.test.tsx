@@ -24,6 +24,7 @@ beforeEach(() => {
   m.notasALancar.mockResolvedValue([])
   m.notasLancadas.mockResolvedValue([])
   m.lancarNota.mockResolvedValue(undefined)
+  m.formasPadraoPorFornecedor.mockResolvedValue({})
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -84,14 +85,25 @@ describe('NotaSefaz', () => {
       aLancar(nota({ emitente: 'ATACADAO S.A.' }), nota({ chave: '1'.repeat(44), emitente: 'MATEUS', numero: '9' }))
       const { unmount } = render(<NotaSefaz />)
       const [atacadao, mateus] = await screen.findAllByTestId('nota-a-lancar')
-      await userEvent.selectOptions(within(atacadao).getByLabelText('Como pagar'), 'pix:caixa|sp')
+      await userEvent.selectOptions(within(atacadao).getByLabelText('Como pagar'), 'dinheiro')
       expect((within(mateus).getByLabelText('Como pagar') as HTMLSelectElement).value).toBe('boleto')
       unmount()
 
       render(<NotaSefaz />)
       const [atacadao2, mateus2] = await screen.findAllByTestId('nota-a-lancar')
-      expect((within(atacadao2).getByLabelText('Como pagar') as HTMLSelectElement).value).toBe('pix:caixa|sp')
+      expect((within(atacadao2).getByLabelText('Como pagar') as HTMLSelectElement).value).toBe('dinheiro')
       expect((within(mateus2).getByLabelText('Como pagar') as HTMLSelectElement).value).toBe('boleto')
+    })
+
+    it('PIX nunca é lembrado: na próxima vez a tela volta em Boleto e a conta tem de ser escolhida de novo', async () => {
+      aLancar(nota({ emitente: 'ATACADAO S.A.' }))
+      const { unmount } = render(<NotaSefaz />)
+      await userEvent.selectOptions(await screen.findByLabelText('Como pagar'), 'pix:caixa|sp')
+      unmount()
+
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(comoPagar().value).toBe('boleto')
     })
 
     it('a memória ignora valor inválido e a tela funciona sem localStorage', async () => {
@@ -267,6 +279,15 @@ describe('NotaSefaz', () => {
       expect(botaoLancar()).toBeDisabled()
     })
 
+    it("'lancando' preso há mais de 30 min: avisa para conferir no SisChef e deixa lançar de novo", async () => {
+      const velho = new Date(Date.now() - 31 * 60_000).toISOString()
+      aLancar(nota({ lancamento_estado: 'lancando', lancamento_estado_em: velho }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(screen.getByTestId('status-nota')).toHaveTextContent('O robô não respondeu em 30 min. Confira no SisChef')
+      expect(botaoLancar()).toBeEnabled()
+    })
+
     it('sem estado: nenhum status aparece', async () => {
       aLancar(nota({}))
       render(<NotaSefaz />)
@@ -308,6 +329,15 @@ describe('NotaSefaz', () => {
       expect(m.notasALancar).toHaveBeenCalledTimes(1)
     })
 
+    it("nota 'lancando' presa (> 30 min) não fica recarregando", async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      aLancar(nota({ lancamento_estado: 'lancando', lancamento_estado_em: new Date(Date.now() - 40 * 60_000).toISOString() }))
+      await montar()
+      expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
+      await avancar(INTERVALO * 4)
+      expect(m.notasALancar).toHaveBeenCalledTimes(1)
+    })
+
     it('ao sair da tela o intervalo é limpo', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
       aLancar(nota({ lancamento_estado: 'lancando' }))
@@ -328,6 +358,46 @@ describe('NotaSefaz', () => {
       m.notasALancar.mockRejectedValue(new Error('sem rede'))
       await avancar(INTERVALO)
       expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
+      expect(screen.queryByText('Não consegui carregar as notas.')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('padrão do fornecedor (vem do banco)', () => {
+    const CNPJ = '12345678000190'
+    it('pré-marca a forma da última nota lançada do fornecedor e diz de onde veio', async () => {
+      m.formasPadraoPorFornecedor.mockResolvedValue({ [CNPJ]: 'dinheiro' })
+      aLancar(nota({ cnpj_emitente: CNPJ }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(comoPagar().value).toBe('dinheiro')
+      expect(screen.getByTestId('padrao-fornecedor')).toHaveTextContent('Padrão deste fornecedor: Dinheiro à vista')
+    })
+
+    it('o padrão do banco vale mais que o lembrado neste celular, e outro fornecedor segue em Boleto', async () => {
+      lembrarForma('ATACADAO S.A.', 'tesouraria')
+      m.formasPadraoPorFornecedor.mockResolvedValue({ [CNPJ]: 'dinheiro' })
+      aLancar(nota({ cnpj_emitente: CNPJ }), nota({ chave: '9'.repeat(44), emitente: 'OUTRO LTDA', cnpj_emitente: '99999999000199' }))
+      render(<NotaSefaz />)
+      const linhas = await screen.findAllByTestId('nota-a-lancar')
+      expect((within(linhas[0]).getByLabelText('Como pagar') as HTMLSelectElement).value).toBe('dinheiro')
+      expect((within(linhas[1]).getByLabelText('Como pagar') as HTMLSelectElement).value).toBe('boleto')
+    })
+
+    it('PIX e cartão nunca viram padrão: a última nota em PIX deixa o fornecedor em Boleto', async () => {
+      m.formasPadraoPorFornecedor.mockResolvedValue({ [CNPJ]: 'pix:bradesco|ij' })
+      aLancar(nota({ cnpj_emitente: CNPJ }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(comoPagar().value).toBe('boleto')
+      expect(screen.queryByTestId('padrao-fornecedor')).not.toBeInTheDocument()
+    })
+
+    it('falha ao ler o padrão não derruba a aba (segue em Boleto)', async () => {
+      m.formasPadraoPorFornecedor.mockRejectedValue(new Error('sem rede'))
+      aLancar(nota({ cnpj_emitente: CNPJ }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(comoPagar().value).toBe('boleto')
       expect(screen.queryByText('Não consegui carregar as notas.')).not.toBeInTheDocument()
     })
   })

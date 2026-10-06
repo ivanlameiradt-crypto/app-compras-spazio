@@ -41,10 +41,19 @@ export function rotuloForma(forma: string): string {
 const PREFIXO_MEMORIA = 'spazio.notaSefaz.forma.'
 const chaveMemoria = (emitente: string): string => PREFIXO_MEMORIA + emitente.replace(/\s+/g, ' ').trim().toUpperCase()
 
+/** Só Boleto, Dinheiro e Tesouraria podem vir pré-marcados: PIX (a conta pode ser a da empresa errada) e cartão (não cria pagamento
+ *  no Sischef) exigem escolha deliberada em cada nota. */
+const FORMAS_AUTOMATICAS = ['boleto', 'dinheiro', 'tesouraria']
+export const podeVirMarcada = (forma: string | null | undefined): boolean => forma != null && FORMAS_AUTOMATICAS.includes(forma)
+
 export function formaLembrada(emitente: string): string | null {
-  try { return formaValida(localStorage.getItem(chaveMemoria(emitente))) } catch { return null }
+  try {
+    const f = formaValida(localStorage.getItem(chaveMemoria(emitente)))
+    return podeVirMarcada(f) ? f : null
+  } catch { return null }
 }
 export function lembrarForma(emitente: string, forma: string): void {
+  if (!podeVirMarcada(forma)) return // PIX e cartão nunca são memorizados
   try { localStorage.setItem(chaveMemoria(emitente), forma) } catch { /* sem armazenamento: segue sem lembrar */ }
 }
 
@@ -63,10 +72,17 @@ export function traduzirMotivo(motivo: string | null | undefined): string {
 export const precisaEscolherForma = (n: NotaSefazLista): boolean =>
   n.lancamento_estado === 'revisar' && /sem boletos?/i.test(n.lancamento_motivo ?? '')
 
-/** Forma que a tela começa mostrando: a gravada na nota, senão a lembrada do fornecedor, senão Boleto. '' = ainda sem escolha. */
-export function formaInicial(n: NotaSefazLista): string {
+/** Padrão do fornecedor no banco (a forma da última nota lançada dele; chave = CNPJ), ou null. */
+export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<string, string> | undefined): string | null {
+  const f = n.cnpj_emitente && padroes ? formaValida(padroes[n.cnpj_emitente]) : null
+  return podeVirMarcada(f) ? f : null
+}
+
+/** Forma que a tela começa mostrando: a gravada na nota, senão o padrão do fornecedor no banco, senão a lembrada neste celular,
+ *  senão Boleto. '' = ainda sem escolha (a nota voltou do robô sem boleto: o robô para e o Ivan escolhe). */
+export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>): string {
   if (precisaEscolherForma(n)) return ''
-  return formaValida(n.forma_pagamento) ?? formaLembrada(n.emitente) ?? FORMA_PADRAO
+  return formaValida(n.forma_pagamento) ?? formaPadraoDoFornecedor(n, padroes) ?? formaLembrada(n.emitente) ?? FORMA_PADRAO
 }
 
 // ---------- bloqueios
@@ -83,6 +99,19 @@ export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   if (contaEspecial(n.emitente)) b.push(AVISO_CONTA_ESPECIAL)
   if (n.itens.some(itemSemProduto)) b.push(AVISO_ITEM_SEM_PRODUTO)
   return b
+}
+
+// ---------- 'lancando' preso
+/** Mesmo limite da Edge Function lancar-nfe (MINUTOS_TRAVA): uma reserva 'lancando' mais velha que isto é dada como presa (o run
+ *  caiu ou o GitHub o cancelou na fila) e o servidor aceita reservar de novo. A tela espelha a regra para não travar o botão. */
+export const MINUTOS_PRESA = 30
+export const AVISO_PRESA = 'O robô não respondeu em 30 min. Confira no SisChef se a nota entrou; se não entrou, pode lançar de novo.'
+
+/** A nota está 'lancando' há mais de MINUTOS_PRESA (carimbo da reserva). Sem carimbo legível, NÃO é presa (fica travada). */
+export function lancandoPresa(n: NotaSefazLista, agoraMs: number = Date.now()): boolean {
+  if (n.lancamento_estado !== 'lancando' || !n.lancamento_estado_em) return false
+  const desde = Date.parse(n.lancamento_estado_em)
+  return Number.isFinite(desde) && agoraMs - desde > MINUTOS_PRESA * 60_000
 }
 
 /** Texto do estado da nota (null = nunca disparada). */

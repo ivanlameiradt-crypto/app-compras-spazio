@@ -29,7 +29,7 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasLancadas,
+  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasLancadas, formasPadraoPorFornecedor,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
@@ -580,6 +580,24 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     from.mockReset()
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: 'PGRST205', message: 'sem tabela' }, status: 404 }))
     expect(await notasALancar()).toEqual([])
+  })
+
+  it('formasPadraoPorFornecedor: a forma da nota lançada mais recente de cada CNPJ (as linhas já vêm da mais nova para a mais velha)', async () => {
+    const c = cadeia({ data: [
+      { cnpj_emitente: '111', forma_pagamento: 'dinheiro' },
+      { cnpj_emitente: '222', forma_pagamento: 'boleto' },
+      { cnpj_emitente: '111', forma_pagamento: 'boleto' },   // mais velha do 111: ignorada
+      { cnpj_emitente: null, forma_pagamento: 'boleto' },
+      { cnpj_emitente: '333', forma_pagamento: null },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    expect(await formasPadraoPorFornecedor()).toEqual({ '111': 'dinheiro', '222': 'boleto' })
+    expect(from).toHaveBeenCalledWith('cot_nfe')
+  })
+
+  it('formasPadraoPorFornecedor: qualquer erro de leitura = sem padrão (a aba segue em Boleto)', async () => {
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'column does not exist' }, status: 400 }))
+    expect(await formasPadraoPorFornecedor()).toEqual({})
   })
 
   it('lancarNota chama a Edge Function lancar-nfe com {chave, forma}', async () => {

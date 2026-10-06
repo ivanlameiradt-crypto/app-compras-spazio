@@ -393,6 +393,7 @@ export type EstadoLancamentoNfe = 'lancando' | 'revisar' | 'erro' | 'ensaio_ok'
 /** Linha da aba Lançamento de nota SEFAZ (lê cot_nfe por RLS de admin). */
 export interface NotaSefazLista {
   chave: string
+  cnpj_emitente?: string | null
   emitente: string
   numero: string
   emissao: string
