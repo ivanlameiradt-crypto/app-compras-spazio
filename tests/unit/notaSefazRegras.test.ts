@@ -64,6 +64,12 @@ describe('notaSefazRegras', () => {
     expect(bloqueiosDaNota(nota({ emitente: 'KONDO', itens: [semProduto] }))).toHaveLength(2)
   })
 
+  it('bloqueiosDaNota: nota que chegou sem itens (a leitura não abriu a nota) não pode ser lançada', () => {
+    const b = bloqueiosDaNota(nota({ itens: [] }))
+    expect(b).toHaveLength(1)
+    expect(b[0]).toContain('chegou sem itens')
+  })
+
   it('textoDoEstado', () => {
     expect(textoDoEstado(null, null)).toBeNull()
     expect(textoDoEstado('lancando', null)).toBe('Lançando… (o robô está trabalhando)')

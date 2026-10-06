@@ -88,6 +88,8 @@ export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>
 // ---------- bloqueios
 export const AVISO_ITEM_SEM_PRODUTO = 'Item sem produto no SisChef: associe lá antes de lançar'
 export const AVISO_CONTA_ESPECIAL = 'Conta especial: essa nota não é lançada pelo app'
+/** Nota que a leitura do SisChef trouxe sem itens (a tela de importação não abriu): não há o que conferir, e o robô também recusa. */
+export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: o robô não conseguiu lê-la no SisChef, então não dá para conferir. Veja na próxima leitura (07h40, 12h40 ou 17h40) ou confira a nota lá'
 
 const itemSemProduto = (it: ItemNotaSefaz): boolean =>
   it.produto_id == null || String(it.produto_id).trim() === '' || (it.associacao ?? '').trim().toLowerCase() === 'painel'
@@ -97,6 +99,7 @@ const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.tes
 export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   const b: string[] = []
   if (contaEspecial(n.emitente)) b.push(AVISO_CONTA_ESPECIAL)
+  if (n.itens.length === 0) b.push(AVISO_SEM_ITENS)
   if (n.itens.some(itemSemProduto)) b.push(AVISO_ITEM_SEM_PRODUTO)
   return b
 }

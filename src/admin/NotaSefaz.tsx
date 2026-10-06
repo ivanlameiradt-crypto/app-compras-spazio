@@ -28,6 +28,9 @@ const ddmm = (iso: string): string => { const p = iso.split('-'); return p.lengt
 const dataBr = (iso: string | null): string => { const p = (iso ?? '').split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—' }
 /** Tira o prefixo "CÓD. FOR: 123456 " que o SisChef põe na descrição, para o painel de conferir ficar legível. */
 const semCodFor = (d: string): string => d.replace(/^CÓD\. FOR:\s*\S+\s*/i, '').trim() || d
+/** Quantidade no jeito brasileiro: 19,918 (e não 19.918, que no Brasil lê-se como dezenove mil) e 1.000,5; sem quantidade, "?". */
+const qtdBr = (q: number | null | undefined): string =>
+  q == null || !Number.isFinite(Number(q)) ? '?' : Number(q).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
 const nomeDoProduto = (it: ItemNotaSefaz): string =>
   it.produto_nome?.trim() || (it.produto_id != null && String(it.produto_id).trim() !== '' ? `produto ${it.produto_id}` : 'sem produto')
 
@@ -38,10 +41,11 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
     <details className="conferir" data-testid="conferir">
       <summary>Conferir itens e financeiro</summary>
       <div className="grupo">Itens e produtos associados</div>
+      {nota.itens.length === 0 && <p className="sub" data-testid="conferir-sem-itens">Nenhum item lido: o robô não conseguiu abrir esta nota no SisChef.</p>}
       <ul className="conferir-itens">
         {nota.itens.map((it, i) => (
           <li key={i} data-testid="conferir-item">
-            <span>{semCodFor(it.descricao)} · {it.qtd ?? '?'} {it.unidade_sischef ?? ''}</span>
+            <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
             <b>{nomeDoProduto(it)}</b>
             <span className="sub">{(it.associacao ?? '') === 'sischef' ? 'associado no SisChef' : (it.associacao ?? '') === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>
           </li>
@@ -49,7 +53,7 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
       </ul>
       <div className="grupo">Financeiro</div>
       {!f.lido ? <p className="sub" data-testid="fin-nao-lido">Os boletos ainda não foram lidos do XML. Aparecem na próxima leitura do SisChef.</p>
-        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">A nota não tem boletos (duplicatas). Escolha como pagar.</p>
+        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">O XML da nota não traz boletos (duplicatas). Digite as parcelas do boleto ou escolha outra forma de pagamento.</p>
         : (
           <>
             <ul className="conferir-itens">

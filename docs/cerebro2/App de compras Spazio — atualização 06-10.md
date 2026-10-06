@@ -43,8 +43,12 @@
 
 ## Pendências
 1. Publicar a correção da nota presa.
-2. Fila de 06/10: 7 notas. Prontas para lançar: MERCURIO 002270842, MATEUS 000089282, MC CONTENTE 000002278.
-   Precisam de associação no Sischef: SEARA 000187105, MERCURIO 002270833, MATEUS 000089284 e 000089283.
+2. Fila de 06/10 (7 notas, leitura das 15h55). **Só 2 estão com todos os itens associados**: MERCURIO 002270842 (3 boletos do XML:
+   pronta, só Lançar) e MATEUS 000089282 (itens ok, mas o XML não traz boletos: você digita a parcela).
+   Precisam de associação (item sem produto): SEARA 000187105, MERCURIO 002270833, MATEUS 000089283 e 000089284.
+   **MC CONTENTE 000002278 NÃO está pronta**: chegou sem nenhum item e sem XML lido (o robô não conseguiu ler essa nota no SisChef;
+   causa ainda não confirmada — hipótese: fornecedor novo, não cadastrado no SisChef). O app trava o Lançar dela.
+   (Uma versão anterior deste texto listava a MC CONTENTE como pronta: errado, "todos os itens têm produto" era verdade só porque a lista veio vazia.)
 3. Ligar `MOTOR_NFE_LIGADO=ON` (só você consegue, é secret do GitHub) e lançar a 1ª nota real em Boleto.
 4. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
 5. **Renovar o GITHUB_PAT antes de 27/10.**

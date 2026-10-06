@@ -531,6 +531,30 @@ describe('NotaSefaz', () => {
       expect(within(painel).getByTestId('fin-total')).toHaveTextContent(/Soma dos boletos R\$\s100,00 · valor da nota R\$\s100,00 · bate/)
     })
 
+    it('painel de conferir mostra a quantidade no jeito brasileiro (19,918 e não 19.918, que parece dezenove mil)', async () => {
+      aLancar(pronta({ itens: [
+        { descricao: 'CÓD. FOR: 1 LAGARTO RESF', qtd: 19.918, unidade_sischef: 'KG', produto_id: 5, associacao: 'sischef' },
+        { descricao: 'CÓD. FOR: 2 BACON', qtd: 1000.5, unidade_sischef: 'KG', produto_id: 6, associacao: 'sischef' },
+        { descricao: 'CÓD. FOR: 3 SEM QTD', qtd: null, unidade_sischef: 'UN', produto_id: 7, associacao: 'sischef' },
+      ] }))
+      render(<NotaSefaz />)
+      const itens = within(await screen.findByTestId('conferir')).getAllByTestId('conferir-item')
+      expect(itens[0]).toHaveTextContent('LAGARTO RESF · 19,918 KG')
+      expect(itens[1]).toHaveTextContent('BACON · 1.000,5 KG')
+      expect(itens[2]).toHaveTextContent('SEM QTD · ? UN')
+    })
+
+    it('nota que chegou sem itens: o painel avisa, o aviso vermelho aparece e o Lançar fica travado (não há o que conferir)', async () => {
+      aLancar(pronta({ itens: [], parcelas: null }))
+      render(<NotaSefaz />)
+      const painel = await screen.findByTestId('conferir')
+      expect(within(painel).getByTestId('conferir-sem-itens')).toBeInTheDocument()
+      expect(within(painel).queryAllByTestId('conferir-item')).toHaveLength(0)
+      expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('chegou sem itens')
+      expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+      expect(botaoLancar()).toBeDisabled()
+    })
+
     it('painel de conferir mostra a diferença quando os boletos não fecham, e o aviso de XML não lido / sem boleto', async () => {
       aLancar(pronta({ parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 90 }] }), pronta({ chave: '8'.repeat(44), parcelas: null }), pronta({ chave: '7'.repeat(44), parcelas: [] }))
       render(<NotaSefaz />)
