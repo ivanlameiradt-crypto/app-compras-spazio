@@ -267,6 +267,15 @@ describe('NotaSefaz', () => {
       expect(botaoLancar()).toBeDisabled()
     })
 
+    it("'lancando' preso há mais de 30 min: avisa para conferir no SisChef e deixa lançar de novo", async () => {
+      const velho = new Date(Date.now() - 31 * 60_000).toISOString()
+      aLancar(nota({ lancamento_estado: 'lancando', lancamento_estado_em: velho }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(screen.getByTestId('status-nota')).toHaveTextContent('O robô não respondeu em 30 min. Confira no SisChef')
+      expect(botaoLancar()).toBeEnabled()
+    })
+
     it('sem estado: nenhum status aparece', async () => {
       aLancar(nota({}))
       render(<NotaSefaz />)
@@ -302,6 +311,15 @@ describe('NotaSefaz', () => {
     it("sem nota 'lancando' não fica recarregando", async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
       aLancar(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'x' }))
+      await montar()
+      expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
+      await avancar(INTERVALO * 4)
+      expect(m.notasALancar).toHaveBeenCalledTimes(1)
+    })
+
+    it("nota 'lancando' presa (> 30 min) não fica recarregando", async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      aLancar(nota({ lancamento_estado: 'lancando', lancamento_estado_em: new Date(Date.now() - 40 * 60_000).toISOString() }))
       await montar()
       expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
       await avancar(INTERVALO * 4)

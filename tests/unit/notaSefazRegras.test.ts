@@ -1,6 +1,6 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
-  traduzirMotivo, formaNaoProvada,
+  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -76,5 +76,16 @@ describe('notaSefazRegras', () => {
     expect(formaNaoProvada('boleto')).toBe(false)
     expect(formaNaoProvada('')).toBe(false)
     for (const f of ['dinheiro', 'tesouraria', 'cartao', 'pix:bradesco|ij']) expect(formaNaoProvada(f)).toBe(true)
+  })
+
+  it('lancandoPresa: só "lancando" com carimbo mais velho que 30 min (o mesmo limite da Edge Function)', () => {
+    const agora = Date.parse('2026-10-06T12:00:00Z')
+    const em = (min: number) => new Date(agora - min * 60_000).toISOString()
+    expect(MINUTOS_PRESA).toBe(30)
+    expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: em(31) }), agora)).toBe(true)
+    expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: em(29) }), agora)).toBe(false)
+    expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: null }), agora)).toBe(false)
+    expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: 'lixo' }), agora)).toBe(false)
+    expect(lancandoPresa(nota({ lancamento_estado: 'erro', lancamento_estado_em: em(120) }), agora)).toBe(false)
   })
 })

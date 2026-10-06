@@ -7,8 +7,8 @@ import { formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
-  AVISO_FORMA_NAO_PROVADA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  lembrarForma, rotuloForma, textoDoEstado, traduzirMotivo,
+  AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
+  lancandoPresa, lembrarForma, rotuloForma, textoDoEstado, traduzirMotivo,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -33,9 +33,11 @@ function NotaALancar({ nota, aoLancar }: { nota: NotaSefazLista; aoLancar: () =>
   const forma = escolha ?? formaInicial(nota)
   const estado = nota.lancamento_estado ?? null
   const bloqueios = bloqueiosDaNota(nota)
-  const estadoTexto = textoDoEstado(estado, nota.lancamento_motivo)
-  // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela.
-  const travada = estado === 'erro' || estado === 'lancando' || bloqueios.length > 0
+  const presa = lancandoPresa(nota)
+  const estadoTexto = presa ? AVISO_PRESA : textoDoEstado(estado, nota.lancamento_motivo)
+  // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
+  // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
+  const travada = estado === 'erro' || (estado === 'lancando' && !presa) || bloqueios.length > 0
   const podeLancar = !travada && forma !== '' && !enviando
 
   function escolher(nova: string) {
@@ -123,8 +125,8 @@ export default function NotaSefaz() {
   }
   useEffect(() => { void carregar() }, [])
 
-  // Enquanto o robô trabalha em alguma nota, olha de novo a cada ~15 s (e para quando nenhuma estiver 'lancando').
-  const algumaLancando = aLancar.some((n) => n.lancamento_estado === 'lancando')
+  // Enquanto o robô trabalha em alguma nota, olha de novo a cada ~15 s (e para quando nenhuma estiver 'lancando' — presa não conta).
+  const algumaLancando = aLancar.some((n) => n.lancamento_estado === 'lancando' && !lancandoPresa(n))
   useEffect(() => {
     if (!algumaLancando) return
     const id = setInterval(() => { void carregar(true) }, INTERVALO_ATUALIZAR)

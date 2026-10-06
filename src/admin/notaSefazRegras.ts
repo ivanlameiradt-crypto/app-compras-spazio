@@ -85,6 +85,19 @@ export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   return b
 }
 
+// ---------- 'lancando' preso
+/** Mesmo limite da Edge Function lancar-nfe (MINUTOS_TRAVA): uma reserva 'lancando' mais velha que isto é dada como presa (o run
+ *  caiu ou o GitHub o cancelou na fila) e o servidor aceita reservar de novo. A tela espelha a regra para não travar o botão. */
+export const MINUTOS_PRESA = 30
+export const AVISO_PRESA = 'O robô não respondeu em 30 min. Confira no SisChef se a nota entrou; se não entrou, pode lançar de novo.'
+
+/** A nota está 'lancando' há mais de MINUTOS_PRESA (carimbo da reserva). Sem carimbo legível, NÃO é presa (fica travada). */
+export function lancandoPresa(n: NotaSefazLista, agoraMs: number = Date.now()): boolean {
+  if (n.lancamento_estado !== 'lancando' || !n.lancamento_estado_em) return false
+  const desde = Date.parse(n.lancamento_estado_em)
+  return Number.isFinite(desde) && agoraMs - desde > MINUTOS_PRESA * 60_000
+}
+
 /** Texto do estado da nota (null = nunca disparada). */
 export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined): string | null {
   const m = traduzirMotivo(motivo)
