@@ -28,6 +28,8 @@
 - O XML da MATEUS vem **sem forma de pagamento e sem duplicatas**: falha do fornecedor. Nas 3 notas de 06/10 era **boleto**, mas você também compra da MATEUS no **cartão de crédito** e em outras formas. **Não é regra fixa.**
 - Até corrigirem: o app não assume forma nenhuma para essas notas e você **informa o pagamento nota a nota**. Nunca viram "pronta" nem "fornecedor aprendido".
 - Quando a MATEUS corrigir o XML, você me avisa e a regra é encerrada.
+- **Como informar o boleto:** na nota aparece um editor para você digitar as parcelas (vencimento e valor). O Lançar só libera quando a soma fecha com o valor da nota. O robô escreve essas parcelas na tela de pagamento do Sischef e confere antes de gravar.
+- **Ainda não foi provado ao vivo.** O primeiro teste deve ser a menor nota da MATEUS (000089282, R$ 430,20).
 
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
