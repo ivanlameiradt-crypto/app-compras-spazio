@@ -11,7 +11,7 @@
 - O app **se atualiza sozinho** ao reabrir (desde 03/10).
 - As notas novas chegam ao app **sozinhas 3x por dia: 07h40, 12h40 e 17h40** (desde 06/10). Antes era só à mão.
 - Se uma nota ficar "Lançando…" por mais de 30 min, o app avisa para conferir no Sischef e deixa tentar de novo
-  (correção de 06/10, falta publicar).
+  (correção de 06/10, já publicada).
 
 ## Pagamento da nota (decisão de 06/10)
 - O app pré-marca a forma da **última nota lançada** do fornecedor (guardada no banco, vale em qualquer celular). Sem histórico: Boleto.
@@ -50,15 +50,16 @@
 - Item sem produto no Sischef ou conta especial (KONDO, Mercado Livre) bloqueia o Lançar.
 
 ## Pendências
-1. Publicar a correção da nota presa.
+1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
 2. Fila de 06/10 (7 notas, leitura das 15h55). **Só 2 estão com todos os itens associados**: MERCURIO 002270842 (3 boletos do XML:
    pronta, só Lançar) e MATEUS 000089282 (itens ok, mas o XML não traz boletos: você digita a parcela).
    Precisam de associação (item sem produto): SEARA 000187105, MERCURIO 002270833, MATEUS 000089283 e 000089284.
    **MC CONTENTE 000002278 NÃO está pronta**: chegou sem nenhum item e sem XML lido. Causa (print do SisChef, 06/10): a nota está como
    **"xml resumido"** — a SEFAZ só entregou o resumo; o XML completo só vem depois da ciência da operação. Não é XML corrompido.
-   O app trava o Lançar dela e oferece "Descartar nota".
+   O app trava o Lançar dela e oferece "Descartar nota" (decisão sua: nota com informação faltando não é lançada; quem descarta é você).
    (Uma versão anterior deste texto listava a MC CONTENTE como pronta: errado, "todos os itens têm produto" era verdade só porque a lista veio vazia.)
-3. Ligar `MOTOR_NFE_LIGADO=ON` (só você consegue, é secret do GitHub) e lançar a 1ª nota real em Boleto.
-4. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
-5. **Renovar o GITHUB_PAT antes de 27/10.**
-6. Cotação com vendedores: ensaio 09/10 e piloto 19/10 (sem mudança no app desde 30/09).
+3. **Próxima etapa de desenvolvimento: caixa de associação de itens no app** (ordem combinada: associação no app → o robô aplica a decisão no SisChef → teste acompanhado). Ainda NÃO existe: só a prévia.
+4. Ligar `MOTOR_NFE_LIGADO=ON` (só você consegue, é secret do GitHub) e lançar a 1ª nota real em Boleto. Sugestão: a MERCURIO 002270842 (caminho do boleto já provado), acompanhada.
+5. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
+6. **Renovar o GITHUB_PAT antes de 27/10.**
+7. Cotação com vendedores: ensaio 09/10 e piloto 19/10 (sem mudança no app desde 30/09).
