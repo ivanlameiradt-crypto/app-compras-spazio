@@ -21,7 +21,8 @@
 
 ## Pendências
 1. Publicar a correção da nota presa.
-2. SEARA (NF 000187105): associar o item no Sischef.
+2. Fila de 06/10: 7 notas. Prontas para lançar: MERCURIO 002270842, MATEUS 000089282, MC CONTENTE 000002278.
+   Precisam de associação no Sischef: SEARA 000187105, MERCURIO 002270833, MATEUS 000089284 e 000089283.
 3. Teste acompanhado: primeiro o ensaio, depois 1 nota real em Boleto.
 4. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
 5. **Renovar o GITHUB_PAT antes de 27/10.**
