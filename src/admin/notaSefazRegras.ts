@@ -6,6 +6,12 @@ import type { EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista } from '../lib/
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
 export const FORMA_PADRAO = 'boleto'
 
+/** Formas já PROVADAS ao vivo no SisChef (OLINDA, boleto). As outras têm texto de conta/opção ainda não confirmado na tela e, se
+ *  errarem, só quebram DEPOIS do pedido criado (nota pela metade). Quando uma for provada num lançamento real, entra aqui. */
+export const FORMAS_PROVADAS: string[] = ['boleto']
+export const AVISO_FORMA_NAO_PROVADA = 'Esta forma ainda não foi testada ao vivo no robô. No 1º lançamento real, use Boleto.'
+export const formaNaoProvada = (forma: string): boolean => forma !== '' && !FORMAS_PROVADAS.includes(forma)
+
 export interface OpcaoPagar { valor: string; rotulo: string }
 /** Valores no formato que a Edge Function lancar-nfe aceita: boleto | dinheiro | tesouraria | cartao | pix:<banco>|<empresa>. */
 export const OPCOES_ANTES_DO_PIX: OpcaoPagar[] = [

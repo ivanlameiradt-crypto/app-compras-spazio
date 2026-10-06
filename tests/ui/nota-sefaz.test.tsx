@@ -331,4 +331,15 @@ describe('NotaSefaz', () => {
       expect(screen.queryByText('Não consegui carregar as notas.')).not.toBeInTheDocument()
     })
   })
+
+  it('avisa quando a forma escolhida ainda não foi provada ao vivo (e não avisa no boleto)', async () => {
+    aLancar(nota({}))
+    render(<NotaSefaz />)
+    await screen.findByTestId('nota-a-lancar')
+    expect(screen.queryByTestId('aviso-forma')).not.toBeInTheDocument() // padrão = Boleto
+    await userEvent.selectOptions(comoPagar(), 'dinheiro')
+    expect(await screen.findByTestId('aviso-forma')).toHaveTextContent(/ainda não foi testada ao vivo/)
+    await userEvent.selectOptions(comoPagar(), 'boleto')
+    expect(screen.queryByTestId('aviso-forma')).not.toBeInTheDocument()
+  })
 })

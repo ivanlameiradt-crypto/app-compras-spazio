@@ -7,8 +7,8 @@ import { formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
-  OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, lembrarForma, rotuloForma, textoDoEstado,
-  traduzirMotivo,
+  AVISO_FORMA_NAO_PROVADA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
+  lembrarForma, rotuloForma, textoDoEstado, traduzirMotivo,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -83,6 +83,7 @@ function NotaALancar({ nota, aoLancar }: { nota: NotaSefazLista; aoLancar: () =>
           {OPCOES_DEPOIS_DO_PIX.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
         </select>
       </label>
+      {formaNaoProvada(forma) && <div className="amarelo" data-testid="aviso-forma">{AVISO_FORMA_NAO_PROVADA}</div>}
 
       {confirmando ? (
         <div className="bloco-envio">

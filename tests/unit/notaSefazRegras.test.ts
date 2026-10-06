@@ -1,6 +1,6 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
-  traduzirMotivo,
+  traduzirMotivo, formaNaoProvada,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -70,5 +70,11 @@ describe('notaSefazRegras', () => {
     expect(textoDoEstado('revisar', 'x')).toBe('Precisa de você: x')
     expect(textoDoEstado('erro', 'x')).toContain('NÃO lance de novo')
     expect(textoDoEstado('ensaio_ok', null)).toBe('Ensaio ok (nada foi criado)')
+  })
+
+  it('formaNaoProvada: só o boleto foi provado ao vivo', () => {
+    expect(formaNaoProvada('boleto')).toBe(false)
+    expect(formaNaoProvada('')).toBe(false)
+    for (const f of ['dinheiro', 'tesouraria', 'cartao', 'pix:bradesco|ij']) expect(formaNaoProvada(f)).toBe(true)
   })
 })
