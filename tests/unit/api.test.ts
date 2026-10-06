@@ -29,7 +29,7 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
+  associarItem, catalogoProdutos, descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
@@ -554,10 +554,11 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     ['mensagem "column ... does not exist"', { message: 'column cot_nfe.forma_pagamento does not exist' }],
   ])('migração ainda não aplicada (%s): cai para as colunas antigas e a aba segue funcionando', async (_n, erro) => {
     const falha = cadeia({ data: null, error: erro, status: 400 })
+    const falha2 = cadeia({ data: null, error: erro, status: 400 })  // o 2º degrau (sem a decisão do app) ainda tem as colunas novas: também falha
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(antiga)
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(antiga)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(from).toHaveBeenCalledTimes(3)
     expect(falha.select.mock.calls[0][0]).toContain(COLUNA_NOVA)
     expect(antiga.select.mock.calls[0][0]).not.toContain('forma_pagamento')
     expect(antiga.select.mock.calls[0][0]).toContain('nf_sischef, itens')
@@ -567,9 +568,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
 
   it('"Últimos lançamentos" (notasLancadas) tem o mesmo fallback', async () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
+      .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: [{ ...linha, situacao: 'lancada' }], error: null, status: 200 }))
     const r = await notasLancadas()
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(from).toHaveBeenCalledTimes(3)
     expect(r[0]).toMatchObject({ situacao: 'lancada', lancamento_estado: null })
   })
 
@@ -698,9 +700,11 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   })
 
   it('migração do descarte ainda não aplicada: a lista cai para as colunas antigas SEM filtrar por descartada_em (a aba não quebra)', async () => {
-    const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.descartada_em does not exist' }, status: 400 })
+    const erro = { code: '42703', message: 'column cot_nfe.descartada_em does not exist' }
+    const falha = cadeia({ data: null, error: erro, status: 400 })
+    const falha2 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(antiga)
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(antiga)
     const r = await notasALancar()
     expect(falha.is).toHaveBeenCalledWith('descartada_em', null)
     expect(antiga.is).not.toHaveBeenCalled()
@@ -747,5 +751,83 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('restaurarNota: falha vira texto claro em português', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'qualquer coisa', code: 'XX000' }, status: 500 })
     await expect(restaurarNota('d'.repeat(44))).rejects.toThrow('Não consegui voltar a nota para a fila agora. Confira a internet e tente de novo.')
+  })
+
+  it('só a migração da decisão do app (associacoes_app) ainda não aplicada: cai para as colunas SEM ela e mantém forma, estado, boletos e o filtro do descarte', async () => {
+    const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
+    const semDecisao = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', lancamento_estado: 'revisar', parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: '10.5' }] }], error: null, status: 200 })
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
+    const r = await notasALancar()
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(falha.select.mock.calls[0][0]).toContain('associacoes_app')
+    const colunas = semDecisao.select.mock.calls[0][0] as string
+    expect(colunas).not.toContain('associacoes_app')
+    expect(colunas).toContain('forma_pagamento')
+    expect(colunas).toContain('descartada_em')
+    expect(semDecisao.is).toHaveBeenCalledWith('descartada_em', null)                       // o descarte continua filtrando
+    expect(r[0]).toMatchObject({ forma_pagamento: 'boleto', lancamento_estado: 'revisar', associacoes_app: null })
+    expect(r[0].parcelas).toEqual([{ numero: '001', vencimento: '2026-11-05', valor: 10.5 }])
+  })
+
+  it('lê a decisão do app (associacoes_app): só as bem formadas, com o código como número; vazio, lista ou lixo = null', async () => {
+    const decisao = { produto_id: '3138573', produto_nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un', por: 'ivan@spazio.com', em: '2026-10-06T23:00:00Z' }
+    const c = cadeia({ data: [
+      { ...linha, associacoes_app: { '3': decisao, '4': { produto_id: 'x', produto_nome: 'sem código' }, '5': { produto_id: 7, produto_nome: '  ' }, '6': null } },
+      { ...linha, chave: 'e'.repeat(44), associacoes_app: {} },
+      { ...linha, chave: 'f'.repeat(44), associacoes_app: [1, 2] },
+      { ...linha, chave: 'g'.repeat(44) },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(r[0].associacoes_app).toEqual({ '3': { produto_id: 3138573, produto_nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un', por: 'ivan@spazio.com', em: '2026-10-06T23:00:00Z' } })
+    expect(r.slice(1).map((n) => n.associacoes_app)).toEqual([null, null, null])
+  })
+
+  it('catalogoProdutos: UMA linha por produto (a da semana mais nova), nome sem espaço sobrando, em ordem alfabética; descarta linha sem nome ou sem código', async () => {
+    const c = cadeia({ data: [
+      { produto_id: 3469626, produto: 'LEITE CONDESSADO  - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+      { produto_id: '3138573', produto: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un', semana_id: 3 },
+      { produto_id: 1836957, produto: 'AGUA SEM GÁS 500ML', unidade: 'un', semana_id: 3 },
+      { produto_id: 3138573, produto: 'OLEO ANTIGO (UN)', unidade: 'un', semana_id: 2 },      // semana velha: a nova já valeu
+      { produto_id: 'x', produto: 'SEM CÓDIGO', unidade: 'un', semana_id: 2 },
+      { produto_id: 77, produto: '   ', unidade: 'kg', semana_id: 2 },
+      { produto_id: 88, produto: null, unidade: 'kg', semana_id: 2 },
+      { produto_id: 99, produto: 'SÓ NA SEMANA VELHA (KG)', unidade: null, semana_id: 1 },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await catalogoProdutos()
+    expect(from).toHaveBeenCalledWith('itens_semana')
+    expect(c.order).toHaveBeenCalledWith('semana_id', { ascending: false })
+    expect(r).toEqual([
+      { produto_id: 1836957, nome: 'AGUA SEM GÁS 500ML', unidade: 'un' },
+      { produto_id: 3469626, nome: 'LEITE CONDESSADO - INSUMOS (KG)', unidade: 'kg' },
+      { produto_id: 3138573, nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' },
+      { produto_id: 99, nome: 'SÓ NA SEMANA VELHA (KG)', unidade: null },
+    ])
+  })
+
+  it('catalogoProdutos: falha de leitura vira ErroApi (a caixa mostra "não consegui carregar")', async () => {
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 }))
+    await expect(catalogoProdutos()).rejects.toMatchObject({ name: 'ErroApi', status: 403 })
+  })
+
+  it('associarItem chama cot_nfe_associar com a chave, o número do item e o produto (nulo desfaz)', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await associarItem('d'.repeat(44), 2, 3138573)
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 2, p_produto_id: 3138573 })
+    await associarItem('d'.repeat(44), 2, null)
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 2, p_produto_id: null })
+  })
+
+  it.each([
+    ['apenas o administrador pode fazer isso', 'Só o administrador pode fazer isso.'],
+    ['esta nota foi descartada: volte-a para a fila antes de associar', 'Esta nota foi descartada: volte-a para a fila antes de associar.'],
+    ['este item já está associado no SisChef', 'Este item já está associado no SisChef.'],
+    ['produto fora da lista de insumos', 'Produto fora da lista de insumos.'],
+    ['o robô está lançando esta nota agora: aguarde terminar', 'O robô está lançando esta nota agora: aguarde terminar.'],
+    ['TypeError: Failed to fetch', 'Não consegui guardar a escolha agora. Confira a internet e tente de novo.'],
+  ])('associarItem: erro do banco "%s" vira texto claro', async (msg, esperado) => {
+    rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })
+    await expect(associarItem('d'.repeat(44), 1, 5)).rejects.toThrow(esperado)
   })
 })

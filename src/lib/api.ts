@@ -4,10 +4,10 @@ import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
-  Abertura, Compra, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
+  Abertura, AssociacaoApp, Compra, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
   IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
   LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
-  Preparo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
+  Preparo, ProdutoCatalogo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
 /** Erro vindo do Supabase, com o status HTTP e o código (PostgREST/Postgres) para a fila saber se tenta de novo. */
@@ -571,7 +571,9 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
 // ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
 const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
 // As colunas novas (migrações 20261206000001 e 20261207000001 — esta traz `parcelas`) só existem depois de aplicada: sem elas a leitura cai para as antigas.
-const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais, descartada_em, descartada_motivo`
+/** Até a migração do descarte (20261209000001): sem a coluna da decisão do app (20261210000001), que é a mais nova. */
+const COLUNAS_NOTA_SEM_ASSOCIACAO = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais, descartada_em, descartada_motivo`
+const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_ASSOCIACAO}, associacoes_app`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -589,7 +591,23 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
     : null,
   descartada_em: n.descartada_em ?? null,
   descartada_motivo: n.descartada_motivo ?? null,
+  associacoes_app: associacoesLidas(n.associacoes_app),
 })
+/** Decisões do app como vêm do banco (jsonb) -> só as bem formadas, com o código como número. Vazio ou estragado = null. */
+function associacoesLidas(x: unknown): Record<string, AssociacaoApp> | null {
+  if (x === null || typeof x !== 'object' || Array.isArray(x)) return null
+  const saida: Record<string, AssociacaoApp> = {}
+  for (const [n, v] of Object.entries(x as Record<string, unknown>)) {
+    const d = (v ?? {}) as Record<string, unknown>
+    const id = Number(d.produto_id)
+    if (!Number.isFinite(id) || typeof d.produto_nome !== 'string' || d.produto_nome.trim() === '') continue
+    saida[n] = {
+      produto_id: id, produto_nome: d.produto_nome, unidade: typeof d.unidade === 'string' ? d.unidade : null,
+      por: typeof d.por === 'string' ? d.por : null, em: typeof d.em === 'string' ? d.em : null,
+    }
+  }
+  return Object.keys(saida).length > 0 ? saida : null
+}
 /** Coluna que não existe (Postgres 42703, ou a mensagem "column ... does not exist"): migração ainda não aplicada. */
 const colunaInexistente = (e: { message?: string; code?: string }): boolean =>
   e.code === '42703' || /column .* does not exist/i.test(e.message ?? '')
@@ -599,7 +617,10 @@ type RespostaNotas = { data: unknown; error: { message: string; code?: string } 
  * `consulta` qual das duas tentativas é: com as colunas antigas ela também não pode filtrar pelas colunas do descarte.
  */
 async function lerNotas(consulta: (colunas: string, novas: boolean) => PromiseLike<RespostaNotas>): Promise<NotaSefazLista[]> {
+  // Degraus: tudo (com a decisão do app) -> sem a decisão do app (descarte já existe) -> só as colunas antigas. Cada degrau só é tentado se o anterior
+  // falhou por coluna inexistente (migração ainda não aplicada); qualquer outro erro vale como está.
   let r = await consulta(COLUNAS_NOTA, true)
+  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_ASSOCIACAO, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_ANTIGAS, false)
   if (r.error) {
     if (tabelaInexistente(r.error.code)) return []
@@ -615,7 +636,7 @@ export const notasALancar = (): Promise<NotaSefazLista[]> =>
   })
 /** Notas que o Ivan descartou e que ainda estão na fila do SisChef (as que já saíram de lá não aparecem), a mais nova primeiro. */
 export async function notasDescartadas(): Promise<NotaSefazLista[]> {
-  const r = await supabase.from('cot_nfe').select(COLUNAS_NOTA).eq('situacao', 'na_fila').not('descartada_em', 'is', null)
+  const r = await supabase.from('cot_nfe').select(COLUNAS_NOTA_SEM_ASSOCIACAO).eq('situacao', 'na_fila').not('descartada_em', 'is', null)
     .order('descartada_em', { ascending: false })
   if (r.error) {
     if (colunaInexistente(r.error) || tabelaInexistente(r.error.code)) return [] // migração do descarte ainda não aplicada
@@ -722,6 +743,41 @@ export async function descartarNota(chave: string, motivo: string): Promise<void
 export async function restaurarNota(chave: string): Promise<void> {
   try { await chamar('cot_nfe_restaurar', { p_chave: chave }) }
   catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'voltar a nota para a fila'), e instanceof ErroApi ? e.status : undefined) }
+}
+
+/**
+ * Os produtos que o Ivan pode escolher ao associar um item da nota: os insumos e bebidas que já estão no app (itens_semana; o código é o do
+ * SisChef), UMA linha por produto, com o nome e a unidade da semana mais nova. Em ordem alfabética. Só o admin lê tudo (RLS).
+ */
+export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
+  const { data, error, status } = await supabase.from('itens_semana').select('produto_id, produto, unidade, semana_id')
+    .order('semana_id', { ascending: false }).limit(1000)
+  if (error) throw new ErroApi(error.message, status, error.code)
+  const porId = new Map<number, ProdutoCatalogo>()
+  for (const r of (data ?? []) as { produto_id: number | string; produto: string | null; unidade: string | null }[]) {
+    const id = Number(r.produto_id)
+    const nome = (r.produto ?? '').replace(/\s+/g, ' ').trim()
+    if (!Number.isFinite(id) || nome === '' || porId.has(id)) continue // a 1ª de cada produto é a da semana mais nova
+    porId.set(id, { produto_id: id, nome, unidade: r.unidade ?? null })
+  }
+  return [...porId.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+}
+/** Texto claro para o erro de associar: as mensagens do banco (cot_nfe_associar) já são em português e dizem o motivo; o resto vira um texto genérico. */
+function mensagemDaAssociacao(e: unknown): string {
+  const texto = e instanceof Error ? e.message : ''
+  if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
+  if (/nota não encontrada|não está mais na fila|descartada|pela metade|lançando esta nota|item não encontrado|já está associado|fora da lista/i.test(texto)) {
+    return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
+  }
+  return 'Não consegui guardar a escolha agora. Confira a internet e tente de novo.'
+}
+/**
+ * Guarda a escolha do Ivan para UM item sem produto (cot_nfe_associar, admin): o produto vem da lista de insumos do app e o servidor grava
+ * o nome e a unidade. Com `produtoId` nulo desfaz a escolha. Etapa 1: só GUARDA; nada muda no SisChef (o robô ainda não aplica a escolha).
+ */
+export async function associarItem(chave: string, n: number, produtoId: number | null): Promise<void> {
+  try { await chamar('cot_nfe_associar', { p_chave: chave, p_n: n, p_produto_id: produtoId }) }
+  catch (e) { throw new ErroApi(mensagemDaAssociacao(e), e instanceof ErroApi ? e.status : undefined) }
 }
 export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
 export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })

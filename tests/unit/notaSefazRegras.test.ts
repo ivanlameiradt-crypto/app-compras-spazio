@@ -1,7 +1,8 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
-  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado,
+  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
+  AVISO_ASSOCIACAO_SO_NO_APP, AVISO_ITEM_SEM_PRODUTO,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -63,6 +64,39 @@ describe('notaSefazRegras', () => {
     expect(bloqueiosDaNota(nota({ itens: [semProduto] }))).toEqual(['Item sem produto no SisChef: associe lá antes de lançar'])
     expect(bloqueiosDaNota(nota({ itens: [{ ...semProduto, produto_id: 5, associacao: ' Painel ' }] }))).toHaveLength(1)
     expect(bloqueiosDaNota(nota({ emitente: 'KONDO', itens: [semProduto] }))).toHaveLength(2)
+  })
+
+  describe('decisão do app (associacoes_app): o que o Ivan confirmou para o item sem produto', () => {
+    const dec = (id: number) => ({ produto_id: id, produto_nome: `PRODUTO ${id}`, unidade: 'un' })
+    const sem = (n: number | null) => ({ descricao: 'Y', qtd: 1, unidade_sischef: 'UN', produto_id: null, n })
+
+    it('decisaoDoItem: acha pelo número do item; sem número, sem decisões ou item de outro número = null', () => {
+      const n = nota({ itens: [sem(1), sem(2), sem(null)], associacoes_app: { '2': dec(5) } })
+      expect(decisaoDoItem(n, n.itens[0])).toBeNull()
+      expect(decisaoDoItem(n, n.itens[1])).toEqual(dec(5))
+      expect(decisaoDoItem(n, n.itens[2])).toBeNull()
+      expect(decisaoDoItem(nota({ itens: [sem(2)] }), sem(2))).toBeNull()                             // nota sem decisões
+      expect(decisaoDoItem(nota({ itens: [sem(2)], associacoes_app: null }), sem(2))).toBeNull()
+    })
+
+    it('se o item já vem associado de verdade do SisChef, vale o SisChef (a decisão do app é ignorada); item "painel" ainda conta', () => {
+      const associado = { descricao: 'Z', qtd: 1, unidade_sischef: 'UN', produto_id: 9, associacao: 'sischef', n: 1 }
+      const painel = { descricao: 'W', qtd: 1, unidade_sischef: 'UN', produto_id: 9, associacao: 'painel', n: 2 }
+      const n = nota({ itens: [associado, painel], associacoes_app: { '1': dec(5), '2': dec(6) } })
+      expect(decisaoDoItem(n, associado)).toBeNull()
+      expect(decisaoDoItem(n, painel)).toEqual(dec(6))
+    })
+
+    it('a decisão NUNCA destrava o Lançar (etapa 1: o robô ainda não aplica): sem decisão = aviso de sempre; todos decididos = aviso "confirmado no app"; misto = o de sempre', () => {
+      expect(bloqueiosDaNota(nota({ itens: [sem(1)] }))).toEqual([AVISO_ITEM_SEM_PRODUTO])
+      expect(bloqueiosDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
+      expect(bloqueiosDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': dec(5), '2': dec(6) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
+      expect(bloqueiosDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ITEM_SEM_PRODUTO])
+      const comAssociado = { descricao: 'Z', qtd: 1, unidade_sischef: 'UN', produto_id: 9, associacao: 'sischef', n: 3 }
+      expect(bloqueiosDaNota(nota({ itens: [comAssociado, sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
+      expect(bloqueiosDaNota(nota({ itens: [comAssociado] }))).toEqual([])                              // todo associado no SisChef: pode lançar
+      expect(prontidaoDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) }, valor_nf: 10, parcelas: [{ numero: '1', vencimento: '2026-11-01', valor: 10 }] })).pronta).toBe(false)
+    })
   })
 
   it('itemAssociado (o ✓ verde do painel de conferir): é o mesmo critério que trava ou libera o Lançar', () => {

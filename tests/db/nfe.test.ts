@@ -647,6 +647,136 @@ describe('Fase 3 — descartar a nota que não dá para lançar (cot_nfe_descart
   })
 })
 
+describe('Fase 3 — associar o produto de um item pelo app (cot_nfe_associar)', () => {
+  const atualF3F = bancoRecebimento(null)
+  const bancoF3F = async () => atualF3F()
+  const OLEO = 3138573
+  const LEITE = 3469626
+  /** O catálogo do app (itens_semana): 2 semanas; o nome do óleo mudou na mais nova (a mais nova manda). */
+  async function catalogo(db: PGlite) {
+    await db.exec(`
+      insert into semanas (data_referencia, status) values ('2026-10-05', 'encerrada'), ('2026-10-12', 'em_compra');
+      insert into itens_semana (semana_id, produto_id, produto, bebida, unidade, estoque, situacao, incluido)
+        select s.id, ${OLEO}, case when s.data_referencia = '2026-10-05' then 'OLEO ANTIGO (UN)' else 'ÓLEO DE SOJA - INSUMOS (UN)' end, false, 'un', 1, 'Repor', true from semanas s;
+      insert into itens_semana (semana_id, produto_id, produto, bebida, unidade, estoque, situacao, incluido)
+        select s.id, ${LEITE}, 'LEITE CONDESSADO  - INSUMOS (KG)', false, 'kg', 1, 'Repor', true from semanas s where s.data_referencia = '2026-10-12';`)
+  }
+  const associar = (db: PGlite, quem: string, n: number | null, produto: number | null, chave = CHAVE) =>
+    chamar(db, quem, 'cot_nfe_associar($1, $2, $3)', [chave, n, produto])
+  async function decisoes(db: PGlite, chave = CHAVE): Promise<Json> {
+    const [r] = await como(db, ADMIN, 'select associacoes_app, itens, situacao from cot_nfe where chave = $1', [chave])
+    return r
+  }
+  const dois = () => nota({ itens: [nfeItem(), nfeItem({ n: 2, cod_forn: '99', descricao: 'LEITE COND TIROL' })] })
+
+  it('o admin associa: o servidor grava o produto (nome e unidade da semana mais nova do catálogo), quem e quando; os itens e a situação não mudam', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [dois()])
+    expect((await decisoes(db)).associacoes_app).toBeNull()
+    await associar(db, ADMIN, 1, OLEO)
+    const r = await decisoes(db)
+    expect(Object.keys(r.associacoes_app)).toEqual(['1'])
+    expect(r.associacoes_app['1']).toMatchObject({ produto_id: OLEO, produto_nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' })
+    expect(String(r.associacoes_app['1'].por)).toContain('@')
+    expect(Number.isNaN(Date.parse(r.associacoes_app['1'].em))).toBe(false)
+    expect(r.situacao).toBe('na_fila')
+    expect((r.itens as Json[]).map((i) => [i.n, i.produto_id])).toEqual([[1, null], [2, null]]) // o item da NF não foi tocado
+    await associar(db, ADMIN, 2, LEITE)
+    expect(Object.keys((await decisoes(db)).associacoes_app).sort()).toEqual(['1', '2'])
+    expect((await decisoes(db)).associacoes_app['2']).toMatchObject({ produto_id: LEITE, unidade: 'kg' })
+  })
+
+  it('escolher de novo troca a decisão; produto nulo desfaz (e não dá erro se não havia); a decisão sozinha não deixa a coluna com {} ', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [dois()])
+    await associar(db, ADMIN, 1, OLEO)
+    await associar(db, ADMIN, 1, LEITE)
+    expect((await decisoes(db)).associacoes_app['1'].produto_id).toBe(LEITE)
+    await associar(db, ADMIN, 2, null)                                       // não havia decisão no item 2: nada acontece
+    expect(Object.keys((await decisoes(db)).associacoes_app)).toEqual(['1'])
+    await associar(db, ADMIN, 1, null)
+    expect((await decisoes(db)).associacoes_app).toBeNull()                  // sem decisões: volta a NULL (não fica {})
+    await associar(db, ADMIN, 1, null)                                       // de novo: continua sem erro
+  })
+
+  it('recusa nota desconhecida, item que não existe na nota, produto fora da lista de insumos e item que JÁ tem produto no SisChef', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [nota({ itens: [nfeItem(), nfeItem({ n: 2, produto_id: 7, associacao: 'sischef', qtd: 1 }), nfeItem({ n: 3, produto_id: 8, associacao: 'painel' })] })])
+    expect(await erroDe(associar(db, ADMIN, 1, OLEO, CHAVE2))).toBe('nota não encontrada')
+    expect(await erroDe(associar(db, ADMIN, 9, OLEO))).toBe('item não encontrado na nota')
+    expect(await erroDe(associar(db, ADMIN, 1, 999999))).toBe('produto fora da lista de insumos')
+    expect(await erroDe(associar(db, ADMIN, 2, OLEO))).toBe('este item já está associado no SisChef')
+    await associar(db, ADMIN, 3, OLEO)                                      // "decidido só pelo painel" não é associação de verdade: pode ser refeito
+    expect(Object.keys((await decisoes(db)).associacoes_app)).toEqual(['3'])
+  })
+
+  it('só nota na fila e sem robô mexendo: recusa lançada, descartada, pela metade (erro) e lançando agora; aceita revisar, ensaio_ok e reserva presa (> 30 min)', async () => {
+    const db = await bancoF3F()
+    await fixarRelogio(db, '2026-10-20T15:00:00Z')
+    await catalogo(db)
+    await sync(db, [nota()])
+    const marcar = (estado: string | null, minutosAtras: number | null) => db.query(
+      `update cot_nfe set lancamento_estado = $1, lancamento_em = case when $2::int is null then null else cot_agora() - make_interval(mins => $2::int) end where chave = $3`,
+      [estado, minutosAtras, CHAVE])
+    await marcar('erro', null)
+    expect(await erroDe(associar(db, ADMIN, 1, OLEO))).toBe('esta nota ficou pela metade: confira no SisChef')
+    await marcar('lancando', 5)
+    expect(await erroDe(associar(db, ADMIN, 1, OLEO))).toBe('o robô está lançando esta nota agora: aguarde terminar')
+    await marcar('lancando', null)                                          // sem carimbo: na dúvida, recusa
+    expect(await erroDe(associar(db, ADMIN, 1, OLEO))).toBe('o robô está lançando esta nota agora: aguarde terminar')
+    expect((await decisoes(db)).associacoes_app).toBeNull()
+    for (const [estado, min] of [['revisar', null], ['ensaio_ok', null], ['lancando', 31]] as const) {
+      await marcar(estado, min)
+      await associar(db, ADMIN, 1, OLEO)
+      expect([estado, (await decisoes(db)).associacoes_app['1'].produto_id]).toEqual([estado, OLEO])
+      await associar(db, ADMIN, 1, null)
+    }
+    await marcar(null, null)
+    await chamar(db, ADMIN, 'cot_nfe_descartar($1, $2)', [CHAVE, 'teste'])
+    expect(await erroDe(associar(db, ADMIN, 1, OLEO))).toBe('esta nota foi descartada: volte-a para a fila antes de associar')
+    await chamar(db, ADMIN, 'cot_nfe_restaurar($1)', [CHAVE])
+    await chamar(db, 'anon', 'cot_nfe_marcar_lancadas($1, $2::jsonb)',
+      [SEGREDO, JSON.stringify([{ chave: CHAVE, nf_sischef: 'NF 9', lancada_em: '2026-10-20T14:00:00Z' }])])
+    expect(await erroDe(associar(db, ADMIN, 1, OLEO))).toBe('esta nota não está mais na fila: não dá para associar')
+  })
+
+  it('a leitura da SEFAZ NUNCA apaga a decisão (ela reescreve os itens a cada rodada); se o item passa a ter produto no SisChef, a decisão fica guardada mas o item já vem associado', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [nota()])
+    await associar(db, ADMIN, 1, OLEO)
+    const antes = (await decisoes(db)).associacoes_app
+    await sync(db, [nota()])                                                 // nova leitura, mesma nota
+    await sync(db, [nota({ itens: [nfeItem({ produto_id: 3138573, associacao: 'sischef', qtd: 9 })] })]) // o Ivan associou no SisChef nesse meio tempo
+    const r = await decisoes(db)
+    expect(r.associacoes_app).toEqual(antes)
+    expect((r.itens as Json[])[0].associacao).toBe('sischef')
+    expect(await erroDe(associar(db, ADMIN, 1, LEITE))).toBe('este item já está associado no SisChef')
+  })
+
+  it('só o admin associa (comprador é recusado), a anon nem executa, a coluna só aceita objeto; cada mudança fica no histórico', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [nota()])
+    expect(await erroDe(associar(db, JOAO, 1, OLEO))).toBe('apenas o administrador pode fazer isso')
+    await expect(como(db, 'anon', `select cot_nfe_associar($1, 1, ${OLEO})`, [CHAVE])).rejects.toThrow(/permission denied/)
+    expect((await decisoes(db)).associacoes_app).toBeNull()
+    await expect(db.query(`update cot_nfe set associacoes_app = '[1]'::jsonb where chave = $1`, [CHAVE])).rejects.toThrow(/check/)
+    await associar(db, ADMIN, 1, OLEO)
+    await associar(db, ADMIN, 1, LEITE)
+    await associar(db, ADMIN, 1, null)
+    const h = await como(db, ADMIN, `select antes, depois from historico_alteracoes where tabela = 'cot_nfe' and registro = $1 order by id`, [CHAVE])
+    expect(h).toHaveLength(3)
+    expect((h[0].depois as Json).associacao_app.decisao.produto_id).toBe(OLEO)
+    expect((h[1].antes as Json).associacao_app.decisao.produto_id).toBe(OLEO)
+    expect((h[1].depois as Json).associacao_app.decisao.produto_id).toBe(LEITE)
+    expect((h[2].depois as Json).associacao_app.decisao).toBeNull()
+  })
+})
+
 describe('Fase 3 — parcelas digitadas pelo Ivan (cot_nfe.parcelas_manuais)', () => {
   const atualF3D = bancoRecebimento(null)
   const bancoF3D = async () => atualF3D()

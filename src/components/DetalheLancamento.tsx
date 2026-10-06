@@ -3,6 +3,8 @@
 import { formatarReais } from '../lib/regras'
 
 export interface LinhaDetalhe {
+  /** Número do produto no SisChef (Cód. Interno), em destaque na frente da descrição. Vazio = sem destaque (o cupom não usa). */
+  codigo?: string | null
   descricao: string
   quantidade: number | null
   unidade: string | null
@@ -13,9 +15,14 @@ const qtd = (q: number): string => new Intl.NumberFormat('pt-BR', { maximumFract
 /** Unidade exata do cupom (UND, KG, PCT…), só em minúscula para ler melhor — nunca inventada: vazio quando não veio. */
 const unid = (u: string | null): string => (u ? u.trim().toLowerCase() : '')
 
-export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no SisChef' }: { pedido: string | null; itens: LinhaDetalhe[]; rotulo?: string }) {
+export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no SisChef', quando = null, rotuloQuando = 'Lançada em' }: {
+  pedido: string | null; itens: LinhaDetalhe[]; rotulo?: string
+  /** Dia e hora em que o lançamento foi feito no sistema, já formatado (ex.: "06/10 às 19h05"). Vazio = não mostra a linha. */
+  quando?: string | null; rotuloQuando?: string
+}) {
   return (
     <div className="detalhe">
+      {quando && <p className="detalhe-pedido" data-testid="detalhe-quando">{rotuloQuando}: <b>{quando}</b></p>}
       {pedido && <p className="detalhe-pedido">{rotulo}: <b>{pedido}</b></p>}
       {itens.length === 0 ? (
         <p className="sub">Sem itens para mostrar.</p>
@@ -25,7 +32,7 @@ export default function DetalheLancamento({ pedido, itens, rotulo = 'Pedido no S
             const u = unid(it.unidade)
             return (
               <li key={i}>
-                <span className="desc">{it.descricao}</span>
+                <span className="desc">{it.codigo ? <><b className="cod">{it.codigo}</b> {it.descricao}</> : it.descricao}</span>
                 <span className="nums">
                   {it.quantidade != null && `qtd ${qtd(it.quantidade)}${u ? ` ${u}` : ''}`}
                   {it.quantidade != null && it.valor != null && ' · '}

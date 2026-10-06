@@ -1,14 +1,15 @@
-// Aba "Lançamento de fiscal" (Fase 3; até 06/10/2026 chamava-se "Lançamento de nota SEFAZ"). Lista as notas da fila da SEFAZ (cot_nfe, situacao 'na_fila'): por nota, "Como pagar"
+// Aba "Lançamento fiscal" (Fase 3; até 06/10/2026 chamava-se "Lançamento de nota SEFAZ"). Lista as notas da fila da SEFAZ (cot_nfe, situacao 'na_fila'): por nota, "Como pagar"
 // + botão Lançar (dois toques: Lançar → Confirmar) e o estado do robô; e os últimos lançamentos, com o detalhe clicável — o MESMO
 // componente do cupom (DetalheLancamento). A segurança real é a RLS + a Edge Function lancar-nfe (admin, reserva da nota).
 import { useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
-import { formatarReais } from '../lib/regras'
-import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
+import { formatarDataHora, formatarReais } from '../lib/regras'
+import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
+import AssociarProduto from './AssociarProduto'
 import {
-  AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  FORNECEDORES_XML_SEM_PAGAMENTO, descartadaVoltouComItens, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
+  AVISO_ASSOCIACAO_SO_NO_APP, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
+  FORNECEDORES_XML_SEM_PAGAMENTO, decisaoDoItem, descartadaVoltouComItens, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
   traduzirMotivo, validarParcelasDigitadas,
   type LinhaParcela, type ResultadoParcelas,
@@ -16,10 +17,6 @@ import {
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
 const INTERVALO_ATUALIZAR = 15_000
-
-/** Converte um item da NF para a linha genérica do detalhe (descrição · quantidade + unidade). */
-const linhaDoItem = (it: ItemNotaSefaz): LinhaDetalhe =>
-  ({ descricao: it.descricao ?? 'item', quantidade: it.qtd, unidade: it.unidade_sischef, valor: null })
 
 /** emissao vem como AAAA-MM-DD; mostra dd/mm. */
 const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
@@ -29,16 +26,23 @@ const ddmm = (iso: string): string => { const p = iso.split('-'); return p.lengt
 const dataBr = (iso: string | null): string => { const p = (iso ?? '').split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—' }
 /** Tira o prefixo "CÓD. FOR: 123456 " que o SisChef põe na descrição, para o painel de conferir ficar legível. */
 const semCodFor = (d: string): string => d.replace(/^CÓD\. FOR:\s*\S+\s*/i, '').trim() || d
+/** Item de uma nota JÁ LANÇADA para o detalhe de "Últimos lançamentos": na frente da descrição vai o número do produto associado no SisChef
+ *  (Cód. Interno, o `produto_id`), no lugar do "CÓD. FOR" do fornecedor (pedido do Ivan, 06/10); depois a quantidade e a unidade. */
+const linhaDoItem = (it: ItemNotaSefaz): LinhaDetalhe => {
+  const codigo = it.produto_id != null && String(it.produto_id).trim() !== '' ? String(it.produto_id).trim() : null
+  return { codigo, descricao: semCodFor(it.descricao ?? 'item'), quantidade: it.qtd, unidade: it.unidade_sischef, valor: null }
+}
 /** Quantidade no jeito brasileiro: 19,918 (e não 19.918, que no Brasil lê-se como dezenove mil) e 1.000,5; sem quantidade, "?". */
 const qtdBr = (q: number | null | undefined): string =>
   q == null || !Number.isFinite(Number(q)) ? '?' : Number(q).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
 const nomeDoProduto = (it: ItemNotaSefaz): string =>
   it.produto_nome?.trim() || (it.produto_id != null && String(it.produto_id).trim() !== '' ? `produto ${it.produto_id}` : 'sem produto')
 
-/** O "ticket" verde de produto associado: bolinha verde com ✓ (desenhada em SVG, igual em qualquer aparelho; leitor de tela lê o rótulo). */
-function TickOk() {
+/** O "ticket" verde de produto associado: bolinha verde com ✓ (desenhada em SVG, igual em qualquer aparelho; leitor de tela lê o rótulo).
+ *  Duas leituras: produto que já está associado no SisChef (padrão) e produto que o Ivan CONFIRMOU no app ("confirmado"). */
+function TickOk({ rotulo = 'produto associado no SisChef', testid = 'item-ok' }: { rotulo?: string; testid?: string }) {
   return (
-    <svg className="tick-ok" viewBox="0 0 20 20" width="18" height="18" role="img" aria-label="produto associado no SisChef" data-testid="item-ok">
+    <svg className="tick-ok" viewBox="0 0 20 20" width="18" height="18" role="img" aria-label={rotulo} data-testid={testid}>
       <circle cx="10" cy="10" r="10" />
       <path d="M5.5 10.4l3 3 6-6.6" fill="none" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -46,7 +50,15 @@ function TickOk() {
 }
 
 /** "Conferir": o que foi associado a cada item e o financeiro (boletos contra o valor da nota), para o Ivan abrir e checar. */
-function PainelConferir({ nota }: { nota: NotaSefazLista }) {
+function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAssociacao }: {
+  nota: NotaSefazLista
+  /** Lista de insumos do app (null = carregando) e se a leitura dela falhou. */
+  catalogo: ProdutoCatalogo[] | null
+  catalogoFalhou: boolean
+  /** Dá para escolher produto agora? Não, se o robô está lançando a nota ou ela ficou pela metade (o banco também recusa). */
+  podeAssociar: boolean
+  salvarAssociacao: (n: number, produtoId: number | null) => Promise<void>
+}) {
   const f = resumoFinanceiro(nota)
   return (
     <details className="conferir" data-testid="conferir">
@@ -56,15 +68,21 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
       <ul className="conferir-itens">
         {nota.itens.map((it, i) => {
           const ok = itemAssociado(it)
+          const decisao = decisaoDoItem(nota, it) // o que o Ivan confirmou NO APP para este item (só existe se ele ainda não tem produto no SisChef)
           return (
             <li key={i} data-testid="conferir-item">
               <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
-              {/* Item com produto no SisChef: ✓ verde na frente do nome (sem texto embaixo). Sem ✓ = falta associar: o aviso fica escrito. */}
+              {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app" embaixo).
+                  Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
               <b className="produto">
                 {ok && <TickOk />}
-                <span>{nomeDoProduto(it)}</span>
+                {decisao && <TickOk rotulo="produto confirmado no app" testid="item-confirmado" />}
+                <span>{decisao ? decisao.produto_nome : nomeDoProduto(it)}</span>
               </b>
-              {!ok && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
+              {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
+              {!ok && it.n != null && (decisao != null || podeAssociar) && (
+                <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} />
+              )}
             </li>
           )
         })}
@@ -156,8 +174,11 @@ interface PropsNota {
   /** Pede a vez de enviar: false se já há um envio em curso (trava síncrona entre notas). */
   iniciarEnvio: () => boolean
   fimEnvio: () => void
+  /** Lista de insumos do app para escolher o produto de um item sem produto (null = carregando) e se a leitura dela falhou. */
+  catalogo: ProdutoCatalogo[] | null
+  catalogoFalhou: boolean
 }
-function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnvio, iniciarEnvio, fimEnvio }: PropsNota) {
+function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -188,6 +209,12 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   const exigeParcelas = precisaDigitarParcelas(nota, forma)
   const resultadoParcelas = validarParcelasDigitadas(linhas, nota.valor_nf, nota.emissao)
   const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok)
+  // Escolher produto de um item sem produto: não com o robô lançando a nota nem com ela pela metade (o banco também recusa).
+  const podeAssociar = estado !== 'erro' && !(estado === 'lancando' && !presa)
+  async function salvarAssociacao(n: number, produtoId: number | null) {
+    await api.associarItem(nota.chave, n, produtoId)
+    await recarregar() // a decisão vem do banco: o item passa a mostrar o ✓ de confirmado
+  }
 
   function escolher(nova: string) {
     setEscolha(nova); setConfirmando(false); setErro('')
@@ -245,13 +272,13 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
       {!soLancar && !exigeParcelas && prontidao.financeiro && !bloqueios.length && estado == null && (
         <div className="amarelo" data-testid="aviso-financeiro">{prontidao.financeiro}</div>
       )}
-      <PainelConferir nota={nota} />
+      <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao} />
       {estadoTexto && (
         <div className={estado === 'erro' ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo)}</div>}
       {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
-      {bloqueios.map((b) => <div key={b} className="erro" data-testid="bloqueio-nota">{b}</div>)}
+      {bloqueios.map((b) => <div key={b} className={b === AVISO_ASSOCIACAO_SO_NO_APP ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
 
       {soLancar ? (
         <div className="sub" data-testid="pagamento-fixo">
@@ -337,6 +364,9 @@ export default function NotaSefaz() {
   const [falha, setFalha] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [expandido, setExpandido] = useState<string | null>(null) // qual lançada está aberta mostrando o detalhe
+  // Lista de insumos do app (itens_semana) para escolher o produto de um item sem produto. Só é lida quando alguma nota tem esse tipo de item.
+  const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
+  const [catalogoFalhou, setCatalogoFalhou] = useState(false)
 
   // Devolve a promessa para o "Lançar" esperar a lista nova (a nota passa a 'lancando') antes de liberar o botão.
   // `silencioso` (releitura automática / depois do Lançar): uma falha passageira não esconde a lista que já está na tela.
@@ -353,6 +383,16 @@ export default function NotaSefaz() {
       .finally(() => setCarregando(false))
   }
   useEffect(() => { void carregar() }, [])
+
+  const precisaCatalogo = aLancar.some((n) => n.itens.some((it) => !itemAssociado(it)))
+  useEffect(() => {
+    if (!precisaCatalogo || catalogo !== null) return
+    let vivo = true
+    Promise.resolve(api.catalogoProdutos())
+      .then((c) => { if (vivo) { setCatalogo(c ?? []); setCatalogoFalhou(false) } })
+      .catch(() => { if (vivo) setCatalogoFalhou(true) })
+    return () => { vivo = false }
+  }, [precisaCatalogo, catalogo])
 
   /** Desfaz o descarte: a nota volta para "Notas a lançar". */
   async function voltar(chave: string) {
@@ -378,7 +418,7 @@ export default function NotaSefaz() {
 
   return (
     <section className="coluna cupom">
-      <h2>Lançamento de fiscal</h2>
+      <h2>Lançamento fiscal</h2>
       <p className="sub">Modo: eu disparo — você confere e manda lançar (o automático vem depois).</p>
 
       <div className="grupo">Notas a lançar</div>
@@ -390,7 +430,7 @@ export default function NotaSefaz() {
             <ul className="recentes">
               {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
-                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} />)}
+                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
           </>
@@ -437,7 +477,7 @@ export default function NotaSefaz() {
                     <span><b>lançada ✓</b> · {n.emitente} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
                     <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                   </button>
-                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} itens={n.itens.map(linhaDoItem)} />}
+                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} itens={n.itens.map(linhaDoItem)} />}
                 </li>
               )
             })}
