@@ -35,7 +35,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 describe('NotaSefaz', () => {
   it('mostra o título e o modo "eu disparo"', async () => {
     render(<NotaSefaz />)
-    expect(await screen.findByRole('heading', { name: 'Lançamento de nota SEFAZ' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Lançamento de fiscal' })).toBeInTheDocument()
     expect(screen.getByText(/eu disparo/)).toBeInTheDocument()
   })
 
@@ -607,6 +607,41 @@ describe('NotaSefaz', () => {
       expect(lista).toHaveTextContent('Parcela 2 · vence 12/11/2026')
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto', [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }]))
+    })
+
+    it('regra 4: 3 parcelas de valores diferentes que somam o valor da nota liberam o Lançar e vão como foram digitadas', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      expect(screen.getByTestId('editor-parcelas')).toHaveTextContent('Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota')
+      await digitar(1, '2026-11-05', '70,00')
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+      fireEvent.change(screen.getByLabelText('Vencimento da parcela 2'), { target: { value: '2026-11-15' } })
+      fireEvent.change(screen.getByLabelText('Vencimento da parcela 3'), { target: { value: '2026-11-25' } })
+      await userEvent.type(screen.getByLabelText('Valor da parcela 2'), '20,50')
+      await userEvent.type(screen.getByLabelText('Valor da parcela 3'), '9,50')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('bate')
+      expect(botaoLancar()).toBeEnabled()
+      await userEvent.click(botaoLancar())
+      await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto', [
+        { vencimento: '2026-11-05', valor: 70 }, { vencimento: '2026-11-15', valor: 20.5 }, { vencimento: '2026-11-25', valor: 9.5 }]))
+    })
+
+    it('regra 4: 1 centavo a mais ou a menos no total trava o Lançar e diz quanto passou ou falta (e oferece completar a última)', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      await digitar(1, '2026-11-05', '100,01')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Passou 0,01 do valor da nota')
+      expect(botaoLancar()).toBeDisabled()
+      await digitar(1, '2026-11-05', '99,99')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Faltam 0,01 para fechar com o valor da nota')
+      expect(botaoLancar()).toBeDisabled()
+      await userEvent.click(screen.getByRole('button', { name: 'Preencher o que falta na última' }))
+      expect((screen.getByLabelText('Valor da parcela 1') as HTMLInputElement).value).toBe('100,00')
+      expect(botaoLancar()).toBeEnabled()
     })
 
     it('parcela única com o valor total já libera o Lançar', async () => {

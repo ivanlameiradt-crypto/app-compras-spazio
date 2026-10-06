@@ -1,4 +1,4 @@
-// Aba "Lançamento de nota SEFAZ" (Fase 3). Lista as notas da fila da SEFAZ (cot_nfe, situacao 'na_fila'): por nota, "Como pagar"
+// Aba "Lançamento de fiscal" (Fase 3; até 06/10/2026 chamava-se "Lançamento de nota SEFAZ"). Lista as notas da fila da SEFAZ (cot_nfe, situacao 'na_fila'): por nota, "Como pagar"
 // + botão Lançar (dois toques: Lançar → Confirmar) e o estado do robô; e os últimos lançamentos, com o detalhe clicável — o MESMO
 // componente do cupom (DetalheLancamento). A segurança real é a RLS + a Edge Function lancar-nfe (admin, reserva da nota).
 import { useEffect, useRef, useState } from 'react'
@@ -92,7 +92,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, onChange }: {
       <div className="amarelo">
         {fornecedor
           ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
-          : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef.
+          : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
       </div>
       {linhas.map((l, i) => (
         <div key={i} className="linha-parcela" data-testid="linha-parcela">
@@ -113,7 +113,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, onChange }: {
         <button type="button" className="botao secundario" disabled={desabilitado || linhas.length >= 60} onClick={() => onChange([...linhas, { vencimento: '', valor: '' }])}>
           Adicionar parcela
         </button>
-        {resultado.falta != null && resultado.falta > 0.01 && (
+        {resultado.falta != null && resultado.falta > 0 && (
           <button type="button" className="botao secundario" disabled={desabilitado} onClick={completar}>Preencher o que falta na última</button>
         )}
       </div>
@@ -361,7 +361,7 @@ export default function NotaSefaz() {
 
   return (
     <section className="coluna cupom">
-      <h2>Lançamento de nota SEFAZ</h2>
+      <h2>Lançamento de fiscal</h2>
       <p className="sub">Modo: eu disparo — você confere e manda lançar (o automático vem depois).</p>
 
       <div className="grupo">Notas a lançar</div>

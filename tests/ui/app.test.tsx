@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import type { EstadoSessao } from '../../src/auth/useSessao'
 
 let estado: EstadoSessao = { carregando: true }
@@ -57,9 +57,11 @@ describe('App', () => {
   it('Fase 1 app unificado: topo tem 3 abas e a Compra abre o menu em grade com as telas de compra', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     render(<App />)
-    // 3 abas no topo: Compra · Lançamento de cupom · Lançamento de nota SEFAZ
+    // 3 abas no topo: Compra · Lançamento de cupom · Lançamento de fiscal (a nota da SEFAZ; renomeada em 06/10)
     const topo = (await screen.findByRole('link', { name: 'Lançamento de cupom' })).closest('nav') as HTMLElement
     expect([...topo.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/compra', '#/cupom', '#/nota-sefaz'])
+    expect(within(topo).getByRole('link', { name: /Lançamento de fiscal/ })).toHaveAttribute('href', '#/nota-sefaz')   // o nome da 3ª aba
+    expect(within(topo).queryByText(/nota SEFAZ/)).not.toBeInTheDocument()                                          // e o nome antigo sumiu
     // a aba Compra (rota padrão do admin) abre o menu em grade com as telas de compra (findBy: espera o redirect p/ /compra)
     expect(await screen.findByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
     expect(screen.getByRole('link', { name: 'Lançamentos' })).toHaveAttribute('href', '#/lancamentos')

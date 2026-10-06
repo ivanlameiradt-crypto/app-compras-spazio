@@ -192,8 +192,19 @@ describe('tratar com parcelas digitadas (boleto sem duplicatas no XML)', () => {
     expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)).status).toBe(409)
   })
 
-  it('soma com ruído de 1 centavo no valor da nota ainda fecha', async () => {
-    const d = fakeDeps({ async notaParaParcelas() { return { valor_nf: '100.01', parcelas: [] } } })
-    expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)).status).toBe(202)
+  it('regra 4: 1 centavo de diferença para mais ou para menos NÃO fecha (400, sem reservar) — o robô também recusa', async () => {
+    for (const valor_nf of ['100.01', '99.99']) {
+      const d = fakeDeps({ async notaParaParcelas() { return { valor_nf, parcelas: [] } } })
+      const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
+      expect([valor_nf, r.status, JSON.stringify(r.corpo)]).toEqual([valor_nf, 400, expect.stringContaining('não fecham com o valor da nota')])
+      expect(d.reservas).toEqual([])
+    }
+  })
+
+  it('regra 4: parcelas de valores diferentes que somam o valor da nota passam e vão ao robô como foram digitadas', async () => {
+    const d = fakeDeps({ async notaParaParcelas() { return { valor_nf: '100.00', parcelas: [] } } })
+    const parcelas = [{ vencimento: '2026-11-05', valor: 70 }, { vencimento: '2026-11-15', valor: 20.5 }, { vencimento: '2026-11-25', valor: 9.5 }]
+    expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas }, 'a@b', d)).status).toBe(202)
+    expect(d.reservas[0][4]).toEqual(parcelas) // o que a reserva grava (e o robô recebe) é exatamente o que o Ivan digitou, cada valor no seu lugar
   })
 })

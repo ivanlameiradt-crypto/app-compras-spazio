@@ -39,6 +39,13 @@
 - Decisão do Ivan: nota com informação faltando (XML incompleto, feita errada pelo fornecedor) **não é lançada no sistema**: ele descarta.
   (Alternativa que ele dispensou: pedir a ciência da operação no SisChef ou o XML ao fornecedor.)
 
+## Regra 4 (Ivan, 06/10/2026): parcelas digitadas — a soma tem de ser igual ao valor da nota
+- Nas parcelas que você digita no app, os valores **podem ser iguais ou diferentes**. O que importa: **a soma das parcelas é igual ao valor da nota, ao centavo**. Se for diferente, dá erro
+  (o app trava o Lançar e diz quanto falta ou passou; a função e o robô também recusam).
+- Ajuste de 06/10: o app e a função aceitavam 1 centavo de diferença e o robô recusava depois; agora os três são exatos. Falta publicar.
+- 2º lançamento real (06/10, 19h05): MATEUS 000089282, R$ 430,20, 3 parcelas digitadas de R$ 143,40 (27/10, 06/11, 16/11), NF 89282. Parcelas de valores desiguais ainda não foram provadas ao vivo.
+- A aba "Lançamento de nota SEFAZ" passou a se chamar **"Lançamento de fiscal"** (pedido seu). Falta publicar.
+
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
 
