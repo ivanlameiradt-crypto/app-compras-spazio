@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import NotaSefaz from '../../src/admin/NotaSefaz'
@@ -485,7 +485,6 @@ describe('NotaSefaz', () => {
 
     it.each([
       ['boletos que não fecham', { parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 10 }] }, 'Os boletos não fecham com o valor da nota'],
-      ['nota sem boleto', { parcelas: [] }, 'A nota não tem boletos: escolha como pagar'],
       ['XML não lido', { parcelas: null }, 'Boletos ainda não lidos do XML (próxima leitura)'],
     ])('%s: não é pronta, avisa o motivo e mantém o Como pagar', async (_n, extra, motivo) => {
       aLancar(pronta(extra as Partial<NotaSefazLista>))
@@ -493,6 +492,16 @@ describe('NotaSefaz', () => {
       await screen.findByTestId('nota-a-lancar')
       expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
       expect(screen.getByTestId('aviso-financeiro')).toHaveTextContent(motivo)
+      expect(comoPagar()).toBeInTheDocument()
+    })
+
+    it('nota sem boleto no XML: não é pronta; em vez do aviso aparece o editor para digitar as parcelas (e o Como pagar segue)', async () => {
+      aLancar(pronta({ parcelas: [] }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('aviso-financeiro')).not.toBeInTheDocument()
+      expect(screen.getByTestId('editor-parcelas')).toBeInTheDocument()
       expect(comoPagar()).toBeInTheDocument()
     })
 
@@ -529,6 +538,110 @@ describe('NotaSefaz', () => {
       expect(within(paineis[0]).getByTestId('fin-total')).toHaveTextContent(/diferença de R\$\s10,00/)
       expect(within(paineis[1]).getByTestId('fin-nao-lido')).toBeInTheDocument()
       expect(within(paineis[2]).getByTestId('fin-sem-boleto')).toBeInTheDocument()
+    })
+  })
+
+  describe('parcelas digitadas (boleto cujo XML não traz as duplicatas — MATEUS)', () => {
+    const MATEUS = '03995515011363'
+    const semDuplicata = (extra: Partial<NotaSefazLista> = {}) => nota({ emitente: 'MATEUS SUPERMERCADOS SA', cnpj_emitente: MATEUS, valor_nf: 100, emissao: '2026-10-05', parcelas: [], ...extra })
+    const digitar = async (i: number, venc: string, valor: string) => {
+      fireEvent.change(screen.getByLabelText(`Vencimento da parcela ${i}`), { target: { value: venc } })
+      const campo = screen.getByLabelText(`Valor da parcela ${i}`)
+      await userEvent.clear(campo)
+      if (valor) await userEvent.type(campo, valor)
+    }
+
+    it('mostra o editor com o aviso da falha do fornecedor e trava o Lançar até a soma fechar', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      const editor = await screen.findByTestId('editor-parcelas')
+      expect(editor).toHaveTextContent('O XML da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)')
+      expect(botaoLancar()).toBeDisabled()
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Parcela 1: informe o vencimento')
+      await digitar(1, '2026-11-05', '60,00')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Faltam 40,00 para fechar com o valor da nota')
+      expect(botaoLancar()).toBeDisabled()
+    })
+
+    it('adicionar parcela, completar o que falta e lançar: manda as parcelas à função e confirma com a lista', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      await digitar(1, '2026-11-05', '60,00')
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+      fireEvent.change(screen.getByLabelText('Vencimento da parcela 2'), { target: { value: '2026-11-12' } })
+      await userEvent.click(screen.getByRole('button', { name: 'Preencher o que falta na última' }))
+      expect((screen.getByLabelText('Valor da parcela 2') as HTMLInputElement).value).toBe('40,00')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Soma R$ 100,00')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('bate')
+      await userEvent.click(botaoLancar())
+      const lista = screen.getByTestId('parcelas-confirmar')
+      expect(lista).toHaveTextContent('Parcela 1 · vence 05/11/2026')
+      expect(lista).toHaveTextContent('Parcela 2 · vence 12/11/2026')
+      await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto', [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }]))
+    })
+
+    it('parcela única com o valor total já libera o Lançar', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      await digitar(1, '2026-11-05', '100')
+      expect(botaoLancar()).toBeEnabled()
+    })
+
+    it('remover parcela (só com 2 ou mais) e vencimento antes da emissão trava', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      expect(screen.queryByRole('button', { name: /Remover parcela/ })).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Remover parcela 2' }))
+      expect(screen.queryByLabelText('Vencimento da parcela 2')).not.toBeInTheDocument()
+      await digitar(1, '2025-11-05', '100')
+      expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('o vencimento é anterior à emissão da nota')
+      expect(botaoLancar()).toBeDisabled()
+    })
+
+    it('outra forma de pagamento (cartão, dinheiro) esconde o editor e não manda parcelas', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      await userEvent.selectOptions(comoPagar(), 'cartao')
+      expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+      await userEvent.click(botaoLancar())
+      await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'cartao'))
+    })
+
+    it('nota com boletos no XML, ou XML ainda não lido, não mostra o editor', async () => {
+      aLancar(semDuplicata({ parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 100 }] }), semDuplicata({ chave: '8'.repeat(44), parcelas: null }))
+      render(<NotaSefaz />)
+      await screen.findAllByTestId('nota-a-lancar')
+      expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+    })
+
+    it('fornecedor fora da regra provisória: aviso genérico, mesmo editor', async () => {
+      aLancar(semDuplicata({ emitente: 'OUTRO LTDA', cnpj_emitente: '99999999000199' }))
+      render(<NotaSefaz />)
+      expect(await screen.findByTestId('editor-parcelas')).toHaveTextContent('O XML desta nota não traz os boletos.')
+    })
+
+    it('nota que voltou do robô reabre com as parcelas que o Ivan já tinha digitado', async () => {
+      aLancar(semDuplicata({ parcelas_manuais: [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }] }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      expect((screen.getByLabelText('Valor da parcela 1') as HTMLInputElement).value).toBe('60,00')
+      expect((screen.getByLabelText('Vencimento da parcela 2') as HTMLInputElement).value).toBe('2026-11-12')
+      expect(botaoLancar()).toBeEnabled()
+    })
+
+    it('nunca é "pronta" nem mostra o aviso financeiro duplicado', async () => {
+      aLancar(semDuplicata())
+      render(<NotaSefaz />)
+      await screen.findByTestId('editor-parcelas')
+      expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('aviso-financeiro')).not.toBeInTheDocument()
     })
   })
 

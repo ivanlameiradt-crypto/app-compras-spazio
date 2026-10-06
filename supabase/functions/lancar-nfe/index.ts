@@ -3,7 +3,7 @@
 // Lógica pura em logica.ts (vitest); aqui só a ligação (Deno.serve, CORS, banco, GitHub). O GITHUB_PAT fica só no
 // servidor: nunca vai ao repo, ao log nem à resposta.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { filtroReservavel, tratar, type Corpo, type Deps, type NotaReservada } from './logica.ts'
+import { filtroReservavel, tratar, type Corpo, type Deps, type NotaParaParcelas, type NotaReservada } from './logica.ts'
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
@@ -12,7 +12,7 @@ const ORIGENS_PERMITIDAS = new Set([
 ])
 const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
 const WORKFLOW = 'lancar-nfe.yml'
-const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens'
+const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens, parcelas_manuais'
 
 function cabecalhosCors(origem: string | null): Record<string, string> {
   return {
@@ -53,11 +53,16 @@ Deno.serve(async (req: Request) => {
         const { data } = await admin.from('usuarios').select('papel, ativo').eq('email', email).maybeSingle()
         return (data as { papel: string; ativo: boolean } | null) ?? null
       },
-      async reservar(chave, forma, agoraIso, limiteIso) {
+      async notaParaParcelas(chave) {
+        const { data, error } = await admin.from('cot_nfe').select('valor_nf, parcelas').eq('chave', chave).maybeSingle()
+        if (error) throw new Error(error.message)
+        return (data as NotaParaParcelas | null) ?? null
+      },
+      async reservar(chave, forma, agoraIso, limiteIso, parcelasManuais) {
         // compara-e-troca num UPDATE só (o PostgREST aplica tudo no mesmo comando): quem perde a corrida recebe [].
         const { data, error } = await admin.from('cot_nfe')
-          .update({ forma_pagamento: forma, lancamento_em: agoraIso, lancamento_estado: 'lancando', lancamento_motivo: null,
-                    lancamento_estado_em: agoraIso, atualizado_em: agoraIso })
+          .update({ forma_pagamento: forma, parcelas_manuais: parcelasManuais, lancamento_em: agoraIso, lancamento_estado: 'lancando',
+                    lancamento_motivo: null, lancamento_estado_em: agoraIso, atualizado_em: agoraIso })
           .eq('chave', chave).eq('situacao', 'na_fila')
           .or(filtroReservavel(limiteIso))
           .select(COLUNAS)

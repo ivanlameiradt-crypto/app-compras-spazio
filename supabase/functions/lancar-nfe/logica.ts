@@ -9,7 +9,9 @@
 // verdade é a trava MOTOR_NFE_LIGADO do robô: desligada, ele roda em ensaio e não cria nada. Se o disparo falhar, a
 // reserva é solta (a nota volta a ficar disponível).
 
-export interface Corpo { chave?: unknown; forma?: unknown }
+export interface Corpo { chave?: unknown; forma?: unknown; parcelas?: unknown }
+/** Parcela digitada pelo Ivan quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS). */
+export interface ParcelaManual { vencimento: string; valor: number }
 export interface UsuarioLinha { papel: string; ativo: boolean }
 export interface ItemNota {
   descricao?: string | null
@@ -26,12 +28,18 @@ export interface NotaReservada {
   valor_nf: number | string | null
   forma_pagamento: string
   itens: ItemNota[] | null
+  /** O que o Ivan digitou (gravado na reserva); null = nada digitado. */
+  parcelas_manuais?: ParcelaManual[] | null
 }
+/** O que a função precisa saber da nota ANTES de reservar, para conferir as parcelas digitadas. */
+export interface NotaParaParcelas { valor_nf: number | string | null; parcelas: unknown }
 
 export interface Deps {
   buscarUsuario(email: string): Promise<UsuarioLinha | null>
   /** Reserva atômica (um UPDATE só, com as condições de `filtroReservavel`): a nota reservada, ou null se indisponível. */
-  reservar(chave: string, forma: string, agoraIso: string, limiteIso: string): Promise<NotaReservada | null>
+  reservar(chave: string, forma: string, agoraIso: string, limiteIso: string, parcelasManuais: ParcelaManual[] | null): Promise<NotaReservada | null>
+  /** Valor da nota e boletos do XML (cot_nfe.parcelas), ou null se a nota não existe. */
+  notaParaParcelas(chave: string): Promise<NotaParaParcelas | null>
   /** Há OUTRA nota (chave diferente) 'lancando' desde `limiteIso` ou depois? O GitHub guarda só UM run pendente por grupo
    *  (sischef-session): um 2º disparo cancelaria o pendente e a nota reservada ficaria presa em 'lancando'. Um robô por vez. */
   outraLancando(chave: string, limiteIso: string): Promise<boolean>
@@ -49,6 +57,30 @@ export const CONTAS_PIX = ['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesc
 /** Uma tentativa 'lancando' mais velha que isto é dada como presa (o run caiu/foi cancelado) e pode ser reservada. */
 export const MINUTOS_TRAVA = 30
 const RE_CHAVE = /^\d{44}$/
+
+export const MAX_PARCELAS_MANUAIS = 60
+const RE_DATA = /^\d{4}-\d{2}-\d{2}$/
+
+/** Parcelas digitadas no app -> lista normalizada (valor em centavos exatos), ou null se algo estiver fora do formato. */
+export function normalizarParcelas(x: unknown): ParcelaManual[] | null {
+  if (!Array.isArray(x) || x.length < 1 || x.length > MAX_PARCELAS_MANUAIS) return null
+  const saida: ParcelaManual[] = []
+  for (const p of x) {
+    if (p === null || typeof p !== 'object') return null
+    const { vencimento, valor } = p as Record<string, unknown>
+    if (typeof vencimento !== 'string' || !RE_DATA.test(vencimento)) return null
+    const d = new Date(`${vencimento}T00:00:00Z`)
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== vencimento) return null // 2026-02-30 não existe
+    if (typeof valor !== 'number' || !Number.isFinite(valor) || valor <= 0 || valor > 10_000_000) return null
+    const centavos = Math.round(valor * 100)
+    if (Math.abs(valor * 100 - centavos) > 1e-6) return null // no máximo 2 casas
+    saida.push({ vencimento, valor: centavos / 100 })
+  }
+  return saida
+}
+
+/** Soma em centavos (sem erro de ponto flutuante), em reais. */
+export const somaParcelas = (ps: ParcelaManual[]): number => ps.reduce((t, p) => t + Math.round(p.valor * 100), 0) / 100
 
 /** "Como pagar" do app -> a forma no formato do robô (formas_pagamento.py), ou null se inválida. */
 export function normalizarForma(forma: unknown): string | null {
@@ -75,6 +107,7 @@ export function montarNotaJson(n: NotaReservada): string {
   return JSON.stringify({
     chave: n.chave, emitente: n.emitente, numero: n.numero, emissao: n.emissao, valor_nf: n.valor_nf,
     forma_pagamento: n.forma_pagamento,
+    ...(n.parcelas_manuais && n.parcelas_manuais.length > 0 ? { parcelas_manuais: n.parcelas_manuais } : {}),
     itens: (n.itens ?? []).map((it) => ({
       descricao: it.descricao ?? null, produto_id: it.produto_id ?? null, associacao: it.associacao ?? null,
       qtd: it.qtd ?? null, unidade_sischef: it.unidade_sischef ?? null,
@@ -93,6 +126,25 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!RE_CHAVE.test(chave)) return { status: 400, corpo: { erro: 'chave da nota inválida' } }
   const forma = normalizarForma(c.forma)
   if (!forma) return { status: 400, corpo: { erro: 'escolha como pagar (forma de pagamento inválida)' } }
+  // Parcelas digitadas (boleto sem duplicatas no XML — falha do fornecedor): só para boleto, no formato certo, só se o XML
+  // da nota NÃO traz boletos e se a soma fecha com o valor da nota. O robô repete a conta contra o vNF do XML antes de lançar.
+  let manuais: ParcelaManual[] | null = null
+  if (c.parcelas !== undefined && c.parcelas !== null) {
+    if (forma !== 'boleto') return { status: 400, corpo: { erro: 'parcelas digitadas só valem para boleto' } }
+    manuais = normalizarParcelas(c.parcelas)
+    if (!manuais) return { status: 400, corpo: { erro: 'parcelas digitadas inválidas: confira o vencimento e o valor de cada uma' } }
+    const n = await deps.notaParaParcelas(chave)
+    if (n) {
+      if (!Array.isArray(n.parcelas) || n.parcelas.length > 0) {
+        return { status: 400, corpo: { erro: 'esta nota já tem boletos no XML (ou o XML ainda não foi lido): as parcelas digitadas não se aplicam' } }
+      }
+      const total = Number(n.valor_nf)
+      // em centavos inteiros (sem erro de ponto flutuante): até 1 centavo de diferença é ruído de arredondamento
+      if (!Number.isFinite(total) || Math.abs(Math.round(somaParcelas(manuais) * 100) - Math.round(total * 100)) > 1) {
+        return { status: 400, corpo: { erro: 'as parcelas digitadas não fecham com o valor da nota' } }
+      }
+    }
+  }
 
   // 3. reserva (compara-e-troca): duplo toque / dois aparelhos / nota pela metade não disparam de novo.
   const agora = deps.agora()
@@ -102,7 +154,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (await deps.outraLancando(chave, limite.toISOString())) {
     return { status: 409, corpo: { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' } }
   }
-  const nota = await deps.reservar(chave, forma, agora.toISOString(), limite.toISOString())
+  const nota = await deps.reservar(chave, forma, agora.toISOString(), limite.toISOString(), manuais)
   if (!nota) {
     return { status: 409, corpo: { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando ou pela metade)' } }
   }

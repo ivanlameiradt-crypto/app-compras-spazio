@@ -546,3 +546,24 @@ describe('Fase 3 — boletos do XML na cot_nfe (cot_nfe_anexar_parcelas)', () =>
     await expect(como(db, ADMIN, `select cot_nfe_anexar_parcelas($1, '{}'::jsonb)`, [SEGREDO])).rejects.toThrow(/permission denied/)
   })
 })
+
+describe('Fase 3 — parcelas digitadas pelo Ivan (cot_nfe.parcelas_manuais)', () => {
+  const atualF3D = bancoRecebimento(null)
+  const bancoF3D = async () => atualF3D()
+
+  it('só aceita lista de 1 a 60 parcelas ou NULL; a leitura da SEFAZ nunca a apaga', async () => {
+    const db = await bancoF3D()
+    await sync(db, [nota()])
+    const [antes] = await como(db, ADMIN, 'select parcelas_manuais from cot_nfe where chave = $1', [CHAVE])
+    expect(antes.parcelas_manuais).toBeNull()
+    const boa = JSON.stringify([{ vencimento: '2026-11-05', valor: 100 }])
+    await db.query('update cot_nfe set parcelas_manuais = $1::jsonb where chave = $2', [boa, CHAVE])
+    await sync(db, [nota()]) // nova leitura: a coluna fica como estava
+    const [depois] = await como(db, ADMIN, 'select parcelas_manuais from cot_nfe where chave = $1', [CHAVE])
+    expect(depois.parcelas_manuais).toEqual([{ vencimento: '2026-11-05', valor: 100 }])
+    for (const ruim of ['[]', '{}', '"x"', JSON.stringify(Array.from({ length: 61 }, () => ({ vencimento: '2026-11-05', valor: 1 })))]) {
+      await expect(db.query('update cot_nfe set parcelas_manuais = $1::jsonb where chave = $2', [ruim, CHAVE])).rejects.toThrow(/check/)
+    }
+    await db.query('update cot_nfe set parcelas_manuais = null where chave = $1', [CHAVE])
+  })
+})

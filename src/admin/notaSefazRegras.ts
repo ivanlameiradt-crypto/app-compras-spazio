@@ -1,7 +1,7 @@
 // Regras puras da aba "Lançamento de nota SEFAZ" (Fase 3): "Como pagar", memória por fornecedor, bloqueios e textos.
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
-import type { EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaNota } from '../lib/tipos'
+import type { EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
 export const FORMA_PADRAO = 'boleto'
@@ -180,7 +180,7 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   const f = resumoFinanceiro(n)
   let financeiro: string | null = null
   if (!f.lido) financeiro = 'Boletos ainda não lidos do XML (próxima leitura)'
-  else if (f.parcelas.length === 0) financeiro = 'A nota não tem boletos: escolha como pagar'
+  else if (f.parcelas.length === 0) financeiro = 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'
   else if (!f.bate) financeiro = 'Os boletos não fecham com o valor da nota'
   if (financeiro) motivos.push(financeiro)
   if (contaEspecial(n.emitente)) motivos.push(AVISO_CONTA_ESPECIAL)
@@ -193,4 +193,79 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
 export function fornecedorAprendido(n: NotaSefazLista, seguidas: Record<string, number> | undefined): number {
   const c = n.cnpj_emitente ? seguidas?.[n.cnpj_emitente] ?? 0 : 0
   return c >= NOTAS_PARA_APRENDER ? c : 0
+}
+
+// ---------- parcelas DIGITADAS pelo Ivan (boleto cujo XML não traz as duplicatas)
+/**
+ * REGRA PROVISÓRIA (Ivan, 06/10/2026): fornecedores cujo XML vem SEM a forma de pagamento e sem duplicatas (falha DELES). A forma
+ * real é decidida pelo Ivan em cada nota (boleto, cartão de crédito, outras): nunca assumir. Quando o fornecedor corrigir o XML o
+ * Ivan avisa e o fornecedor sai desta lista. Chave = CNPJ (14 dígitos, sem pontuação).
+ */
+export const FORNECEDORES_XML_SEM_PAGAMENTO: Record<string, string> = { '03995515011363': 'MATEUS SUPERMERCADOS' }
+
+/** Linha do editor: vencimento (aaaa-mm-dd, do campo de data) e valor como foi digitado (pt-BR). */
+export interface LinhaParcela { vencimento: string; valor: string }
+
+/** "1.234,56" / "1234,5" / "R$ 100" -> 1234.56 / 1234.5 / 100; texto fora do formato, zero ou negativo -> null. */
+export function parseValorBr(texto: string): number | null {
+  const t = texto.trim().replace(/^R\$\s*/i, '')
+  if (!/^(\d{1,3}(\.\d{3})+|\d+)(,\d{1,2})?$/.test(t)) return null
+  const n = Number(t.replace(/\./g, '').replace(',', '.'))
+  return Number.isFinite(n) && n > 0 && n <= 10_000_000 ? Math.round(n * 100) / 100 : null
+}
+export const formatarValorBr = (v: number): string => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** O editor de parcelas aparece quando a forma é Boleto e o XML foi lido e NÃO traz duplicatas. */
+export const precisaDigitarParcelas = (n: NotaSefazLista, forma: string): boolean =>
+  forma === 'boleto' && Array.isArray(n.parcelas) && n.parcelas.length === 0
+
+/** Linhas que o editor mostra ao abrir: o que já foi digitado (nota que voltou do robô) ou uma linha em branco. */
+export function linhasIniciais(n: NotaSefazLista): LinhaParcela[] {
+  const antigas = n.parcelas_manuais ?? []
+  return antigas.length > 0
+    ? antigas.map((p) => ({ vencimento: p.vencimento, valor: formatarValorBr(p.valor) }))
+    : [{ vencimento: '', valor: '' }]
+}
+
+export interface ResultadoParcelas {
+  ok: boolean
+  /** Por que ainda não dá para lançar (vazio quando ok). */
+  motivo: string
+  /** As parcelas válidas, no formato que a Edge Function recebe (só confiáveis quando ok). */
+  parcelas: ParcelaDigitada[]
+  /** Soma das linhas já válidas, em reais. */
+  soma: number
+  /** valor da nota - soma (positivo = falta, negativo = passou), em reais; null sem valor da nota. */
+  falta: number | null
+}
+
+const dataValida = (iso: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false
+  const d = new Date(`${iso}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso
+}
+
+/** Confere o que o Ivan digitou: cada linha com vencimento e valor, vencimento não anterior à emissão e soma igual ao valor da nota (até 1 centavo). */
+export function validarParcelasDigitadas(linhas: LinhaParcela[], valorNota: number | null, emissao: string): ResultadoParcelas {
+  const parcelas: ParcelaDigitada[] = []
+  let motivo = ''
+  linhas.forEach((l, i) => {
+    const n = i + 1
+    const valor = parseValorBr(l.valor)
+    if (valor != null) parcelas.push({ vencimento: l.vencimento, valor })
+    if (motivo) return
+    if (!dataValida(l.vencimento)) motivo = `Parcela ${n}: informe o vencimento`
+    else if (emissao && l.vencimento < emissao) motivo = `Parcela ${n}: o vencimento é anterior à emissão da nota`
+    else if (valor == null) motivo = `Parcela ${n}: informe o valor (ex.: 1.234,56)`
+  })
+  const cents = parcelas.reduce((t, p) => t + Math.round(p.valor * 100), 0)
+  const soma = cents / 100
+  const falta = valorNota == null ? null : Math.round(Math.round(valorNota * 100) - cents) / 100
+  if (linhas.length === 0) motivo = 'Digite ao menos uma parcela'
+  if (!motivo && falta == null) motivo = 'A nota está sem valor para conferir as parcelas'
+  if (!motivo && falta != null && Math.abs(falta) > 0.01) {
+    motivo = falta > 0 ? `Faltam ${formatarValorBr(falta)} para fechar com o valor da nota` : `Passou ${formatarValorBr(-falta)} do valor da nota`
+  }
+  const todasValidas = parcelas.length === linhas.length && linhas.every((l) => dataValida(l.vencimento))
+  return { ok: motivo === '' && todasValidas, motivo, parcelas, soma, falta }
 }

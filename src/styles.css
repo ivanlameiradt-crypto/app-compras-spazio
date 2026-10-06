@@ -189,3 +189,6 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .conferir-itens li { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; font-size: 13px; }
 .cupom .conferir-itens li b { font-weight: 600; word-break: break-word; }
 .cupom button.link { background: none; border: 0; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font: inherit; }
+.cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }
+.cupom .linha-parcela { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
+.cupom .linha-parcela label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

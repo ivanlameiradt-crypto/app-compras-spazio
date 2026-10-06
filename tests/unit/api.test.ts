@@ -633,6 +633,27 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     expect(await lancamentosSeguidosEmBoleto()).toEqual({})
   })
 
+  it('lancarNota com parcelas digitadas manda {chave, forma, parcelas}; sem elas o corpo é o de sempre', async () => {
+    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    const parcelas = [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }]
+    await lancarNota('d'.repeat(44), 'boleto', parcelas)
+    expect(invoke).toHaveBeenLastCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'boleto', parcelas } })
+    await lancarNota('d'.repeat(44), 'boleto', [])
+    expect(invoke).toHaveBeenLastCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'boleto' } })
+  })
+
+  it('lê as parcelas digitadas (parcelas_manuais) normalizadas; ausente = null', async () => {
+    const c = cadeia({ data: [
+      { ...linha, parcelas_manuais: [{ vencimento: '2026-11-05', valor: '60.5' }] },
+      { ...linha, chave: 'e'.repeat(44) },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(c.select.mock.calls[0][0]).toContain('parcelas_manuais')
+    expect(r[0].parcelas_manuais).toEqual([{ vencimento: '2026-11-05', valor: 60.5 }])
+    expect(r[1].parcelas_manuais).toBeNull()
+  })
+
   it('lancarNota chama a Edge Function lancar-nfe com {chave, forma}', async () => {
     invoke.mockResolvedValue({ data: { ok: true }, error: null })
     await lancarNota('d'.repeat(44), 'pix:caixa|sp')
@@ -648,6 +669,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando ou pela metade)' }, 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'],
     [409, { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' }, 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'],
     [400, { erro: 'escolha como pagar (forma de pagamento inválida)' }, 'Escolha como pagar: a forma de pagamento não é válida.'],
+    [400, { erro: 'as parcelas digitadas não fecham com o valor da nota' }, 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'],
+    [400, { erro: 'esta nota já tem boletos no XML (ou o XML ainda não foi lido): as parcelas digitadas não se aplicam' }, 'Esta nota já tem boletos no XML. Atualize a tela e confira.'],
+    [400, { erro: 'parcelas digitadas só valem para boleto' }, 'Parcelas digitadas só valem para a forma Boleto.'],
+    [400, { erro: 'parcelas digitadas inválidas: confira o vencimento e o valor de cada uma' }, 'Confira o vencimento e o valor de cada parcela.'],
     [400, { erro: 'chave da nota inválida' }, 'A chave da nota não é válida. Atualize a tela e tente de novo.'],
     [502, { erro: 'não consegui chamar o robô agora — tente de novo em instantes' }, 'Não consegui chamar o robô agora, tente de novo.'],
   ])('lancarNota: status %i vira texto claro em português', async (status, corpo, esperado) => {
