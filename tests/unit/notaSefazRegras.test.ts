@@ -1,6 +1,6 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
-  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada,
+  traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -110,5 +110,55 @@ describe('notaSefazRegras', () => {
     expect(formaLembrada('ATACADAO S.A.')).toBeNull()
     expect(formaPadraoDoFornecedor(nota({ cnpj_emitente: '222' }), { '222': 'cartao' })).toBeNull()
     expect(formaPadraoDoFornecedor(nota({ cnpj_emitente: null }), { '222': 'boleto' })).toBeNull()
+  })
+
+  describe('nota pronta (regra 2) e financeiro', () => {
+    const boletos = (...v: number[]) => v.map((valor, i) => ({ numero: String(i + 1), vencimento: '2026-11-05', valor }))
+
+    it('resumoFinanceiro: boletos que somam o valor da nota batem; sem leitura / sem boleto / diferença não batem', () => {
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(50, 50) }))).toMatchObject({ lido: true, soma: 100, diferenca: 0, bate: true })
+      expect(resumoFinanceiro(nota({ valor_nf: 100.01, parcelas: boletos(33.34, 33.33, 33.33) })).bate).toBe(true)  // 1 centavo é ruído
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(50, 49) }))).toMatchObject({ bate: false, diferenca: -1 })
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: [] }))).toMatchObject({ lido: true, bate: false })
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: null }))).toMatchObject({ lido: false, bate: false, diferenca: null })
+      expect(resumoFinanceiro(nota({ valor_nf: 0.1 + 0.2, parcelas: boletos(0.3) })).bate).toBe(true)                 // sem erro de ponto flutuante
+    })
+
+    it('prontidaoDaNota: pronta só com itens associados + boletos que fecham', () => {
+      const ok = nota({ valor_nf: 100, parcelas: boletos(60, 40) })
+      expect(prontidaoDaNota(ok)).toEqual({ pronta: true, motivos: [], financeiro: null })
+      const semProduto = nota({ valor_nf: 100, parcelas: boletos(100), itens: [{ descricao: 'X', qtd: 1, unidade_sischef: 'KG', produto_id: null }] })
+      expect(prontidaoDaNota(semProduto)).toMatchObject({ pronta: false, financeiro: null })
+      expect(prontidaoDaNota(semProduto).motivos).toEqual(['1 item sem produto no SisChef'])
+      const painel = nota({ valor_nf: 100, parcelas: boletos(100), itens: [{ descricao: 'X', qtd: 1, unidade_sischef: 'KG', produto_id: 7, associacao: 'painel' }] })
+      expect(prontidaoDaNota(painel).pronta).toBe(false) // decidido no app mas ainda não associado no SisChef
+    })
+
+    it.each([
+      ['XML ainda não lido', null, 'Boletos ainda não lidos do XML (próxima leitura)'],
+      ['nota sem boleto (à vista)', [], 'A nota não tem boletos: escolha como pagar'],
+      ['boletos que não fecham', boletos(10), 'Os boletos não fecham com o valor da nota'],
+    ])('prontidaoDaNota: %s não é pronta e explica', (_n, parcelas, motivo) => {
+      const r = prontidaoDaNota(nota({ valor_nf: 100, parcelas }))
+      expect(r).toMatchObject({ pronta: false, financeiro: motivo })
+    })
+
+    it('prontidaoDaNota: conta especial, nota pela metade e nota que voltou do robô nunca são prontas', () => {
+      const b = { valor_nf: 100, parcelas: boletos(100) }
+      expect(prontidaoDaNota(nota({ ...b, emitente: 'KONDO COMERCIO' })).pronta).toBe(false)
+      expect(prontidaoDaNota(nota({ ...b, lancamento_estado: 'erro' })).pronta).toBe(false)
+      expect(prontidaoDaNota(nota({ ...b, lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' })).motivos.join(' ')).toContain('total diferente')
+      expect(prontidaoDaNota(nota({ ...b, itens: [] })).pronta).toBe(false)
+    })
+
+    it('fornecedorAprendido: só com 3 ou mais notas seguidas em boleto', () => {
+      const n = nota({ cnpj_emitente: '111' })
+      expect(NOTAS_PARA_APRENDER).toBe(3)
+      expect(fornecedorAprendido(n, { '111': 2 })).toBe(0)
+      expect(fornecedorAprendido(n, { '111': 3 })).toBe(3)
+      expect(fornecedorAprendido(n, { '999': 9 })).toBe(0)
+      expect(fornecedorAprendido(nota({ cnpj_emitente: null }), { '111': 9 })).toBe(0)
+      expect(fornecedorAprendido(n, undefined)).toBe(0)
+    })
   })
 })

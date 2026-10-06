@@ -472,3 +472,77 @@ describe('Fase 3 — lançar pelo app: forma de pagamento e estado do disparo (c
     await expect(como(db, ADMIN, `select cot_nfe_marcar_estado($1, '{}'::jsonb)`, [SEGREDO])).rejects.toThrow(/permission denied/)
   })
 })
+
+describe('Fase 3 — boletos do XML na cot_nfe (cot_nfe_anexar_parcelas)', () => {
+  const atualF3C = bancoRecebimento(null)
+  const bancoF3C = async () => atualF3C()
+  const anexar = (db: PGlite, seg: string, p: Json) =>
+    chamar(db, 'anon', 'cot_nfe_anexar_parcelas($1, $2::jsonb)', [seg, JSON.stringify(p)])
+  async function parcelas(db: PGlite, chave = CHAVE): Promise<unknown> {
+    const [r] = await como(db, ADMIN, 'select parcelas from cot_nfe where chave = $1', [chave])
+    return r.parcelas
+  }
+
+  it('antes da leitura do XML as parcelas são NULL; o robô grava as duplicatas normalizadas e o admin lê', async () => {
+    const db = await bancoF3C()
+    await sync(db, [nota()])
+    expect(await parcelas(db)).toBeNull()
+    const n = await anexar(db, SEGREDO, { notas: [{ chave: CHAVE, parcelas: [
+      { numero: '001', vencimento: '2026-11-05', valor: 100.5, lixo: 'x' },
+      { numero: '', vencimento: null, valor: 0 },
+    ] }] })
+    expect(Number(n)).toBe(1)
+    expect(await parcelas(db)).toEqual([
+      { numero: '001', vencimento: '2026-11-05', valor: 100.5 },
+      { numero: null, vencimento: null, valor: 0 },
+    ])
+  })
+
+  it('lista vazia = XML lido e sem duplicatas (à vista); é idempotente e a última gravação vale', async () => {
+    const db = await bancoF3C()
+    await sync(db, [nota()])
+    await anexar(db, SEGREDO, { notas: [{ chave: CHAVE, parcelas: [] }] })
+    expect(await parcelas(db)).toEqual([])
+    await anexar(db, SEGREDO, { notas: [{ chave: CHAVE, parcelas: [{ numero: '1', vencimento: '2026-12-01', valor: 5 }] }] })
+    await anexar(db, SEGREDO, { notas: [{ chave: CHAVE, parcelas: [{ numero: '1', vencimento: '2026-12-01', valor: 5 }] }] })
+    expect(await parcelas(db)).toEqual([{ numero: '1', vencimento: '2026-12-01', valor: 5 }])
+  })
+
+  it('chave desconhecida é ignorada (0) e nota já lançada nunca é mexida', async () => {
+    const db = await bancoF3C()
+    await sync(db, [nota()])
+    expect(Number(await anexar(db, SEGREDO, { notas: [{ chave: CHAVE2, parcelas: [] }] }))).toBe(0)
+    await anexar(db, SEGREDO, { notas: [{ chave: CHAVE, parcelas: [{ numero: '1', vencimento: '2026-12-01', valor: 5 }] }] })
+    await chamar(db, 'anon', 'cot_nfe_marcar_lancadas($1, $2::jsonb)',
+      [SEGREDO, JSON.stringify([{ chave: CHAVE, nf_sischef: 'NF 9', lancada_em: '2026-10-20T18:00:00Z' }])])
+    expect(Number(await anexar(db, SEGREDO, { notas: [{ chave: CHAVE, parcelas: [] }] }))).toBe(0)
+    expect(await parcelas(db)).toEqual([{ numero: '1', vencimento: '2026-12-01', valor: 5 }])
+  })
+
+  it('formato inválido derruba o lote inteiro (nada é gravado) e o segredo errado é recusado', async () => {
+    const db = await bancoF3C()
+    await sync(db, [nota()])
+    const boa = { chave: CHAVE, parcelas: [{ numero: '1', vencimento: '2026-12-01', valor: 5 }] }
+    const ruins: Array<[string, Json]> = [
+      ['parcelas inválidas: notas', { notas: 'x' }],
+      ['parcelas inválidas: chave', { notas: [boa, { chave: '123', parcelas: [] }] }],
+      ['parcelas inválidas: parcelas', { notas: [boa, { chave: CHAVE2, parcelas: 'x' }] }],
+      ['parcelas inválidas: parcelas', { notas: [boa, { chave: CHAVE2, parcelas: Array.from({ length: 61 }, () => ({ valor: 1 })) }] }],
+      ['parcelas inválidas: parcela', { notas: [boa, { chave: CHAVE2, parcelas: [5] }] }],
+      ['parcelas inválidas: vencimento', { notas: [boa, { chave: CHAVE2, parcelas: [{ vencimento: 'amanhã', valor: 1 }] }] }],
+      ['parcelas inválidas: valor', { notas: [boa, { chave: CHAVE2, parcelas: [{ vencimento: '2026-12-01', valor: -1 }] }] }],
+      ['parcelas inválidas: valor', { notas: [boa, { chave: CHAVE2, parcelas: [{ vencimento: '2026-12-01' }] }] }],
+      ['parcelas inválidas: valor', { notas: [boa, { chave: CHAVE2, parcelas: [{ vencimento: '2026-12-01', valor: 99999999 }] }] }],
+    ]
+    for (const [msg, p] of ruins) {
+      expect([msg, await erroDe(anexar(db, SEGREDO, p))]).toEqual([msg, msg])
+    }
+    expect(await parcelas(db)).toBeNull() // a nota "boa" do mesmo lote também ficou de fora
+    expect(await erroDe(anexar(db, 'errado', { notas: [boa] }))).toBe('não autorizado')
+  })
+
+  it('a 5ª do robô (cot_nfe_anexar_parcelas) é só de anon com o segredo: authenticated não executa', async () => {
+    const db = await bancoF3C()
+    await expect(como(db, ADMIN, `select cot_nfe_anexar_parcelas($1, '{}'::jsonb)`, [SEGREDO])).rejects.toThrow(/permission denied/)
+  })
+})

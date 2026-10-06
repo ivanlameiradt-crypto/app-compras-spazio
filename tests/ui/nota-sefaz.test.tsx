@@ -25,6 +25,7 @@ beforeEach(() => {
   m.notasLancadas.mockResolvedValue([])
   m.lancarNota.mockResolvedValue(undefined)
   m.formasPadraoPorFornecedor.mockResolvedValue({})
+  m.lancamentosSeguidosEmBoleto.mockResolvedValue({})
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -439,6 +440,95 @@ describe('NotaSefaz', () => {
       await screen.findByTestId('nota-a-lancar')
       expect(comoPagar().value).toBe('boleto')
       expect(screen.queryByText('Não consegui carregar as notas.')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('nota pronta e painel de conferir (regra 2)', () => {
+    const parcelas = [{ numero: '001', vencimento: '2026-11-05', valor: 60 }, { numero: '002', vencimento: '2026-11-12', valor: 40 }]
+    const pronta = (extra: Partial<NotaSefazLista> = {}) => nota({ valor_nf: 100, parcelas, cnpj_emitente: '12345678000190', ...extra })
+
+    it('nota pronta (itens associados + boletos fecham): mostra "Pronta", só o Lançar e esconde o Como pagar', async () => {
+      aLancar(pronta())
+      render(<NotaSefaz />)
+      const linha = await screen.findByTestId('nota-a-lancar')
+      expect(within(linha).getByTestId('nota-pronta')).toHaveTextContent('Pronta para lançar')
+      expect(within(linha).getByTestId('nota-pronta')).toHaveTextContent('2 boletos fecham')
+      expect(within(linha).getByTestId('pagamento-fixo')).toHaveTextContent('Pagamento: Boleto (2 parcelas)')
+      expect(within(linha).queryByLabelText('Como pagar')).not.toBeInTheDocument()
+      expect(botaoLancar()).toBeEnabled()
+    })
+
+    it('"mudar forma de pagamento" devolve o Como pagar e tira o modo "só lançar"', async () => {
+      aLancar(pronta())
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-pronta')
+      await userEvent.click(screen.getByRole('button', { name: 'mudar forma de pagamento' }))
+      expect(comoPagar().value).toBe('boleto')
+      expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+    })
+
+    it('Lançar da nota pronta manda a chave e Boleto (dois toques, como sempre)', async () => {
+      aLancar(pronta())
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-pronta')
+      await userEvent.click(botaoLancar())
+      await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto'))
+    })
+
+    it('fornecedor aprendido (3 notas seguidas em boleto) é dito na nota pronta', async () => {
+      m.lancamentosSeguidosEmBoleto.mockResolvedValue({ '12345678000190': 3 })
+      aLancar(pronta())
+      render(<NotaSefaz />)
+      expect(await screen.findByTestId('nota-pronta')).toHaveTextContent('Fornecedor aprendido (3 notas seguidas lançadas em boleto sem problema)')
+    })
+
+    it.each([
+      ['boletos que não fecham', { parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 10 }] }, 'Os boletos não fecham com o valor da nota'],
+      ['nota sem boleto', { parcelas: [] }, 'A nota não tem boletos: escolha como pagar'],
+      ['XML não lido', { parcelas: null }, 'Boletos ainda não lidos do XML (próxima leitura)'],
+    ])('%s: não é pronta, avisa o motivo e mantém o Como pagar', async (_n, extra, motivo) => {
+      aLancar(pronta(extra as Partial<NotaSefazLista>))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+      expect(screen.getByTestId('aviso-financeiro')).toHaveTextContent(motivo)
+      expect(comoPagar()).toBeInTheDocument()
+    })
+
+    it('com padrão do fornecedor diferente de Boleto a nota não fica no modo "só lançar"', async () => {
+      m.formasPadraoPorFornecedor.mockResolvedValue({ '12345678000190': 'dinheiro' })
+      aLancar(pronta())
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+      expect(comoPagar().value).toBe('dinheiro')
+    })
+
+    it('painel de conferir: itens com o produto associado e o financeiro (parcelas, soma e total)', async () => {
+      aLancar(pronta({ itens: [{ descricao: 'CÓD. FOR: 515972 CREME DE LEITE', qtd: 10, unidade_sischef: 'KG', produto_id: 1855900, associacao: 'sischef', produto_nome: 'CREME DE LEITE - INSUMOS' },
+        { descricao: 'CÓD. FOR: 9 ITEM SEM NOME', qtd: 2, unidade_sischef: 'UN', produto_id: 77, associacao: 'sischef' }] }))
+      render(<NotaSefaz />)
+      const painel = await screen.findByTestId('conferir')
+      const itens = within(painel).getAllByTestId('conferir-item')
+      expect(itens[0]).toHaveTextContent('CREME DE LEITE · 10 KG')
+      expect(itens[0]).toHaveTextContent('CREME DE LEITE - INSUMOS')
+      expect(itens[0]).toHaveTextContent('associado no SisChef')
+      expect(itens[0]).not.toHaveTextContent('CÓD. FOR')
+      expect(itens[1]).toHaveTextContent('produto 77') // sem o nome vindo do robô, mostra o código
+      const par = within(painel).getAllByTestId('conferir-parcela')
+      expect(par[0]).toHaveTextContent('Parcela 001 · vence 05/11/2026')
+      expect(par[0]).toHaveTextContent(/R\$\s60,00/)
+      expect(within(painel).getByTestId('fin-total')).toHaveTextContent(/Soma dos boletos R\$\s100,00 · valor da nota R\$\s100,00 · bate/)
+    })
+
+    it('painel de conferir mostra a diferença quando os boletos não fecham, e o aviso de XML não lido / sem boleto', async () => {
+      aLancar(pronta({ parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 90 }] }), pronta({ chave: '8'.repeat(44), parcelas: null }), pronta({ chave: '7'.repeat(44), parcelas: [] }))
+      render(<NotaSefaz />)
+      const paineis = await screen.findAllByTestId('conferir')
+      expect(within(paineis[0]).getByTestId('fin-total')).toHaveTextContent(/diferença de R\$\s10,00/)
+      expect(within(paineis[1]).getByTestId('fin-nao-lido')).toBeInTheDocument()
+      expect(within(paineis[2]).getByTestId('fin-sem-boleto')).toBeInTheDocument()
     })
   })
 

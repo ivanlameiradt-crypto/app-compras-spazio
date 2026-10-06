@@ -387,7 +387,11 @@ export interface ItemNotaSefaz {
   produto_id: number | null
   /** Como o item foi associado no SisChef ('painel' = só pelo painel, sem produto de verdade). Vem do robô; pode faltar. */
   associacao?: string | null
+  /** Nome do produto associado, quando o robô de leitura o trouxe (vem do cadastro do SisChef). */
+  produto_nome?: string | null
 }
+/** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
+export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
 /** Situação do último "Lançar" de uma nota (cot_nfe.lancamento_estado, migração 20261206000001). null = nunca disparada. */
 export type EstadoLancamentoNfe = 'lancando' | 'revisar' | 'erro' | 'ensaio_ok'
 /** Linha da aba Lançamento de nota SEFAZ (lê cot_nfe por RLS de admin). */
@@ -407,6 +411,8 @@ export interface NotaSefazLista {
   lancamento_estado?: EstadoLancamentoNfe | null
   lancamento_motivo?: string | null
   lancamento_estado_em?: string | null
+  /** Boletos do XML. null/ausente = XML ainda não lido; [] = lido e sem duplicatas (à vista). Migração 20261207000001. */
+  parcelas?: ParcelaNota[] | null
 }
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'
