@@ -24,6 +24,11 @@
 - Quando você tiver certeza de que um fornecedor já "aprendeu", só confirma. Critério combinado: 3 notas seguidas do fornecedor lançadas sem erro e sem você mudar nada.
 - **No ar desde 06/10 (18h).** A leitura baixa o XML de todas as notas e grava os boletos. Nota pronta mostra o selo e só o Lançar; o painel "Conferir itens e financeiro" abre itens e parcelas. Notas de supermercado (MATEUS) vêm sem boleto (à vista): você escolhe como pagar.
 
+## Regra provisória: MATEUS SUPERMERCADOS (CNPJ 03995515011363)
+- O XML da MATEUS vem **sem forma de pagamento e sem duplicatas**: falha do fornecedor. Nas 3 notas de 06/10 era **boleto**, mas você também compra da MATEUS no **cartão de crédito** e em outras formas. **Não é regra fixa.**
+- Até corrigirem: o app não assume forma nenhuma para essas notas e você **informa o pagamento nota a nota**. Nunca viram "pronta" nem "fornecedor aprendido".
+- Quando a MATEUS corrigir o XML, você me avisa e a regra é encerrada.
+
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
 
