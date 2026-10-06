@@ -104,6 +104,8 @@ const DO_APP = [
   // Fase 3: descartar a nota que não dá para lançar (admin) e desfazer
   'cot_nfe_descartar(text,text)',
   'cot_nfe_restaurar(text)',
+  // Fase 3: escolher (ou desfazer) o produto de um item sem produto no SisChef, pelo app (admin)
+  'cot_nfe_associar(text,integer,bigint)',
 ]
 
 /** A página do vendedor (chave anônima): estas duas + as 4 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,

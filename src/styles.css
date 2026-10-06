@@ -180,6 +180,7 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .detalhe-itens li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--linha); font-size: 13px; }
 .detalhe-itens li:last-child { border-bottom: 0; }
 .detalhe-itens .nums { color: var(--suave); white-space: nowrap; }
+.detalhe-itens .cod { font-weight: 700; }
 
 /* Fase 3 — nota a lançar: "Como pagar", estado do robô e botão Lançar empilhados dentro do item da lista */
 .cupom .recentes li.nota-lancar { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; }
@@ -195,6 +196,17 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .conferir-itens .tick-ok { flex: none; margin-top: 1px; }
 .cupom .conferir-itens .tick-ok circle { fill: var(--marca); }
 .cupom .conferir-itens .tick-ok path { stroke: var(--marca-texto); }
+/* Caixa de associação de produto (item sem produto no SisChef): campo, resultados, produto escolhido e "confirmado no app" */
+.cupom .associar { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 10px; border: 1px dashed var(--linha); border-radius: 10px; }
+.cupom .associar .achados { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cupom .associar .achados li { display: block; }
+.cupom .associar .achados button { width: 100%; display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 8px 10px; border: 1px solid var(--linha);
+  border-radius: 8px; background: var(--cartao); color: var(--texto); font: inherit; font-size: 13px; cursor: pointer; }
+.cupom .associar .achados button:disabled { opacity: .5; cursor: default; }
+.cupom .associar .escolhido { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.cupom .associar .sem-quebra { white-space: nowrap; }
+.cupom .associar-feito { font-size: 13px; }
+.cupom .confirmado { color: var(--ok-texto); font-weight: 600; }
 .cupom .conferir-itens li button.link { align-self: flex-start; }
 .cupom button.link { background: none; border: 0; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font: inherit; }
 .cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }

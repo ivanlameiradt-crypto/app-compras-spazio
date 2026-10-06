@@ -1,7 +1,7 @@
-// Regras puras da aba "Lançamento de nota SEFAZ" (Fase 3): "Como pagar", memória por fornecedor, bloqueios e textos.
+// Regras puras da aba "Lançamento fiscal" (Fase 3; até 06/10/2026 "Lançamento de nota SEFAZ"): "Como pagar", memória por fornecedor, bloqueios e textos.
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
-import type { EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
+import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
 export const FORMA_PADRAO = 'boleto'
@@ -87,6 +87,8 @@ export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>
 
 // ---------- bloqueios
 export const AVISO_ITEM_SEM_PRODUTO = 'Item sem produto no SisChef: associe lá antes de lançar'
+/** Todo item sem produto no SisChef já tem a escolha CONFIRMADA no app (etapa 1: o app só guarda; o robô ainda não aplica a escolha na tela do SisChef). */
+export const AVISO_ASSOCIACAO_SO_NO_APP = 'Os produtos já estão confirmados no app, mas o robô ainda não os aplica no SisChef: associe lá antes de lançar (a aplicação automática é a próxima etapa)'
 export const AVISO_CONTA_ESPECIAL = 'Conta especial: essa nota não é lançada pelo app'
 /**
  * Nota que a leitura do SisChef trouxe sem itens: não há o que conferir, e o robô também recusa. No SisChef ela costuma aparecer como
@@ -99,6 +101,12 @@ const itemSemProduto = (it: ItemNotaSefaz): boolean =>
 /** Item com produto de verdade no SisChef: o "✓ verde" do painel de conferir. É o MESMO critério que libera ou trava o Lançar
  *  (um ✓ nunca aparece num item que bloqueia a nota, nem some de um que a deixa passar). */
 export const itemAssociado = (it: ItemNotaSefaz): boolean => !itemSemProduto(it)
+/** A escolha que o Ivan CONFIRMOU no app para este item (pelo número do item na NF), ou null. Só existe para item que ainda não tem produto de
+ *  verdade no SisChef: se ele já vem associado de lá, vale o SisChef. */
+export function decisaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz): AssociacaoApp | null {
+  if (it.n == null || !n.associacoes_app || !itemSemProduto(it)) return null
+  return n.associacoes_app[String(it.n)] ?? null
+}
 const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.test(emitente.toUpperCase())
 
 /** Motivos (em português) pelos quais esta nota NÃO pode ser lançada pelo app; lista vazia = pode. */
@@ -106,7 +114,8 @@ export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   const b: string[] = []
   if (contaEspecial(n.emitente)) b.push(AVISO_CONTA_ESPECIAL)
   if (n.itens.length === 0) b.push(AVISO_SEM_ITENS)
-  if (n.itens.some(itemSemProduto)) b.push(AVISO_ITEM_SEM_PRODUTO)
+  const semProduto = n.itens.filter(itemSemProduto)
+  if (semProduto.length > 0) b.push(semProduto.every((it) => decisaoDoItem(n, it) != null) ? AVISO_ASSOCIACAO_SO_NO_APP : AVISO_ITEM_SEM_PRODUTO)
   return b
 }
 

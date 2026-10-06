@@ -9,7 +9,7 @@ import AvisoFila from './AvisoFila'
 const ABAS = [
   { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: '🛒' },
   { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: '🧾' },
-  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento de fiscal', ic: '📄' },
+  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', ic: '📄' },
 ] as const
 
 /** Qual aba fica acesa para a rota atual: Cupom e Nota SEFAZ só nas suas; todo o resto é Compra. */

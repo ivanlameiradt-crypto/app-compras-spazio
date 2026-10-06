@@ -389,6 +389,19 @@ export interface ItemNotaSefaz {
   associacao?: string | null
   /** Nome do produto associado, quando o robô de leitura o trouxe (vem do cadastro do SisChef). */
   produto_nome?: string | null
+  /** Número do item na NF (1, 2, 3…): é por ele que a decisão do app (cot_nfe.associacoes_app) liga ao item. Vem do robô de leitura. */
+  n?: number | null
+  /** Palpite do robô de leitura para um item sem produto (o produto do SisChef mais parecido); só sugestão, nunca vale sozinho. */
+  sugestao?: { id: number | string; nome: string } | null
+}
+/** Produto que o Ivan escolheu e CONFIRMOU no app para um item sem produto no SisChef (cot_nfe.associacoes_app; migração 20261210000001).
+ *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 1: só guardado; o robô ainda não aplica no SisChef. */
+export interface AssociacaoApp { produto_id: number; produto_nome: string; unidade: string | null; por?: string | null; em?: string | null }
+/** Produto da lista de insumos do app (itens_semana; o código é o do SisChef): o que o Ivan pode escolher ao associar um item da nota. */
+export interface ProdutoCatalogo {
+  produto_id: number; nome: string; unidade: string | null
+  /** Produto NOVO: o robô já o vê no SisChef (palpite do item), mas ele ainda não entrou na lista semanal de insumos do app; sem unidade conhecida. */
+  novo?: boolean
 }
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
@@ -420,6 +433,8 @@ export interface NotaSefazLista {
   /** Descartada pelo Ivan (some de "Notas a lançar"; dá para desfazer). null/ausente = na lista normal. Migração 20261209000001. */
   descartada_em?: string | null
   descartada_motivo?: string | null
+  /** Decisões do Ivan no app para itens sem produto, por número do item na NF ("1", "2"…). null/ausente = nenhuma. Migração 20261210000001. */
+  associacoes_app?: Record<string, AssociacaoApp> | null
 }
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'
