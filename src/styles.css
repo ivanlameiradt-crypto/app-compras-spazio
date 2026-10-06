@@ -181,3 +181,11 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 
 /* Fase 3 — nota a lançar: "Como pagar", estado do robô e botão Lançar empilhados dentro do item da lista */
 .cupom .recentes li.nota-lancar { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; }
+
+/* Aba "Lançamento de nota SEFAZ": painel "Conferir itens e financeiro" (regra 2 do Ivan) */
+.cupom details.conferir { border: 1px solid var(--linha); border-radius: 10px; padding: 8px 10px; background: var(--fundo-cartao, transparent); }
+.cupom details.conferir summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.cupom .conferir-itens { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.cupom .conferir-itens li { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; font-size: 13px; }
+.cupom .conferir-itens li b { font-weight: 600; word-break: break-word; }
+.cupom button.link { background: none; border: 0; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font: inherit; }

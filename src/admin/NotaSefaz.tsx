@@ -8,7 +8,8 @@ import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
   AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  formaPadraoDoFornecedor, lancandoPresa, lembrarForma, rotuloForma, textoDoEstado, traduzirMotivo,
+  formaPadraoDoFornecedor, fornecedorAprendido, lancandoPresa, lembrarForma, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
+  traduzirMotivo,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -22,9 +23,54 @@ const linhaDoItem = (it: ItemNotaSefaz): LinhaDetalhe =>
 const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
 
 /** Uma nota a lançar: "Como pagar", estado do robô, avisos de bloqueio e o botão Lançar em dois toques. */
+/** emissao e vencimento vêm como AAAA-MM-DD; mostra dd/mm/aaaa (sem data = traço). */
+const dataBr = (iso: string | null): string => { const p = (iso ?? '').split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—' }
+/** Tira o prefixo "CÓD. FOR: 123456 " que o SisChef põe na descrição, para o painel de conferir ficar legível. */
+const semCodFor = (d: string): string => d.replace(/^CÓD\. FOR:\s*\S+\s*/i, '').trim() || d
+const nomeDoProduto = (it: ItemNotaSefaz): string =>
+  it.produto_nome?.trim() || (it.produto_id != null && String(it.produto_id).trim() !== '' ? `produto ${it.produto_id}` : 'sem produto')
+
+/** "Conferir": o que foi associado a cada item e o financeiro (boletos contra o valor da nota), para o Ivan abrir e checar. */
+function PainelConferir({ nota }: { nota: NotaSefazLista }) {
+  const f = resumoFinanceiro(nota)
+  return (
+    <details className="conferir" data-testid="conferir">
+      <summary>Conferir itens e financeiro</summary>
+      <div className="grupo">Itens e produtos associados</div>
+      <ul className="conferir-itens">
+        {nota.itens.map((it, i) => (
+          <li key={i} data-testid="conferir-item">
+            <span>{semCodFor(it.descricao)} · {it.qtd ?? '?'} {it.unidade_sischef ?? ''}</span>
+            <b>{nomeDoProduto(it)}</b>
+            <span className="sub">{(it.associacao ?? '') === 'sischef' ? 'associado no SisChef' : (it.associacao ?? '') === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="grupo">Financeiro</div>
+      {!f.lido ? <p className="sub" data-testid="fin-nao-lido">Os boletos ainda não foram lidos do XML. Aparecem na próxima leitura do SisChef.</p>
+        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">A nota não tem boletos (duplicatas). Escolha como pagar.</p>
+        : (
+          <>
+            <ul className="conferir-itens">
+              {f.parcelas.map((p, i) => (
+                <li key={i} data-testid="conferir-parcela"><span>Parcela {p.numero ?? i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>
+              ))}
+            </ul>
+            <p className={f.bate ? 'ok' : 'erro'} data-testid="fin-total">
+              Soma dos boletos {formatarReais(f.soma)} · valor da nota {f.total == null ? '?' : formatarReais(f.total)} ·{' '}
+              {f.bate ? 'bate' : `diferença de ${formatarReais(Math.abs(f.diferenca ?? 0))}`}
+            </p>
+          </>
+        )}
+    </details>
+  )
+}
+
 interface PropsNota {
   nota: NotaSefazLista
   padroes: Record<string, string>
+  /** Notas seguidas lançadas em boleto por fornecedor (CNPJ): 3 ou mais = fornecedor "aprendido". */
+  seguidas: Record<string, number>
   aoLancar: () => Promise<void>
   /** Outra nota está 'lancando' (o robô é um por vez: o GitHub guarda só 1 disparo pendente e cancelaria o resto). */
   outraLancando: boolean
@@ -34,16 +80,22 @@ interface PropsNota {
   iniciarEnvio: () => boolean
   fimEnvio: () => void
 }
-function NotaALancar({ nota, padroes, aoLancar, outraLancando, emEnvio, iniciarEnvio, fimEnvio }: PropsNota) {
+function NotaALancar({ nota, padroes, seguidas, aoLancar, outraLancando, emEnvio, iniciarEnvio, fimEnvio }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [mudandoForma, setMudandoForma] = useState(false)
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
   const forma = escolha ?? formaInicial(nota, padroes)
   const padraoDoFornecedor = formaPadraoDoFornecedor(nota, padroes)
+  const prontidao = prontidaoDaNota(nota)
+  const financeiro = resumoFinanceiro(nota)
+  const aprendido = fornecedorAprendido(nota, seguidas)
+  // Regra 2: nota pronta (itens associados + boletos que fecham) com Boleto marcado = só falta lançar. Mudando a forma, volta ao normal.
+  const soLancar = prontidao.pronta && forma === 'boleto' && !mudandoForma
   const estado = nota.lancamento_estado ?? null
   const bloqueios = bloqueiosDaNota(nota)
   const presa = lancandoPresa(nota)
@@ -84,6 +136,16 @@ function NotaALancar({ nota, padroes, aoLancar, outraLancando, emEnvio, iniciarE
         <span><b>{nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
       </div>
 
+      {soLancar && (
+        <div className="ok" data-testid="nota-pronta">
+          Pronta para lançar: todos os itens associados e {financeiro.parcelas.length === 1 ? '1 boleto fecha' : `${financeiro.parcelas.length} boletos fecham`} com o valor da nota.
+          {aprendido > 0 && <> Fornecedor aprendido ({aprendido} notas seguidas lançadas em boleto sem problema): pode só confirmar.</>}
+        </div>
+      )}
+      {!soLancar && prontidao.financeiro && !bloqueios.length && estado == null && (
+        <div className="amarelo" data-testid="aviso-financeiro">{prontidao.financeiro}</div>
+      )}
+      <PainelConferir nota={nota} />
       {estadoTexto && (
         <div className={estado === 'erro' ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
@@ -91,6 +153,12 @@ function NotaALancar({ nota, padroes, aoLancar, outraLancando, emEnvio, iniciarE
       {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
       {bloqueios.map((b) => <div key={b} className="erro" data-testid="bloqueio-nota">{b}</div>)}
 
+      {soLancar ? (
+        <div className="sub" data-testid="pagamento-fixo">
+          Pagamento: Boleto ({financeiro.parcelas.length} {financeiro.parcelas.length === 1 ? 'parcela' : 'parcelas'}){' '}
+          <button type="button" className="link" onClick={() => setMudandoForma(true)}>mudar forma de pagamento</button>
+        </div>
+      ) : (
       <label>Como pagar
         <select value={forma} disabled={travada || enviando} onChange={(e) => escolher(e.target.value)}>
           {forma === '' && <option value="" disabled>Escolha como pagar…</option>}
@@ -101,6 +169,7 @@ function NotaALancar({ nota, padroes, aoLancar, outraLancando, emEnvio, iniciarE
           {OPCOES_DEPOIS_DO_PIX.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
         </select>
       </label>
+      )}
       {padraoDoFornecedor && escolha === null && forma === padraoDoFornecedor && (
         <div className="sub" data-testid="padrao-fornecedor">Padrão deste fornecedor: {rotuloForma(padraoDoFornecedor)} (a forma da última nota lançada dele).</div>
       )}
@@ -134,6 +203,7 @@ export default function NotaSefaz() {
   const iniciarEnvio = (): boolean => { if (envioRef.current) return false; envioRef.current = true; setEmEnvio(true); return true }
   const fimEnvio = (): void => { envioRef.current = false; setEmEnvio(false) }
   const [padroes, setPadroes] = useState<Record<string, string>>({}) // forma padrão por CNPJ (última nota lançada), vem do banco
+  const [seguidas, setSeguidas] = useState<Record<string, number>>({}) // notas seguidas em boleto por CNPJ (fornecedor aprendido)
   const [falha, setFalha] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [expandido, setExpandido] = useState<string | null>(null) // qual lançada está aberta mostrando o detalhe
@@ -144,8 +214,9 @@ export default function NotaSefaz() {
     if (!silencioso) setCarregando(true)
     // O padrão por fornecedor é só uma sugestão: se falhar, a tela segue sem ele (Boleto).
     const padrao = Promise.resolve(api.formasPadraoPorFornecedor()).catch(() => ({}))
-    return Promise.all([api.notasALancar(), api.notasLancadas(), padrao])
-      .then(([a, l, p]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setFalha(false) })
+    const aprendidos = Promise.resolve(api.lancamentosSeguidosEmBoleto()).catch(() => ({}))
+    return Promise.all([api.notasALancar(), api.notasLancadas(), padrao, aprendidos])
+      .then(([a, l, p, s]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setFalha(false) })
       .catch(() => { if (!silencioso) setFalha(true) })
       .finally(() => setCarregando(false))
   }
@@ -171,7 +242,7 @@ export default function NotaSefaz() {
         : (
           <>
             <ul className="recentes">
-              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} aoLancar={() => carregar(true)}
+              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} aoLancar={() => carregar(true)}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
                 emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} />)}
             </ul>

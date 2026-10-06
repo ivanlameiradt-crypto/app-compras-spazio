@@ -570,8 +570,8 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
 }
 // ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
 const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
-// As colunas novas (migração 20261206000001) só existem depois de aplicada: sem elas a leitura cai para as antigas.
-const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em`
+// As colunas novas (migrações 20261206000001 e 20261207000001 — esta traz `parcelas`) só existem depois de aplicada: sem elas a leitura cai para as antigas.
+const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -581,6 +581,9 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   lancamento_estado: n.lancamento_estado ?? null,
   lancamento_motivo: n.lancamento_motivo ?? null,
   lancamento_estado_em: n.lancamento_estado_em ?? null,
+  parcelas: Array.isArray(n.parcelas)
+    ? n.parcelas.map((p) => ({ numero: p?.numero ?? null, vencimento: p?.vencimento ?? null, valor: Number(p?.valor ?? 0) }))
+    : null,
 })
 /** Coluna que não existe (Postgres 42703, ou a mensagem "column ... does not exist"): migração ainda não aplicada. */
 const colunaInexistente = (e: { message?: string; code?: string }): boolean =>
@@ -619,6 +622,26 @@ export async function formasPadraoPorFornecedor(): Promise<Record<string, string
     ultima[r.cnpj_emitente] = r.forma_pagamento
   }
   return ultima
+}
+
+/**
+ * Quantas notas SEGUIDAS (as mais recentes) de cada fornecedor (chave = CNPJ) foram lançadas em BOLETO. Para a regra do Ivan:
+ * fornecedor com 3 ou mais já "aprendeu" e a nota dele vem só para confirmar. Para no 1º lançamento que não foi boleto
+ * (ou que não tem forma gravada). Falha de leitura = ninguém aprendido (a tela segue pedindo conferência).
+ */
+export async function lancamentosSeguidosEmBoleto(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from('cot_nfe').select('cnpj_emitente, forma_pagamento, lancada_em')
+    .eq('situacao', 'lancada').order('lancada_em', { ascending: false, nullsFirst: false }).limit(300)
+  if (error) return {}
+  const contagem: Record<string, number> = {}
+  const parou = new Set<string>()
+  for (const r of (data ?? []) as { cnpj_emitente: string | null; forma_pagamento: string | null }[]) {
+    const c = r.cnpj_emitente
+    if (!c || parou.has(c)) continue
+    if (r.forma_pagamento === 'boleto') contagem[c] = (contagem[c] ?? 0) + 1
+    else parou.add(c)
+  }
+  return contagem
 }
 
 /** Texto claro (em português) para o erro do "Lançar": pelo status HTTP da Edge Function lancar-nfe, ou pelo texto que ela devolveu. */

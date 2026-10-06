@@ -29,7 +29,7 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasLancadas, formasPadraoPorFornecedor,
+  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasLancadas, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
@@ -598,6 +598,39 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('formasPadraoPorFornecedor: qualquer erro de leitura = sem padrão (a aba segue em Boleto)', async () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'column does not exist' }, status: 400 }))
     expect(await formasPadraoPorFornecedor()).toEqual({})
+  })
+
+  it('lê as parcelas (boletos do XML) normalizadas; sem a coluna ou sem leitura = null', async () => {
+    const c = cadeia({ data: [
+      { ...linha, parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: '10.5' }, { numero: null, vencimento: null, valor: 3 }] },
+      { ...linha, chave: 'e'.repeat(44), parcelas: [] },
+      { ...linha, chave: 'f'.repeat(44) },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(c.select.mock.calls[0][0]).toContain('parcelas')
+    expect(r[0].parcelas).toEqual([{ numero: '001', vencimento: '2026-11-05', valor: 10.5 }, { numero: null, vencimento: null, valor: 3 }])
+    expect(r[1].parcelas).toEqual([])
+    expect(r[2].parcelas).toBeNull()
+  })
+
+  it('lancamentosSeguidosEmBoleto: conta as notas mais recentes de cada CNPJ em boleto e para na 1ª que não foi', async () => {
+    from.mockReturnValueOnce(cadeia({ data: [
+      { cnpj_emitente: '111', forma_pagamento: 'boleto' },
+      { cnpj_emitente: '222', forma_pagamento: 'dinheiro' },
+      { cnpj_emitente: '111', forma_pagamento: 'boleto' },
+      { cnpj_emitente: '222', forma_pagamento: 'boleto' },    // depois de uma não-boleto: não conta
+      { cnpj_emitente: '111', forma_pagamento: 'boleto' },
+      { cnpj_emitente: '111', forma_pagamento: null },        // sem forma gravada interrompe
+      { cnpj_emitente: '111', forma_pagamento: 'boleto' },    // já interrompido
+      { cnpj_emitente: null, forma_pagamento: 'boleto' },
+    ], error: null, status: 200 }))
+    expect(await lancamentosSeguidosEmBoleto()).toEqual({ '111': 3 })
+  })
+
+  it('lancamentosSeguidosEmBoleto: erro de leitura = ninguém aprendido', async () => {
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'x' }, status: 403 }))
+    expect(await lancamentosSeguidosEmBoleto()).toEqual({})
   })
 
   it('lancarNota chama a Edge Function lancar-nfe com {chave, forma}', async () => {

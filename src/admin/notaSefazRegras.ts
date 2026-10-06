@@ -1,7 +1,7 @@
 // Regras puras da aba "Lançamento de nota SEFAZ" (Fase 3): "Como pagar", memória por fornecedor, bloqueios e textos.
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
-import type { EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
+import type { EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
 export const FORMA_PADRAO = 'boleto'
@@ -124,4 +124,73 @@ export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, mo
     case 'ensaio_ok': return m ? `Ensaio ok (nada foi criado): ${m}` : 'Ensaio ok (nada foi criado)'
     default: return null
   }
+}
+
+// ---------- nota "pronta" (regra 2 do Ivan) e conferência do financeiro
+/** Diferença aceita entre a soma dos boletos e o valor da nota (R$): só ruído de centavo. */
+export const TOLERANCIA_FINANCEIRO = 0.01
+/** Quantas notas seguidas em boleto, sem problema, para o fornecedor contar como "aprendido". */
+export const NOTAS_PARA_APRENDER = 3
+
+const arredondar = (v: number): number => Math.round(v * 100) / 100
+
+export interface ResumoFinanceiro {
+  /** XML lido (parcelas conhecidas)? */
+  lido: boolean
+  parcelas: ParcelaNota[]
+  soma: number
+  total: number | null
+  /** soma - total, em reais (já arredondada); null se não dá para comparar. */
+  diferenca: number | null
+  /** Tem boleto e a soma fecha com o valor da nota. */
+  bate: boolean
+}
+
+/** Financeiro da nota (boletos do XML contra o valor da nota), para o painel de conferir e para marcar a nota como pronta. */
+export function resumoFinanceiro(n: NotaSefazLista): ResumoFinanceiro {
+  const parcelas = Array.isArray(n.parcelas) ? n.parcelas : []
+  const lido = Array.isArray(n.parcelas)
+  const soma = arredondar(parcelas.reduce((t, p) => t + (Number.isFinite(p.valor) ? p.valor : 0), 0))
+  const total = n.valor_nf == null ? null : arredondar(n.valor_nf)
+  const diferenca = lido && total != null ? arredondar(soma - total) : null
+  const bate = lido && parcelas.length > 0 && diferenca != null && Math.abs(diferenca) <= TOLERANCIA_FINANCEIRO
+  return { lido, parcelas, soma, total, diferenca, bate }
+}
+
+/** Itens sem produto de verdade no SisChef (os mesmos que bloqueiam o Lançar). */
+export const itensSemProduto = (n: NotaSefazLista): ItemNotaSefaz[] => n.itens.filter(itemSemProduto)
+
+export interface ProntidaoNota {
+  pronta: boolean
+  motivos: string[]
+  /** O motivo ligado ao financeiro (boletos), ou null: a tela mostra só este, os de item/conta já têm aviso próprio. */
+  financeiro: string | null
+}
+
+/**
+ * Regra 2 do Ivan: a nota está "pronta" (só falta lançar) quando TODOS os itens estão associados no SisChef, o pagamento é em
+ * boleto (a nota tem duplicatas) e os boletos fecham com o valor da nota. Qualquer coisa fora disso vira motivo, em português,
+ * e a nota segue o fluxo normal (conferir e escolher como pagar). Nota bloqueada, lançando ou pela metade nunca é "pronta".
+ */
+export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
+  const motivos: string[] = []
+  if (n.itens.length === 0) motivos.push('A nota chegou sem itens')
+  const sem = itensSemProduto(n).length
+  if (sem > 0) motivos.push(sem === 1 ? '1 item sem produto no SisChef' : `${sem} itens sem produto no SisChef`)
+  const f = resumoFinanceiro(n)
+  let financeiro: string | null = null
+  if (!f.lido) financeiro = 'Boletos ainda não lidos do XML (próxima leitura)'
+  else if (f.parcelas.length === 0) financeiro = 'A nota não tem boletos: escolha como pagar'
+  else if (!f.bate) financeiro = 'Os boletos não fecham com o valor da nota'
+  if (financeiro) motivos.push(financeiro)
+  if (contaEspecial(n.emitente)) motivos.push(AVISO_CONTA_ESPECIAL)
+  if (n.lancamento_estado === 'erro') motivos.push('Ficou pela metade: não lance de novo')
+  if (n.lancamento_estado === 'revisar' && n.lancamento_motivo) motivos.push(`Precisa de você: ${traduzirMotivo(n.lancamento_motivo)}`)
+  return { pronta: motivos.length === 0, motivos, financeiro }
+}
+
+/** O fornecedor já "aprendeu"? (NOTAS_PARA_APRENDER ou mais notas seguidas lançadas em boleto.) */
+export function fornecedorAprendido(n: NotaSefazLista, seguidas: Record<string, number> | undefined): number {
+  const c = n.cnpj_emitente ? seguidas?.[n.cnpj_emitente] ?? 0 : 0
+  return c >= NOTAS_PARA_APRENDER ? c : 0
 }
