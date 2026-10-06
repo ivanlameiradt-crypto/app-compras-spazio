@@ -190,6 +190,11 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .conferir-itens { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
 .cupom .conferir-itens li { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; font-size: 13px; }
 .cupom .conferir-itens li b { font-weight: 600; word-break: break-word; }
+/* ✓ verde na frente do produto já associado (cores da marca: contraste certo no claro e no escuro); o nome quebra de linha sem passar por baixo do ✓ */
+.cupom .conferir-itens li b.produto { display: flex; align-items: flex-start; gap: 6px; }
+.cupom .conferir-itens .tick-ok { flex: none; margin-top: 1px; }
+.cupom .conferir-itens .tick-ok circle { fill: var(--marca); }
+.cupom .conferir-itens .tick-ok path { stroke: var(--marca-texto); }
 .cupom .conferir-itens li button.link { align-self: flex-start; }
 .cupom button.link { background: none; border: 0; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font: inherit; }
 .cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }

@@ -5,11 +5,11 @@ import type { Usuario } from '../lib/tipos'
 import AvisoFila from './AvisoFila'
 
 // As 3 abas do topo (admin). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
-// Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Nota SEFAZ são cada um sua tela.
+// Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Fiscal (a nota da SEFAZ) são cada um sua tela.
 const ABAS = [
   { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: '🛒' },
   { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: '🧾' },
-  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento de nota SEFAZ', ic: '📄' },
+  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento de fiscal', ic: '📄' },
 ] as const
 
 /** Qual aba fica acesa para a rota atual: Cupom e Nota SEFAZ só nas suas; todo o resto é Compra. */

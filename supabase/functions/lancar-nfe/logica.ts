@@ -139,8 +139,9 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
         return { status: 400, corpo: { erro: 'esta nota já tem boletos no XML (ou o XML ainda não foi lido): as parcelas digitadas não se aplicam' } }
       }
       const total = Number(n.valor_nf)
-      // em centavos inteiros (sem erro de ponto flutuante): até 1 centavo de diferença é ruído de arredondamento
-      if (!Number.isFinite(total) || Math.abs(Math.round(somaParcelas(manuais) * 100) - Math.round(total * 100)) > 1) {
+      // Regra 4 do Ivan: a soma das parcelas tem de ser IGUAL ao valor da nota, ao centavo (parcelas iguais ou diferentes: tanto faz). Em centavos
+      // inteiros (sem erro de ponto flutuante). É a mesma exigência do robô (TOL_TOTAL = 0,005): com tolerância aqui, a nota pararia no robô.
+      if (!Number.isFinite(total) || Math.round(somaParcelas(manuais) * 100) !== Math.round(total * 100)) {
         return { status: 400, corpo: { erro: 'as parcelas digitadas não fecham com o valor da nota' } }
       }
     }

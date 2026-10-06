@@ -1,7 +1,7 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
-  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS,
+  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -63,6 +63,21 @@ describe('notaSefazRegras', () => {
     expect(bloqueiosDaNota(nota({ itens: [semProduto] }))).toEqual(['Item sem produto no SisChef: associe lá antes de lançar'])
     expect(bloqueiosDaNota(nota({ itens: [{ ...semProduto, produto_id: 5, associacao: ' Painel ' }] }))).toHaveLength(1)
     expect(bloqueiosDaNota(nota({ emitente: 'KONDO', itens: [semProduto] }))).toHaveLength(2)
+  })
+
+  it('itemAssociado (o ✓ verde do painel de conferir): é o mesmo critério que trava ou libera o Lançar', () => {
+    const base = { descricao: 'Y', qtd: 1, unidade_sischef: 'KG' }
+    const casos: [string, Parameters<typeof itemAssociado>[0], boolean][] = [
+      ['produto associado no SisChef', { ...base, produto_id: 7, associacao: 'sischef' }, true],
+      ['produto sem o campo associacao (robô antigo): o Lançar não trava por ele', { ...base, produto_id: 7 }, true],
+      ['sem produto', { ...base, produto_id: null }, false],
+      ['sem produto, mesmo dito "sischef"', { ...base, produto_id: null, associacao: 'sischef' }, false],
+      ['decidido só no app (painel)', { ...base, produto_id: 7, associacao: ' Painel ' }, false],
+    ]
+    for (const [, item, esperado] of casos) {
+      expect(itemAssociado(item)).toBe(esperado)
+      expect(bloqueiosDaNota(nota({ itens: [item] })).length === 0).toBe(esperado) // ✓ e Lançar liberado andam juntos
+    }
   })
 
   it('bloqueiosDaNota: nota que chegou sem itens (a leitura não abriu a nota) não pode ser lançada', () => {
@@ -166,7 +181,11 @@ describe('notaSefazRegras', () => {
 
     it('resumoFinanceiro: boletos que somam o valor da nota batem; sem leitura / sem boleto / diferença não batem', () => {
       expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(50, 50) }))).toMatchObject({ lido: true, soma: 100, diferenca: 0, bate: true })
-      expect(resumoFinanceiro(nota({ valor_nf: 100.01, parcelas: boletos(33.34, 33.33, 33.33) })).bate).toBe(true)  // 1 centavo é ruído
+      // regra 4: parcelas iguais OU diferentes, mas a soma tem de ser IGUAL ao valor da nota, ao centavo (como o robô)
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(33.34, 33.33, 33.33) })).bate).toBe(true)
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(70, 20, 10) })).bate).toBe(true)
+      expect(resumoFinanceiro(nota({ valor_nf: 100.01, parcelas: boletos(33.34, 33.33, 33.33) }))).toMatchObject({ bate: false, diferenca: -0.01 })
+      expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(33.34, 33.34, 33.33) }))).toMatchObject({ bate: false, diferenca: 0.01 })
       expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: boletos(50, 49) }))).toMatchObject({ bate: false, diferenca: -1 })
       expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: [] }))).toMatchObject({ lido: true, bate: false })
       expect(resumoFinanceiro(nota({ valor_nf: 100, parcelas: null }))).toMatchObject({ lido: false, bate: false, diferenca: null })
@@ -249,9 +268,18 @@ describe('notaSefazRegras', () => {
         const r = validarParcelasDigitadas([L('2026-11-05', '60,00'), L('2026-11-12', '40')], 100, '2026-10-05')
         expect(r).toEqual({ ok: true, motivo: '', parcelas: [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }], soma: 100, falta: 0 })
       })
-      it('1 centavo de diferença ainda fecha; 2 centavos não', () => {
-        expect(validarParcelasDigitadas([L('2026-11-05', '100,01')], 100, '2026-10-05').ok).toBe(true)
-        expect(validarParcelasDigitadas([L('2026-11-05', '100,02')], 100, '2026-10-05').ok).toBe(false)
+      it('regra 4: qualquer diferença no total, até de 1 centavo, NÃO fecha (o robô também recusa)', () => {
+        expect(validarParcelasDigitadas([L('2026-11-05', '100,01')], 100, '2026-10-05')).toMatchObject({ ok: false, falta: -0.01, motivo: 'Passou 0,01 do valor da nota' })
+        expect(validarParcelasDigitadas([L('2026-11-05', '99,99')], 100, '2026-10-05')).toMatchObject({ ok: false, falta: 0.01, motivo: 'Faltam 0,01 para fechar com o valor da nota' })
+        expect(validarParcelasDigitadas([L('2026-11-05', '100,00')], 100, '2026-10-05').ok).toBe(true)
+      })
+      it('regra 4: parcelas de valores DIFERENTES fecham quando a soma é igual ao valor da nota', () => {
+        const r = validarParcelasDigitadas([L('2026-11-05', '70,00'), L('2026-11-15', '20,50'), L('2026-11-25', '9,50')], 100, '2026-10-05')
+        expect(r).toMatchObject({ ok: true, motivo: '', soma: 100, falta: 0 })
+        expect(r.parcelas.map((p) => p.valor)).toEqual([70, 20.5, 9.5])
+        // e as iguais com resto de centavo (100 / 3): 33,33 + 33,33 + 33,34
+        expect(validarParcelasDigitadas([L('2026-11-05', '33,33'), L('2026-11-15', '33,33'), L('2026-11-25', '33,34')], 100, '2026-10-05').ok).toBe(true)
+        expect(validarParcelasDigitadas([L('2026-11-05', '33,33'), L('2026-11-15', '33,33'), L('2026-11-25', '33,33')], 100, '2026-10-05').ok).toBe(false)
       })
       it('diz o que falta ou o que passou', () => {
         expect(validarParcelasDigitadas([L('2026-11-05', '60,00')], 100, '2026-10-05')).toMatchObject({ ok: false, falta: 40, motivo: 'Faltam 40,00 para fechar com o valor da nota' })

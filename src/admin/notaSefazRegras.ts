@@ -96,6 +96,9 @@ export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: no SisChef ela costu
 
 const itemSemProduto = (it: ItemNotaSefaz): boolean =>
   it.produto_id == null || String(it.produto_id).trim() === '' || (it.associacao ?? '').trim().toLowerCase() === 'painel'
+/** Item com produto de verdade no SisChef: o "✓ verde" do painel de conferir. É o MESMO critério que libera ou trava o Lançar
+ *  (um ✓ nunca aparece num item que bloqueia a nota, nem some de um que a deixa passar). */
+export const itemAssociado = (it: ItemNotaSefaz): boolean => !itemSemProduto(it)
 const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.test(emitente.toUpperCase())
 
 /** Motivos (em português) pelos quais esta nota NÃO pode ser lançada pelo app; lista vazia = pode. */
@@ -164,8 +167,12 @@ export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, mo
 }
 
 // ---------- nota "pronta" (regra 2 do Ivan) e conferência do financeiro
-/** Diferença aceita entre a soma dos boletos e o valor da nota (R$): só ruído de centavo. */
-export const TOLERANCIA_FINANCEIRO = 0.01
+/**
+ * Diferença aceita entre a soma dos boletos e o valor da nota (R$): NENHUMA. Regra 4 do Ivan (06/10): o que importa é o total lançado ser igual ao
+ * total da nota; as parcelas podem ser iguais ou diferentes, mas a soma tem de bater ao centavo. É a mesma exigência do robô (TOL_TOTAL = 0,005
+ * sobre valores de 2 casas): se o app aceitasse 1 centavo de diferença, o robô pararia a nota depois do disparo.
+ */
+export const TOLERANCIA_FINANCEIRO = 0
 /** Quantas notas seguidas em boleto, sem problema, para o fornecedor contar como "aprendido". */
 export const NOTAS_PARA_APRENDER = 3
 
@@ -282,7 +289,10 @@ const dataValida = (iso: string): boolean => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso
 }
 
-/** Confere o que o Ivan digitou: cada linha com vencimento e valor, vencimento não anterior à emissão e soma igual ao valor da nota (até 1 centavo). */
+/**
+ * Confere o que o Ivan digitou: cada linha com vencimento e valor, vencimento não anterior à emissão e soma IGUAL ao valor da nota, ao centavo
+ * (regra 4 do Ivan). Os valores das parcelas podem ser iguais ou diferentes: só a soma importa.
+ */
 export function validarParcelasDigitadas(linhas: LinhaParcela[], valorNota: number | null, emissao: string): ResultadoParcelas {
   const parcelas: ParcelaDigitada[] = []
   let motivo = ''
@@ -300,7 +310,7 @@ export function validarParcelasDigitadas(linhas: LinhaParcela[], valorNota: numb
   const falta = valorNota == null ? null : Math.round(Math.round(valorNota * 100) - cents) / 100
   if (linhas.length === 0) motivo = 'Digite ao menos uma parcela'
   if (!motivo && falta == null) motivo = 'A nota está sem valor para conferir as parcelas'
-  if (!motivo && falta != null && Math.abs(falta) > 0.01) {
+  if (!motivo && falta != null && falta !== 0) {
     motivo = falta > 0 ? `Faltam ${formatarValorBr(falta)} para fechar com o valor da nota` : `Passou ${formatarValorBr(-falta)} do valor da nota`
   }
   const todasValidas = parcelas.length === linhas.length && linhas.every((l) => dataValida(l.vencimento))
