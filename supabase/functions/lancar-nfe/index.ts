@@ -64,6 +64,12 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(error.message)
         return ((data ?? [])[0] as NotaReservada | undefined) ?? null
       },
+      async outraLancando(chave, limiteIso) {
+        const { data, error } = await admin.from('cot_nfe').select('chave')
+          .eq('situacao', 'na_fila').eq('lancamento_estado', 'lancando').gte('lancamento_em', limiteIso).neq('chave', chave).limit(1)
+        if (error) throw new Error(error.message)
+        return (data ?? []).length > 0
+      },
       async soltar(chave) {
         const agora = new Date().toISOString()
         const { error } = await admin.from('cot_nfe')

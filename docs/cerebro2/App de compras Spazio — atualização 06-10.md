@@ -19,6 +19,14 @@
 - Nota sem boleto: o robô para e você escolhe. Cartão = só estoque, sem pagamento no Sischef.
 - Próxima forma a provar depois do Boleto: Dinheiro à vista.
 
+## Regra 2 (Ivan, 06/10/2026): nota pronta = só Lançar
+- Nota toda correta (itens associados conforme o XML, pagamento em boleto, financeiro batendo) vem com **só o botão Lançar**, mais uma área para **abrir e conferir** itens associados e financeiro.
+- Quando você tiver certeza de que um fornecedor já "aprendeu", só confirma. Critério combinado: 3 notas seguidas do fornecedor lançadas sem erro e sem você mudar nada.
+- **Ainda não construído** (a leitura precisa trazer boletos e totais do XML).
+
+## Um robô por vez
+- Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
+
 ## Regras
 - **No lançamento real, use só Boleto** até as outras formas serem testadas ao vivo.
 - **REGRA (Ivan, 06/10/2026): nota que você revisou no app, com a forma de pagamento escolhida e confirmada (Lançar → Confirmar), é para ser lançada de verdade.** Não pedir nova autorização. A trava `MOTOR_NFE_LIGADO` fica **ligada**.

@@ -288,6 +288,46 @@ describe('NotaSefaz', () => {
       expect(botaoLancar()).toBeEnabled()
     })
 
+    it("com outra nota 'lancando', o Lançar das demais fica bloqueado com aviso (o robô é um por vez)", async () => {
+      const agora = new Date().toISOString()
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'lancando', lancamento_estado_em: agora }),
+        nota({ chave: '2'.repeat(44), emitente: 'B LTDA' }),
+      )
+      render(<NotaSefaz />)
+      const [lancandoA, livreB] = await screen.findAllByTestId('nota-a-lancar')
+      expect(within(lancandoA).getByRole('button', { name: 'Lançar' })).toBeDisabled()
+      expect(within(livreB).getByRole('button', { name: 'Lançar' })).toBeDisabled()
+      expect(within(livreB).getByTestId('aviso-outra')).toHaveTextContent('o robô está lançando outra nota')
+      expect(within(lancandoA).queryByTestId('aviso-outra')).not.toBeInTheDocument() // a própria nota só mostra "Lançando…"
+    })
+
+    it("nota 'lancando' presa (> 30 min) NÃO bloqueia as outras", async () => {
+      const velho = new Date(Date.now() - 31 * 60_000).toISOString()
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'lancando', lancamento_estado_em: velho }),
+        nota({ chave: '2'.repeat(44), emitente: 'B LTDA' }),
+      )
+      render(<NotaSefaz />)
+      const [, livreB] = await screen.findAllByTestId('nota-a-lancar')
+      expect(within(livreB).getByRole('button', { name: 'Lançar' })).toBeEnabled()
+      expect(within(livreB).queryByTestId('aviso-outra')).not.toBeInTheDocument()
+    })
+
+    it('enquanto um Confirmar está enviando, as outras notas ficam bloqueadas (sem 2 disparos juntos)', async () => {
+      let liberar: () => void = () => undefined
+      m.lancarNota.mockImplementation(() => new Promise<void>((ok) => { liberar = ok }))
+      aLancar(nota({ chave: '1'.repeat(44), emitente: 'A LTDA' }), nota({ chave: '2'.repeat(44), emitente: 'B LTDA' }))
+      render(<NotaSefaz />)
+      const [a, b] = await screen.findAllByTestId('nota-a-lancar')
+      await userEvent.click(within(a).getByRole('button', { name: 'Lançar' }))
+      await userEvent.click(within(a).getByRole('button', { name: 'Confirmar' }))
+      expect(within(b).getByRole('button', { name: 'Lançar' })).toBeDisabled()
+      expect(m.lancarNota).toHaveBeenCalledTimes(1)
+      await act(async () => { liberar() })
+      await waitFor(() => expect(m.lancarNota).toHaveBeenCalledTimes(1))
+    })
+
     it('sem estado: nenhum status aparece', async () => {
       aLancar(nota({}))
       render(<NotaSefaz />)

@@ -625,6 +625,7 @@ export async function formasPadraoPorFornecedor(): Promise<Record<string, string
 function mensagemDoLancar(status: number | undefined, texto: string): string {
   const t = texto.toLowerCase()
   if (status === 403 || t.includes('administrador')) return 'Só o administrador pode lançar notas.'
+  if (t.includes('outra nota')) return 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'
   if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'
   if (status === 400 || t.includes('inválid')) {
     return t.includes('chave') ? 'A chave da nota não é válida. Atualize a tela e tente de novo.' : 'Escolha como pagar: a forma de pagamento não é válida.'

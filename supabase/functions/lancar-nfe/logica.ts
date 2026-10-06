@@ -32,6 +32,9 @@ export interface Deps {
   buscarUsuario(email: string): Promise<UsuarioLinha | null>
   /** Reserva atômica (um UPDATE só, com as condições de `filtroReservavel`): a nota reservada, ou null se indisponível. */
   reservar(chave: string, forma: string, agoraIso: string, limiteIso: string): Promise<NotaReservada | null>
+  /** Há OUTRA nota (chave diferente) 'lancando' desde `limiteIso` ou depois? O GitHub guarda só UM run pendente por grupo
+   *  (sischef-session): um 2º disparo cancelaria o pendente e a nota reservada ficaria presa em 'lancando'. Um robô por vez. */
+  outraLancando(chave: string, limiteIso: string): Promise<boolean>
   /** Desfaz a reserva (o disparo falhou): a nota volta a ficar disponível. */
   soltar(chave: string): Promise<void>
   /** workflow_dispatch do lancar-nfe.yml com {nota_json, modo: 'real'}. */
@@ -94,6 +97,11 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   // 3. reserva (compara-e-troca): duplo toque / dois aparelhos / nota pela metade não disparam de novo.
   const agora = deps.agora()
   const limite = new Date(agora.getTime() - MINUTOS_TRAVA * 60_000)
+  // Um robô por vez: com outra nota ainda lançando (há menos de 30 min) este disparo cancelaria o run pendente e deixaria uma
+  // nota reservada à toa. Recusa ANTES de reservar; a tela mostra o aviso e o Ivan lança esta quando a outra terminar.
+  if (await deps.outraLancando(chave, limite.toISOString())) {
+    return { status: 409, corpo: { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' } }
+  }
   const nota = await deps.reservar(chave, forma, agora.toISOString(), limite.toISOString())
   if (!nota) {
     return { status: 409, corpo: { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando ou pela metade)' } }
