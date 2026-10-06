@@ -385,7 +385,11 @@ export interface ItemNotaSefaz {
   qtd: number | null
   unidade_sischef: string | null
   produto_id: number | null
+  /** Como o item foi associado no SisChef ('painel' = só pelo painel, sem produto de verdade). Vem do robô; pode faltar. */
+  associacao?: string | null
 }
+/** Situação do último "Lançar" de uma nota (cot_nfe.lancamento_estado, migração 20261206000001). null = nunca disparada. */
+export type EstadoLancamentoNfe = 'lancando' | 'revisar' | 'erro' | 'ensaio_ok'
 /** Linha da aba Lançamento de nota SEFAZ (lê cot_nfe por RLS de admin). */
 export interface NotaSefazLista {
   chave: string
@@ -397,6 +401,11 @@ export interface NotaSefazLista {
   lancada_em: string | null
   nf_sischef: string | null
   itens: ItemNotaSefaz[]
+  /** Colunas da migração 20261206000001 (podem faltar enquanto ela não estiver aplicada). */
+  forma_pagamento?: string | null
+  lancamento_estado?: EstadoLancamentoNfe | null
+  lancamento_motivo?: string | null
+  lancamento_estado_em?: string | null
 }
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'

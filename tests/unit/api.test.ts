@@ -29,7 +29,8 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, marcasDaSemana, novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
+  enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasLancadas,
+  novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
@@ -524,5 +525,88 @@ describe('Sub-fase 3: cupom', () => {
     const r = await cuponsRecentes()
     expect(r[0].valor_a_pagar).toBeNull()
     expect(r[0]).toMatchObject({ id: 'c2', estado: 'PENDENTE', emitente_nome: null })
+  })
+})
+
+describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
+  type Resp = { data: unknown; error: { message: string; code?: string } | null; status: number }
+  /** Cadeia do PostgREST (select/eq/order/limit) que, ao ser aguardada, devolve `resp`. */
+  const cadeia = (resp: Resp) => {
+    const c: Record<string, unknown> = {}
+    for (const metodo of ['select', 'eq', 'order', 'limit']) c[metodo] = vi.fn(() => c)
+    c.then = (ok: (r: Resp) => unknown, ko: (e: unknown) => unknown) => Promise.resolve(resp).then(ok, ko)
+    return c as { select: ReturnType<typeof vi.fn> } & Record<string, unknown>
+  }
+  const COLUNA_NOVA = 'forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em'
+  const linha = { chave: 'c'.repeat(44), emitente: 'ATACADAO', numero: '1', emissao: '2026-10-03', valor_nf: '10.5', situacao: 'na_fila', itens: null }
+
+  it('lê com as colunas novas (forma, estado, motivo) quando a migração está aplicada', async () => {
+    const c = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', lancamento_estado: 'lancando', lancamento_motivo: null, lancamento_estado_em: '2026-10-06T12:00:00Z' }], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(from).toHaveBeenCalledWith('cot_nfe')
+    expect(c.select.mock.calls[0][0]).toContain(COLUNA_NOVA)
+    expect(r[0]).toMatchObject({ valor_nf: 10.5, itens: [], forma_pagamento: 'boleto', lancamento_estado: 'lancando' })
+  })
+
+  it.each([
+    ['código 42703', { code: '42703', message: 'qualquer coisa' }],
+    ['mensagem "column ... does not exist"', { message: 'column cot_nfe.forma_pagamento does not exist' }],
+  ])('migração ainda não aplicada (%s): cai para as colunas antigas e a aba segue funcionando', async (_n, erro) => {
+    const falha = cadeia({ data: null, error: erro, status: 400 })
+    const antiga = cadeia({ data: [linha], error: null, status: 200 })
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(antiga)
+    const r = await notasALancar()
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(falha.select.mock.calls[0][0]).toContain(COLUNA_NOVA)
+    expect(antiga.select.mock.calls[0][0]).not.toContain('forma_pagamento')
+    expect(antiga.select.mock.calls[0][0]).toContain('nf_sischef, itens')
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ valor_nf: 10.5, forma_pagamento: null, lancamento_estado: null, lancamento_motivo: null, lancamento_estado_em: null })
+  })
+
+  it('"Últimos lançamentos" (notasLancadas) tem o mesmo fallback', async () => {
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
+      .mockReturnValueOnce(cadeia({ data: [{ ...linha, situacao: 'lancada' }], error: null, status: 200 }))
+    const r = await notasLancadas()
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(r[0]).toMatchObject({ situacao: 'lancada', lancamento_estado: null })
+  })
+
+  it('outro erro NÃO cai para as colunas antigas: lança ErroApi (tabela inexistente continua dando lista vazia)', async () => {
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 }))
+    await expect(notasALancar()).rejects.toMatchObject({ name: 'ErroApi', status: 403 })
+    expect(from).toHaveBeenCalledTimes(1)
+    from.mockReset()
+    from.mockReturnValueOnce(cadeia({ data: null, error: { code: 'PGRST205', message: 'sem tabela' }, status: 404 }))
+    expect(await notasALancar()).toEqual([])
+  })
+
+  it('lancarNota chama a Edge Function lancar-nfe com {chave, forma}', async () => {
+    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    await lancarNota('d'.repeat(44), 'pix:caixa|sp')
+    expect(invoke).toHaveBeenCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'pix:caixa|sp' } })
+  })
+
+  const falhaHttp = (status: number | undefined, corpo: unknown) => {
+    const context = { status, json: async () => corpo } as unknown as Response
+    invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context } })
+  }
+  it.each([
+    [403, { erro: 'apenas o administrador pode fazer isso' }, 'Só o administrador pode lançar notas.'],
+    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando ou pela metade)' }, 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'],
+    [400, { erro: 'escolha como pagar (forma de pagamento inválida)' }, 'Escolha como pagar: a forma de pagamento não é válida.'],
+    [400, { erro: 'chave da nota inválida' }, 'A chave da nota não é válida. Atualize a tela e tente de novo.'],
+    [502, { erro: 'não consegui chamar o robô agora — tente de novo em instantes' }, 'Não consegui chamar o robô agora, tente de novo.'],
+  ])('lancarNota: status %i vira texto claro em português', async (status, corpo, esperado) => {
+    falhaHttp(status, corpo)
+    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow(esperado)
+  })
+
+  it('lancarNota: sem status (só o corpo) usa o texto da função; sem nada, mensagem de conexão', async () => {
+    falhaHttp(undefined, { erro: 'apenas o administrador pode fazer isso' })
+    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Só o administrador pode lançar notas.')
+    invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
+    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Não consegui lançar agora. Confira a internet e tente de novo.')
   })
 })

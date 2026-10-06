@@ -60,7 +60,7 @@ describe('D — credencial do robô (cot_nfe_exigir_robo)', () => {
   it('com o segredo certo, anon executa as 3 do robô; authenticated não executa nenhuma', async () => {
     const db = await banco()
     await sync(db, [nota()]) // anon com segredo → ok
-    // authenticated (ADMIN) não tem grant nas 3 do robô
+    // authenticated (ADMIN) não tem grant nas 3 do robô (a 4ª, da Fase 3, é conferida no bloco dela, cadeia inteira)
     await expect(como(db, ADMIN, `select cot_nfe_sincronizar($1, $2::jsonb)`, [SEGREDO, JSON.stringify(leitura([nota()]))]))
       .rejects.toThrow(/permission denied/)
     await expect(como(db, ADMIN, `select cot_nfe_marcar_lancadas($1, '[]'::jsonb)`, [SEGREDO])).rejects.toThrow(/permission denied/)
@@ -410,5 +410,65 @@ describe('D — CNPJ (2ª revisão n.º 12)', () => {
     // comprador é recusado
     expect(await erroDe(chamar(db, JOAO, 'cot_cnpj_mover($1, $2)', ['12345678000190', 1]))).toBe('apenas o administrador pode fazer isso')
     expect(await erroDe(chamar(db, ADMIN, 'cot_cnpj_mover($1, $2)', ['00000000000000', 1]))).toBe('CNPJ não encontrado')
+  })
+})
+
+describe('Fase 3 — lançar pelo app: forma de pagamento e estado do disparo (cot_nfe_marcar_estado)', () => {
+  const atualF3 = bancoRecebimento(null) // a cadeia INTEIRA: a Fase 3 vem depois da D2
+  const bancoF3 = async () => atualF3()
+  const estado = (db: PGlite, seg: string, p: Json) =>
+    chamar(db, 'anon', 'cot_nfe_marcar_estado($1, $2::jsonb)', [seg, JSON.stringify(p)])
+  async function lancamento(db: PGlite, chave = CHAVE): Promise<Json> {
+    const [r] = await como(db, ADMIN, `select forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, situacao
+      from cot_nfe where chave = $1`, [chave])
+    return r
+  }
+
+  it('o robô grava revisar | erro | ensaio_ok com o motivo; chave desconhecida = 0', async () => {
+    const db = await bancoF3()
+    await sync(db, [nota()])
+    expect(Number(await estado(db, SEGREDO, { chave: CHAVE, estado: 'revisar', motivo: 'falta a forma de pagamento' }))).toBe(1)
+    let l = await lancamento(db)
+    expect([l.lancamento_estado, l.lancamento_motivo]).toEqual(['revisar', 'falta a forma de pagamento'])
+    expect(l.lancamento_estado_em).not.toBeNull()
+    expect(Number(await estado(db, SEGREDO, { chave: CHAVE, estado: 'erro', motivo: 'pedido JÁ gerado 9' }))).toBe(1)
+    expect((await lancamento(db)).lancamento_estado).toBe('erro')
+    expect(Number(await estado(db, SEGREDO, { chave: CHAVE, estado: 'ensaio_ok', motivo: '' }))).toBe(1)
+    l = await lancamento(db)
+    expect([l.lancamento_estado, l.lancamento_motivo]).toEqual(['ensaio_ok', null])   // motivo vazio vira null
+    expect(Number(await estado(db, SEGREDO, { chave: CHAVE2, estado: 'revisar' }))).toBe(0)
+  })
+
+  it('estado fora da lista do robô, segredo errado e nota já lançada (lançada é final)', async () => {
+    const db = await bancoF3()
+    await sync(db, [nota()])
+    for (const e of ['lancando', 'lancada', '', 'qualquer']) {
+      expect(await erroDe(estado(db, SEGREDO, { chave: CHAVE, estado: e }))).toBe('estado inválido')
+    }
+    expect(await erroDe(estado(db, 'errado', { chave: CHAVE, estado: 'revisar' }))).toBe('não autorizado')
+    await chamar(db, 'anon', 'cot_nfe_marcar_lancadas($1, $2::jsonb)',
+      [SEGREDO, JSON.stringify([{ chave: CHAVE, nf_sischef: 'NF 9', lancada_em: '2026-10-20T18:00:00Z' }])])
+    expect(Number(await estado(db, SEGREDO, { chave: CHAVE, estado: 'erro' }))).toBe(0)
+    expect((await lancamento(db)).situacao).toBe('lancada')
+  })
+
+  it('motivo longo é cortado em 2000; forma e estado fora do formato são recusados pelo banco', async () => {
+    const db = await bancoF3()
+    await sync(db, [nota()])
+    await estado(db, SEGREDO, { chave: CHAVE, estado: 'revisar', motivo: 'x'.repeat(5000) })
+    expect(String((await lancamento(db)).lancamento_motivo).length).toBe(2000)
+    // a Edge Function grava a forma com a service_role: o banco ainda confere o formato
+    for (const forma of ['boleto', 'dinheiro', 'tesouraria', 'cartao', 'pix:bradesco|ij', null]) {
+      await db.query('update cot_nfe set forma_pagamento = $1 where chave = $2', [forma, CHAVE])
+    }
+    for (const forma of ['cheque', 'pix', 'pix:', 'PIX:bradesco|ij', 'dinheiro ', 'pix:bradesco|ij|x']) {
+      await expect(db.query('update cot_nfe set forma_pagamento = $1 where chave = $2', [forma, CHAVE])).rejects.toThrow(/check/)
+    }
+    await expect(db.query(`update cot_nfe set lancamento_estado = 'lancada' where chave = $1`, [CHAVE])).rejects.toThrow(/check/)
+  })
+
+  it('a 4ª do robô (cot_nfe_marcar_estado) é só de anon com o segredo: authenticated não executa', async () => {
+    const db = await bancoF3()
+    await expect(como(db, ADMIN, `select cot_nfe_marcar_estado($1, '{}'::jsonb)`, [SEGREDO])).rejects.toThrow(/permission denied/)
   })
 })

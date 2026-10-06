@@ -569,28 +569,65 @@ export async function nfesSemPedido(vendedorId: number | null, desde: string): P
   return ((data ?? []) as unknown as NfeResumo[]).map(nfeLida)
 }
 // ---------- Fase 3: aba "Lançamento de nota SEFAZ" (lê cot_nfe por RLS de admin). numeric pode chegar como texto.
-const COLUNAS_NOTA = 'chave, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
-const notaListaLida = (n: NotaSefazLista): NotaSefazLista =>
-  ({ ...n, valor_nf: n.valor_nf == null ? null : Number(n.valor_nf), itens: Array.isArray(n.itens) ? n.itens : [] })
-/** Notas pendentes da fila da SEFAZ (situacao 'na_fila'), para "Notas a lançar". */
-export async function notasALancar(): Promise<NotaSefazLista[]> {
-  const { data, error, status } = await supabase.from('cot_nfe').select(COLUNAS_NOTA)
-    .eq('situacao', 'na_fila').order('emissao', { ascending: false })
-  if (error) {
-    if (tabelaInexistente(error.code)) return []
-    throw new ErroApi(error.message, status, error.code)
+const COLUNAS_NOTA_ANTIGAS = 'chave, emitente, numero, emissao, valor_nf, situacao, lancada_em, nf_sischef, itens'
+// As colunas novas (migração 20261206000001) só existem depois de aplicada: sem elas a leitura cai para as antigas.
+const COLUNAS_NOTA = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em`
+const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
+  ...n,
+  valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
+  itens: Array.isArray(n.itens) ? n.itens : [],
+  forma_pagamento: n.forma_pagamento ?? null,
+  lancamento_estado: n.lancamento_estado ?? null,
+  lancamento_motivo: n.lancamento_motivo ?? null,
+  lancamento_estado_em: n.lancamento_estado_em ?? null,
+})
+/** Coluna que não existe (Postgres 42703, ou a mensagem "column ... does not exist"): migração ainda não aplicada. */
+const colunaInexistente = (e: { message?: string; code?: string }): boolean =>
+  e.code === '42703' || /column .* does not exist/i.test(e.message ?? '')
+type RespostaNotas = { data: unknown; error: { message: string; code?: string } | null; status: number }
+/** Lê as notas com as colunas novas; se o banco ainda não as tem, repete com as antigas (a aba não pode quebrar). */
+async function lerNotas(consulta: (colunas: string) => PromiseLike<RespostaNotas>): Promise<NotaSefazLista[]> {
+  let r = await consulta(COLUNAS_NOTA)
+  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_ANTIGAS)
+  if (r.error) {
+    if (tabelaInexistente(r.error.code)) return []
+    throw new ErroApi(r.error.message, r.status, r.error.code)
   }
-  return ((data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
+  return ((r.data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
 }
+/** Notas pendentes da fila da SEFAZ (situacao 'na_fila'), para "Notas a lançar". */
+export const notasALancar = (): Promise<NotaSefazLista[]> =>
+  lerNotas((colunas) => supabase.from('cot_nfe').select(colunas).eq('situacao', 'na_fila').order('emissao', { ascending: false }))
 /** Notas já lançadas (situacao 'lancada'), mais recentes primeiro, para "Últimos lançamentos". */
-export async function notasLancadas(limite = 10): Promise<NotaSefazLista[]> {
-  const { data, error, status } = await supabase.from('cot_nfe').select(COLUNAS_NOTA)
-    .eq('situacao', 'lancada').order('lancada_em', { ascending: false, nullsFirst: false }).limit(limite)
-  if (error) {
-    if (tabelaInexistente(error.code)) return []
-    throw new ErroApi(error.message, status, error.code)
+export const notasLancadas = (limite = 10): Promise<NotaSefazLista[]> =>
+  lerNotas((colunas) => supabase.from('cot_nfe').select(colunas)
+    .eq('situacao', 'lancada').order('lancada_em', { ascending: false, nullsFirst: false }).limit(limite))
+
+/** Texto claro (em português) para o erro do "Lançar": pelo status HTTP da Edge Function lancar-nfe, ou pelo texto que ela devolveu. */
+function mensagemDoLancar(status: number | undefined, texto: string): string {
+  const t = texto.toLowerCase()
+  if (status === 403 || t.includes('administrador')) return 'Só o administrador pode lançar notas.'
+  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada ou ficou pela metade. Atualize a tela e confira.'
+  if (status === 400 || t.includes('inválid')) {
+    return t.includes('chave') ? 'A chave da nota não é válida. Atualize a tela e tente de novo.' : 'Escolha como pagar: a forma de pagamento não é válida.'
   }
-  return ((data ?? []) as unknown as NotaSefazLista[]).map(notaListaLida)
+  if (status === 502 || t.includes('robô')) return 'Não consegui chamar o robô agora, tente de novo.'
+  return 'Não consegui lançar agora. Confira a internet e tente de novo.'
+}
+/**
+ * Manda lançar UMA nota (Edge Function lancar-nfe: admin, reserva a nota e dispara o robô). A função só responde 202 quando o robô
+ * foi chamado; o resultado de verdade aparece depois, no estado da nota (lancamento_estado). Erros viram texto em português.
+ */
+export async function lancarNota(chave: string, forma: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('lancar-nfe', { body: { chave, forma } })
+  if (!error) return
+  const contexto = (error as { context?: Response }).context
+  const status = typeof contexto?.status === 'number' ? contexto.status : undefined
+  let texto = ''
+  if (contexto && typeof contexto.json === 'function') {
+    try { const corpo = await contexto.json(); if (corpo && typeof corpo.erro === 'string') texto = corpo.erro } catch { /* corpo não era JSON */ }
+  }
+  throw new ErroApi(mensagemDoLancar(status, texto), status)
 }
 export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
 export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })

@@ -40,12 +40,15 @@ const C1 = '20261029000001_cadastros.sql'
 const D2 = '20261029000002_falta_definitiva.sql'
 const B = '20261104000001_ia_leitura.sql'
 const C2 = '20261126000001_cadastros_regras.sql'
-// A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 é a última por nome de arquivo.
+// Fase 3 (lançar a NF-e pelo App): a coluna da trava (lancamento_em) e a forma de pagamento + estado do disparo.
+const F3A = '20261205000001_nfe_lancamento.sql'
+const F3B = '20261206000001_nfe_lancar.sql'
+// A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 vem depois da B; as da Fase 3 são as últimas por nome.
 const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [
