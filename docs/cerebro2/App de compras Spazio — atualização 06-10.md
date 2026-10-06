@@ -58,7 +58,7 @@
 - Nota "pela metade" (erro) **nunca** se lança de novo pelo app: conferir no Sischef.
 - Item sem produto no Sischef ou conta especial (KONDO, Mercado Livre) bloqueia o Lançar.
 
-## Pedidos de 06/10 à noite — prontos em prévia, aguardando o seu OK para publicar
+## Pedidos de 06/10 à noite — NO AR (3ª publicação do dia)
 - A aba passa a se chamar **"Lançamento fiscal"** (sem o "de"; "Lançamento de cupom" não muda).
 - **Últimos lançamentos:** cada item mostra o **número do produto no SisChef** (o código do fornecedor, "CÓD. FOR", saiu) e o detalhe mostra **"Lançada em dia/mês às hora"**. A quantidade vem só como número e unidade ("3,09 kg", "180 un"), sem "qtd" (no cupom ainda aparece "qtd").
 - **Caixa de associação de produto (etapa 1):** em cada item sem produto você digita o produto (lista de insumos que já está no app), escolhe, toca em **Confirmar** e o item ganha o **✓ verde
@@ -70,12 +70,12 @@
 
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
-   **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (agora trocada por "Lançamento fiscal", em prévia) e o ✓ verde no painel de conferir.
+   **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (depois trocada por "Lançamento fiscal", 3ª publicação) e o ✓ verde no painel de conferir.
 2. Fila de 06/10 (conferida no banco às 19h35). **Já lançadas:** MERCURIO 002270842 e MATEUS 000089282. **Ainda a lançar, todas com item sem produto** (o app trava o Lançar):
    MERCURIO 002270833 (1 item, LAGARTO RESF) · MATEUS 000089284 (3 de 8 itens: CHOC LACTA BIS, LEITE COND TIROL, ÓLEO SOJA) · MATEUS 000089283 (1 item, queijo muçarela, R$ 5.417,31) · SEARA 000187105 (1 item).
    Saída: associar no SisChef, ou a caixa de associação no app (item 3). **MC CONTENTE 000002278**: chegou sem nenhum item ("xml resumido": a SEFAZ só entregou o resumo; o XML completo só vem
    depois da ciência da operação). Decisão sua: nota com informação faltando não é lançada; você a descartou (descartar só a tira do app; a compra segue pendente no SisChef).
-3. **Caixa de associação de itens no app:** etapa 1 pronta em prévia (seção acima), falta o seu OK para publicar. Depois, **etapa 2: o robô aplica a decisão no SisChef** (ordem combinada:
+3. **Caixa de associação de itens no app:** etapa 1 no ar (seção acima). Falta a **etapa 2: o robô aplicar a decisão no SisChef** (ordem combinada:
    associação no app → o robô aplica → teste acompanhado numa nota de valor baixo; a conversão UN × KG precisará de um campo "quanto vale 1 UN em KG").
 4. **FEITO em 06/10 (18h49 Belém): 1º lançamento real pela nuvem** — MERCURIO NF 002270842, R$ 2.922,28, Boleto, 3 parcelas; NF 2270842 no SisChef; conferido por você. A trava `MOTOR_NFE_LIGADO` está `ON`
    (não confundir com `MOTOR_CUPOM_LIGADO`, que é a do cupom). Todo "Confirmar" no app agora lança de verdade.
