@@ -22,7 +22,19 @@ const linhaDoItem = (it: ItemNotaSefaz): LinhaDetalhe =>
 const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
 
 /** Uma nota a lançar: "Como pagar", estado do robô, avisos de bloqueio e o botão Lançar em dois toques. */
-function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroes: Record<string, string>; aoLancar: () => Promise<void> }) {
+interface PropsNota {
+  nota: NotaSefazLista
+  padroes: Record<string, string>
+  aoLancar: () => Promise<void>
+  /** Outra nota está 'lancando' (o robô é um por vez: o GitHub guarda só 1 disparo pendente e cancelaria o resto). */
+  outraLancando: boolean
+  /** Algum "Confirmar" está enviando agora (nesta ou em outra nota). */
+  emEnvio: boolean
+  /** Pede a vez de enviar: false se já há um envio em curso (trava síncrona entre notas). */
+  iniciarEnvio: () => boolean
+  fimEnvio: () => void
+}
+function NotaALancar({ nota, padroes, aoLancar, outraLancando, emEnvio, iniciarEnvio, fimEnvio }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -39,7 +51,8 @@ function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroe
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
   const travada = estado === 'erro' || (estado === 'lancando' && !presa) || bloqueios.length > 0
-  const podeLancar = !travada && forma !== '' && !enviando
+  const outraOcupando = outraLancando || (emEnvio && !enviando)
+  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando
 
   function escolher(nova: string) {
     setEscolha(nova); setConfirmando(false); setErro('')
@@ -47,7 +60,7 @@ function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroe
   }
 
   async function confirmar() {
-    if (!podeLancar || trancado.current) return
+    if (!podeLancar || trancado.current || !iniciarEnvio()) return
     trancado.current = true
     setEnviando(true); setErro('')
     try {
@@ -61,6 +74,7 @@ function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroe
     } finally {
       trancado.current = false
       setEnviando(false)
+      fimEnvio()
     }
   }
 
@@ -74,6 +88,7 @@ function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroe
         <div className={estado === 'erro' ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo)}</div>}
+      {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
       {bloqueios.map((b) => <div key={b} className="erro" data-testid="bloqueio-nota">{b}</div>)}
 
       <label>Como pagar
@@ -114,6 +129,10 @@ function NotaALancar({ nota, padroes, aoLancar }: { nota: NotaSefazLista; padroe
 export default function NotaSefaz() {
   const [aLancar, setALancar] = useState<NotaSefazLista[]>([])
   const [lancadas, setLancadas] = useState<NotaSefazLista[]>([])
+  const envioRef = useRef(false)
+  const [emEnvio, setEmEnvio] = useState(false)
+  const iniciarEnvio = (): boolean => { if (envioRef.current) return false; envioRef.current = true; setEmEnvio(true); return true }
+  const fimEnvio = (): void => { envioRef.current = false; setEmEnvio(false) }
   const [padroes, setPadroes] = useState<Record<string, string>>({}) // forma padrão por CNPJ (última nota lançada), vem do banco
   const [falha, setFalha] = useState(false)
   const [carregando, setCarregando] = useState(true)
@@ -152,7 +171,9 @@ export default function NotaSefaz() {
         : (
           <>
             <ul className="recentes">
-              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} aoLancar={() => carregar(true)} />)}
+              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} aoLancar={() => carregar(true)}
+                outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
+                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
           </>

@@ -17,6 +17,7 @@ function fakeDeps(over: Partial<Deps> = {}): Deps & { reservas: unknown[][]; dis
     reservas, disparos, soltas,
     async buscarUsuario() { return { papel: 'admin', ativo: true } },
     async reservar(...a) { reservas.push(a); return { ...NOTA, forma_pagamento: a[1] as string } },
+    async outraLancando() { return false },
     async soltar(chave) { soltas.push(chave) },
     async disparar(notaJson) { disparos.push(notaJson) },
     agora: () => AGORA,
@@ -78,6 +79,19 @@ describe('tratar (o "Lançar" de uma nota)', () => {
     expect((await tratar({ chave: CHAVE, forma: 'cheque' }, 'a@b', d)).status).toBe(400)
     expect((await tratar({ chave: CHAVE }, 'a@b', d)).status).toBe(400)
     expect(d.reservas).toEqual([])
+  })
+
+  it('outra nota lançando: 409, NÃO reserva e NÃO dispara (um robô por vez); o limite é o mesmo de 30 min', async () => {
+    const chamadas: unknown[][] = []
+    const d = fakeDeps({ async outraLancando(...a) { chamadas.push(a); return true } })
+    const r = await tratar({ chave: CHAVE, forma: 'boleto' }, 'a@b', d)
+    expect(r.status).toBe(409)
+    expect(JSON.stringify(r.corpo)).toContain('outra nota')
+    expect(d.reservas).toEqual([])
+    expect(d.disparos).toEqual([])
+    expect(chamadas).toHaveLength(1)
+    expect(chamadas[0][0]).toBe(CHAVE)
+    expect(new Date(chamadas[0][1] as string).getTime()).toBe(AGORA.getTime() - 30 * 60_000)
   })
 
   it('nota indisponível (lançada, lançando ou pela metade): 409 e NÃO dispara', async () => {
