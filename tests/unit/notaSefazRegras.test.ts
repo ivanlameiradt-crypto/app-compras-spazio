@@ -1,7 +1,7 @@
 import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
-  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS,
+  podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -63,6 +63,21 @@ describe('notaSefazRegras', () => {
     expect(bloqueiosDaNota(nota({ itens: [semProduto] }))).toEqual(['Item sem produto no SisChef: associe lá antes de lançar'])
     expect(bloqueiosDaNota(nota({ itens: [{ ...semProduto, produto_id: 5, associacao: ' Painel ' }] }))).toHaveLength(1)
     expect(bloqueiosDaNota(nota({ emitente: 'KONDO', itens: [semProduto] }))).toHaveLength(2)
+  })
+
+  it('itemAssociado (o ✓ verde do painel de conferir): é o mesmo critério que trava ou libera o Lançar', () => {
+    const base = { descricao: 'Y', qtd: 1, unidade_sischef: 'KG' }
+    const casos: [string, Parameters<typeof itemAssociado>[0], boolean][] = [
+      ['produto associado no SisChef', { ...base, produto_id: 7, associacao: 'sischef' }, true],
+      ['produto sem o campo associacao (robô antigo): o Lançar não trava por ele', { ...base, produto_id: 7 }, true],
+      ['sem produto', { ...base, produto_id: null }, false],
+      ['sem produto, mesmo dito "sischef"', { ...base, produto_id: null, associacao: 'sischef' }, false],
+      ['decidido só no app (painel)', { ...base, produto_id: 7, associacao: ' Painel ' }, false],
+    ]
+    for (const [, item, esperado] of casos) {
+      expect(itemAssociado(item)).toBe(esperado)
+      expect(bloqueiosDaNota(nota({ itens: [item] })).length === 0).toBe(esperado) // ✓ e Lançar liberado andam juntos
+    }
   })
 
   it('bloqueiosDaNota: nota que chegou sem itens (a leitura não abriu a nota) não pode ser lançada', () => {

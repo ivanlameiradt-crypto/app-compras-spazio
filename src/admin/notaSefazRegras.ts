@@ -96,6 +96,9 @@ export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: no SisChef ela costu
 
 const itemSemProduto = (it: ItemNotaSefaz): boolean =>
   it.produto_id == null || String(it.produto_id).trim() === '' || (it.associacao ?? '').trim().toLowerCase() === 'painel'
+/** Item com produto de verdade no SisChef: o "✓ verde" do painel de conferir. É o MESMO critério que libera ou trava o Lançar
+ *  (um ✓ nunca aparece num item que bloqueia a nota, nem some de um que a deixa passar). */
+export const itemAssociado = (it: ItemNotaSefaz): boolean => !itemSemProduto(it)
 const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.test(emitente.toUpperCase())
 
 /** Motivos (em português) pelos quais esta nota NÃO pode ser lançada pelo app; lista vazia = pode. */

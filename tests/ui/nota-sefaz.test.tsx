@@ -525,13 +525,49 @@ describe('NotaSefaz', () => {
       const itens = within(painel).getAllByTestId('conferir-item')
       expect(itens[0]).toHaveTextContent('CREME DE LEITE · 10 KG')
       expect(itens[0]).toHaveTextContent('CREME DE LEITE - INSUMOS')
-      expect(itens[0]).toHaveTextContent('associado no SisChef')
+      expect(within(itens[0]).getByTestId('item-ok')).toHaveAccessibleName('produto associado no SisChef') // ✓ verde na frente do produto
+      expect(itens[0]).not.toHaveTextContent('associado no SisChef') // o texto embaixo do produto foi tirado (pedido do Ivan, 06/10)
+      expect(within(itens[1]).getByTestId('item-ok')).toBeInTheDocument()
       expect(itens[0]).not.toHaveTextContent('CÓD. FOR')
       expect(itens[1]).toHaveTextContent('produto 77') // sem o nome vindo do robô, mostra o código
       const par = within(painel).getAllByTestId('conferir-parcela')
       expect(par[0]).toHaveTextContent('Parcela 001 · vence 05/11/2026')
       expect(par[0]).toHaveTextContent(/R\$\s60,00/)
       expect(within(painel).getByTestId('fin-total')).toHaveTextContent(/Soma dos boletos R\$\s100,00 · valor da nota R\$\s100,00 · bate/)
+    })
+
+    it('painel de conferir: só o item com produto leva o ✓; o sem produto e o decidido só no app ficam sem ✓ e com o aviso escrito', async () => {
+      aLancar(pronta({ itens: [
+        { descricao: 'CÓD. FOR: 1 AGUA SEM GÁS 500ML', qtd: 60, unidade_sischef: 'UN', produto_id: 10, associacao: 'sischef', produto_nome: 'AGUA SEM GÁS 500ML' },
+        { descricao: 'CÓD. FOR: 2 CHOC LACTA BIS', qtd: 15, unidade_sischef: 'UN', produto_id: null, associacao: null },
+        { descricao: 'CÓD. FOR: 3 LEITE COND', qtd: 4, unidade_sischef: 'UN', produto_id: 55, associacao: 'painel', produto_nome: 'LEITE CONDENSADO' },
+        { descricao: 'CÓD. FOR: 4 OLEO', qtd: 2, unidade_sischef: 'UN', produto_id: 56 }, // robô sem o campo associacao, mas com produto: o Lançar não trava por ele
+      ] }))
+      render(<NotaSefaz />)
+      const itens = within(await screen.findByTestId('conferir')).getAllByTestId('conferir-item')
+      expect(within(itens[0]).getByTestId('item-ok')).toBeInTheDocument()
+      expect(itens[0]).toHaveTextContent('AGUA SEM GÁS 500ML')
+      expect(within(itens[1]).queryByTestId('item-ok')).not.toBeInTheDocument()
+      expect(itens[1]).toHaveTextContent('sem produto')
+      expect(itens[1]).toHaveTextContent('sem associação')
+      expect(within(itens[2]).queryByTestId('item-ok')).not.toBeInTheDocument()
+      expect(itens[2]).toHaveTextContent('decidido no app (ainda não está no SisChef)')
+      expect(within(itens[3]).getByTestId('item-ok')).toBeInTheDocument()
+      // sem ✓ em algum item ⇒ o aviso vermelho aparece e o Lançar fica travado (o ✓ não contradiz o bloqueio)
+      expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef')
+      expect(botaoLancar()).toBeDisabled()
+    })
+
+    it('nota com todos os itens associados: todos levam ✓ e o Lançar fica liberado', async () => {
+      aLancar(pronta({ itens: [
+        { descricao: 'CÓD. FOR: 1 A', qtd: 1, unidade_sischef: 'UN', produto_id: 1, associacao: 'sischef', produto_nome: 'A' },
+        { descricao: 'CÓD. FOR: 2 B', qtd: 2, unidade_sischef: 'UN', produto_id: 2, associacao: 'sischef', produto_nome: 'B' },
+      ] }))
+      render(<NotaSefaz />)
+      const painel = await screen.findByTestId('conferir')
+      expect(within(painel).getAllByTestId('item-ok')).toHaveLength(2)
+      expect(screen.queryByTestId('bloqueio-nota')).not.toBeInTheDocument()
+      expect(botaoLancar()).toBeEnabled()
     })
 
     it('painel de conferir mostra a quantidade no jeito brasileiro (19,918 e não 19.918, que parece dezenove mil)', async () => {

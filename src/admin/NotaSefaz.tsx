@@ -8,7 +8,7 @@ import type { ItemNotaSefaz, NotaSefazLista } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import {
   AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  FORNECEDORES_XML_SEM_PAGAMENTO, descartadaVoltouComItens, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, lancandoPresa, lembrarForma,
+  FORNECEDORES_XML_SEM_PAGAMENTO, descartadaVoltouComItens, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
   traduzirMotivo, validarParcelasDigitadas,
   type LinhaParcela, type ResultadoParcelas,
@@ -35,6 +35,16 @@ const qtdBr = (q: number | null | undefined): string =>
 const nomeDoProduto = (it: ItemNotaSefaz): string =>
   it.produto_nome?.trim() || (it.produto_id != null && String(it.produto_id).trim() !== '' ? `produto ${it.produto_id}` : 'sem produto')
 
+/** O "ticket" verde de produto associado: bolinha verde com ✓ (desenhada em SVG, igual em qualquer aparelho; leitor de tela lê o rótulo). */
+function TickOk() {
+  return (
+    <svg className="tick-ok" viewBox="0 0 20 20" width="18" height="18" role="img" aria-label="produto associado no SisChef" data-testid="item-ok">
+      <circle cx="10" cy="10" r="10" />
+      <path d="M5.5 10.4l3 3 6-6.6" fill="none" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 /** "Conferir": o que foi associado a cada item e o financeiro (boletos contra o valor da nota), para o Ivan abrir e checar. */
 function PainelConferir({ nota }: { nota: NotaSefazLista }) {
   const f = resumoFinanceiro(nota)
@@ -44,13 +54,20 @@ function PainelConferir({ nota }: { nota: NotaSefazLista }) {
       <div className="grupo">Itens e produtos associados</div>
       {nota.itens.length === 0 && <p className="sub" data-testid="conferir-sem-itens">Nenhum item lido: no SisChef esta nota costuma aparecer como “XML resumido” (só o resumo da nota, sem os itens).</p>}
       <ul className="conferir-itens">
-        {nota.itens.map((it, i) => (
-          <li key={i} data-testid="conferir-item">
-            <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
-            <b>{nomeDoProduto(it)}</b>
-            <span className="sub">{(it.associacao ?? '') === 'sischef' ? 'associado no SisChef' : (it.associacao ?? '') === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>
-          </li>
-        ))}
+        {nota.itens.map((it, i) => {
+          const ok = itemAssociado(it)
+          return (
+            <li key={i} data-testid="conferir-item">
+              <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
+              {/* Item com produto no SisChef: ✓ verde na frente do nome (sem texto embaixo). Sem ✓ = falta associar: o aviso fica escrito. */}
+              <b className="produto">
+                {ok && <TickOk />}
+                <span>{nomeDoProduto(it)}</span>
+              </b>
+              {!ok && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
+            </li>
+          )
+        })}
       </ul>
       <div className="grupo">Financeiro</div>
       {!f.lido ? <p className="sub" data-testid="fin-nao-lido">Os boletos ainda não foram lidos do XML. Aparecem na próxima leitura do SisChef.</p>

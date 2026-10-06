@@ -4,9 +4,9 @@
 > Fonte: código do app (GitHub `app-compras-spazio`), robô `sischef-monitor-notas` e banco Supabase, conferidos em 06/10.
 
 ## O que vale hoje
-- O app tem **3 abas**: Compra em grade · Lançamento de cupom · Lançamento de nota SEFAZ (desde 03/10).
+- O app tem **3 abas**: Compra em grade · Lançamento de cupom · **Lançamento de fiscal** (desde 03/10; até 06/10 chamava-se "Lançamento de nota SEFAZ").
 - **Lançamento de cupom** (desde 02/10): lança no Sischef a compra feita com cupom fiscal, pelo robô na nuvem.
-- **Lançamento de nota SEFAZ** (desde 05–06/10): lista as notas de fornecedor que estão na fila do Sischef.
+- **Lançamento de fiscal** (desde 05–06/10): lista as notas de fornecedor que estão na fila do Sischef.
   Em cada nota: **Como pagar** (Boleto já vem marcado) e o botão **Lançar** (dois toques). O robô lança na nuvem.
 - O app **se atualiza sozinho** ao reabrir (desde 03/10).
 - As notas novas chegam ao app **sozinhas 3x por dia: 07h40, 12h40 e 17h40** (desde 06/10). Antes era só à mão.
@@ -29,7 +29,7 @@
 - Até corrigirem: o app não assume forma nenhuma para essas notas e você **informa o pagamento nota a nota**. Nunca viram "pronta" nem "fornecedor aprendido".
 - Quando a MATEUS corrigir o XML, você me avisa e a regra é encerrada.
 - **Como informar o boleto:** na nota aparece um editor para você digitar as parcelas (vencimento e valor). O Lançar só libera quando a soma fecha com o valor da nota. O robô escreve essas parcelas na tela de pagamento do Sischef e confere antes de gravar.
-- **Ainda não foi provado ao vivo.** O primeiro teste deve ser a menor nota da MATEUS (000089282, R$ 430,20).
+- **Provado ao vivo em 06/10** com a MATEUS 000089282 (R$ 430,20, 3 parcelas digitadas). Parcelas de valores diferentes ainda não foram provadas.
 
 ## Regra 3 (Ivan, 06/10/2026): nota que não dá para lançar pode ser descartada
 - Nota sem itens ("xml resumido"), com item sem produto, conta especial ou parada pelo robô ganha o botão **Descartar nota** (2 toques).
@@ -42,9 +42,11 @@
 ## Regra 4 (Ivan, 06/10/2026): parcelas digitadas — a soma tem de ser igual ao valor da nota
 - Nas parcelas que você digita no app, os valores **podem ser iguais ou diferentes**. O que importa: **a soma das parcelas é igual ao valor da nota, ao centavo**. Se for diferente, dá erro
   (o app trava o Lançar e diz quanto falta ou passou; a função e o robô também recusam).
-- Ajuste de 06/10: o app e a função aceitavam 1 centavo de diferença e o robô recusava depois; agora os três são exatos. Falta publicar.
+- Ajuste de 06/10: o app e a função aceitavam 1 centavo de diferença e o robô recusava depois; agora os três são exatos. **No ar desde 06/10** (app + função do servidor v5).
 - 2º lançamento real (06/10, 19h05): MATEUS 000089282, R$ 430,20, 3 parcelas digitadas de R$ 143,40 (27/10, 06/11, 16/11), NF 89282. Parcelas de valores desiguais ainda não foram provadas ao vivo.
-- A aba "Lançamento de nota SEFAZ" passou a se chamar **"Lançamento de fiscal"** (pedido seu). Falta publicar.
+- A aba "Lançamento de nota SEFAZ" passou a se chamar **"Lançamento de fiscal"** (pedido seu). No ar.
+- No painel "Conferir itens e financeiro", o texto "associado no SisChef" saiu: o produto já associado agora leva um **✓ verde na frente do nome**. Item sem produto continua com o aviso escrito.
+  Você aprovou a prévia e já está no ar.
 
 ## Um robô por vez
 - Cada nota leva uns 3 minutos para lançar. Enquanto uma está lançando, o app bloqueia o Lançar das outras (o GitHub guarda só 1 lançamento esperando e cancelaria o resto). Fila automática fica para depois.
@@ -58,17 +60,15 @@
 
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
-2. Fila de 06/10 (7 notas, leitura das 15h55). **Só 2 estão com todos os itens associados**: MERCURIO 002270842 (3 boletos do XML:
-   pronta, só Lançar) e MATEUS 000089282 (itens ok, mas o XML não traz boletos: você digita a parcela).
-   Precisam de associação (item sem produto): SEARA 000187105, MERCURIO 002270833, MATEUS 000089283 e 000089284.
-   **MC CONTENTE 000002278 NÃO está pronta**: chegou sem nenhum item e sem XML lido. Causa (print do SisChef, 06/10): a nota está como
-   **"xml resumido"** — a SEFAZ só entregou o resumo; o XML completo só vem depois da ciência da operação. Não é XML corrompido.
-   O app trava o Lançar dela e oferece "Descartar nota" (decisão sua: nota com informação faltando não é lançada; quem descarta é você).
-   (Uma versão anterior deste texto listava a MC CONTENTE como pronta: errado, "todos os itens têm produto" era verdade só porque a lista veio vazia.)
+   **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" e o ✓ verde no painel de conferir.
+2. Fila de 06/10 (conferida no banco às 19h35). **Já lançadas:** MERCURIO 002270842 e MATEUS 000089282. **Ainda a lançar, todas com item sem produto** (o app trava o Lançar):
+   MERCURIO 002270833 (1 item, LAGARTO RESF) · MATEUS 000089284 (3 de 8 itens: CHOC LACTA BIS, LEITE COND TIROL, ÓLEO SOJA) · MATEUS 000089283 (1 item, queijo muçarela, R$ 5.417,31) · SEARA 000187105 (1 item).
+   Saída: associar no SisChef, ou a caixa de associação no app (item 3). **MC CONTENTE 000002278**: chegou sem nenhum item ("xml resumido": a SEFAZ só entregou o resumo; o XML completo só vem
+   depois da ciência da operação). Decisão sua: nota com informação faltando não é lançada; você a descartou (descartar só a tira do app; a compra segue pendente no SisChef).
 3. **Próxima etapa de desenvolvimento: caixa de associação de itens no app** (ordem combinada: associação no app → o robô aplica a decisão no SisChef → teste acompanhado). Ainda NÃO existe: só a prévia.
 4. **FEITO em 06/10 (18h49 Belém): 1º lançamento real pela nuvem** — MERCURIO NF 002270842, R$ 2.922,28, Boleto, 3 parcelas; NF 2270842 no SisChef; conferido por você. A trava `MOTOR_NFE_LIGADO` está `ON`
    (não confundir com `MOTOR_CUPOM_LIGADO`, que é a do cupom). Todo "Confirmar" no app agora lança de verdade.
-   Próximo teste: MATEUS 000089282 (R$ 430,20) com UMA parcela de R$ 430,20 (você digita o vencimento).
+   2º lançamento real também feito: MATEUS 000089282, 3 parcelas digitadas de R$ 143,40. Próximo teste: uma nota com parcelas de VALORES DIFERENTES (prova a escrita do valor da parcela no SisChef).
 5. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
 6. **Renovar o GITHUB_PAT antes de 27/10.**
 7. Cotação com vendedores: ensaio 09/10 e piloto 19/10 (sem mudança no app desde 30/09).
