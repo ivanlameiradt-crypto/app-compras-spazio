@@ -59,7 +59,9 @@
    O app trava o Lançar dela e oferece "Descartar nota" (decisão sua: nota com informação faltando não é lançada; quem descarta é você).
    (Uma versão anterior deste texto listava a MC CONTENTE como pronta: errado, "todos os itens têm produto" era verdade só porque a lista veio vazia.)
 3. **Próxima etapa de desenvolvimento: caixa de associação de itens no app** (ordem combinada: associação no app → o robô aplica a decisão no SisChef → teste acompanhado). Ainda NÃO existe: só a prévia.
-4. Ligar `MOTOR_NFE_LIGADO=ON` (só você consegue, é secret do GitHub) e lançar a 1ª nota real em Boleto. Sugestão: a MERCURIO 002270842 (caminho do boleto já provado), acompanhada.
+4. **FEITO em 06/10 (18h49 Belém): 1º lançamento real pela nuvem** — MERCURIO NF 002270842, R$ 2.922,28, Boleto, 3 parcelas; NF 2270842 no SisChef; conferido por você. A trava `MOTOR_NFE_LIGADO` está `ON`
+   (não confundir com `MOTOR_CUPOM_LIGADO`, que é a do cupom). Todo "Confirmar" no app agora lança de verdade.
+   Próximo teste: MATEUS 000089282 (R$ 430,20) com UMA parcela de R$ 430,20 (você digita o vencimento).
 5. `git pull` do robô no PC (pasta OneDrive/claude nuvem/sischef-monitor-notas).
 6. **Renovar o GITHUB_PAT antes de 27/10.**
 7. Cotação com vendedores: ensaio 09/10 e piloto 19/10 (sem mudança no app desde 30/09).
