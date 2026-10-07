@@ -1023,6 +1023,8 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     const decisao = (id: number, nome: string, unidade = 'un') => ({ produto_id: id, produto_nome: nome, unidade, por: 'ivan@spazio.com', em: '2026-10-06T23:00:00Z' })
     const painel = async () => within(await screen.findByTestId('conferir'))
     const campo = async () => (await painel()).findByLabelText('Produto do SisChef')
+    /** O botão de um produto NA LISTA de achados (o mesmo produto pode aparecer também como sugestão, fora dela). */
+    const achado = async (nome: RegExp) => within(await screen.findByTestId('achados')).getByRole('button', { name: nome })
 
     beforeEach(() => { m.catalogoProdutos.mockResolvedValue(CATALOGO) })
 
@@ -1101,21 +1103,21 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       aLancar(nota({ itens: [sem(1)] }))
       render(<NotaSefaz />)
       await userEvent.type(await campo(), 'leite cond')
-      await userEvent.click(await screen.findByRole('button', { name: /LEITE CONDESSADO/ }))
+      await userEvent.click(await achado(/LEITE CONDESSADO/))
       expect(await screen.findByTestId('aviso-unidade')).toHaveTextContent('A nota vem em UN e este produto é em KG')
       expect(screen.getByTestId('aviso-unidade')).toHaveTextContent('1 UN em KG')
       await userEvent.click(screen.getByRole('button', { name: 'Escolher outro' }))
       await userEvent.type(await campo(), 'oleo')
-      await userEvent.click(await screen.findByRole('button', { name: /ÓLEO DE SOJA/ }))
+      await userEvent.click(await achado(/ÓLEO DE SOJA/))
       expect(await screen.findByTestId('produto-escolhido')).toBeInTheDocument()
       expect(screen.queryByTestId('aviso-unidade')).not.toBeInTheDocument()
     })
 
-    it('nada na lista: avisa que o produto precisa existir (cadastre no SisChef) e não oferece Confirmar', async () => {
+    it('nada na lista (nem uma palavra casa): avisa em vez de ficar mudo, mantém o campo e não oferece Confirmar', async () => {
       aLancar(nota({ itens: [sem(1)] }))
       render(<NotaSefaz />)
       await userEvent.type(await campo(), 'chocolate bis')
-      expect(await screen.findByTestId('sem-resultado')).toHaveTextContent('cadastre-o no SisChef')
+      expect(await screen.findByTestId('sem-resultado')).toHaveTextContent('associe-o direto no SisChef')
       expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument()
     })
 
@@ -1153,7 +1155,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()   // voltou ao confirmado
       await userEvent.click(screen.getByRole('button', { name: 'Trocar' }))
       await userEvent.type(await campo(), 'muçarela')
-      await userEvent.click(await screen.findByRole('button', { name: /Q\. MUÇARELA/ }))
+      await userEvent.click(await achado(/Q\. MUÇARELA/))
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 1854713))
     })
@@ -1171,7 +1173,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       m.associarItem.mockRejectedValueOnce(new Error('Este item já está associado no SisChef.'))
       render(<NotaSefaz />)
       await userEvent.type(await campo(), 'oleo')
-      await userEvent.click(await screen.findByRole('button', { name: /ÓLEO DE SOJA/ }))
+      await userEvent.click(await achado(/ÓLEO DE SOJA/))
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       expect(await screen.findByText('Este item já está associado no SisChef.')).toBeInTheDocument()
       expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('ÓLEO DE SOJA')
@@ -1185,7 +1187,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       m.associarItem.mockImplementation(() => new Promise<void>((r) => { liberar = r }))
       render(<NotaSefaz />)
       await userEvent.type(await campo(), 'oleo')
-      await userEvent.click(await screen.findByRole('button', { name: /ÓLEO DE SOJA/ }))
+      await userEvent.click(await achado(/ÓLEO DE SOJA/))
       const botao = screen.getByRole('button', { name: 'Confirmar' })
       await userEvent.click(botao)
       await userEvent.click(screen.getByRole('button', { name: 'Confirmando…' }))
@@ -1227,6 +1229,178 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         expect(item).toHaveTextContent('sem associação')
         unmount()
       }
+    })
+
+    describe('palavras-chave do Ivan, "Lembrar esta descrição" e o motivo do Lançar apagado (06/10 à noite)', () => {
+      const MUCARELA = 1854713
+      const NUGGETS = 3469754
+      const LEITE = 3469626
+      const COM_PALAVRAS: ProdutoCatalogo[] = [
+        { produto_id: MUCARELA, nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg', palavras: 'queijo mussarela mozarela mozzarella' },
+        { produto_id: NUGGETS, nome: 'NUGGETS SUPREME - INSUMOS (KG)', nome_sischef: 'NUGGSTES SUPREME - INSUMOS (KG)', unidade: 'kg', palavras: 'nuggets ou Chicken Supreme 2,5Kg' },
+        { produto_id: LEITE, nome: 'LEITE CONDENSADO - INSUMOS (KG)', nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)', unidade: 'kg', palavras: 'leite semi condensado ou leite condensado' },
+        { produto_id: OLEO, nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' },
+      ]
+      const DESC_SEARA = 'CÓD. FOR: 031647 CHICKEN SUPREME FS 2,5KG'
+      const seara = (extra: Partial<ItemNotaSefaz> = {}) => sem(1, { descricao: DESC_SEARA, qtd: 2, unidade_sischef: 'CX', ...extra })
+      const queijo = (extra: Partial<ItemNotaSefaz> = {}) =>
+        sem(1, { descricao: 'CÓD. FOR: 221430 QUEIJO MUSS ARGE LA PAULINA BARR KG', qtd: 148.46, unidade_sischef: 'KG', ...extra })
+      beforeEach(() => { m.catalogoProdutos.mockResolvedValue(COM_PALAVRAS) })
+
+      it('a busca acha pela palavra-chave e pelo nome errado do SisChef, e mostra o nome corrigido com o original em letra pequena', async () => {
+        aLancar(nota({ itens: [sem(1)] }))
+        render(<NotaSefaz />)
+        await userEvent.type(await campo(), 'chicken')                                  // só existe nas palavras-chave
+        let achados = within(await screen.findByTestId('achados'))
+        expect(achados.getAllByRole('button')).toHaveLength(1)
+        expect(achados.getByRole('button')).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')
+        expect(achados.getByRole('button')).toHaveTextContent('no SisChef: NUGGSTES SUPREME - INSUMOS (KG)')
+        await userEvent.clear(await campo())
+        await userEvent.type(await campo(), 'nuggstes')                                 // o nome como está (errado) no SisChef
+        achados = within(await screen.findByTestId('achados'))
+        expect(achados.getAllByRole('button')).toHaveLength(1)
+        await userEvent.click(achados.getByRole('button'))
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`NUGGETS SUPREME - INSUMOS (KG) cód. ${NUGGETS} · KG · no SisChef: NUGGSTES SUPREME`)
+      })
+
+      it('nenhum produto com todas as palavras: mostra os que têm alguma (não fica no "nada") e dá para escolher', async () => {
+        aLancar(nota({ itens: [sem(1)] }))
+        render(<NotaSefaz />)
+        await userEvent.type(await campo(), 'leite chocolate')
+        expect(await screen.findByTestId('busca-parcial')).toHaveTextContent('Nenhum produto tem todas essas palavras')
+        expect(screen.queryByTestId('sem-resultado')).not.toBeInTheDocument()
+        await userEvent.click(await achado(/LEITE CONDENSADO/))
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('LEITE CONDENSADO - INSUMOS (KG)')
+      })
+
+      it('sem palpite do robô, as palavras-chave sugerem (SEARA: "chicken supreme" → NUGGETS SUPREME), mostrando as palavras que casaram', async () => {
+        aLancar(nota({ itens: [seara()] }))
+        render(<NotaSefaz />)
+        const sug = await screen.findByTestId('sugestao-palavras')
+        expect(sug).toHaveTextContent('Pelas suas palavras-chave (chicken, supreme): NUGGETS SUPREME - INSUMOS (KG)')
+        expect(screen.queryByTestId('sugestao-robo')).not.toBeInTheDocument()
+        await userEvent.click(within(sug).getByRole('button'))
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')
+        expect(screen.getByTestId('aviso-unidade')).toHaveTextContent('A nota vem em CX e este produto é em KG')  // a conversão continua valendo
+        expect(m.associarItem).not.toHaveBeenCalled()                                    // sugerir não guarda: só o Confirmar
+      })
+
+      it('"queijo muss" = mussarela: a abreviação da nota casa; quando o robô sugere o mesmo produto, a tela diz que confere (uma sugestão só)', async () => {
+        aLancar(nota({ itens: [queijo({ sugestao: { id: String(MUCARELA), nome: 'Q. MUÇARELA - INSUMOS' } })] }))
+        render(<NotaSefaz />)
+        const sug = await screen.findByTestId('sugestao-robo')
+        expect(sug).toHaveTextContent('Sugestão do robô: Q. MUÇARELA - INSUMOS (KG) · confere com as suas palavras-chave')
+        expect(screen.queryByTestId('sugestao-palavras')).not.toBeInTheDocument()
+      })
+
+      it('robô e palavras-chave discordam: as duas sugestões aparecem, cada uma com o seu rótulo', async () => {
+        aLancar(nota({ itens: [queijo({ sugestao: { id: String(OLEO), nome: 'ÓLEO DE SOJA - INSUMOS' } })] }))
+        render(<NotaSefaz />)
+        expect(await screen.findByTestId('sugestao-robo')).toHaveTextContent('Sugestão do robô: ÓLEO DE SOJA - INSUMOS (UN)')
+        expect(screen.getByTestId('sugestao-palavras')).toHaveTextContent('Pelas suas palavras-chave (queijo, muss): Q. MUÇARELA - INSUMOS (KG)')
+      })
+
+      describe('Lembrar esta descrição', () => {
+        const escolherSugestao = async () => {
+          await userEvent.click(within(await screen.findByTestId('sugestao-palavras')).getByRole('button'))
+          return screen.findByTestId('lembrar-descricao')
+        }
+
+        it('vem marcado; ao confirmar guarda a escolha E a descrição da nota (nessa ordem) e recarrega a lista de produtos', async () => {
+          aLancar(nota({ itens: [seara()] }))
+          m.lembrarDescricao.mockResolvedValue(true)
+          render(<NotaSefaz />)
+          const lembrar = await escolherSugestao()
+          expect(within(lembrar).getByRole('checkbox')).toBeChecked()
+          expect(lembrar).toHaveTextContent('Lembrar esta descrição: da próxima vez, “CHICKEN SUPREME FS 2,5KG” já sugere este produto')
+          await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+          await waitFor(() => expect(m.lembrarDescricao).toHaveBeenCalledWith(NUGGETS, DESC_SEARA))
+          expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, NUGGETS)
+          expect(m.associarItem.mock.invocationCallOrder[0]).toBeLessThan(m.lembrarDescricao.mock.invocationCallOrder[0])
+          await waitFor(() => expect(m.catalogoProdutos).toHaveBeenCalledTimes(2))        // a lista nova já traz a descrição como palavra-chave
+        })
+
+        it('desmarcado, a descrição não é guardada (e a lista não é lida de novo)', async () => {
+          aLancar(nota({ itens: [seara()] }))
+          render(<NotaSefaz />)
+          const lembrar = await escolherSugestao()
+          await userEvent.click(within(lembrar).getByRole('checkbox'))
+          expect(within(lembrar).getByRole('checkbox')).not.toBeChecked()
+          await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+          await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, NUGGETS))
+          expect(m.lembrarDescricao).not.toHaveBeenCalled()
+          expect(m.catalogoProdutos).toHaveBeenCalledTimes(1)
+        })
+
+        it('se lembrar falhar, a confirmação fica valendo (o ✓ aparece e nenhum erro é mostrado)', async () => {
+          const antes = nota({ itens: [seara()] })
+          const depois = nota({ itens: [seara()], associacoes_app: { '1': decisao(NUGGETS, 'NUGGSTES SUPREME - INSUMOS (KG)', 'kg') } })
+          aLancar(antes)
+          m.associarItem.mockImplementation(async () => { aLancar(depois) })
+          m.lembrarDescricao.mockRejectedValue(new Error('sem rede'))
+          render(<NotaSefaz />)
+          await escolherSugestao()
+          await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+          const item = (await painel()).getByTestId('conferir-item')
+          await waitFor(() => expect(within(item).getByTestId('item-confirmado')).toBeInTheDocument())
+          expect(within(item).queryByRole('alert')).not.toBeInTheDocument()
+          expect(item).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')                // o ✓ mostra o nome corrigido da lista, não o do SisChef
+        })
+
+        it('Desfazer a escolha nunca guarda descrição nenhuma', async () => {
+          aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
+          render(<NotaSefaz />)
+          await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+          await userEvent.click(await screen.findByRole('button', { name: 'Desfazer a escolha' }))
+          await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, null))
+          expect(m.lembrarDescricao).not.toHaveBeenCalled()
+        })
+      })
+
+      it('o painel de conferir abre sozinho enquanto falta escolher produto, e fica fechado quando tudo já está associado', async () => {
+        aLancar(nota({ itens: [sem(1)] }))
+        const a = render(<NotaSefaz />)
+        expect(await screen.findByTestId('conferir')).toHaveAttribute('open')
+        a.unmount()
+        aLancar(nota({ itens: [item({ n: 1 })] }))
+        render(<NotaSefaz />)
+        expect(await screen.findByTestId('conferir')).not.toHaveAttribute('open')
+      })
+
+      describe('motivo do Lançar apagado, logo embaixo do botão', () => {
+        it('diz por quê, e qual produto associar no SisChef (código e nome da lista, com o nome do SisChef quando foi corrigido)', async () => {
+          aLancar(nota({ itens: [sem(1, { descricao: 'CÓD. FOR: 249693 LEITE COND TIROL SEMIDES TP 395G', unidade_sischef: 'UN' })],
+            associacoes_app: { '1': decisao(LEITE, 'LEITE CONDESSADO - INSUMOS (KG)', 'kg') } }))
+          render(<NotaSefaz />)
+          const aviso = await screen.findByTestId('lancar-travado')
+          expect(aviso).toHaveTextContent('O Lançar está apagado porque falta produto no SisChef')
+          expect(aviso).toHaveTextContent('o robô ainda não a aplica lá')
+          const [linha] = within(aviso).getAllByTestId('lancar-travado-item')
+          // o nome corrigido vem da lista de produtos, que carrega um instante depois do aviso (antes disso vale o nome guardado na decisão)
+          await waitFor(() => expect(linha).toHaveTextContent(`LEITE COND TIROL SEMIDES TP 395G → ${LEITE} LEITE CONDENSADO - INSUMOS (KG) (no SisChef: LEITE CONDESSADO - INSUMOS (KG))`))
+          expect(botaoLancar()).toBeDisabled()
+          // o aviso fica DEPOIS do botão (junto dele), não só lá em cima
+          expect(botaoLancar().compareDocumentPosition(aviso) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        })
+
+        it('item ainda sem escolha no app: manda escolher o produto em "Conferir itens e financeiro"', async () => {
+          aLancar(nota({ itens: [sem(1)] }))
+          render(<NotaSefaz />)
+          expect(await screen.findByTestId('lancar-travado-item')).toHaveTextContent('OLEO SOJA VITALIV PET 900ML → escolha o produto em “Conferir itens e financeiro”')
+        })
+
+        it('nota que pode ser lançada, ou com o robô trabalhando nela, não mostra esse aviso', async () => {
+          aLancar(nota({ itens: [item()] }))
+          const a = render(<NotaSefaz />)
+          await screen.findByTestId('nota-a-lancar')
+          expect(screen.queryByTestId('lancar-travado')).not.toBeInTheDocument()
+          a.unmount()
+          aLancar(nota({ itens: [sem(1)], lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString(), lancamento_em: new Date().toISOString() } as Partial<NotaSefazLista>))
+          render(<NotaSefaz />)
+          await screen.findByTestId('nota-a-lancar')
+          expect(screen.queryByTestId('lancar-travado')).not.toBeInTheDocument()
+        })
+      })
     })
   })
 })

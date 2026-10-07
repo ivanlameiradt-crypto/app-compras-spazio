@@ -107,6 +107,15 @@ export function decisaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz): AssociacaoA
   if (it.n == null || !n.associacoes_app || !itemSemProduto(it)) return null
   return n.associacoes_app[String(it.n)] ?? null
 }
+/** Item que ainda NÃO tem produto de verdade no SisChef, com o produto que o Ivan confirmou no app para ele (se confirmou): é o que ele precisa
+ *  associar LÁ para o Lançar liberar (enquanto o robô não aplica a escolha). `codigo`/`nome` nulos = ainda sem escolha no app. */
+export interface PendenciaSischef { descricao: string; codigo: number | null; nome: string | null }
+export function pendenciasNoSischef(n: NotaSefazLista): PendenciaSischef[] {
+  return n.itens.filter(itemSemProduto).map((it) => {
+    const d = decisaoDoItem(n, it)
+    return { descricao: it.descricao ?? 'item', codigo: d?.produto_id ?? null, nome: d?.produto_nome ?? null }
+  })
+}
 /** Bloqueio que só diz "falta produto no SisChef": a nota ainda NÃO pode ser lançada, mas dá para preparar o resto (forma de pagamento e parcelas). */
 export const bloqueioDeProduto = (b: string): boolean => b === AVISO_ITEM_SEM_PRODUTO || b === AVISO_ASSOCIACAO_SO_NO_APP
 const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.test(emitente.toUpperCase())

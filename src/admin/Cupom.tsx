@@ -7,6 +7,7 @@ import { formatarReais } from '../lib/regras'
 import { CONTAS_PIX, CONTA_DINHEIRO, CONTA_TESOURARIA, FORMAS } from '../cupom/formasPagamento'
 import type { CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ResumoEnvioCupom } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
+import { diagnosticoDoCupom } from './cupomRegras'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
   PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
@@ -41,6 +42,30 @@ const pedeAtencao = (r: ResumoEnvioCupom): boolean => r.estado === 'REVISAR' || 
 /** Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade + unidade que entrou · valor). */
 const linhaDoItem = (it: ItemCupomRecente): LinhaDetalhe =>
   ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, unidade: it.unidade_cupom, valor: it.valor_unitario })
+
+/** Cupom parado ("precisa de você"): o que está errado e o que fazer para o robô poder lançá-lo (pedido do Ivan, 06/10 à noite). O motivo técnico
+ *  registrado fica embaixo, em letra pequena, para conferência. */
+function ProblemaDoCupom({ c }: { c: CupomRecente }) {
+  const d = diagnosticoDoCupom(c)
+  if (!d) return null
+  return (
+    <div className="amarelo problema-cupom" data-testid="cupom-problema">
+      <p><b>O que está errado:</b> {d.problema}</p>
+      {d.itens.length > 0 && (
+        <ul data-testid="cupom-problema-itens">
+          {d.itens.map((it, i) => (
+            <li key={i}>
+              <span>{it.descricao}</span>{it.preco && <span className="sub"> · {it.preco}</span>}
+              {' — '}{it.proposta ? <>proposta: <span>{it.proposta}</span></> : 'sem proposta do sistema'}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p><b>Como resolver:</b> {d.solucao}</p>
+      {c.motivo && <p className="sub">Motivo registrado: <span>{c.motivo}</span></p>}
+    </div>
+  )
+}
 
 export default function Cupom() {
   const [forma, setForma] = useState<FormaCupom | null>(null)
@@ -149,7 +174,13 @@ export default function Cupom() {
         {enviando ? 'Enviando…' : 'Enviar'}
       </button>
       {erro && <p className="erro" role="alert">{erro}</p>}
-      {resultado && <p className={pedeAtencao(resultado) ? 'amarelo' : 'ok'} data-testid="resultado">{resultado.resumo}</p>}
+      {resultado && (
+        <p className={pedeAtencao(resultado) ? 'amarelo' : 'ok'} data-testid="resultado">
+          {resultado.estado === 'REVISAR'
+            ? <>Cupom recebido, mas NÃO foi lançado: {resultado.resumo}. Veja em “Últimos envios”, logo abaixo, o que está errado e como resolver.</>
+            : resultado.resumo}
+        </p>
+      )}
 
       <div className="grupo">Últimos envios</div>
       {falhaRecentes && <p className="erro" role="alert">Não consegui carregar os últimos envios.</p>}
@@ -165,7 +196,7 @@ export default function Cupom() {
                   <span><b>{ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}{valor && ` · ${valor}`}</span>
                   <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                 </button>
-                {c.estado === 'REVISAR' && c.motivo && <div className="sub">{c.motivo}</div>}
+                {c.estado === 'REVISAR' && <ProblemaDoCupom c={c} />}
                 {aberto && <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} />}
               </li>
             )

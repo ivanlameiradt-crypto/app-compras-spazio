@@ -71,6 +71,19 @@
 - **Ajuste (06/10, noite):** o editor das parcelas do boleto (MATEUS) e o "Como pagar" não abriam enquanto a nota esperava produto no SisChef. Agora abrem; o Lançar continua travado até os produtos
   estarem associados. O que você digita fica guardado neste aparelho e sobrevive a recarregar a página.
 
+## Noite de 06/10 — sua planilha de palavras-chave (no banco) e o que está pronto para publicar
+- **Planilha carregada no banco** (230 produtos: 227 com palavras-chave, 35 com nome corrigido), como você escreveu. Dois ajustes meus: "FARINHA DESÊMOLA" virou **"FARINHA DE SÊMOLA - INSUMOS (KG)"**
+  (parecia "de sêmola" sem espaço) e o queijo muçarela ganhou **"queijo muss"** (pedido seu). As duas linhas de MAIONESE que você apagou continuam na lista; me diga se é para escondê-las da busca.
+- **Pronto, mas AINDA NÃO publicado (espera o seu "pode publicar"):** a caixa de associação acha por palavra-chave e pelo nome corrigido, e **sugere** o produto pelas suas palavras ("queijo muss" = mussarela);
+  quando nada bate com todas as palavras mostra os mais parecidos (não termina em "nada"); a opção **"Lembrar esta descrição"** (marcada) guarda a descrição da nota como palavra-chave do produto para a próxima vez;
+  o painel de itens abre sozinho; o **botão Lançar apagado agora diz o motivo logo embaixo e qual produto associar no SisChef**; e, no cupom, cada envio parado mostra **"O que está errado" e "Como resolver"**.
+- **Por que o Lançar das 4 notas está apagado:** todas têm item sem produto **no SisChef**. Confirmar no app só guarda a sua escolha; o robô ainda **não aplica** a escolha no SisChef (etapa 2). Para lançar hoje:
+  associar os 6 itens no SisChef (e me avisar para eu atualizar a leitura).
+- **Cupom do ATACADAO (R$ 35,27) parado:** 2 itens (LIMAO SICILIANO, PEPINO JAPONES) sem produto **confirmado**; o robô nunca chuta. Falta você confirmar os 2 casamentos e dizer os pesos (kg) deles (o
+  sistema não guardou). Reenviar a foto não resolve.
+- **Seu pedido "confirmou → o robô lança" (nota e cupom)** é a **etapa 2**: ainda não existe. A primeira vez tem de ser **acompanhada por você, numa nota de valor baixo** (o SisChef guarda a associação para as
+  próximas notas do fornecedor). A planilha só **sugere**: ela não tem a conversão (UN×KG, caixa×kg).
+
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
    **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (depois trocada por "Lançamento fiscal", 3ª publicação) e o ✓ verde no painel de conferir.

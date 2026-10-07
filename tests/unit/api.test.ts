@@ -29,7 +29,7 @@ vi.mock('../../src/lib/supabase', () => ({
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  associarItem, catalogoProdutos, descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
+  associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
@@ -794,7 +794,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
       { produto_id: 88, produto: null, unidade: 'kg', semana_id: 2 },
       { produto_id: 99, produto: 'SÓ NA SEMANA VELHA (KG)', unidade: null, semana_id: 1 },
     ], error: null, status: 200 })
-    from.mockReturnValueOnce(c)
+    from.mockReturnValueOnce(c).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))   // 2ª leitura: cot_produto_busca (vazia)
     const r = await catalogoProdutos()
     expect(from).toHaveBeenCalledWith('itens_semana')
     expect(c.order).toHaveBeenCalledWith('semana_id', { ascending: false })
@@ -808,7 +808,58 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
 
   it('catalogoProdutos: falha de leitura vira ErroApi (a caixa mostra "não consegui carregar")', async () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 }))
+      .mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))
     await expect(catalogoProdutos()).rejects.toMatchObject({ name: 'ErroApi', status: 403 })
+  })
+
+  describe('catalogoProdutos: palavras-chave e nome corrigido do Ivan (cot_produto_busca)', () => {
+    const lista = () => cadeia({ data: [
+      { produto_id: 3469626, produto: 'LEITE CONDESSADO - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+      { produto_id: 1854713, produto: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+      { produto_id: 3138573, produto: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un', semana_id: 3 },
+    ], error: null, status: 200 })
+
+    it('junta as palavras-chave e o nome corrigido por produto (o nome do SisChef fica em nome_sischef); anotação de produto fora da lista não aparece', async () => {
+      const busca = cadeia({ data: [
+        { produto_id: '3469626', palavras: '  leite   semi condensado ', nome_corrigido: 'LEITE  CONDENSADO - INSUMOS (KG)' },
+        { produto_id: 1854713, palavras: 'queijo mussarela', nome_corrigido: null },
+        { produto_id: 3138573, palavras: null, nome_corrigido: 'ÓLEO DE SOJA - INSUMOS (UN)' },        // igual ao nome da lista: nada a corrigir
+        { produto_id: 999, palavras: 'produto que não está na lista desta semana', nome_corrigido: null },
+      ], error: null, status: 200 })
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(busca)
+      const r = await catalogoProdutos()
+      expect(from).toHaveBeenNthCalledWith(2, 'cot_produto_busca')
+      expect(busca.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido')
+      expect(r).toEqual([
+        { produto_id: 3469626, nome: 'LEITE CONDENSADO - INSUMOS (KG)', unidade: 'kg', nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)', palavras: 'leite semi condensado' },
+        { produto_id: 3138573, nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' },
+        { produto_id: 1854713, nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg', palavras: 'queijo mussarela' },
+      ])
+    })
+
+    it.each([['PGRST205'], ['42P01']])('App publicado antes da migração (tabela inexistente, código %s): o catálogo vem como sempre, sem palavras', async (code) => {
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(cadeia({ data: null, error: { code, message: 'relation "cot_produto_busca" does not exist' }, status: 404 }))
+      const r = await catalogoProdutos()
+      expect(r.map((p) => p.produto_id)).toEqual([3469626, 3138573, 1854713])
+      expect(r.every((p) => p.palavras === undefined && p.nome_sischef === undefined)).toBe(true)
+    })
+
+    it('qualquer outro erro nessa leitura NÃO é engolido (a caixa avisa que não carregou, em vez de funcionar sem palavras sem ninguém saber)', async () => {
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 }))
+      await expect(catalogoProdutos()).rejects.toMatchObject({ name: 'ErroApi', status: 403 })
+    })
+  })
+
+  it('lembrarDescricao chama cot_produto_lembrar com o produto e a descrição; devolve se acrescentou (null/false = não)', async () => {
+    rpc.mockResolvedValueOnce({ data: true, error: null })
+    expect(await lembrarDescricao(1854713, 'CÓD. FOR: 221430 QUEIJO MUSS ARGE')).toBe(true)
+    expect(rpc).toHaveBeenLastCalledWith('cot_produto_lembrar', { p_produto_id: 1854713, p_texto: 'CÓD. FOR: 221430 QUEIJO MUSS ARGE' })
+    rpc.mockResolvedValueOnce({ data: false, error: null })
+    expect(await lembrarDescricao(1854713, 'x')).toBe(false)
+    rpc.mockResolvedValueOnce({ data: null, error: null })
+    expect(await lembrarDescricao(1854713, 'x')).toBe(false)
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'apenas o administrador pode fazer isso' } })
+    await expect(lembrarDescricao(1854713, 'x')).rejects.toMatchObject({ name: 'ErroApi' })
   })
 
   it('associarItem chama cot_nfe_associar com a chave, o número do item e o produto (nulo desfaz)', async () => {

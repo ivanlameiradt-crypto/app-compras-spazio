@@ -3,7 +3,7 @@ import {
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
   AVISO_ASSOCIACAO_SO_NO_APP, AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, bloqueioDeProduto,
-  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas,
+  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -78,6 +78,16 @@ describe('notaSefazRegras', () => {
       expect(decisaoDoItem(n, n.itens[2])).toBeNull()
       expect(decisaoDoItem(nota({ itens: [sem(2)] }), sem(2))).toBeNull()                             // nota sem decisões
       expect(decisaoDoItem(nota({ itens: [sem(2)], associacoes_app: null }), sem(2))).toBeNull()
+    })
+
+    it('pendenciasNoSischef: o que o Ivan precisa associar LÁ (só itens sem produto de verdade), com o produto que ele confirmou no app, se confirmou', () => {
+      const associado = { descricao: 'Z', qtd: 1, unidade_sischef: 'UN', produto_id: 9, associacao: 'sischef', n: 1 }
+      const n = nota({ itens: [associado, { ...sem(2), descricao: 'A' }, { ...sem(3), descricao: 'B' }], associacoes_app: { '3': dec(5) } })
+      expect(pendenciasNoSischef(n)).toEqual([
+        { descricao: 'A', codigo: null, nome: null },                       // ainda sem escolha no app
+        { descricao: 'B', codigo: 5, nome: 'PRODUTO 5' },                   // confirmado no app: é este que se associa no SisChef
+      ])
+      expect(pendenciasNoSischef(nota())).toEqual([])                       // tudo associado: nada a fazer lá
     })
 
     it('se o item já vem associado de verdade do SisChef, vale o SisChef (a decisão do app é ignorada); item "painel" ainda conta', () => {

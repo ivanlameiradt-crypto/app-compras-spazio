@@ -426,3 +426,74 @@ describe('Cupom — "Últimos envios"', () => {
     expect(screen.queryByText('resto de um motivo antigo')).not.toBeInTheDocument()
   })
 })
+
+describe('Cupom — "precisa de você" diz o que está errado e como resolver (pedido do Ivan, 06/10 à noite)', () => {
+  const ITENS_ATACADAO = [
+    { descricao_cupom: 'LIMAO SICILIANO', unidade_cupom: 'KG', valor_unitario: 13.9, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null,
+      proposta: { insumo_id: '3484974', insumo_nome: 'LIMÃO SICILIANO - INSUMOS' } },
+    { descricao_cupom: 'PEPINO JAPONES', unidade_cupom: 'KG', valor_unitario: 5.79, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null,
+      proposta: { insumo_id: '3484991', insumo_nome: 'PEPINO JAPONÊS - INSUMOS' } },
+    { descricao_cupom: 'LIMAO TAITI TROPICAL', unidade_cupom: 'KG', valor_unitario: 9.9, desconto_item: 5.51, entrada_estoque: 2.884, sugestao_produto: { id: '3469643' },
+      casado_por: 'descricao', proposta: null },
+  ]
+
+  it('o cupom do ATACADAO: o bloco aparece SEM abrir o detalhe, com o problema, os itens com a proposta, a solução e o motivo registrado', async () => {
+    m.cuponsRecentes.mockResolvedValue([recente({ id: 'aaf54e6f', estado: 'REVISAR', emitente_nome: 'ATACADAO S.A.', valor_a_pagar: 35.27,
+      motivo: '2 item(ns) sem casamento confirmado — confira no Code', itens: ITENS_ATACADAO })])
+    render(<Cupom />)
+    const bloco = await screen.findByTestId('cupom-problema')
+    expect(bloco).toHaveTextContent('O que está errado: 2 itens ainda não têm produto confirmado no SisChef')
+    const itens = within(screen.getByTestId('cupom-problema-itens')).getAllByRole('listitem')
+    expect(itens).toHaveLength(2)                                                            // o 3º (LIMAO TAITI) já está confirmado
+    expect(itens[0]).toHaveTextContent('LIMAO SICILIANO')
+    expect(itens[0]).toHaveTextContent('proposta: LIMÃO SICILIANO - INSUMOS · cód. 3484974')
+    expect(itens[1]).toHaveTextContent(/PEPINO JAPONES · R\$\s5,79 por KG — proposta: PEPINO JAPONÊS - INSUMOS · cód\. 3484991/)
+    expect(bloco).toHaveTextContent('Como resolver: Peça ao Claude: “confirma os produtos do cupom do ATACADAO S.A.”')
+    expect(bloco).toHaveTextContent('o peso (kg) desses itens não ficou guardado')
+    expect(screen.getByText('2 item(ns) sem casamento confirmado — confira no Code')).toBeInTheDocument()   // o motivo técnico continua à mostra (pequeno)
+    expect(bloco).toHaveClass('amarelo')
+    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()            // o detalhe dos itens segue fechado
+  })
+
+  it('foto ilegível: diz para tirar outra foto', async () => {
+    m.cuponsRecentes.mockResolvedValue([recente({ estado: 'REVISAR', emitente_nome: null, valor_a_pagar: 0, motivo: 'não consegui ler a foto do cupom' })])
+    render(<Cupom />)
+    const bloco = await screen.findByTestId('cupom-problema')
+    expect(bloco).toHaveTextContent('A foto não ficou legível')
+    expect(bloco).toHaveTextContent('Tire outra foto, com o cupom inteiro, esticado e com boa luz, e envie de novo.')
+    expect(screen.queryByTestId('cupom-problema-itens')).not.toBeInTheDocument()
+  })
+
+  it('só os REVISAR têm o bloco (o motivo de um LANCADO/na fila é resto de estado antigo)', async () => {
+    m.cuponsRecentes.mockResolvedValue([
+      recente({ id: 'a', estado: 'REVISAR', motivo: 'não consegui ler o total do cupom' }),
+      recente({ id: 'b', estado: 'LANCADO', motivo: 'resto de um motivo antigo' }),
+      recente({ id: 'c', estado: 'PENDENTE', motivo: 'outro resto' }),
+    ])
+    render(<Cupom />)
+    await screen.findAllByTestId('cupom-recente')
+    expect(screen.getAllByTestId('cupom-problema')).toHaveLength(1)
+  })
+
+  it('logo depois de enviar um cupom que foi para REVISAR: diz que NÃO foi lançado e manda olhar o motivo em "Últimos envios"', async () => {
+    m.enviarCupom.mockResolvedValue({ cupom_id: 'c2', resumo: '2 item(ns) para você conferir', estado: 'REVISAR', disparo_ok: false })
+    render(<Cupom />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Sem cartão' }))
+    await userEvent.upload(screen.getByLabelText('Anexar arquivo do cupom'), arquivo())
+    await userEvent.click(await enviarPronto())
+    const resultado = await screen.findByTestId('resultado')
+    expect(resultado).toHaveTextContent('Cupom recebido, mas NÃO foi lançado: 2 item(ns) para você conferir.')
+    expect(resultado).toHaveTextContent('Veja em “Últimos envios”, logo abaixo, o que está errado e como resolver.')
+    expect(resultado).toHaveClass('amarelo')
+  })
+
+  it('envio que deu certo mantém o resumo de sempre (sem o texto de "não foi lançado")', async () => {
+    render(<Cupom />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Sem cartão' }))
+    await userEvent.upload(screen.getByLabelText('Anexar arquivo do cupom'), arquivo())
+    await userEvent.click(await enviarPronto())
+    const resultado = await screen.findByTestId('resultado')
+    expect(resultado).toHaveTextContent('enviado para lançar')
+    expect(resultado).not.toHaveTextContent('NÃO foi lançado')
+  })
+})
