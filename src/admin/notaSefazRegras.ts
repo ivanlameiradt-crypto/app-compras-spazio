@@ -324,7 +324,8 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   }
   const f = resumoFinanceiro(n)
   let financeiro: string | null = null
-  if (!f.lido) financeiro = 'Boletos ainda não lidos do XML (próxima leitura)'
+  // Regra do Ivan (07/10): com o XML por ler, o que ele digitar no app vale — a nota segue NÃO pronta (não há boleto conferido), mas a tela abre o editor.
+  if (!f.lido) financeiro = 'Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)'
   else if (f.parcelas.length === 0) financeiro = 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'
   else if (!f.bate) financeiro = 'Os boletos não fecham com o valor da nota'
   if (financeiro) motivos.push(financeiro)
@@ -360,9 +361,16 @@ export function parseValorBr(texto: string): number | null {
 }
 export const formatarValorBr = (v: number): string => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** O editor de parcelas aparece quando a forma é Boleto e o XML foi lido e NÃO traz duplicatas. */
+/**
+ * O editor de parcelas aparece quando a forma é Boleto e o XML NÃO traz boletos que valham: ou o XML ainda não foi lido (parcelas null)
+ * ou foi lido e veio sem duplicatas (parcelas []). Regra do Ivan (07/10/2026): "Quando não vier informando nada na nota, o que vai prevalecer
+ * é o que eu determinar dentro do app. Se eu determinar que essa compra foi feita via boleto, eu vou clicar no botão boleto e você vai me
+ * abrir as opções de eu botar a quantidade de parcelas, data do vencimento e o valor, e eu vou confirmar para lançar." Antes o editor só
+ * abria com o XML lido e vazio; com o XML por ler o Ivan ficava esperando a próxima leitura sem poder fazer nada. Se a leitura trouxer
+ * boletos de verdade (array com itens), eles prevalecem: o editor não abre, e o robô para em "revisar" se receber parcelas digitadas.
+ */
 export const precisaDigitarParcelas = (n: NotaSefazLista, forma: string): boolean =>
-  forma === 'boleto' && Array.isArray(n.parcelas) && n.parcelas.length === 0
+  forma === 'boleto' && (n.parcelas == null || (Array.isArray(n.parcelas) && n.parcelas.length === 0))
 
 /** Linhas que o editor mostra ao abrir: o que já foi digitado (nota que voltou do robô) ou uma linha em branco. */
 export function linhasIniciais(n: NotaSefazLista): LinhaParcela[] {

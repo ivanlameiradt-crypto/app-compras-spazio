@@ -16,6 +16,12 @@ const nota = (extra: Partial<NotaSefazLista>): NotaSefazLista => ({
   valor_nf: 100, situacao: 'na_fila', lancada_em: null, nf_sischef: null, itens: [item()], ...extra,
 })
 const aLancar = (...n: NotaSefazLista[]) => m.notasALancar.mockResolvedValue(n)
+/**
+ * XML já lido pelo robô, com 1 boleto que fecha com os R$ 100 da nota. Regra do Ivan (07/10): com o XML por ler (`parcelas` null, o padrão da
+ * fixture `nota`) e Boleto marcado, o Ivan DIGITA as parcelas e o Lançar só libera quando a soma fecha. Os testes que não são sobre parcelas e
+ * querem uma nota em boleto que já dá para lançar usam esta leitura.
+ */
+const LIDA: Partial<NotaSefazLista> = { parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 100 }] }
 const comoPagar = () => screen.getByLabelText('Como pagar') as HTMLSelectElement
 const botaoLancar = () => screen.getByRole('button', { name: 'Lançar' })
 
@@ -208,17 +214,18 @@ describe('NotaSefaz', () => {
       aLancar(nota({}))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
+      await userEvent.selectOptions(comoPagar(), 'dinheiro') // regra 07/10: em Boleto com o XML por ler o Lançar espera as parcelas; à vista não
       await userEvent.click(botaoLancar())
       await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
       expect(screen.queryByText(/Confirmar\?/)).not.toBeInTheDocument()
       await userEvent.click(botaoLancar())
-      await userEvent.selectOptions(comoPagar(), 'dinheiro')
+      await userEvent.selectOptions(comoPagar(), 'tesouraria')
       expect(screen.queryByText(/Confirmar\?/)).not.toBeInTheDocument()
       expect(m.lancarNota).not.toHaveBeenCalled()
     })
 
     it('duplo toque em Confirmar não manda duas vezes (botão trava enquanto envia)', async () => {
-      aLancar(nota({}))
+      aLancar(nota(LIDA))
       let liberar!: () => void
       m.lancarNota.mockImplementation(() => new Promise<void>((r) => { liberar = r }))
       render(<NotaSefaz />)
@@ -232,7 +239,7 @@ describe('NotaSefaz', () => {
     })
 
     it('erro do servidor aparece em português e a nota pode ser tentada de novo', async () => {
-      aLancar(nota({}))
+      aLancar(nota(LIDA))
       m.lancarNota.mockRejectedValue(new Error('Não consegui chamar o robô agora, tente de novo.'))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
@@ -271,7 +278,7 @@ describe('NotaSefaz', () => {
     })
 
     it('nota boa (todos os itens com produto) não tem bloqueio', async () => {
-      aLancar(nota({ itens: [item(), item({ associacao: null })] }))
+      aLancar(nota({ ...LIDA, itens: [item(), item({ associacao: null })] }))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
       expect(screen.queryByTestId('bloqueio-nota')).not.toBeInTheDocument()
@@ -299,7 +306,7 @@ describe('NotaSefaz', () => {
     })
 
     it("'revisar' com outro motivo mostra o motivo como veio e deixa tentar de novo", async () => {
-      aLancar(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'item   X sem  unidade' }))
+      aLancar(nota({ ...LIDA, lancamento_estado: 'revisar', lancamento_motivo: 'item   X sem  unidade' }))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
       expect(screen.getByTestId('status-nota')).toHaveTextContent('Precisa de você: item X sem unidade')
@@ -307,7 +314,7 @@ describe('NotaSefaz', () => {
     })
 
     it("'ensaio_ok': mostra o que o robô faria e nada foi criado", async () => {
-      aLancar(nota({ lancamento_estado: 'ensaio_ok', lancamento_motivo: 'criaria compra com 3 itens e 3 boletos' }))
+      aLancar(nota({ ...LIDA, lancamento_estado: 'ensaio_ok', lancamento_motivo: 'criaria compra com 3 itens e 3 boletos' }))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
       expect(screen.getByTestId('status-nota')).toHaveTextContent('Ensaio ok (nada foi criado): criaria compra com 3 itens e 3 boletos')
@@ -324,7 +331,7 @@ describe('NotaSefaz', () => {
 
     it("'lancando' preso há mais de 30 min: avisa para conferir no SisChef e deixa lançar de novo", async () => {
       const velho = new Date(Date.now() - 31 * 60_000).toISOString()
-      aLancar(nota({ lancamento_estado: 'lancando', lancamento_estado_em: velho }))
+      aLancar(nota({ ...LIDA, lancamento_estado: 'lancando', lancamento_estado_em: velho }))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
       expect(screen.getByTestId('status-nota')).toHaveTextContent('O robô não respondeu em 30 min. Confira no SisChef')
@@ -349,7 +356,7 @@ describe('NotaSefaz', () => {
       const velho = new Date(Date.now() - 31 * 60_000).toISOString()
       aLancar(
         nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'lancando', lancamento_estado_em: velho }),
-        nota({ chave: '2'.repeat(44), emitente: 'B LTDA' }),
+        nota({ ...LIDA, chave: '2'.repeat(44), emitente: 'B LTDA' }),
       )
       render(<NotaSefaz />)
       const [, livreB] = await screen.findAllByTestId('nota-a-lancar')
@@ -360,7 +367,7 @@ describe('NotaSefaz', () => {
     it('enquanto um Confirmar está enviando, as outras notas ficam bloqueadas (sem 2 disparos juntos)', async () => {
       let liberar: () => void = () => undefined
       m.lancarNota.mockImplementation(() => new Promise<void>((ok) => { liberar = ok }))
-      aLancar(nota({ chave: '1'.repeat(44), emitente: 'A LTDA' }), nota({ chave: '2'.repeat(44), emitente: 'B LTDA' }))
+      aLancar(nota({ ...LIDA, chave: '1'.repeat(44), emitente: 'A LTDA' }), nota({ ...LIDA, chave: '2'.repeat(44), emitente: 'B LTDA' }))
       render(<NotaSefaz />)
       const [a, b] = await screen.findAllByTestId('nota-a-lancar')
       await userEvent.click(within(a).getByRole('button', { name: 'Lançar' }))
@@ -525,16 +532,69 @@ describe('NotaSefaz', () => {
       expect(await screen.findByTestId('nota-pronta')).toHaveTextContent('Fornecedor aprendido (3 notas seguidas lançadas em boleto sem problema)')
     })
 
-    it.each([
-      ['boletos que não fecham', { parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 10 }] }, 'Os boletos não fecham com o valor da nota'],
-      ['XML não lido', { parcelas: null }, 'Boletos ainda não lidos do XML (próxima leitura)'],
-    ])('%s: não é pronta, avisa o motivo e mantém o Como pagar', async (_n, extra, motivo) => {
-      aLancar(pronta(extra as Partial<NotaSefazLista>))
+    it('boletos que não fecham: não é pronta, avisa o motivo e mantém o Como pagar', async () => {
+      aLancar(pronta({ parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 10 }] }))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
       expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
-      expect(screen.getByTestId('aviso-financeiro')).toHaveTextContent(motivo)
+      expect(screen.getByTestId('aviso-financeiro')).toHaveTextContent('Os boletos não fecham com o valor da nota')
       expect(comoPagar()).toBeInTheDocument()
+    })
+
+    // Regra do Ivan (07/10): "quando não vier informando nada na nota, o que vai prevalecer é o que eu determinar dentro do app". Antes, com o XML por
+    // ler, a tela só avisava "próxima leitura" e o Lançar em Boleto ia sem parcelas; agora, em Boleto, abre o editor e o que ele digitar vale.
+    describe('XML ainda não lido (parcelas null) — regra do Ivan, 07/10', () => {
+      const digitar = async (i: number, venc: string, valor: string) => {
+        fireEvent.change(screen.getByLabelText(`Vencimento da parcela ${i}`), { target: { value: venc } })
+        await userEvent.type(screen.getByLabelText(`Valor da parcela ${i}`), valor)
+      }
+
+      it('com Boleto: não é pronta, abre o editor com a ajuda de "XML não lido" (sem o aviso financeiro duplicado) e mantém o Como pagar', async () => {
+        aLancar(pronta({ parcelas: null }))
+        render(<NotaSefaz />)
+        await screen.findByTestId('nota-a-lancar')
+        expect(comoPagar().value).toBe('boleto')
+        expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('aviso-financeiro')).not.toBeInTheDocument()
+        const editor = screen.getByTestId('editor-parcelas')
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido'))
+          .toHaveTextContent('O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.')
+        expect(editor).not.toHaveTextContent('O XML desta nota não traz os boletos') // isso ainda não se sabe: o XML nem foi lido
+        expect(within(screen.getByTestId('conferir')).getByTestId('fin-nao-lido'))
+          .toHaveTextContent('O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.')
+      })
+
+      it('com Boleto: o Lançar fica apagado até a soma fechar; depois lança com as parcelas digitadas', async () => {
+        aLancar(pronta({ parcelas: null }))
+        render(<NotaSefaz />)
+        await screen.findByTestId('editor-parcelas')
+        expect(botaoLancar()).toBeDisabled()
+        await digitar(1, '2026-11-05', '60,00')
+        expect(botaoLancar()).toBeDisabled()                                            // faltam 40
+        expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Faltam 40,00 para fechar com o valor da nota')
+        await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+        await digitar(2, '2026-12-05', '40,00')
+        expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('bate')
+        expect(botaoLancar()).toBeEnabled()
+        await userEvent.click(botaoLancar())
+        expect(screen.getByTestId('parcelas-confirmar')).toHaveTextContent('Parcela 2 · vence 05/12/2026')
+        await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto', [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-12-05', valor: 40 }]))
+      })
+
+      it('com PIX (ou outra forma que não é boleto): sem editor; o aviso financeiro explica a regra e o Lançar vai sem parcelas', async () => {
+        aLancar(pronta({ parcelas: null }))
+        render(<NotaSefaz />)
+        await screen.findByTestId('editor-parcelas')
+        await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')
+        expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+        expect(screen.getByTestId('aviso-financeiro'))
+          .toHaveTextContent('Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)')
+        expect(botaoLancar()).toBeEnabled()
+        await userEvent.click(botaoLancar())
+        await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'pix:pangbank|ij'))
+      })
     })
 
     it('nota sem boleto no XML: não é pronta; em vez do aviso aparece o editor para digitar as parcelas (e o Como pagar segue)', async () => {
@@ -638,7 +698,7 @@ describe('NotaSefaz', () => {
       render(<NotaSefaz />)
       const paineis = await screen.findAllByTestId('conferir')
       expect(within(paineis[0]).getByTestId('fin-total')).toHaveTextContent(/diferença de R\$\s10,00/)
-      expect(within(paineis[1]).getByTestId('fin-nao-lido')).toBeInTheDocument()
+      expect(within(paineis[1]).getByTestId('fin-nao-lido')).toHaveTextContent('O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo')
       expect(within(paineis[2]).getByTestId('fin-sem-boleto')).toBeInTheDocument()
     })
   })
@@ -751,11 +811,15 @@ describe('NotaSefaz', () => {
       await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'cartao'))
     })
 
-    it('nota com boletos no XML, ou XML ainda não lido, não mostra o editor', async () => {
+    it('nota com boletos no XML não mostra o editor (os boletos do XML prevalecem); com o XML ainda não lido, mostra (regra do Ivan, 07/10)', async () => {
+      // até 06/10 o XML não lido também ficava SEM editor (esperava a próxima leitura); agora o que o Ivan digitar vale
       aLancar(semDuplicata({ parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 100 }] }), semDuplicata({ chave: '8'.repeat(44), parcelas: null }))
       render(<NotaSefaz />)
-      await screen.findAllByTestId('nota-a-lancar')
-      expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+      const [comBoleto, naoLida] = await screen.findAllByTestId('nota-a-lancar')
+      expect(within(comBoleto).queryByTestId('editor-parcelas')).not.toBeInTheDocument()
+      const editor = within(naoLida).getByTestId('editor-parcelas')
+      expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toBeInTheDocument()
+      expect(editor).toHaveTextContent('O XML da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)') // o aviso da MATEUS continua
     })
 
     it('fornecedor fora da regra provisória: aviso genérico, mesmo editor', async () => {
@@ -1309,7 +1373,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         })
 
         it('nota em KG × produto "un" confirmado SEM conversão: o Lançar NÃO trava (o robô confere no SisChef) e a linha do item avisa que a unidade não foi confirmada', async () => {
-          aLancar(nota({ itens: [emKg()], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un') } }))
+          aLancar(nota({ ...LIDA, itens: [emKg()], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un') } }))
           render(<NotaSefaz />)
           await screen.findByTestId('nota-a-lancar')
           expect(screen.queryByTestId('bloqueio-nota')).not.toBeInTheDocument()
@@ -1323,7 +1387,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         it('nota em KG × produto "un" confirmado COM conversão 2: a linha diz "1 KG = 2 na unidade do produto no SisChef" (nunca "= 2 UN") e não avisa de unidade incerta', async () => {
           // Revisão adversarial: a linha dizia "1 KG = 2 UN", nomeando justamente a unidade em que o app não confia ("un" é chute pelo nome; no
           // SisChef pode ser PCT). Agora a linha, o ✓ e o bloco do Lançar usam a mesma frase do eco "Vai gravar".
-          aLancar(nota({ itens: [emKg()], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un', 2) } }))
+          aLancar(nota({ ...LIDA, itens: [emKg()], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un', 2) } }))
           render(<NotaSefaz />)
           await screen.findByTestId('nota-a-lancar')
           expect(botaoLancar()).toBeEnabled()
@@ -1458,7 +1522,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         })
 
         it('nota SEM unidade já confirmada no app: o Lançar libera, mas a linha do item avisa que o robô vai parar antes de associar (e a saída)', async () => {
-          aLancar(nota({ itens: [sem(1, { unidade_sischef: null })], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un') } }))
+          aLancar(nota({ ...LIDA, itens: [sem(1, { unidade_sischef: null })], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un') } }))
           render(<NotaSefaz />)
           await screen.findByTestId('nota-a-lancar')
           expect(botaoLancar()).toBeEnabled()
@@ -1468,7 +1532,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         })
 
         it('produto novo (fora da lista) confirmado sem conversão: a linha do "lancar-associa" também avisa que a unidade não foi confirmada', async () => {
-          aLancar(nota({ itens: [emKg()], associacoes_app: { '1': { produto_id: 3476455, produto_nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS', unidade: null } } }))
+          aLancar(nota({ ...LIDA, itens: [emKg()], associacoes_app: { '1': { produto_id: 3476455, produto_nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS', unidade: null } } }))
           render(<NotaSefaz />)
           await screen.findByTestId('nota-a-lancar')
           expect(botaoLancar()).toBeEnabled()
@@ -1493,7 +1557,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     })
 
     it('nota já com a escolha confirmada (decisão completa): ✓ + "confirmado no app", sem campo; nada trava e o Lançar fica liberado (etapa 2)', async () => {
-      aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
+      aLancar(nota({ ...LIDA, itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
       render(<NotaSefaz />)
       const item = (await painel()).getByTestId('conferir-item')
       expect(within(item).getByTestId('item-confirmado')).toBeInTheDocument()
@@ -1510,10 +1574,11 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       const lata = (extra: Partial<ItemNotaSefaz> = {}) => sem(1, { descricao: 'CÓD. FOR: 249693 LEITE COND TIROL SEMIDES TP 395G', qtd: 24, unidade_sischef: 'UN', ...extra })
 
       it('item sem produto no SisChef com decisão completa: o Lançar habilita, lança como sempre e o bloco "lancar-associa" diz o que o robô vai associar', async () => {
-        aLancar(nota({ itens: [item(), sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
+        aLancar(nota({ ...LIDA, itens: [item(), sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
         render(<NotaSefaz />)
         await screen.findByTestId('nota-a-lancar')
-        expect(comoPagar().value).toBe('boleto')
+        // XML lido com boleto que fecha + decisão completa = nota "pronta" (regra 2): Boleto fixo em vez do Como pagar
+        expect(screen.getByTestId('pagamento-fixo')).toHaveTextContent('Pagamento: Boleto (1 parcela)')
         expect(botaoLancar()).toBeEnabled()
         const aviso = screen.getByTestId('lancar-associa')
         expect(aviso).toHaveClass('amarelo')
@@ -1534,7 +1599,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
 
       it('decisão completa COM conversão (nota em UN, produto em KG): habilita e o bloco mostra "1 UN = 0,395 KG" com o nome corrigido da lista', async () => {
         m.catalogoProdutos.mockResolvedValue([{ produto_id: LEITE_COND, nome: 'LEITE CONDENSADO - INSUMOS (KG)', nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)', unidade: 'kg' }])
-        aLancar(nota({ itens: [lata()], associacoes_app: { '1': decisao(LEITE_COND, 'LEITE CONDESSADO - INSUMOS (KG)', 'kg', 0.395) } }))
+        aLancar(nota({ ...LIDA, itens: [lata()], associacoes_app: { '1': decisao(LEITE_COND, 'LEITE CONDESSADO - INSUMOS (KG)', 'kg', 0.395) } }))
         render(<NotaSefaz />)
         await screen.findByTestId('nota-a-lancar')
         expect(botaoLancar()).toBeEnabled()
@@ -1563,7 +1628,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       })
 
       it('decisão com conversão mas produto de unidade desconhecida (produto novo, fora da lista): o app não exige nada, o robô decide com o cadastro vivo', async () => {
-        aLancar(nota({ itens: [lata()], associacoes_app: { '1': { produto_id: 3476455, produto_nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS', unidade: null } } }))
+        aLancar(nota({ ...LIDA, itens: [lata()], associacoes_app: { '1': { produto_id: 3476455, produto_nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS', unidade: null } } }))
         render(<NotaSefaz />)
         await screen.findByTestId('nota-a-lancar')
         expect(botaoLancar()).toBeEnabled()
