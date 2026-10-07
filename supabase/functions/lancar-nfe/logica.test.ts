@@ -5,9 +5,12 @@ const AGORA = new Date('2026-10-06T12:00:00.000Z')
 const NOTA: NotaReservada = {
   chave: CHAVE, emitente: 'OLINDA DISTRI E COM DE ALIMENTOS LTDA', numero: '001415976', emissao: '2026-10-03',
   valor_nf: '1516.05', forma_pagamento: 'boleto',
-  itens: [{ descricao: 'CÓD. FOR: 563731 REQ. CREAM CHEESE - INSUMOS', produto_id: '3469783', associacao: 'sischef',
+  itens: [{ n: 1, descricao: 'CÓD. FOR: 563731 REQ. CREAM CHEESE - INSUMOS', produto_id: '3469783', associacao: 'sischef',
             qtd: 30, unidade_sischef: 'KG' }],
 }
+/** Decisão do Ivan no app (cot_nfe.associacoes_app) como o banco a grava: lata de 395 g, NF em UN e produto em KG → conversão 0,395. */
+const DECISAO_LATA = { produto_id: 3138573, produto_nome: 'LEITE CONDENSADO - INSUMOS', unidade: 'kg', conversao: 0.395, origem: 'lista',
+                       por: 'ivan@spazio.com', em: '2026-10-06T11:00:00+00:00' }
 
 function fakeDeps(over: Partial<Deps> = {}): Deps & { reservas: unknown[][]; disparos: string[]; soltas: string[] } {
   const reservas: unknown[][] = []
@@ -49,11 +52,39 @@ describe('filtroReservavel (compara-e-troca da reserva)', () => {
 })
 
 describe('montarNotaJson (a nota que o robô recebe)', () => {
-  it('leva a forma escolhida e os itens com produto/associação', () => {
+  it('leva a forma escolhida e os itens com n e produto/associação; sem decisão do app, associacoes_app vai null (= hoje)', () => {
     const n = JSON.parse(montarNotaJson(NOTA))
     expect(n).toMatchObject({ chave: CHAVE, numero: '001415976', emissao: '2026-10-03', forma_pagamento: 'boleto' })
-    expect(n.itens[0]).toEqual({ descricao: NOTA.itens![0].descricao, produto_id: '3469783', associacao: 'sischef',
+    expect(n.itens[0]).toEqual({ n: 1, descricao: NOTA.itens![0].descricao, produto_id: '3469783', associacao: 'sischef',
                                  qtd: 30, unidade_sischef: 'KG' })
+    expect(n).toHaveProperty('associacoes_app', null) // a chave existe sempre: o robô não precisa adivinhar se a coluna veio
+  })
+
+  it('etapa 2: a decisão do app vai inteira, como veio do banco (com a conversão); cada item leva o seu n (null se a cot_nfe não o traz)', () => {
+    const decisoes = { '2': DECISAO_LATA, '3': { ...DECISAO_LATA, produto_id: 3469783, produto_nome: 'REQ. CREAM CHEESE - INSUMOS', conversao: null } }
+    const nota: NotaReservada = {
+      ...NOTA,
+      associacoes_app: decisoes,
+      itens: [
+        NOTA.itens![0],
+        { n: 2, descricao: 'CÓD. FOR: 11 LEITE CONDENSADO LATA 395G', qtd: 24, unidade_sischef: 'UN' }, // sem produto: a decisão "2" é dele
+        { descricao: 'CÓD. FOR: 12 ITEM DE COT_NFE ANTIGA', qtd: 1, unidade_sischef: 'UN' }, // sem n: o robô não acha decisão para ele
+      ],
+    }
+    const n = JSON.parse(montarNotaJson(nota))
+    expect(n.associacoes_app).toEqual(decisoes)
+    expect(n.itens.map((it: { n: number | null }) => it.n)).toEqual([1, 2, null])
+    expect(n.itens[1]).toEqual({ n: 2, descricao: 'CÓD. FOR: 11 LEITE CONDENSADO LATA 395G', produto_id: null, associacao: null,
+                                 qtd: 24, unidade_sischef: 'UN' })
+  })
+
+  it('associacoes_app null no banco (decisão desfeita) vai null, não {}', () => {
+    expect(JSON.parse(montarNotaJson({ ...NOTA, associacoes_app: null })).associacoes_app).toBeNull()
+  })
+
+  it('a decisão de item que JÁ tem produto no SisChef também é repassada: quem a ignora é o robô (as travas ficam num lugar só)', () => {
+    const decisoes = { '1': { ...DECISAO_LATA, produto_id: 999 } } // o item 1 da NOTA já tem produto_id 3469783 no SisChef
+    expect(JSON.parse(montarNotaJson({ ...NOTA, associacoes_app: decisoes })).associacoes_app).toEqual(decisoes)
   })
 })
 
@@ -64,6 +95,13 @@ describe('tratar (o "Lançar" de uma nota)', () => {
     expect(r).toEqual({ status: 202, corpo: { ok: true, chave: CHAVE, forma: 'pix:bradesco|ij' } })
     expect(d.reservas).toEqual([[CHAVE, 'pix:bradesco|ij', '2026-10-06T12:00:00.000Z', '2026-10-06T11:30:00.000Z', null]])
     expect(JSON.parse(d.disparos[0]).forma_pagamento).toBe('pix:bradesco|ij')
+  })
+
+  it('etapa 2: a decisão do app lida na reserva (coluna associacoes_app) vai no nota_json do disparo', async () => {
+    const decisoes = { '1': DECISAO_LATA }
+    const d = fakeDeps({ async reservar(...a) { return { ...NOTA, forma_pagamento: a[1] as string, associacoes_app: decisoes } } })
+    expect((await tratar({ chave: CHAVE, forma: 'boleto' }, 'a@b', d)).status).toBe(202)
+    expect(JSON.parse(d.disparos[0]).associacoes_app).toEqual(decisoes)
   })
 
   it('quem não é admin ativo é recusado antes de qualquer reserva', async () => {

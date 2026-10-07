@@ -8,12 +8,18 @@
 // junto e dispara o lancar-nfe.yml do robô com a nota pronta (nota_json) em modo 'real'. Quem decide se é real de
 // verdade é a trava MOTOR_NFE_LIGADO do robô: desligada, ele roda em ensaio e não cria nada. Se o disparo falhar, a
 // reserva é solta (a nota volta a ficar disponível).
+//
+// Etapa 2 ("confirmou no app → pode lançar"): a nota vai ao robô com `associacoes_app` (a decisão do Ivan para item sem produto
+// no SisChef, por nº do item) e cada item com o seu `n`. É o ROBÔ quem aplica a associação na tela do SisChef (e ignora a decisão
+// de item que já tem produto); aqui só se repassa o que está no banco, sem filtrar.
 
 export interface Corpo { chave?: unknown; forma?: unknown; parcelas?: unknown }
 /** Parcela digitada pelo Ivan quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS). */
 export interface ParcelaManual { vencimento: string; valor: number }
 export interface UsuarioLinha { papel: string; ativo: boolean }
 export interface ItemNota {
+  /** Número do item na NF (1, 2, 3…), gravado pela sincronização: é por ele que a decisão do app (associacoes_app) liga ao item. */
+  n?: number | null
   descricao?: string | null
   produto_id?: string | number | null
   associacao?: string | null
@@ -30,6 +36,10 @@ export interface NotaReservada {
   itens: ItemNota[] | null
   /** O que o Ivan digitou (gravado na reserva); null = nada digitado. */
   parcelas_manuais?: ParcelaManual[] | null
+  /** Decisões do Ivan no app para itens sem produto no SisChef, por nº do item ("1", "2"…): { produto_id, produto_nome, unidade,
+   *  conversao, origem, por, em } (migração 20261210000001; a conversão é da etapa 2). Vai inteira ao robô, como veio do banco;
+   *  null/ausente = nenhuma decisão. */
+  associacoes_app?: Record<string, unknown> | null
 }
 /** O que a função precisa saber da nota ANTES de reservar, para conferir as parcelas digitadas. */
 export interface NotaParaParcelas { valor_nf: number | string | null; parcelas: unknown }
@@ -102,14 +112,21 @@ export function filtroReservavel(limiteIso: string): string {
     `and(lancamento_estado.eq.lancando,lancamento_em.lt."${limiteIso}")`
 }
 
-/** A nota pronta para o robô (o `nota_json` do workflow): só o que o lancar_nfe_nuvem.py usa. */
+/**
+ * A nota pronta para o robô (o `nota_json` do workflow): só o que o lancar_nfe_nuvem.py usa.
+ * Etapa 2: vão também `associacoes_app` (o objeto inteiro, ou null) e o `n` de cada item (ou null quando a cot_nfe não o traz): é por
+ * `associacoes_app[str(n)]` que o robô acha a decisão do app e associa o produto na tela do SisChef antes de importar. Nada é filtrado
+ * aqui de propósito: o robô é fail-closed e ignora a decisão de item que já tem produto no SisChef (nunca sobrepõe), então repassar
+ * tudo é seguro e deixa as travas num lugar só. Sem decisão, `associacoes_app: null` = o comportamento de hoje.
+ */
 export function montarNotaJson(n: NotaReservada): string {
   return JSON.stringify({
     chave: n.chave, emitente: n.emitente, numero: n.numero, emissao: n.emissao, valor_nf: n.valor_nf,
     forma_pagamento: n.forma_pagamento,
     ...(n.parcelas_manuais && n.parcelas_manuais.length > 0 ? { parcelas_manuais: n.parcelas_manuais } : {}),
+    associacoes_app: n.associacoes_app ?? null,
     itens: (n.itens ?? []).map((it) => ({
-      descricao: it.descricao ?? null, produto_id: it.produto_id ?? null, associacao: it.associacao ?? null,
+      n: it.n ?? null, descricao: it.descricao ?? null, produto_id: it.produto_id ?? null, associacao: it.associacao ?? null,
       qtd: it.qtd ?? null, unidade_sischef: it.unidade_sischef ?? null,
     })),
   })
