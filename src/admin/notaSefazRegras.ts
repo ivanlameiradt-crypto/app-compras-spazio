@@ -458,3 +458,72 @@ export function validarParcelasDigitadas(linhas: LinhaParcela[], valorNota: numb
   const todasValidas = parcelas.length === linhas.length && linhas.every((l) => dataValida(l.vencimento))
   return { ok: motivo === '' && todasValidas, motivo, parcelas, soma, falta }
 }
+
+// ---------- pagamento SEMANAL na quarta (MAUES): o app mostra a quarta e a data pode ser editada
+/**
+ * Fornecedores que pagam a compra da SEMANA (domingo a sábado) numa única QUARTA-FEIRA, a seguinte ao sábado (regra do Ivan, 30/09/2026).
+ * É o mesmo conjunto do robô (motor_logica.CNPJS_PAGAMENTO_SEMANAL_QUARTA) e da Edge Function lancar-nfe. Chave = CNPJ (14 dígitos).
+ */
+export const CNPJS_PAGAMENTO_SEMANAL_QUARTA: Record<string, string> = { '37638932000174': 'MAUES FOOD BRASIL' }
+
+const DIA_MS = 86_400_000
+const somarDias = (d: Date, dias: number): string => new Date(d.getTime() + dias * DIA_MS).toISOString().slice(0, 10)
+
+/** O domingo e o sábado (aaaa-mm-dd) da semana da emissão, ou null se a data não existe. */
+export function semanaDaCompra(emissao: string): { inicio: string; fim: string } | null {
+  if (!dataValida(emissao)) return null
+  const d = new Date(`${emissao}T00:00:00Z`)
+  const dia = d.getUTCDay() // 0 = domingo … 6 = sábado
+  return { inicio: somarDias(d, -dia), fim: somarDias(d, 6 - dia) }
+}
+
+/** A quarta-feira seguinte ao sábado da semana da emissão (aaaa-mm-dd) — a mesma conta do robô (quarta_do_pagamento); null se a data não existe. */
+export function quartaDoPagamento(emissao: string): string | null {
+  const s = semanaDaCompra(emissao)
+  return s ? somarDias(new Date(`${s.fim}T00:00:00Z`), 4) : null
+}
+
+/** MAUES com os boletos já lidos do XML (e a emissão válida): a data de vencimento vale a quarta, e o Ivan pode editá-la. */
+export const ehPagamentoSemanal = (n: NotaSefazLista): boolean =>
+  !!n.cnpj_emitente && n.cnpj_emitente in CNPJS_PAGAMENTO_SEMANAL_QUARTA && Array.isArray(n.parcelas) && n.parcelas.length > 0 &&
+  quartaDoPagamento(n.emissao) != null
+
+export interface ParcelaSemanal {
+  /** O vencimento que vale (a quarta, ou a data que o Ivan editou), aaaa-mm-dd. */
+  vencimento: string
+  valor: number
+  /** O que o XML trouxe (a data do boleto), só para mostrar. */
+  vencimentoXml: string | null
+  /** O Ivan mudou a data (ela não é a quarta da regra). */
+  editada: boolean
+}
+export interface PlanoSemanal {
+  quarta: string
+  semana: { inicio: string; fim: string }
+  parcelas: ParcelaSemanal[]
+  /** Pode lançar: datas válidas, não anteriores à emissão, e os boletos do XML fecham com o valor da nota. */
+  ok: boolean
+  motivo: string
+}
+
+/**
+ * Plano de pagamento da MAUES: um boleto do XML por parcela (valor e quantidade são os do XML), cada um vencendo na quarta da regra ou na data
+ * que o Ivan editou (`editadas[i]`; vazio = a quarta). Null quando a nota não é pagamento semanal.
+ */
+export function planoSemanal(n: NotaSefazLista, editadas: string[]): PlanoSemanal | null {
+  if (!ehPagamentoSemanal(n)) return null
+  const quarta = quartaDoPagamento(n.emissao) as string
+  const semana = semanaDaCompra(n.emissao) as { inicio: string; fim: string }
+  const parcelas: ParcelaSemanal[] = (n.parcelas as ParcelaNota[]).map((p, i) => {
+    const vencimento = (editadas[i] ?? '').trim() || quarta
+    return { vencimento, valor: p.valor, vencimentoXml: p.vencimento ?? null, editada: vencimento !== quarta }
+  })
+  let motivo = ''
+  parcelas.forEach((p, i) => {
+    if (motivo) return
+    if (!dataValida(p.vencimento)) motivo = `Parcela ${i + 1}: informe uma data de vencimento válida`
+    else if (n.emissao && p.vencimento < n.emissao) motivo = `Parcela ${i + 1}: o vencimento é anterior à emissão da nota`
+  })
+  if (!motivo && !resumoFinanceiro(n).bate) motivo = 'Os boletos do XML não fecham com o valor da nota'
+  return { quarta, semana, parcelas, ok: motivo === '', motivo }
+}

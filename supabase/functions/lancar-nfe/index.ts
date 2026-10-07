@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
         return (data as { papel: string; ativo: boolean } | null) ?? null
       },
       async notaParaParcelas(chave) {
-        const { data, error } = await admin.from('cot_nfe').select('valor_nf, parcelas').eq('chave', chave).maybeSingle()
+        const { data, error } = await admin.from('cot_nfe').select('valor_nf, parcelas, cnpj_emitente').eq('chave', chave).maybeSingle()
         if (error) throw new Error(error.message)
         return (data as NotaParaParcelas | null) ?? null
       },

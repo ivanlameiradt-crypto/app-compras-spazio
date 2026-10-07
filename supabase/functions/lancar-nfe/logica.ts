@@ -48,7 +48,13 @@ export interface NotaReservada {
   associacoes_app?: Record<string, unknown> | null
 }
 /** O que a função precisa saber da nota ANTES de reservar, para conferir as parcelas digitadas. */
-export interface NotaParaParcelas { valor_nf: number | string | null; parcelas: unknown }
+export interface NotaParaParcelas { valor_nf: number | string | null; parcelas: unknown; cnpj_emitente?: string | null }
+
+/**
+ * Fornecedores que pagam a compra da SEMANA numa única quarta-feira (= CNPJS_PAGAMENTO_SEMANAL_QUARTA do robô). Para eles o app mostra a
+ * quarta e o Ivan pode editar a DATA, mesmo com boletos no XML (pedido de 07/10): quantidade e valores seguem o XML. CNPJ só com dígitos.
+ */
+export const CNPJS_PAGAMENTO_SEMANAL_QUARTA = ['37638932000174'] // MAUES FOOD BRASIL
 
 export interface Deps {
   buscarUsuario(email: string): Promise<UsuarioLinha | null>
@@ -162,7 +168,17 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     const n = await deps.notaParaParcelas(chave)
     if (n) {
       if (Array.isArray(n.parcelas) && n.parcelas.length > 0) {
-        return { status: 400, corpo: { erro: 'esta nota já tem boletos no XML: as parcelas digitadas não se aplicam (os boletos do XML prevalecem)' } }
+        const semanal = CNPJS_PAGAMENTO_SEMANAL_QUARTA.includes(String(n.cnpj_emitente ?? '').replace(/\D/g, ''))
+        if (!semanal) {
+          return { status: 400, corpo: { erro: 'esta nota já tem boletos no XML: as parcelas digitadas não se aplicam (os boletos do XML prevalecem)' } }
+        }
+        // MAUES: só a DATA muda; quantidade e valores têm de ser os do XML (centavos, sem ordem). O robô repete a conferência.
+        const centavos = (valores: unknown[]): number[] => valores.map((v) => Math.round(Number(v) * 100)).sort((a, b) => a - b)
+        const doXml = centavos((n.parcelas as Array<{ valor?: unknown }>).map((p) => p?.valor))
+        const doApp = centavos(manuais.map((p) => p.valor))
+        if (doXml.length !== doApp.length || doXml.some((c, i) => c !== doApp[i])) {
+          return { status: 400, corpo: { erro: 'esta nota tem boletos no XML: no app só a data pode mudar (a quantidade e os valores são os do XML)' } }
+        }
       }
       const total = Number(n.valor_nf)
       // Regra 4 do Ivan: a soma das parcelas tem de ser IGUAL ao valor da nota, ao centavo (parcelas iguais ou diferentes: tanto faz). Em centavos

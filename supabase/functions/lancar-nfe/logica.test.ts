@@ -228,6 +228,61 @@ describe('tratar com parcelas digitadas (boleto sem duplicatas no XML, ou XML ai
     }
   })
 
+  // Pedido do Ivan (07/10): a MAUES (pagamento semanal na quarta) mostra a quarta no app e a DATA pode ser editada, mesmo com boleto no
+  // XML. Só para esse fornecedor, e só a data: quantidade e valores seguem os boletos do XML.
+  describe('MAUES com boleto no XML: só a data pode mudar', () => {
+    const MAUES = '37638932000174'
+    const xml = [{ numero: '001', vencimento: '2026-10-08', valor: 791.2 }]
+    const dMaues = (parcelasXml: unknown, cnpj: string | null = MAUES) =>
+      fakeDeps({ async notaParaParcelas() { return { valor_nf: '791.20', parcelas: parcelasXml, cnpj_emitente: cnpj } } })
+
+    it('data editada (mesma quantidade e mesmo valor do XML): aceita, reserva e manda ao robô como foi digitado', async () => {
+      const d = dMaues(xml)
+      const editada = [{ vencimento: '2026-10-16', valor: 791.2 }]
+      const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: editada }, 'a@b', d)
+      expect(r.status).toBe(202)
+      expect(d.reservas[0][4]).toEqual(editada) // a reserva grava exatamente a data que o Ivan escolheu (e o disparo leva o que a reserva devolve)
+      expect(d.disparos).toHaveLength(1)
+    })
+
+    it('aceita também a data da própria quarta, e os valores do XML em outra ordem', async () => {
+      const d1 = dMaues(xml)
+      expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas: [{ vencimento: '2026-10-14', valor: 791.2 }] }, 'a@b', d1)).status).toBe(202)
+      const d2 = dMaues([{ numero: '1', vencimento: '2026-10-08', valor: 60 }, { numero: '2', vencimento: '2026-10-15', valor: 40 }])
+      d2.notaParaParcelas = async () => ({ valor_nf: 100, parcelas: [{ vencimento: '2026-10-08', valor: 60 }, { vencimento: '2026-10-15', valor: 40 }], cnpj_emitente: MAUES })
+      const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: [{ vencimento: '2026-10-21', valor: 40 }, { vencimento: '2026-10-14', valor: 60 }] }, 'a@b', d2)
+      expect(r.status).toBe(202)
+    })
+
+    it('outra quantidade ou outro valor (mesmo somando a nota): 400 e NÃO reserva', async () => {
+      for (const parcelas of [[{ vencimento: '2026-10-14', valor: 400 }, { vencimento: '2026-10-21', valor: 391.2 }],
+                              [{ vencimento: '2026-10-14', valor: 791.19 }]]) {
+        const d = dMaues(xml)
+        const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas }, 'a@b', d)
+        expect(r.status).toBe(400)
+        expect(JSON.stringify(r.corpo)).toContain('só a data pode mudar')
+        expect(d.reservas).toEqual([])
+        expect(d.disparos).toEqual([])
+      }
+    })
+
+    it('outro fornecedor (ou CNPJ desconhecido) com boleto no XML: continua recusando as digitadas', async () => {
+      for (const cnpj of ['03995515011363', null]) {
+        const d = dMaues(xml, cnpj)
+        const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: [{ vencimento: '2026-10-16', valor: 791.2 }] }, 'a@b', d)
+        expect([r.status, JSON.stringify(r.corpo)]).toEqual([400, expect.stringContaining('já tem boletos no XML')])
+        expect(d.reservas).toEqual([])
+      }
+    })
+
+    it('MAUES com o XML sem boletos ou por ler: vale o que foi digitado, como para qualquer fornecedor', async () => {
+      for (const parcelasXml of [[], null]) {
+        const d = dMaues(parcelasXml)
+        expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas: [{ vencimento: '2026-10-16', valor: 791.2 }] }, 'a@b', d)).status).toBe(202)
+      }
+    })
+  })
+
   // Regra do Ivan de 07/10: "quando não vier informando nada na nota, prevalece o que eu determinar no app". XML ainda não lido
   // (cot_nfe.parcelas = null) é "nada informado": as digitadas valem, desde que a soma feche com o valor da nota.
   it('regra 07/10: XML ainda NÃO lido (parcelas null) e soma que fecha: aceita, reserva com as parcelas digitadas e as manda ao robô', async () => {

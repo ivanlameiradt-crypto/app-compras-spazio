@@ -17,8 +17,8 @@ import {
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
-  textoDoEstado, traduzirMotivo, validarParcelasDigitadas,
-  type LinhaParcela, type ResultadoParcelas,
+  textoDoEstado, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal,
+  type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -66,6 +66,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
   salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
 }) {
   const f = resumoFinanceiro(nota)
+  const quartaDaMaues = ehPagamentoSemanal(nota) ? planoSemanal(nota, [])?.quarta ?? null : null
   // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
   const [aberto, setAberto] = useState(() => nota.itens.some((it) => !itemAssociado(it) && decisaoDoItem(nota, it) == null))
   return (
@@ -108,7 +109,11 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
           <>
             <ul className="conferir-itens">
               {f.parcelas.map((p, i) => (
-                <li key={i} data-testid="conferir-parcela"><span>Parcela {p.numero ?? i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>
+                <li key={i} data-testid="conferir-parcela">
+                  {/* MAUES paga a compra da semana numa quarta: o vencimento que vale é a quarta da regra, não a data do boleto do XML */}
+                  <span>Parcela {p.numero ?? i + 1} · vence {dataBr(quartaDaMaues ?? p.vencimento)}{quartaDaMaues && ` (o XML trouxe ${dataBr(p.vencimento)})`}</span>
+                  <b>{formatarReais(p.valor)}</b>
+                </li>
               ))}
             </ul>
             <p className={f.bate ? 'ok' : 'erro'} data-testid="fin-total">
@@ -190,6 +195,56 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   )
 }
 
+/**
+ * MAUES paga a compra da semana (domingo a sábado) numa única quarta-feira, a seguinte ao sábado (regra do Ivan, 30/09). O XML traz outra data de
+ * boleto, e o robô lança a quarta; por isso a tela mostra aqui a data que vai valer, já calculada, e deixa o Ivan EDITAR (pedido de 07/10). Com
+ * boletos no XML só a data muda: quantidade e valores são os do XML (a Edge Function e o robô conferem de novo).
+ */
+function PagamentoSemanal({ plano, editando, desabilitado, onEditar, onMudar, onUsarQuarta }: {
+  plano: PlanoSemanal; editando: boolean; desabilitado: boolean
+  onEditar: () => void
+  onMudar: (i: number, iso: string) => void
+  onUsarQuarta: () => void
+}) {
+  const algumaEditada = plano.parcelas.some((p) => p.editada)
+  const doXml = plano.parcelas.map((p) => dataBr(p.vencimentoXml)).filter((d, i, a) => a.indexOf(d) === i).join(', ')
+  return (
+    <div className="pagamento-semanal" data-testid="pagamento-semanal">
+      <div className="grupo">Vencimento do boleto (MAUES paga na quarta)</div>
+      <ul className="conferir-itens">
+        {plano.parcelas.map((p, i) => (
+          <li key={i}>
+            <span>
+              Parcela {i + 1} · vence {p.editada ? dataBr(p.vencimento) : `quarta, ${dataBr(p.vencimento)}`}{p.editada && ' · data alterada por você'}
+            </span>
+            <b>{formatarReais(p.valor)}</b>
+          </li>
+        ))}
+      </ul>
+      <p className="sub">
+        Regra da MAUES: a compra da semana de {ddmm(plano.semana.inicio)} a {ddmm(plano.semana.fim)} é paga na quarta seguinte ao sábado.{' '}
+        {algumaEditada
+          ? `A quarta da regra é ${dataBr(plano.quarta)}. A data que você escolheu é a que o robô lança.`
+          : `O XML trouxe ${doXml}; vale a quarta.`}
+      </p>
+      {editando && plano.parcelas.map((p, i) => (
+        <label key={i}>Vencimento da parcela {i + 1}
+          <input type="date" value={p.vencimento} disabled={desabilitado} onChange={(e) => onMudar(i, e.target.value)} />
+        </label>
+      ))}
+      {!plano.ok && <p className="erro" data-testid="erro-semanal">{plano.motivo}</p>}
+      <div className="acoes">
+        {!editando && (
+          <button type="button" className="botao secundario" disabled={desabilitado} onClick={onEditar}>Mudar a data</button>
+        )}
+        {(editando || algumaEditada) && (
+          <button type="button" className="botao secundario" disabled={desabilitado} onClick={onUsarQuarta}>Usar a quarta ({ddmm(plano.quarta)})</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 interface PropsNota {
   nota: NotaSefazLista
   padroes: Record<string, string>
@@ -222,6 +277,9 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   // parcelas digitadas (boleto sem duplicatas no XML): o rascunho deste aparelho (se houver) vale mais que o que o robô devolveu
   const [linhas, setLinhas] = useState<LinhaParcela[]>(() => rascunhoDasParcelas(nota.chave) ?? linhasIniciais(nota))
   function mudarLinhas(l: LinhaParcela[]) { setLinhas(l); guardarRascunhoDasParcelas(nota.chave, l) }
+  // MAUES (pagamento semanal na quarta): datas que o Ivan editou, por parcela (vazio = a quarta da regra), e se a caixa de data está aberta
+  const [datasSemanais, setDatasSemanais] = useState<string[]>([])
+  const [editandoData, setEditandoData] = useState(false)
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
   const forma = escolha ?? formaInicial(nota, padroes)
@@ -247,7 +305,9 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   // Lançar só destrava quando a soma fecha com o valor da nota.
   const exigeParcelas = precisaDigitarParcelas(nota, forma)
   const resultadoParcelas = validarParcelasDigitadas(linhas, nota.valor_nf, nota.emissao)
-  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok)
+  // MAUES com boletos no XML e Boleto marcado: a tela mostra a quarta (ou a data que o Ivan editou) e é ELA que vai ao robô, sempre explícita.
+  const plano = forma === 'boleto' ? planoSemanal(nota, datasSemanais) : null
+  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
   // Etapa 2: o que AINDA trava o Lançar por item sem produto (decisão do app incompleta) e o que o robô vai associar no SisChef ao lançar (decisão completa).
   const pendencias = pendenciasParaLancar(nota)
   const peloRobo = associacoesPeloRobo(nota)
@@ -277,6 +337,7 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
     setEnviando(true); setErro('')
     try {
       if (exigeParcelas) await api.lancarNota(nota.chave, forma, resultadoParcelas.parcelas)
+      else if (plano) await api.lancarNota(nota.chave, forma, plano.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })))
       else await api.lancarNota(nota.chave, forma)
       lembrarForma(nota.emitente, forma)
       limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
@@ -353,6 +414,14 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
       {exigeParcelas && podePreparar && (
         <EditorParcelas nota={nota} linhas={linhas} resultado={resultadoParcelas} desabilitado={enviando || confirmando} aguardandoProduto={travada} onChange={mudarLinhas} />
       )}
+      {plano && podePreparar && (
+        <PagamentoSemanal
+          plano={plano} editando={editandoData} desabilitado={enviando || confirmando}
+          onEditar={() => setEditandoData(true)}
+          onMudar={(i, iso) => setDatasSemanais((atual) => { const novo = [...atual]; novo[i] = iso; return novo })}
+          onUsarQuarta={() => { setDatasSemanais([]); setEditandoData(false) }}
+        />
+      )}
       {padraoDoFornecedor && escolha === null && forma === padraoDoFornecedor && (
         <div className="sub" data-testid="padrao-fornecedor">Padrão deste fornecedor: {rotuloForma(padraoDoFornecedor)} (a forma da última nota lançada dele).</div>
       )}
@@ -361,9 +430,9 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
       {confirmando ? (
         <div className="bloco-envio">
           <p>Vai lançar a NF {nota.numero} de {nota.emitente} — pagamento: {rotuloForma(forma)}. Confirmar?</p>
-          {exigeParcelas && (
+          {(exigeParcelas || plano) && (
             <ul className="conferir-itens" data-testid="parcelas-confirmar">
-              {resultadoParcelas.parcelas.map((p, i) => (
+              {(exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? []).map((p, i) => (
                 <li key={i}><span>Parcela {i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>
               ))}
             </ul>
