@@ -1119,7 +1119,17 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     /** O campo da conversão OPCIONAL (a lista do app só desconfia da unidade do produto: "un" é palpite, produto novo não tem). */
     const campoOpcional = (un: string) => screen.getByLabelText(`Quanto vale 1 ${un} na unidade do produto no SisChef? (opcional)`)
     const painel = async () => within(await screen.findByTestId('conferir'))
-    const campo = async () => (await painel()).findByLabelText('Produto do SisChef')
+    /**
+     * O campo de busca do produto. Desde 07/10 (pedido do Ivan), quando o app tem um produto indicado (sugestão do robô, palavras-chave ou decisão sem a
+     * conversão) o cartão já abre com ele e o Confirmar; a busca fica atrás de "Não é este produto? Escolher outro". Este auxiliar abre a busca nesse caso.
+     */
+    const campo = async () => {
+      const p = await painel()
+      await waitFor(() => expect(p.queryByLabelText('Produto do SisChef') ?? p.queryByRole('button', { name: /Escolher outro/ })).toBeTruthy())
+      const outro = p.queryByRole('button', { name: /Escolher outro/ })
+      if (outro) fireEvent.click(outro)
+      return p.findByLabelText('Produto do SisChef')
+    }
     /** O botão de um produto NA LISTA de achados (o mesmo produto pode aparecer também como sugestão, fora dela). */
     const achado = async (nome: RegExp) => within(await screen.findByTestId('achados')).getByRole('button', { name: nome })
 
@@ -1164,26 +1174,24 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(within(item).getByRole('button', { name: 'Trocar' })).toBeInTheDocument()
     })
 
-    it('a sugestão do robô é só atalho: um toque a escolhe, mas quem guarda é o Confirmar', async () => {
+    it('a sugestão do robô já abre no cartão "Produto que eu indiquei": quem guarda é o Confirmar (sem Trocar nem busca)', async () => {
       aLancar(nota({ itens: [sem(1, { sugestao: { id: '3469626', nome: 'LEITE CONDENSADO - INSUMOS' } })] }))
       render(<NotaSefaz />)
-      const sug = await screen.findByTestId('sugestao-robo')
-      expect(sug).toHaveTextContent('Sugestão do robô: LEITE CONDESSADO - INSUMOS (KG)')   // o nome vem da lista do app, não do palpite
-      await userEvent.click(within(sug).getByRole('button'))
-      expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('LEITE CONDESSADO - INSUMOS (KG)')
+      const escolhido = await screen.findByTestId('produto-escolhido')
+      expect(escolhido).toHaveTextContent('Produto que eu indiquei no SisChef')
+      expect(escolhido).toHaveTextContent('LEITE CONDESSADO - INSUMOS (KG)')   // o nome vem da lista do app, não do palpite
+      expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
       expect(m.associarItem).not.toHaveBeenCalled()
       await userEvent.type(campoConversao('UN', 'KG'), '0,395')                           // LEITE CONDESSADO é em KG e a nota em UN: a conversão é obrigatória
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 3469626, 0.395))
     })
 
-    it('produto NOVO (o robô já o vê no SisChef, mas ele não está na lista semanal do app): a sugestão aparece marcada como nova; a conversão é OPCIONAL e vazia confirma', async () => {
+    it('produto NOVO (o robô já o vê no SisChef, mas ele não está na lista semanal do app): o cartão o indica marcado como novo; a conversão é OPCIONAL e vazia confirma', async () => {
       aLancar(nota({ itens: [sem(1, { sugestao: { id: '3476455', nome: 'CHOCOLATE BIS ORIGINAL - INSUMOS' } })] }))
       render(<NotaSefaz />)
-      const sug = await screen.findByTestId('sugestao-robo')
-      expect(sug).toHaveTextContent('Sugestão do robô: CHOCOLATE BIS ORIGINAL - INSUMOS · produto novo no SisChef')
-      await userEvent.click(within(sug).getByRole('button', { name: 'CHOCOLATE BIS ORIGINAL - INSUMOS' }))
       const escolhido = await screen.findByTestId('produto-escolhido')
+      expect(escolhido).toHaveTextContent('Produto que eu indiquei no SisChef')
       expect(escolhido).toHaveTextContent('CHOCOLATE BIS ORIGINAL - INSUMOS')
       expect(escolhido).toHaveTextContent('cód. 3476455 · novo, ainda fora da lista semanal')
       // sem unidade conhecida não há como comparar: o campo aparece, mas OPCIONAL (o robô decide com o cadastro vivo; se precisar, para pedindo)
@@ -1191,7 +1199,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(pedido).not.toHaveClass('amarelo')
       expect(campoOpcional('UN')).toBeInTheDocument()
       expect(pedido).toHaveTextContent('Produto fora da lista semanal: o app não conhece a unidade dele no SisChef. Se lá ele também for em UN, deixe vazio.')
-      expect(pedido).toHaveTextContent('Se o robô parar pedindo a conversão, volte aqui (Trocar), escolha o mesmo produto e informe.')
+      expect(pedido).toHaveTextContent('Se o robô parar pedindo a conversão, volte aqui (Trocar) e informe.')
       expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 3476455, null))
@@ -1280,11 +1288,11 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         expect(await screen.findByTestId('produto-escolhido')).toBeInTheDocument()
         expect(screen.queryByTestId('pedir-conversao')).not.toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
-        await userEvent.click(screen.getByRole('button', { name: 'Escolher outro' }))
+        await userEvent.click(screen.getByRole('button', { name: /Escolher outro/ }))
         await userEvent.type(await campo(), 'leite cond')
         await userEvent.click(await achado(/LEITE CONDESSADO/))
         expect(await screen.findByTestId('pedir-conversao')).toBeInTheDocument()
-        await userEvent.click(screen.getByRole('button', { name: 'Escolher outro' }))
+        await userEvent.click(screen.getByRole('button', { name: /Escolher outro/ }))
         await userEvent.type(await campo(), 'oleo')
         await userEvent.click(await achado(/ÓLEO DE SOJA/))
         await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
@@ -1349,7 +1357,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           expect(pedido).not.toHaveClass('amarelo')
           expect(campoOpcional('KG')).toHaveAttribute('inputmode', 'decimal')
           expect(screen.queryByLabelText(/Quanto vale 1 KG em UN\?/)).not.toBeInTheDocument()    // não é a pergunta obrigatória
-          expect(pedido).toHaveTextContent('A lista do app não sabe ao certo a unidade deste produto no SisChef. Se lá ele também for em KG, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Trocar), escolha o mesmo produto e informe.')
+          expect(pedido).toHaveTextContent('A lista do app não sabe ao certo a unidade deste produto no SisChef. Se lá ele também for em KG, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Trocar) e informe.')
           expect(screen.queryByTestId('abrir-conversao')).not.toBeInTheDocument()                 // o campo já está aberto: não precisa de link
           expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()                // vazio NÃO bloqueia
           await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
@@ -1406,9 +1414,8 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           await screen.findByTestId('nota-a-lancar')
           expect(botaoLancar()).toBeDisabled()
           expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('falta a conversão de unidade')
-          await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
-          await userEvent.type(await campo(), 'leite cond')
-          await userEvent.click(await achado(/LEITE CONDESSADO/))
+          // decisão sem a conversão: o cartão abre já com o produto indicado (sem Trocar nem busca) e o campo obrigatório vazio
+          expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('LEITE CONDESSADO - INSUMOS (KG)')
           expect(campoConversao('UN', 'KG')).toBeInTheDocument()
           expect(screen.queryByText(/\(opcional\)/)).not.toBeInTheDocument()
           expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
@@ -1445,7 +1452,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           await userEvent.click(await achado(/ÓLEO DE SOJA/))
           await userEvent.click(screen.getByTestId('abrir-conversao'))
           await userEvent.type(campoOpcional('UN'), '12')
-          await userEvent.click(screen.getByRole('button', { name: 'Escolher outro' }))
+          await userEvent.click(screen.getByRole('button', { name: /Escolher outro/ }))
           await userEvent.type(await campo(), 'oleo')
           await userEvent.click(await achado(/ÓLEO DE SOJA/))
           expect(screen.queryByTestId('pedir-conversao')).not.toBeInTheDocument()
@@ -1668,7 +1675,8 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       const itens = (await painel()).getAllByTestId('conferir-item')
       expect(within(itens[0]).getByTestId('item-confirmado')).toBeInTheDocument()
       expect(within(itens[1]).queryByTestId('item-confirmado')).not.toBeInTheDocument()
-      expect(await within(itens[1]).findByLabelText('Produto do SisChef')).toBeInTheDocument()   // o campo só aparece quando a lista de produtos termina de carregar
+      // o cartão do outro item só aparece quando a lista de produtos termina de carregar; as palavras-chave ("leite cond") indicam o LEITE CONDESSADO
+      expect(await within(itens[1]).findByTestId('produto-escolhido')).toHaveTextContent('Produto que eu indiquei no SisChef')
       expect(screen.getByTestId('bloqueio-nota')).toHaveClass('erro')
       expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef: escolha o produto na caixa de associação (ou associe no SisChef) antes de lançar')
     })
@@ -1802,38 +1810,44 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('LEITE CONDENSADO - INSUMOS (KG)')
       })
 
-      it('sem palpite do robô, as palavras-chave sugerem (SEARA: "chicken supreme" → NUGGETS SUPREME), mostrando as palavras que casaram', async () => {
+      it('sem palpite do robô, as palavras-chave indicam o produto (SEARA: "chicken supreme" → NUGGETS SUPREME): o cartão já abre com ele e o Confirmar (pedido do Ivan, 07/10)', async () => {
         aLancar(nota({ itens: [seara()] }))
         render(<NotaSefaz />)
-        const sug = await screen.findByTestId('sugestao-palavras')
-        expect(sug).toHaveTextContent('Pelas suas palavras-chave (chicken, supreme): NUGGETS SUPREME - INSUMOS (KG)')
-        expect(screen.queryByTestId('sugestao-robo')).not.toBeInTheDocument()
-        await userEvent.click(within(sug).getByRole('button'))
-        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')
+        const escolhido = await screen.findByTestId('produto-escolhido')
+        expect(escolhido).toHaveTextContent('Produto que eu indiquei no SisChef')
+        expect(escolhido).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')
+        expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()     // sem busca, sem Trocar: é só conferir e confirmar
         expect(screen.getByTestId('pedir-conversao')).toHaveTextContent('Quanto vale 1 CX em KG?')  // a nota vem em CX e o produto é em KG: pede a conversão
-        expect(m.associarItem).not.toHaveBeenCalled()                                    // sugerir não guarda: só o Confirmar
+        expect(screen.queryByTestId('conversao-sugerida')).not.toBeInTheDocument()        // "2,5KG" é o pacote, não a caixa (nota em CX): nada de sugerir o peso
+        expect(screen.getByLabelText('Quanto vale 1 CX em KG?')).toHaveValue('')
+        expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()          // obrigatória e vazia
+        expect(m.associarItem).not.toHaveBeenCalled()                                    // indicar não guarda: só o Confirmar
       })
 
-      it('"queijo muss" = mussarela: a abreviação da nota casa; quando o robô sugere o mesmo produto, a tela diz que confere (uma sugestão só)', async () => {
+      it('"queijo muss" = mussarela: a nota em KG já abre com o produto indicado e o Confirmar liberado (sem conversão)', async () => {
         aLancar(nota({ itens: [queijo({ sugestao: { id: String(MUCARELA), nome: 'Q. MUÇARELA - INSUMOS' } })] }))
         render(<NotaSefaz />)
-        const sug = await screen.findByTestId('sugestao-robo')
-        expect(sug).toHaveTextContent('Sugestão do robô: Q. MUÇARELA - INSUMOS (KG) · confere com as suas palavras-chave')
-        expect(screen.queryByTestId('sugestao-palavras')).not.toBeInTheDocument()
+        const escolhido = await screen.findByTestId('produto-escolhido')
+        expect(escolhido).toHaveTextContent('Q. MUÇARELA - INSUMOS (KG)')
+        expect(screen.queryByTestId('pedir-conversao')).not.toBeInTheDocument()           // KG × KG
+        expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
+        await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, MUCARELA, null))
       })
 
-      it('robô e palavras-chave discordam: as duas sugestões aparecem, cada uma com o seu rótulo', async () => {
+      it('robô e palavras-chave discordam: o cartão abre com o do robô; "Escolher outro" mostra as duas sugestões, cada uma com o seu rótulo', async () => {
         aLancar(nota({ itens: [queijo({ sugestao: { id: String(OLEO), nome: 'ÓLEO DE SOJA - INSUMOS' } })] }))
         render(<NotaSefaz />)
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('ÓLEO DE SOJA - INSUMOS (UN)')
+        await userEvent.click(screen.getByRole('button', { name: /Escolher outro/ }))
         expect(await screen.findByTestId('sugestao-robo')).toHaveTextContent('Sugestão do robô: ÓLEO DE SOJA - INSUMOS (UN)')
         expect(screen.getByTestId('sugestao-palavras')).toHaveTextContent('Pelas suas palavras-chave (queijo, muss): Q. MUÇARELA - INSUMOS (KG)')
       })
 
       describe('Lembrar esta descrição', () => {
-        /** Escolhe a sugestão (NUGGETS, em KG) e informa a conversão (a caixa SEARA vem em CX: 1 CX = 2,5 KG), que a etapa 2 exige para confirmar. */
+        /** O cartão já abre com a sugestão (NUGGETS, em KG): informa a conversão (a caixa SEARA vem em CX: 1 CX = 2,5 KG), que a etapa 2 exige para confirmar. */
         const escolherSugestao = async () => {
-          await userEvent.click(within(await screen.findByTestId('sugestao-palavras')).getByRole('button'))
-          await userEvent.type(campoConversao('CX', 'KG'), '2,5')
+          await userEvent.type(await screen.findByLabelText('Quanto vale 1 CX em KG?'), '2,5')
           return screen.findByTestId('lembrar-descricao')
         }
 
@@ -1912,9 +1926,9 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         await userEvent.type(await campo(), 'frango')
         expect(screen.queryByTestId('sem-sugestao')).not.toBeInTheDocument()            // já está procurando
         a.unmount()
-        aLancar(nota({ itens: [seara()] }))                                              // as palavras-chave sugerem: não precisa da dica
+        aLancar(nota({ itens: [seara()] }))                                              // as palavras-chave indicam o produto: não precisa da dica
         render(<NotaSefaz />)
-        await screen.findByTestId('sugestao-palavras')
+        await screen.findByTestId('produto-escolhido')
         expect(screen.queryByTestId('sem-sugestao')).not.toBeInTheDocument()
       })
 

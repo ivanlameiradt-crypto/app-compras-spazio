@@ -205,6 +205,25 @@ export function textoConversao(unidadeNota: string | null | undefined, unidadePr
   if (situacaoConversao(unidadeNota, unidadeProduto) === 'obrigatoria') return `1 ${a} = ${v} ${rotuloUnidade(unidadeProduto)}`
   return `1 ${a} = ${v} na unidade do produto no SisChef`
 }
+/**
+ * Sugestão de conversão tirada do NOME da nota: "LEITE COND TIROL SEMIDES TP 395G" em UN → 1 UN = 0,395 KG. O Ivan só confere e corrige (a caixa mostra
+ * o número já preenchido); nunca vai ao SisChef sem o Confirmar dele. Só sugere quando há UM peso claro no nome (g ou kg) e a nota está em UN: nota em
+ * CX/PCT não vale (a caixa pode ter vários pacotes: a "2,5KG" da SEARA é o pacote, não a caixa) e nome com "12X395G" (embalagem múltipla) também não.
+ * Devolve o peso em kg (até 4 casas) e o trecho que o gerou ("395G"), para a tela explicar de onde veio.
+ */
+export function pesoPeloNome(descricao: string | null | undefined, unidadeNota: string | null | undefined): { kg: number; trecho: string } | null {
+  if (rotuloUnidade(unidadeNota) !== 'UN') return null
+  const t = (descricao ?? '').replace(/^CÓD\. FOR:\s*\S+\s*/i, '')
+  if (/\d\s*[xX]\s*\d/.test(t)) return null
+  const achados = [...t.matchAll(/(?:^|[^\d.,])(\d+(?:[.,]\d+)?)\s*(KG|GRS?|G)(?![A-Za-z])/gi)]
+  if (achados.length !== 1) return null
+  const numero = Number(achados[0][1].replace(',', '.'))
+  const eKg = achados[0][2].toUpperCase() === 'KG'
+  const kg = Math.round((eKg ? numero : numero / 1000) * 10_000) / 10_000
+  if (!Number.isFinite(kg) || kg <= 0 || kg > 50) return null
+  return { kg, trecho: `${achados[0][1]}${achados[0][2].toUpperCase()}` }
+}
+
 /** A conversão da decisão foi informada (número > 0)? Decisão gravada antes da etapa 2 não tem o campo: conta como não informada (null). */
 export const conversaoDaDecisao = (d: AssociacaoApp | null | undefined): number | null =>
   d != null && typeof d.conversao === 'number' && Number.isFinite(d.conversao) && d.conversao > 0 ? d.conversao : null
