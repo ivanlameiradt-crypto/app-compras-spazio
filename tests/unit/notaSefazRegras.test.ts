@@ -452,7 +452,8 @@ describe('notaSefazRegras', () => {
     })
 
     it.each([
-      ['XML ainda não lido', null, 'Boletos ainda não lidos do XML (próxima leitura)'],
+      // regra do Ivan (07/10): com o XML por ler, a nota segue NÃO pronta, mas o motivo já diz que o que ele digitar vale (antes dizia só "próxima leitura")
+      ['XML ainda não lido', null, 'Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)'],
       ['nota sem boleto (à vista)', [], 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'],
       ['boletos que não fecham', boletos(10), 'Os boletos não fecham com o valor da nota'],
     ])('prontidaoDaNota: %s não é pronta e explica', (_n, parcelas, motivo) => {
@@ -497,12 +498,17 @@ describe('notaSefazRegras', () => {
       expect(FORNECEDORES_XML_SEM_PAGAMENTO).toEqual({ '03995515011363': 'MATEUS SUPERMERCADOS' })
     })
 
-    it('precisaDigitarParcelas: só boleto com XML lido e sem duplicatas', () => {
+    it('precisaDigitarParcelas: boleto sem boletos que valham — XML lido e vazio OU XML ainda não lido (regra do Ivan, 07/10)', () => {
       const n = (parcelas: NotaSefazLista['parcelas']) => nota({ parcelas })
       expect(precisaDigitarParcelas(n([]), 'boleto')).toBe(true)
       expect(precisaDigitarParcelas(n([]), 'dinheiro')).toBe(false)
       expect(precisaDigitarParcelas(n([]), 'cartao')).toBe(false)
-      expect(precisaDigitarParcelas(n(null), 'boleto')).toBe(false)                      // XML ainda não lido
+      // XML ainda não lido: antes era false (esperava a próxima leitura); agora o Ivan digita e o que ele digitar vale
+      expect(precisaDigitarParcelas(n(null), 'boleto')).toBe(true)
+      expect(precisaDigitarParcelas(n(undefined), 'boleto')).toBe(true)                  // sem o campo = o mesmo que null
+      expect(precisaDigitarParcelas(n(null), 'pix:bradesco|ij')).toBe(false)
+      expect(precisaDigitarParcelas(n(null), 'dinheiro')).toBe(false)
+      // o XML já traz boletos: eles prevalecem, nada a digitar
       expect(precisaDigitarParcelas(n([{ numero: '1', vencimento: '2026-11-05', valor: 1 }]), 'boleto')).toBe(false)
     })
 

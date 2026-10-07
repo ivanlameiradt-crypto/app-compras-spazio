@@ -171,7 +171,7 @@ describe('normalizarParcelas / somaParcelas (parcelas digitadas pelo Ivan)', () 
   })
 })
 
-describe('tratar com parcelas digitadas (boleto sem duplicatas no XML)', () => {
+describe('tratar com parcelas digitadas (boleto sem duplicatas no XML, ou XML ainda não lido — regra do Ivan de 07/10)', () => {
   const P = [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }]
   const nota = (over: Partial<NotaReservada> = {}) => ({ ...NOTA, valor_nf: 100, ...over })
 
@@ -216,12 +216,42 @@ describe('tratar com parcelas digitadas (boleto sem duplicatas no XML)', () => {
     expect(d.reservas).toEqual([])
   })
 
-  it('XML que JÁ traz boletos (ou ainda não foi lido): as digitadas não se aplicam, 400', async () => {
-    for (const parcelas of [[{ numero: '1', vencimento: '2026-12-01', valor: 100 }], null]) {
+  it('XML que JÁ traz boletos: as digitadas não se aplicam (os boletos do XML prevalecem), 400 sem reservar', async () => {
+    for (const parcelas of [[{ numero: '1', vencimento: '2026-12-01', valor: 100 }],
+                            [{ numero: '1', vencimento: '2026-12-01', valor: 60 }, { numero: '2', vencimento: '2026-12-15', valor: 40 }]]) {
       const d = fakeDeps({ async notaParaParcelas() { return { valor_nf: 100, parcelas } } })
       const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
       expect([r.status, JSON.stringify(r.corpo)]).toEqual([400, expect.stringContaining('já tem boletos no XML')])
+      expect(JSON.stringify(r.corpo)).toContain('os boletos do XML prevalecem')
       expect(d.reservas).toEqual([])
+      expect(d.disparos).toEqual([])
+    }
+  })
+
+  // Regra do Ivan de 07/10: "quando não vier informando nada na nota, prevalece o que eu determinar no app". XML ainda não lido
+  // (cot_nfe.parcelas = null) é "nada informado": as digitadas valem, desde que a soma feche com o valor da nota.
+  it('regra 07/10: XML ainda NÃO lido (parcelas null) e soma que fecha: aceita, reserva com as parcelas digitadas e as manda ao robô', async () => {
+    for (const parcelas of [null, undefined]) {
+      const reservas: unknown[][] = []
+      const d = fakeDeps({
+        async notaParaParcelas() { return { valor_nf: 100, parcelas } },
+        async reservar(...a) { reservas.push(a); return nota({ forma_pagamento: a[1] as string, parcelas_manuais: a[4] as never }) },
+      })
+      const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
+      expect(r.status).toBe(202)
+      expect(reservas).toHaveLength(1)
+      expect(reservas[0][4]).toEqual(P) // o 5º argumento da reserva grava exatamente o que o Ivan digitou
+      expect(JSON.parse(d.disparos[0]).parcelas_manuais).toEqual(P)
+    }
+  })
+
+  it('regra 07/10: XML ainda NÃO lido (parcelas null) com soma errada: 400 sem reservar (a conferência ao centavo continua)', async () => {
+    for (const valor_nf of [99, '100.01', '99.99']) {
+      const d = fakeDeps({ async notaParaParcelas() { return { valor_nf, parcelas: null } } })
+      const r = await tratar({ chave: CHAVE, forma: 'boleto', parcelas: P }, 'a@b', d)
+      expect([valor_nf, r.status, JSON.stringify(r.corpo)]).toEqual([valor_nf, 400, expect.stringContaining('não fecham com o valor da nota')])
+      expect(d.reservas).toEqual([])
+      expect(d.disparos).toEqual([])
     }
   })
 

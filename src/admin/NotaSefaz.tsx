@@ -101,7 +101,8 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
         })}
       </ul>
       <div className="grupo">Financeiro</div>
-      {!f.lido ? <p className="sub" data-testid="fin-nao-lido">Os boletos ainda não foram lidos do XML. Aparecem na próxima leitura do SisChef.</p>
+      {/* Regra do Ivan (07/10): com o XML por ler, o que ele determinar no app vale — não fica esperando a próxima leitura. */}
+      {!f.lido ? <p className="sub" data-testid="fin-nao-lido">O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>
         : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">O XML da nota não traz boletos (duplicatas). Digite as parcelas do boleto ou escolha outra forma de pagamento.</p>
         : (
           <>
@@ -121,8 +122,9 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
 }
 
 /**
- * Editor das parcelas do boleto quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS): o Ivan digita o vencimento e o
- * valor de cada parcela e o robô as aplica no SisChef. O Lançar só destrava quando a soma fecha com o valor da nota.
+ * Editor das parcelas do boleto quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS) ou ainda nem foi lido (regra do Ivan,
+ * 07/10: "o que eu determinar dentro do app prevalece"): o Ivan digita o vencimento e o valor de cada parcela e o robô as aplica no SisChef.
+ * O Lançar só destrava quando a soma fecha com o valor da nota.
  */
 function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProduto, onChange }: {
   nota: NotaSefazLista; linhas: LinhaParcela[]; resultado: ResultadoParcelas; desabilitado: boolean
@@ -131,6 +133,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   onChange: (l: LinhaParcela[]) => void
 }) {
   const fornecedor = nota.cnpj_emitente ? FORNECEDORES_XML_SEM_PAGAMENTO[nota.cnpj_emitente] : undefined
+  const xmlNaoLido = nota.parcelas == null // null = a leitura do SisChef ainda não abriu o XML desta nota ([] = leu e não há boletos)
   const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
   const completar = () => {
     if (resultado.falta == null || resultado.falta <= 0 || linhas.length === 0) return
@@ -143,8 +146,13 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
       <div className="amarelo">
         {fornecedor
           ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
-          : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
+          : xmlNaoLido ? 'A nota não veio informando os boletos.' : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
       </div>
+      {xmlNaoLido && (
+        <p className="sub" data-testid="parcelas-xml-nao-lido">
+          O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.
+        </p>
+      )}
       {aguardandoProduto && (
         <p className="sub" data-testid="parcelas-aguardando">
           Pode digitar as parcelas já: elas ficam guardadas neste aparelho. O Lançar só libera quando todo item tiver produto (associado no SisChef ou
@@ -235,7 +243,8 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   // Conta especial, nota sem itens, robô lançando e nota pela metade continuam sem nada para preparar.
   const podePreparar = !robotOuMetade && bloqueios.every(bloqueioDeProduto)
   const outraOcupando = outraLancando || (emEnvio && !enviando)
-  // Boleto cujo XML não traz as duplicatas: o Ivan digita as parcelas e o Lançar só destrava quando a soma fecha com o valor da nota.
+  // Boleto cujo XML não traz as duplicatas (ou ainda não foi lido — regra do Ivan, 07/10: o que ele digitar vale): o Ivan digita as parcelas e o
+  // Lançar só destrava quando a soma fecha com o valor da nota.
   const exigeParcelas = precisaDigitarParcelas(nota, forma)
   const resultadoParcelas = validarParcelasDigitadas(linhas, nota.valor_nf, nota.emissao)
   const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok)
