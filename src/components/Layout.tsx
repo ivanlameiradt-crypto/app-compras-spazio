@@ -3,6 +3,8 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import * as api from '../lib/api'
 import type { Usuario } from '../lib/tipos'
 import AvisoFila from './AvisoFila'
+import AvisoNovaVersao from './AvisoNovaVersao'
+import { conferirVersao, recarregarPagina } from '../lib/atualizacao'
 
 // As 3 abas do topo (admin). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
 // Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Fiscal (a nota da SEFAZ) são cada um sua tela.
@@ -21,7 +23,16 @@ function abaAtual(pathname: string): 'compra' | 'cupom' | 'sefaz' {
 
 export default function Layout({ usuario, offline = false, children }: { usuario: Usuario; offline?: boolean; children: ReactNode }) {
   const [aguardando, setAguardando] = useState(0)
+  const [atualizando, setAtualizando] = useState(false)
   const admin = usuario.papel === 'admin'
+  // Botão Atualizar (pedido do Ivan, 07/10): o iPhone instalado não tem "puxar para atualizar" e ele não deve precisar sair do app. Confere a versão no ar:
+  // se saiu versão nova, troca já (a tela fica a mesma); se não, recarrega a tela para ler os dados de novo (rascunhos como as parcelas ficam guardados no aparelho).
+  async function atualizar() {
+    if (atualizando) return
+    setAtualizando(true)
+    const r = await conferirVersao('manual')
+    if (r !== 'aplicando') recarregarPagina()
+  }
   const loc = useLocation()
   const aba = abaAtual(loc.pathname)
   // numa tela de Compra que não é o próprio menu em grade → oferece voltar para o menu
@@ -38,6 +49,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
     <div className="app">
       <header className="topo">
         <strong>Compras Spazio</strong>
+        <button type="button" className="link" disabled={atualizando} onClick={() => void atualizar()}>{atualizando ? 'Atualizando…' : 'Atualizar'}</button>
         <NavLink to="/senha" className="link">Trocar minha senha</NavLink>
         <button className="link" onClick={() => api.sair()}>Sair</button>
       </header>
@@ -58,6 +70,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
       )}
       {emSubtelaCompra && <Link to="/compra" className="voltar-menu">← Menu Compra</Link>}
       {offline && <p className="faixa">Sem internet — seus itens serão enviados quando voltar.</p>}
+      <AvisoNovaVersao />
       <AvisoFila />
       <main className="conteudo">{children}</main>
     </div>
