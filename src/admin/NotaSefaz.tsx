@@ -23,6 +23,9 @@ import {
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
 const INTERVALO_ATUALIZAR = 15_000
+/** Com o app aberto e nenhuma nota lançando, a lista é relida neste intervalo; ao voltar para o app, relê se a última leitura tem mais que RELER_MIN_MS. */
+const INTERVALO_RELER = 180_000
+const RELER_MIN_MS = 15_000
 
 /** emissao vem como AAAA-MM-DD; mostra dd/mm. */
 const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
@@ -678,6 +681,22 @@ export default function NotaSefaz() {
     const id = setInterval(() => { void carregar(true) }, INTERVALO_ATUALIZAR)
     return () => clearInterval(id)
   }, [algumaLancando])
+
+  // Relê as notas sozinho (pedido do Ivan, 07/10: não ter de sair do app para ver o que mudou — leitura das 7h40/12h40/17h40, lançamento, conversão):
+  // ao VOLTAR para o app (do WhatsApp, por exemplo) e a cada poucos minutos com ele aberto. Silencioso: falha passageira não esconde a lista; o que o Ivan
+  // digita fica nos componentes de cada nota e não é perdido (as notas são as mesmas, só os dados são trocados).
+  useEffect(() => {
+    let ultima = Date.now()
+    const reler = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - ultima < RELER_MIN_MS) return
+      ultima = Date.now()
+      void carregar(true)
+    }
+    const aoVoltar = () => { if (document.visibilityState === 'visible') reler() }
+    document.addEventListener('visibilitychange', aoVoltar)
+    const id = setInterval(reler, INTERVALO_RELER)
+    return () => { document.removeEventListener('visibilitychange', aoVoltar); clearInterval(id) }
+  }, [])
 
   return (
     <section className="coluna cupom">
