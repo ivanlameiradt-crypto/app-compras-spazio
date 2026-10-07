@@ -365,6 +365,19 @@ export function parseValorBr(texto: string): number | null {
 export const formatarValorBr = (v: number): string => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /**
+ * Divide o valor da nota em `n` parcelas IGUAIS ao centavo, com o centavo que sobra na ÚLTIMA — para a soma fechar com a nota (regra 4 do Ivan). R$ 1.794,49 em 3
+ * não dá 3 valores iguais (598,16 × 3 = 1.794,48): fica 598,16 + 598,16 + 598,17. Devolve os valores no formato da tela ("598,16"), ou null se não dá para dividir.
+ */
+export function dividirEmParcelas(valorNota: number | null, n: number): string[] | null {
+  if (valorNota == null || !Number.isInteger(n) || n < 1 || n > 60) return null
+  const total = Math.round(valorNota * 100)
+  const base = Math.floor(total / n)
+  if (!(total > 0) || base <= 0) return null
+  const resto = total - base * n
+  return Array.from({ length: n }, (_, i) => formatarValorBr((i === n - 1 ? base + resto : base) / 100))
+}
+
+/**
  * O editor de parcelas aparece quando a forma é Boleto e o XML NÃO traz boletos que valham: ou o XML ainda não foi lido (parcelas null)
  * ou foi lido e veio sem duplicatas (parcelas []). Regra do Ivan (07/10/2026): "Quando não vier informando nada na nota, o que vai prevalecer
  * é o que eu determinar dentro do app. Se eu determinar que essa compra foi feita via boleto, eu vou clicar no botão boleto e você vai me
