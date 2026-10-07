@@ -2,7 +2,8 @@ import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
-  AVISO_ASSOCIACAO_SO_NO_APP, AVISO_ITEM_SEM_PRODUTO,
+  AVISO_ASSOCIACAO_SO_NO_APP, AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, bloqueioDeProduto,
+  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -96,6 +97,57 @@ describe('notaSefazRegras', () => {
       expect(bloqueiosDaNota(nota({ itens: [comAssociado, sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
       expect(bloqueiosDaNota(nota({ itens: [comAssociado] }))).toEqual([])                              // todo associado no SisChef: pode lançar
       expect(prontidaoDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) }, valor_nf: 10, parcelas: [{ numero: '1', vencimento: '2026-11-01', valor: 10 }] })).pronta).toBe(false)
+    })
+  })
+
+  it('bloqueioDeProduto: só os avisos de "falta produto" deixam preparar a nota (forma de pagamento e parcelas); conta especial e nota sem itens não', () => {
+    expect(bloqueioDeProduto(AVISO_ITEM_SEM_PRODUTO)).toBe(true)
+    expect(bloqueioDeProduto(AVISO_ASSOCIACAO_SO_NO_APP)).toBe(true)
+    expect(bloqueioDeProduto(AVISO_CONTA_ESPECIAL)).toBe(false)
+    expect(bloqueioDeProduto(AVISO_SEM_ITENS)).toBe(false)
+    expect(bloqueioDeProduto('qualquer outro')).toBe(false)
+  })
+
+  describe('rascunho das parcelas digitadas (fica no aparelho, por nota)', () => {
+    const CH = '1'.repeat(44)
+    const linhas = [{ vencimento: '2026-11-05', valor: '60,00' }, { vencimento: '2026-11-12', valor: '' }]
+
+    it('guarda e devolve o que foi digitado; cada nota tem o seu', () => {
+      expect(rascunhoDasParcelas(CH)).toBeNull()
+      guardarRascunhoDasParcelas(CH, linhas)
+      expect(rascunhoDasParcelas(CH)).toEqual(linhas)
+      expect(rascunhoDasParcelas('2'.repeat(44))).toBeNull()
+      guardarRascunhoDasParcelas(CH, [{ vencimento: '2026-12-01', valor: '10' }])             // digitar de novo troca o rascunho
+      expect(rascunhoDasParcelas(CH)).toEqual([{ vencimento: '2026-12-01', valor: '10' }])
+    })
+
+    it('editor em branco apaga o rascunho (não guarda linha vazia); limpar apaga', () => {
+      guardarRascunhoDasParcelas(CH, linhas)
+      guardarRascunhoDasParcelas(CH, [{ vencimento: '', valor: '' }, { vencimento: ' ', valor: '  ' }])
+      expect(rascunhoDasParcelas(CH)).toBeNull()
+      expect(localStorage.length).toBe(0)
+      guardarRascunhoDasParcelas(CH, linhas)
+      limparRascunhoDasParcelas(CH)
+      expect(rascunhoDasParcelas(CH)).toBeNull()
+      expect(localStorage.length).toBe(0)
+    })
+
+    it('rascunho estragado ou fora do formato é ignorado (nunca quebra a tela)', () => {
+      const chave = `spazio.notaSefaz.parcelas.${CH}`
+      for (const ruim of ['lixo', '{}', 'null', '[]', '[1]', '[{"vencimento":5,"valor":"1"}]', '[{"vencimento":"2026-11-05"}]',
+        JSON.stringify([{ vencimento: '2026-11-05'.padEnd(30, 'x'), valor: '1' }]), JSON.stringify([{ vencimento: '', valor: '' }]),
+        JSON.stringify(Array.from({ length: 61 }, () => ({ vencimento: '2026-11-05', valor: '1' })))]) {
+        localStorage.setItem(chave, ruim)
+        expect(rascunhoDasParcelas(CH)).toBeNull()
+      }
+    })
+
+    it('sem armazenamento (localStorage que dá erro): não quebra, só não guarda', () => {
+      const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('cheio') })
+      const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('bloqueado') })
+      expect(() => guardarRascunhoDasParcelas(CH, linhas)).not.toThrow()
+      expect(rascunhoDasParcelas(CH)).toBeNull()
+      spy.mockRestore(); get.mockRestore()
     })
   })
 

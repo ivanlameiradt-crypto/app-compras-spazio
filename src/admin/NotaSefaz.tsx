@@ -9,7 +9,7 @@ import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLanca
 import AssociarProduto from './AssociarProduto'
 import {
   AVISO_ASSOCIACAO_SO_NO_APP, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  FORNECEDORES_XML_SEM_PAGAMENTO, decisaoDoItem, descartadaVoltouComItens, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
+  FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
   traduzirMotivo, validarParcelasDigitadas,
   type LinhaParcela, type ResultadoParcelas,
@@ -111,8 +111,11 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
  * Editor das parcelas do boleto quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS): o Ivan digita o vencimento e o
  * valor de cada parcela e o robô as aplica no SisChef. O Lançar só destrava quando a soma fecha com o valor da nota.
  */
-function EditorParcelas({ nota, linhas, resultado, desabilitado, onChange }: {
-  nota: NotaSefazLista; linhas: LinhaParcela[]; resultado: ResultadoParcelas; desabilitado: boolean; onChange: (l: LinhaParcela[]) => void
+function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProduto, onChange }: {
+  nota: NotaSefazLista; linhas: LinhaParcela[]; resultado: ResultadoParcelas; desabilitado: boolean
+  /** A nota ainda espera produto ser associado no SisChef: dá para digitar já, mas o Lançar só libera depois. */
+  aguardandoProduto: boolean
+  onChange: (l: LinhaParcela[]) => void
 }) {
   const fornecedor = nota.cnpj_emitente ? FORNECEDORES_XML_SEM_PAGAMENTO[nota.cnpj_emitente] : undefined
   const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
@@ -129,6 +132,11 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, onChange }: {
           ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
           : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
       </div>
+      {aguardandoProduto && (
+        <p className="sub" data-testid="parcelas-aguardando">
+          Pode digitar as parcelas já: elas ficam guardadas neste aparelho. O Lançar só libera quando os produtos estiverem associados no SisChef.
+        </p>
+      )}
       {linhas.map((l, i) => (
         <div key={i} className="linha-parcela" data-testid="linha-parcela">
           <label>Vencimento da parcela {i + 1}
@@ -187,7 +195,9 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   const [mudandoForma, setMudandoForma] = useState(false)
   const [descartando, setDescartando] = useState(false) // aberta a pergunta "Descartar a nota?"
   const [descartandoEnvio, setDescartandoEnvio] = useState(false)
-  const [linhas, setLinhas] = useState<LinhaParcela[]>(() => linhasIniciais(nota)) // parcelas digitadas (boleto sem duplicatas no XML)
+  // parcelas digitadas (boleto sem duplicatas no XML): o rascunho deste aparelho (se houver) vale mais que o que o robô devolveu
+  const [linhas, setLinhas] = useState<LinhaParcela[]>(() => rascunhoDasParcelas(nota.chave) ?? linhasIniciais(nota))
+  function mudarLinhas(l: LinhaParcela[]) { setLinhas(l); guardarRascunhoDasParcelas(nota.chave, l) }
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
   const forma = escolha ?? formaInicial(nota, padroes)
@@ -203,7 +213,11 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   const estadoTexto = presa ? AVISO_PRESA : textoDoEstado(estado, nota.lancamento_motivo)
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
-  const travada = estado === 'erro' || (estado === 'lancando' && !presa) || bloqueios.length > 0
+  const robotOuMetade = estado === 'erro' || (estado === 'lancando' && !presa)
+  const travada = robotOuMetade || bloqueios.length > 0
+  // Só falta produto no SisChef (ou nada trava): dá para escolher a forma de pagamento e digitar as parcelas já; o Lançar segue travado até lá.
+  // Conta especial, nota sem itens, robô lançando e nota pela metade continuam sem nada para preparar.
+  const podePreparar = !robotOuMetade && bloqueios.every(bloqueioDeProduto)
   const outraOcupando = outraLancando || (emEnvio && !enviando)
   // Boleto cujo XML não traz as duplicatas: o Ivan digita as parcelas e o Lançar só destrava quando a soma fecha com o valor da nota.
   const exigeParcelas = precisaDigitarParcelas(nota, forma)
@@ -229,6 +243,7 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
       if (exigeParcelas) await api.lancarNota(nota.chave, forma, resultadoParcelas.parcelas)
       else await api.lancarNota(nota.chave, forma)
       lembrarForma(nota.emitente, forma)
+      limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
       setConfirmando(false)
       await recarregar() // recarrega: a nota passa a aparecer como "lançando"
     } catch (e) {
@@ -287,7 +302,7 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
         </div>
       ) : (
       <label>Como pagar
-        <select value={forma} disabled={travada || enviando} onChange={(e) => escolher(e.target.value)}>
+        <select value={forma} disabled={!podePreparar || enviando} onChange={(e) => escolher(e.target.value)}>
           {forma === '' && <option value="" disabled>Escolha como pagar…</option>}
           {OPCOES_ANTES_DO_PIX.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
           <optgroup label="PIX">
@@ -297,8 +312,8 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
         </select>
       </label>
       )}
-      {exigeParcelas && !travada && (
-        <EditorParcelas nota={nota} linhas={linhas} resultado={resultadoParcelas} desabilitado={enviando || confirmando} onChange={setLinhas} />
+      {exigeParcelas && podePreparar && (
+        <EditorParcelas nota={nota} linhas={linhas} resultado={resultadoParcelas} desabilitado={enviando || confirmando} aguardandoProduto={travada} onChange={mudarLinhas} />
       )}
       {padraoDoFornecedor && escolha === null && forma === padraoDoFornecedor && (
         <div className="sub" data-testid="padrao-fornecedor">Padrão deste fornecedor: {rotuloForma(padraoDoFornecedor)} (a forma da última nota lançada dele).</div>
