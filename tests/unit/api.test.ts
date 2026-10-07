@@ -809,6 +809,25 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     expect(r.slice(1).map((n) => n.associacoes_app)).toEqual([null, null, null])
   })
 
+  it('lê a CONVERSÃO da decisão do app (1 CX = 5 KG): sem ela a tela nunca a via e o Lançar da SEARA ficava apagado com o valor já gravado (07/10)', async () => {
+    const base = { produto_id: 3469754, produto_nome: 'NUGGSTES SUPREME - INSUMOS (KG)', unidade: 'kg', por: 'ivan@spazio.invalid', em: '2026-10-07T19:49:04Z' }
+    const c = cadeia({ data: [{ ...linha, associacoes_app: {
+      '1': { ...base, conversao: 5 },
+      '2': { ...base, conversao: '0.395' },     // numeric pode chegar como texto
+      '3': { ...base, conversao: 0 },           // inválidas: a decisão vale, a conversão não
+      '4': { ...base, conversao: -2 },
+      '5': { ...base, conversao: 'x' },
+      '6': { ...base, conversao: null },
+      '7': base,                                 // decisão antiga (etapa 1), sem o campo
+    } }], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const a = (await notasALancar())[0].associacoes_app!
+    expect(a['1'].conversao).toBe(5)
+    expect(a['2'].conversao).toBe(0.395)
+    for (const k of ['3', '4', '5', '6', '7']) expect(a[k]).not.toHaveProperty('conversao')
+    expect(a['1']).toMatchObject({ produto_id: 3469754, unidade: 'kg' })
+  })
+
   it('catalogoProdutos: UMA linha por produto (a da semana mais nova), nome sem espaço sobrando, em ordem alfabética; descarta linha sem nome ou sem código', async () => {
     const c = cadeia({ data: [
       { produto_id: 3469626, produto: 'LEITE CONDESSADO  - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
