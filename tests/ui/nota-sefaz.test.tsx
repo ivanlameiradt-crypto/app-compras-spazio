@@ -1357,6 +1357,21 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         })
       })
 
+      it('produto escondido (receita da casa, não é de compra) não aparece na busca nem como sugestão do robô', async () => {
+        m.catalogoProdutos.mockResolvedValue([
+          ...COM_PALAVRAS,
+          { produto_id: 3661383, nome: 'MAIONESE DA CASA (KG)', unidade: 'kg', oculto: true },
+          { produto_id: 3474674, nome: 'MAIONESE MARIANA - INSUMOS (KG)', unidade: 'kg', palavras: 'MAIONESE MARIANA' },
+        ])
+        aLancar(nota({ itens: [sem(1, { descricao: 'CÓD. FOR: 55 MAIONESE GALAO 3KG', sugestao: { id: '3661383', nome: 'MAIONESE DA CASA' } })] }))
+        render(<NotaSefaz />)
+        await userEvent.type(await campo(), 'maionese')
+        const achados = within(await screen.findByTestId('achados'))
+        expect(achados.getAllByRole('button')).toHaveLength(1)
+        expect(achados.getByRole('button')).toHaveTextContent('MAIONESE MARIANA')
+        expect(screen.queryByTestId('sugestao-robo')).not.toBeInTheDocument()            // o palpite do robô era o produto escondido
+      })
+
       it('o painel de conferir abre sozinho enquanto falta escolher produto, e fica fechado quando tudo já está associado', async () => {
         aLancar(nota({ itens: [sem(1)] }))
         const a = render(<NotaSefaz />)

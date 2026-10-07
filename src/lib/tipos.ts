@@ -409,6 +409,9 @@ export interface ProdutoCatalogo {
   nome_sischef?: string
   /** Palavras-chave que o Ivan escreveu para achar o produto (cot_produto_busca; migração 20261211000001): texto livre, do jeito que ele escreveu. */
   palavras?: string
+  /** Produto que o Ivan mandou esconder (a casa o PRODUZ, com receita: não é de compra; migração 20261211000002). Fica na lista só para dar nome a decisões
+   *  antigas; a busca, as sugestões e o palpite do robô o ignoram. */
+  oculto?: boolean
 }
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }

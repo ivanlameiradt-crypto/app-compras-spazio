@@ -829,12 +829,41 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
       from.mockReturnValueOnce(lista()).mockReturnValueOnce(busca)
       const r = await catalogoProdutos()
       expect(from).toHaveBeenNthCalledWith(2, 'cot_produto_busca')
-      expect(busca.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido')
+      expect(busca.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido, ocultar')
       expect(r).toEqual([
         { produto_id: 3469626, nome: 'LEITE CONDENSADO - INSUMOS (KG)', unidade: 'kg', nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)', palavras: 'leite semi condensado' },
         { produto_id: 3138573, nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' },
         { produto_id: 1854713, nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg', palavras: 'queijo mussarela' },
       ])
+    })
+
+    it('produto marcado `ocultar` (receita da casa, não é de compra) vem com oculto: true, mesmo sem palavras nem nome corrigido', async () => {
+      const lista2 = cadeia({ data: [
+        { produto_id: 3661383, produto: 'MAIONESE DA CASA (KG)', unidade: 'kg', semana_id: 3 },
+        { produto_id: 1854713, produto: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+        { produto_id: 3469626, produto: 'LEITE CONDESSADO - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+      ], error: null, status: 200 })
+      const busca = cadeia({ data: [
+        { produto_id: 3661383, palavras: null, nome_corrigido: null, ocultar: true },
+        { produto_id: 1854713, palavras: 'queijo mussarela', nome_corrigido: null, ocultar: false },
+        { produto_id: 3469626, palavras: null, nome_corrigido: 'LEITE CONDENSADO - INSUMOS (KG)', ocultar: null },
+      ], error: null, status: 200 })
+      from.mockReturnValueOnce(lista2).mockReturnValueOnce(busca)
+      expect(await catalogoProdutos()).toEqual([
+        { produto_id: 3469626, nome: 'LEITE CONDENSADO - INSUMOS (KG)', unidade: 'kg', nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)' },
+        { produto_id: 3661383, nome: 'MAIONESE DA CASA (KG)', unidade: 'kg', oculto: true },
+        { produto_id: 1854713, nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg', palavras: 'queijo mussarela' },
+      ])
+    })
+
+    it('banco ainda sem a coluna `ocultar` (código 42703): lê de novo sem ela, e as palavras-chave continuam valendo', async () => {
+      const semColuna = cadeia({ data: null, error: { code: '42703', message: 'column "ocultar" does not exist' }, status: 400 })
+      const semOcultar = cadeia({ data: [{ produto_id: 1854713, palavras: 'queijo mussarela', nome_corrigido: null }], error: null, status: 200 })
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(semColuna).mockReturnValueOnce(semOcultar)
+      const r = await catalogoProdutos()
+      expect(semOcultar.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido')
+      expect(r.find((p) => p.produto_id === 1854713)?.palavras).toBe('queijo mussarela')
+      expect(r.some((p) => p.oculto)).toBe(false)
     })
 
     it.each([['PGRST205'], ['42P01']])('App publicado antes da migração (tabela inexistente, código %s): o catálogo vem como sempre, sem palavras', async (code) => {

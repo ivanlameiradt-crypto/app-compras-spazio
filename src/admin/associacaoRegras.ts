@@ -26,7 +26,7 @@ const camposDe = (p: ProdutoCatalogo): Campos => ({
 export function buscarProdutos(catalogo: ProdutoCatalogo[], texto: string, limite = MAX_RESULTADOS): ResultadoBusca {
   const palavras = normalizar(texto).split(/\s+/).filter(Boolean)
   if (palavras.length === 0) return { itens: [], total: 0 }
-  const campos = catalogo.map(camposDe)
+  const campos = catalogo.filter((p) => !p.oculto).map(camposDe)                              // produto de receita da casa não é opção
   const noNomeOuCodigo = (c: Campos, w: string) => c.nome.includes(w) || c.sischef.includes(w) || c.codigo.includes(w)
   const noComeco = (c: Campos) => {
     const w = palavras[0]
@@ -92,6 +92,7 @@ export function sugestaoPorPalavras(it: ItemNotaSefaz, catalogo: ProdutoCatalogo
   let melhor: SugestaoPorPalavras & { sobras: number } | null = null
   let empate = false
   for (const p of catalogo) {
+    if (p.oculto) continue
     const doProduto = palavrasUteis(`${p.nome} ${p.nome_sischef ?? ''} ${p.palavras ?? ''}`)
     const casadas = daNota.filter((a) => doProduto.some((b) => reconhece(a, b)))
     if (casadas.length < 2) continue
@@ -133,7 +134,7 @@ export function sugestaoNoCatalogo(it: ItemNotaSefaz, catalogo: ProdutoCatalogo[
   const id = Number(it.sugestao?.id)
   if (!Number.isInteger(id) || id <= 0) return null
   const daLista = catalogo.find((p) => p.produto_id === id)
-  if (daLista) return daLista
+  if (daLista) return daLista.oculto ? null : daLista                                        // escondido: nem como palpite (não é produto de compra)
   const nome = (it.sugestao?.nome ?? '').replace(/\s+/g, ' ').trim()
   return nome === '' ? null : { produto_id: id, nome, unidade: null, novo: true }
 }

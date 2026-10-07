@@ -116,14 +116,14 @@ describe('cot_produto_lembrar (a descrição confirmada vira palavra-chave do pr
 describe('supabase/dados/produto_busca_2026-10-06.sql (a carga da planilha do Ivan)', () => {
   const ARQUIVO = join(dirname(fileURLToPath(import.meta.url)), '../../supabase/dados/produto_busca_2026-10-06.sql')
 
-  it('é SQL válido para a tabela: 230 produtos (227 com palavras, 35 com nome corrigido), sem repetir produto, e rodar de novo não quebra', async () => {
+  it('é SQL válido para a tabela: 230 produtos (227 com palavras, 35 com nome corrigido) + 2 escondidos, sem repetir produto, e rodar de novo não quebra', async () => {
     const db = await banco()
     const sql = readFileSync(ARQUIVO, 'utf8')
     await db.exec(sql)
-    const [c] = await como(db, ADMIN, `select count(*)::int as total, count(palavras)::int as com_palavras, count(nome_corrigido)::int as com_nome from cot_produto_busca`)
-    expect(c).toEqual({ total: 230, com_palavras: 227, com_nome: 35 })
+    const [c] = await como(db, ADMIN, `select count(*)::int as total, count(palavras)::int as com_palavras, count(nome_corrigido)::int as com_nome, count(*) filter (where ocultar)::int as ocultos from cot_produto_busca`)
+    expect(c).toEqual({ total: 232, com_palavras: 227, com_nome: 35, ocultos: 2 })              // 230 da planilha + as 2 maioneses (só escondem)
     await db.exec(sql)                                                                       // a carga é idempotente (on conflict)
-    expect((await como(db, ADMIN, `select count(*)::int as total from cot_produto_busca`))[0].total).toBe(230)
+    expect((await como(db, ADMIN, `select count(*)::int as total from cot_produto_busca`))[0].total).toBe(232)
   })
 
   it('os dois ajustes avisados ao Ivan estão lá, e o resto está como ele escreveu (com " OU" e vírgula de número)', async () => {
@@ -133,7 +133,38 @@ describe('supabase/dados/produto_busca_2026-10-06.sql (a carga da planilha do Iv
     expect(await por(3138796)).toEqual({ palavras: 'FARINHA SEMOLA OU SÊMOLA', nome_corrigido: 'FARINHA DE SÊMOLA - INSUMOS (KG)' })
     expect((await por(1854713)).palavras).toBe('queijo mussarela mozarela mozzarella OU queijo muss')
     expect(await por(3469754)).toEqual({ palavras: 'nuggets ou Chicken Supreme 2,5Kg', nome_corrigido: 'NUGGETS SUPREME - INSUMOS (KG)' })
-    expect(await por(3484974)).toBeDefined()                                                 // LIMÃO SICILIANO (o do cupom do ATACADAO)
+    expect(await por(3484974)).toEqual({ palavras: 'LIMÃO SICILIANO', nome_corrigido: null })  // o do cupom do ATACADAO: continua um produto à parte
+    expect((await por(3469643)).palavras).toBe('LIMÃO OU LIMÃO TAHITI OU LIMÃO TAITI')         // "o limão Tahiti é o mesmo limão" (Ivan)
     expect(await por(3469590)).toEqual({ palavras: 'CARNE LAGARTO OU CARNE RESFRIADA LARGATO', nome_corrigido: null })
+    const escondidos = await como(db, ADMIN, 'select produto_id::int as produto_id, palavras, nome_corrigido from cot_produto_busca where ocultar order by produto_id')
+    expect(escondidos).toEqual([{ produto_id: 3661381, palavras: null, nome_corrigido: null }, { produto_id: 3661383, palavras: null, nome_corrigido: null }])   // as maioneses
+  })
+})
+
+describe('cot_produto_busca.ocultar (produto de receita some da caixa de associação)', () => {
+  it('a linha pode existir só para esconder o produto; sem esconder, continua precisando dizer alguma coisa; o padrão é não esconder', async () => {
+    const db = await banco()
+    await como(db, 'service', `insert into cot_produto_busca (produto_id, ocultar) values (3661383, true)`)
+    await como(db, 'service', `insert into cot_produto_busca (produto_id, palavras) values (1854713, 'queijo mussarela')`)
+    expect(await como(db, ADMIN, 'select produto_id::int as produto_id, ocultar from cot_produto_busca order by produto_id'))
+      .toEqual([{ produto_id: 1854713, ocultar: false }, { produto_id: 3661383, ocultar: true }])
+    await expect(como(db, 'service', `insert into cot_produto_busca (produto_id, ocultar) values (1, false)`)).rejects.toThrow(/check constraint/)
+    await expect(como(db, 'service', `update cot_produto_busca set ocultar = false where produto_id = 3661383`)).rejects.toThrow(/check constraint/)   // voltaria a ser linha vazia
+    await como(db, 'service', `update cot_produto_busca set ocultar = false, palavras = 'maionese' where produto_id = 3661383`)                        // desfazer: dizendo algo
+    expect((await como(db, ADMIN, 'select ocultar from cot_produto_busca where produto_id = 3661383'))[0].ocultar).toBe(false)
+  })
+
+  it('"Lembrar esta descrição" num produto escondido acrescenta as palavras e não desfaz o esconder', async () => {
+    const db = await banco()
+    await como(db, 'service', `insert into cot_produto_busca (produto_id, ocultar) values (3661383, true)`)
+    expect(await lembrar(db, ADMIN, 3661383, 'MAIONESE CASEIRA 1KG')).toBe(true)
+    expect(await como(db, ADMIN, 'select palavras, ocultar from cot_produto_busca where produto_id = 3661383')).toEqual([{ palavras: 'MAIONESE CASEIRA 1KG', ocultar: true }])
+  })
+
+  it('só o admin lê a coluna nova; ninguém grava pelo app', async () => {
+    const db = await banco()
+    await como(db, 'service', `insert into cot_produto_busca (produto_id, ocultar) values (3661383, true)`)
+    expect(await como(db, JOAO, 'select ocultar from cot_produto_busca')).toEqual([])
+    await expect(como(db, ADMIN, `update cot_produto_busca set ocultar = false`)).rejects.toThrow(/permission denied/)
   })
 })

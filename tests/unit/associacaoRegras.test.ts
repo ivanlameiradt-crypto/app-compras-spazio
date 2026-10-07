@@ -94,6 +94,8 @@ const DO_IVAN: ProdutoCatalogo[] = [
   kw(3469626, 'LEITE CONDENSADO - INSUMOS (KG)', 'leite semi condensado ou leite condensado', { nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)' }),
   kw(3138573, 'ÓLEO DE SOJA - INSUMOS (UN)', 'ÓLEO DE SOJA', { unidade: 'un' }),
   kw(3469754, 'NUGGETS SUPREME - INSUMOS (KG)', 'nuggets ou Chicken Supreme 2,5Kg', { nome_sischef: 'NUGGSTES SUPREME - INSUMOS (KG)' }),
+  kw(3469643, 'LIMÃO - INSUMOS (KG)', 'LIMÃO OU LIMÃO TAHITI OU LIMÃO TAITI'),                  // "o limão Tahiti é o mesmo limão" (Ivan)
+  kw(3484974, 'LIMÃO SICILIANO - INSUMOS (KG)', 'LIMÃO SICILIANO'),
   kw(3469590, 'CARNE LAGARTO - INSUMOS (KG)', 'CARNE LAGARTO OU CARNE RESFRIADA LARGATO'),
   // o resto da lista, que também tem "queijo", "leite", "carne" e "bis" nas palavras
   kw(3474203, 'Q. GORGONZOLA - INSUMOS (KG)', 'queijo gorgonzola'),
@@ -171,6 +173,16 @@ describe('sugestaoPorPalavras (a descrição da nota contra as palavras-chave do
     expect(r?.palavras).toEqual(palavras)
   })
 
+  it('limão: Tahiti/Taiti é o produto LIMÃO; siciliano é outro produto; só "limão" não basta para sugerir', () => {
+    expect(sug('LIMAO TAITI TROPICAL')?.produto.produto_id).toBe(3469643)                      // o que o cupom do ATACADAO traz
+    expect(sug('LIMAO TAITI TROPICAL')?.palavras).toEqual(['limao', 'taiti'])
+    expect(sug('CÓD. FOR: 77 LIMAO TAHITI KG')?.produto.produto_id).toBe(3469643)              // a outra grafia
+    expect(sug('LIMAO SICILIANO')?.produto.produto_id).toBe(3484974)
+    expect(sug('LIMAO')).toBeNull()                                                            // uma palavra só não basta (os dois limões têm "limão")
+    expect(ids(buscarProdutos(DO_IVAN, 'tahiti'))).toEqual([3469643])
+    expect(ids(buscarProdutos(DO_IVAN, 'limão'))).toEqual([3469643, 3484974])                  // o mais curto primeiro
+  })
+
   it('não chuta: CHOC LACTA BIS ORIGINAL não vira BISCOITO ("bis" tem 3 letras: só abreviação de 4 ou mais vale)', () => {
     expect(sug('CÓD. FOR: 515972 CHOC LACTA BIS ORIGINAL PACK 302,4G')).toBeNull()
   })
@@ -212,5 +224,32 @@ describe('nomeParaMostrar', () => {
     expect(nomeParaMostrar(DO_IVAN, 1854713, 'X')).toEqual({ nome: 'Q. MUÇARELA - INSUMOS (KG)', noSischef: undefined })
     expect(nomeParaMostrar(DO_IVAN, 42, 'GUARDADO')).toEqual({ nome: 'GUARDADO' })
     expect(nomeParaMostrar(null, 3469626, 'GUARDADO')).toEqual({ nome: 'GUARDADO' })
+  })
+})
+
+describe('produto escondido (receita da casa, não é de compra): MAIONESE DA CASA e MAIONESE ALHO NEGRO', () => {
+  const MAIONESES: ProdutoCatalogo[] = [
+    kw(3661383, 'MAIONESE DA CASA (KG)', undefined, { oculto: true }),
+    kw(3661381, 'MAIONESE ALHO NEGRO (KG)', undefined, { oculto: true }),
+    kw(3474674, 'MAIONESE MARIANA - INSUMOS (KG)', 'MAIONESE MARIANA'),
+  ]
+
+  it('a busca não o oferece (nem por nome, nem por código); os outros produtos continuam', () => {
+    expect(ids(buscarProdutos(MAIONESES, 'maionese'))).toEqual([3474674])
+    expect(buscarProdutos(MAIONESES, 'maionese').total).toBe(1)
+    expect(ids(buscarProdutos(MAIONESES, '3661383'))).toEqual([])
+    expect(ids(buscarProdutos(MAIONESES, 'casa'))).toEqual([])
+    expect(ids(buscarProdutos(MAIONESES, 'maionese zzzz'))).toEqual([3474674])                 // nem no modo parcial
+  })
+
+  it('a sugestão pelas palavras-chave o ignora, mesmo quando a nota o descreve melhor', () => {
+    expect(sugestaoPorPalavras(nota('MAIONESE DA CASA KG'), MAIONESES)).toBeNull()
+    expect(sugestaoPorPalavras(nota('MAIONESE MARIANA BALDE'), MAIONESES)?.produto.produto_id).toBe(3474674)
+  })
+
+  it('o palpite do robô para um produto escondido não vira sugestão (nem como "produto novo"); o nome continua disponível para decisões antigas', () => {
+    expect(sugestaoNoCatalogo({ ...nota('MAIONESE'), sugestao: { id: '3661383', nome: 'MAIONESE DA CASA' } }, MAIONESES)).toBeNull()
+    expect(sugestaoNoCatalogo({ ...nota('MAIONESE'), sugestao: { id: '3474674', nome: 'MAIONESE MARIANA' } }, MAIONESES)?.produto_id).toBe(3474674)
+    expect(nomeParaMostrar(MAIONESES, 3661383, 'GUARDADO')).toEqual({ nome: 'MAIONESE DA CASA (KG)', noSischef: undefined })
   })
 })

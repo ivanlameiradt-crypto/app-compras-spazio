@@ -745,6 +745,12 @@ export async function restaurarNota(chave: string): Promise<void> {
   catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'voltar a nota para a fila'), e instanceof ErroApi ? e.status : undefined) }
 }
 
+/** As palavras-chave, os nomes corrigidos e os produtos escondidos. Banco ainda sem a coluna `ocultar` (migração 20261211000002 não aplicada): lê sem ela. */
+async function lerBuscaDosProdutos() {
+  const com = await supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido, ocultar').limit(1000)
+  if (com.error?.code === '42703') return supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido').limit(1000)
+  return com
+}
 /**
  * Os produtos que o Ivan pode escolher ao associar um item da nota: os insumos e bebidas que já estão no app (itens_semana; o código é o do
  * SisChef), UMA linha por produto, com o nome e a unidade da semana mais nova. Em ordem alfabética. Só o admin lê tudo (RLS).
@@ -752,11 +758,12 @@ export async function restaurarNota(chave: string): Promise<void> {
  * Junta o que o Ivan escreveu na planilha de 06/10 (cot_produto_busca): as palavras-chave de cada produto e, quando o nome do SisChef tem erro,
  * o nome corrigido — que passa a ser o `nome` mostrado (o do SisChef fica em `nome_sischef`, e a busca acha por ele também). App publicado antes
  * da migração: a tabela não existe e o catálogo vem como sempre, sem palavras. Qualquer outro erro nessa leitura é erro (a caixa avisa).
+ * O produto marcado `ocultar` (receita da casa, não é de compra) vem com `oculto: true`: a busca e as sugestões o ignoram.
  */
 export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
   const [lista, busca] = await Promise.all([
     supabase.from('itens_semana').select('produto_id, produto, unidade, semana_id').order('semana_id', { ascending: false }).limit(1000),
-    supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido').limit(1000),
+    lerBuscaDosProdutos(),
   ])
   if (lista.error) throw new ErroApi(lista.error.message, lista.status, lista.error.code)
   const porId = new Map<number, ProdutoCatalogo>()
@@ -769,12 +776,13 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
   if (busca.error) {
     if (!tabelaInexistente(busca.error.code)) throw new ErroApi(busca.error.message, busca.status, busca.error.code)
   } else {
-    for (const r of (busca.data ?? []) as { produto_id: number | string; palavras: string | null; nome_corrigido: string | null }[]) {
+    for (const r of (busca.data ?? []) as { produto_id: number | string; palavras: string | null; nome_corrigido: string | null; ocultar?: boolean | null }[]) {
       const p = porId.get(Number(r.produto_id))
       if (!p) continue // anotação de produto que não está na lista desta semana: não aparece
       const palavras = (r.palavras ?? '').replace(/\s+/g, ' ').trim()
       const corrigido = (r.nome_corrigido ?? '').replace(/\s+/g, ' ').trim()
       if (palavras !== '') p.palavras = palavras
+      if (r.ocultar === true) p.oculto = true
       if (corrigido !== '' && corrigido !== p.nome) { p.nome_sischef = p.nome; p.nome = corrigido }
     }
   }

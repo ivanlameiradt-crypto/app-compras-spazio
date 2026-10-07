@@ -73,7 +73,10 @@
 
 ## Noite de 06/10 — sua planilha de palavras-chave (no banco) e o que está pronto para publicar
 - **Planilha carregada no banco** (230 produtos: 227 com palavras-chave, 35 com nome corrigido), como você escreveu. Dois ajustes meus: "FARINHA DESÊMOLA" virou **"FARINHA DE SÊMOLA - INSUMOS (KG)"**
-  (parecia "de sêmola" sem espaço) e o queijo muçarela ganhou **"queijo muss"** (pedido seu). As duas linhas de MAIONESE que você apagou continuam na lista; me diga se é para escondê-las da busca.
+  (parecia "de sêmola" sem espaço) e o queijo muçarela ganhou **"queijo muss"** (pedido seu). A seu pedido, o **limão Tahiti é o mesmo limão**: o produto LIMÃO ganhou "limão Tahiti / limão Taiti" como palavras-chave
+  (o limão siciliano segue outro produto).
+- **MAIONESE ALHO NEGRO e MAIONESE DA CASA** (você as apagou da planilha: a casa produz, com receita; não é produto de compra) **saíram da caixa de associação**. Conferi no banco: eram os únicos que estavam lá e
+  não estavam na planilha, e nada usa os dois. Em vez de apagá-los, ficam **escondidos**: a lista semanal vem do SisChef toda semana e os traria de volta (lá já ficam fora da compra, quantidade 0).
 - **Pronto, mas AINDA NÃO publicado (espera o seu "pode publicar"):** a caixa de associação acha por palavra-chave e pelo nome corrigido, e **sugere** o produto pelas suas palavras ("queijo muss" = mussarela);
   quando nada bate com todas as palavras mostra os mais parecidos (não termina em "nada"); a opção **"Lembrar esta descrição"** (marcada) guarda a descrição da nota como palavra-chave do produto para a próxima vez;
   o painel de itens abre sozinho; o **botão Lançar apagado agora diz o motivo logo embaixo e qual produto associar no SisChef**; e, no cupom, cada envio parado mostra **"O que está errado" e "Como resolver"**.

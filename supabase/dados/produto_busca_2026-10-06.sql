@@ -4,11 +4,16 @@
 --
 --   * 230 produtos (todos na lista semanal de 05/10/2026, conferido no banco antes da carga): 227 com palavras-chave, 35 com nome corrigido.
 --   * As palavras estão EXATAMENTE como o Ivan escreveu (só com espaço simples), inclusive os "OU" e as vírgulas dos números (1,5KG). Nada foi "consertado".
---   * Dois ajustes meus, avisados ao Ivan:
+--   * Três ajustes (os dois primeiros meus, avisados ao Ivan; o terceiro pedido por ele):
 --       3138796  nome corrigido: ele escreveu "FARINHA DESÊMOLA" (parece "de sêmola" sem o espaço, sem o " - INSUMOS (KG)" dos outros) -> "FARINHA DE SÊMOLA - INSUMOS (KG)"
 --       1854713  palavras: acrescentado " OU queijo muss" (pedido dele na noite de 06/10: "queijo muss é mesmo que mussarela")
+--       3469643  palavras: "LIMÃO" -> "LIMÃO OU LIMÃO TAHITI OU LIMÃO TAITI" (pedido dele logo depois: "o limão Tahiti é o mesmo limão; a palavra-chave é limão").
+--                Aplicado no banco real com um update à parte (guardado por `where palavras = 'LIMÃO'`); o checksum da carga inicial (553ea30d…) era sem este.
 --   * As observações da planilha (as minhas "Q. = queijo" etc.) NÃO foram carregadas: eram para ele, não para a busca.
---   * Os 2 produtos que ele apagou da planilha (MAIONESE ALHO NEGRO 3661381 e MAIONESE DA CASA 3661383) não entram aqui; continuam na lista semanal como sempre.
+--   * Os 2 produtos que ele apagou da planilha (MAIONESE ALHO NEGRO 3661381 e MAIONESE DA CASA 3661383) são produtos que a casa PRODUZ (receita), não de compra:
+--     ele disse que não precisam estar no banco do app e que o que estiver no banco e não estiver na planilha pode sair. Entram no fim do arquivo como linhas só
+--     com `ocultar` (migração 20261211000002): a caixa de associação os ignora. A lista semanal (itens_semana) NÃO foi mexida: o SisChef a manda toda
+--     semana e as linhas voltariam; lá eles já vêm com quantidade 0 e fora da compra, e nada no banco os referencia (conferido).
 --
 -- É uma carga de UMA vez: rodar de novo sobrescreve as palavras de cada produto, inclusive o que o app acrescentou depois com "Lembrar esta descrição".
 -- Não é migração (por isso não está em supabase/migrations): é dado do Ivan, e os testes de banco não devem depender dele.
@@ -135,7 +140,7 @@ insert into public.cot_produto_busca (produto_id, palavras, nome_corrigido) valu
   (3469635, 'leite liquido integral', 'LEITE LIQUIDO INTEGRAL - INSUMOS (KG)'),
   (1855881, 'leite nilho integral', 'LEITE NINHO PÓ INTEGRAL - INSUMOS (KG)'),
   (3469638, 'LEMON PEPPER', 'LEMON PEPPER - INSUMOS (KG)'),
-  (3469643, 'LIMÃO', null),
+  (3469643, 'LIMÃO OU LIMÃO TAHITI OU LIMÃO TAITI', null),
   (3484974, 'LIMÃO SICILIANO', null),
   (3476510, 'LOMBO CANADENSE', null),
   (3469826, 'MAÇÃ', null),
@@ -246,3 +251,9 @@ insert into public.cot_produto_busca (produto_id, palavras, nome_corrigido) valu
   (3876739, 'sache wasabi', 'WASABI SACHÊ - INSUMOS (UN)')
 on conflict (produto_id) do update
   set palavras = excluded.palavras, nome_corrigido = excluded.nome_corrigido, atualizado_em = now();
+
+-- Produtos de receita (a casa produz; não são de compra): somem da caixa de associação. Linha só com `ocultar`, sem palavras nem nome corrigido.
+insert into public.cot_produto_busca (produto_id, ocultar) values
+  (3661381, true),
+  (3661383, true)
+on conflict (produto_id) do update set ocultar = true, atualizado_em = now();
