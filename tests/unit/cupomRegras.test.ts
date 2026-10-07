@@ -1,4 +1,4 @@
-import { diagnosticoDoCupom } from '../../src/admin/cupomRegras'
+import { diagnosticoDoCupom, envioRepetido } from '../../src/admin/cupomRegras'
 import type { CupomRecente, ItemCupomRecente } from '../../src/lib/tipos'
 
 // O cupom do ATACADAO de 06/10/2026 (R$ 35,27) como está no banco: 2 itens sem produto confirmado (só com proposta) e 1 já aprendido.
@@ -124,5 +124,15 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
 
   it('itens que não vêm como lista não derrubam a tela', () => {
     expect(diagnosticoDoCupom(cupom({ motivo: 'x', itens: null as unknown as ItemCupomRecente[] }))).not.toBeNull()
+  })
+})
+
+describe('envioRepetido — reenvio de um cupom que já foi lançado não é pendência', () => {
+  it('REVISAR com "JÁ LANÇADO em outro envio" é envio repetido; outros motivos e outros estados não', () => {
+    expect(envioRepetido(cupom({ motivo: 'JÁ LANÇADO em outro envio — NÃO reenviar (duplicaria a compra)' }))).toBe(true)
+    expect(envioRepetido(cupom({ motivo: 'já lançado em outro envio' }))).toBe(true)
+    expect(envioRepetido(cupom({ motivo: '2 item(ns) sem casamento confirmado — confira no Code' }))).toBe(false)
+    expect(envioRepetido(cupom({ motivo: null }))).toBe(false)
+    expect(envioRepetido(cupom({ estado: 'LANCADO', motivo: 'JÁ LANÇADO em outro envio' }))).toBe(false)
   })
 })
