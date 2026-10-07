@@ -300,6 +300,8 @@ interface PropsNota {
   seguidas: Record<string, number>
   /** Recarrega as listas (depois de lançar ou de descartar uma nota). */
   recarregar: () => Promise<void>
+  /** Mostra já, na lista da tela, a decisão de produto/conversão que acabou de ser gravada (a releitura pode falhar e deixar a tela velha). */
+  aplicarDecisao: (chave: string, n: number, produtoId: number | null, conversao: number | null) => void
   /** Outra nota está 'lancando' (o robô é um por vez: o GitHub guarda só 1 disparo pendente e cancelaria o resto). */
   outraLancando: boolean
   /** Algum "Confirmar" está enviando agora (nesta ou em outra nota). */
@@ -313,7 +315,7 @@ interface PropsNota {
   /** Lê a lista de insumos de novo (depois de "Lembrar esta descrição", que muda as palavras-chave de um produto). */
   recarregarCatalogo: () => Promise<void>
 }
-function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo }: PropsNota) {
+function NotaALancar({ nota, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -364,6 +366,7 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   // `conversao` = quanto vale 1 unidade da nota em unidades do produto (só quando as unidades diferem); sempre vai à RPC, nula quando não há.
   async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false, conversao: number | null = null) {
     await api.associarItem(nota.chave, n, produtoId, conversao ?? null)
+    aplicarDecisao(nota.chave, n, produtoId, conversao ?? null) // a tela já reflete o que foi gravado, mesmo que a releitura abaixo falhe
     // "Lembrar esta descrição": só reforça a busca da próxima vez. Falhar aqui NÃO desfaz a confirmação (que já está no banco).
     if (lembrar && produtoId != null) {
       const descricao = nota.itens.find((x) => x.n === n)?.descricao
@@ -619,6 +622,33 @@ export default function NotaSefaz() {
     return () => { vivo = false }
   }, [precisaCatalogo, catalogo])
 
+  /**
+   * Aplica NA HORA, na lista da tela, a decisão que acabou de ser gravada no banco (produto + conversão), sem esperar a releitura. Em 07/10 o Ivan
+   * informou "1 CX = 5 KG" na SEARA, o banco gravou, mas a releitura da lista falhou em silêncio (rede) e a tela ficou velha: o Lançar continuou
+   * apagado até ele sair do app. Agora a tela já reflete o que foi gravado; a releitura que vem depois só confirma (ou corrige) com o dado do servidor.
+   */
+  function aplicarDecisao(chave: string, n: number, produtoId: number | null, conversao: number | null) {
+    setALancar((lista) => lista.map((nota) => {
+      if (nota.chave !== chave) return nota
+      const resto = { ...(nota.associacoes_app ?? {}) }
+      if (produtoId == null) { delete resto[String(n)]; return { ...nota, associacoes_app: resto } }
+      const item = nota.itens.find((x) => x.n === n)
+      const antes = resto[String(n)]
+      const doCatalogo = catalogo?.find((p) => p.produto_id === produtoId)
+      const palpite = item?.sugestao && Number(item.sugestao.id) === produtoId ? item.sugestao.nome : null
+      resto[String(n)] = {
+        produto_id: produtoId,
+        // o servidor guarda o nome do SisChef (não o corrigido); sem ele aqui, o que já estava guardado ou o palpite do robô
+        produto_nome: doCatalogo?.nome_sischef ?? doCatalogo?.nome ?? (antes?.produto_id === produtoId ? antes.produto_nome : palpite) ?? `produto ${produtoId}`,
+        unidade: doCatalogo ? doCatalogo.unidade : antes?.produto_id === produtoId ? antes.unidade : null,
+        conversao,
+        por: antes?.por ?? null,
+        em: new Date().toISOString(),
+      }
+      return { ...nota, associacoes_app: resto }
+    }))
+  }
+
   /** Lê a lista de insumos de novo (as palavras-chave mudaram). Falha passageira: fica a lista que já está na tela. */
   async function recarregarCatalogo(): Promise<void> {
     try { const c = await Promise.resolve(api.catalogoProdutos()); if (c) setCatalogo(c) } catch { /* mantém a lista atual */ }
@@ -658,7 +688,7 @@ export default function NotaSefaz() {
         : (
           <>
             <ul className="recentes">
-              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)}
+              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)} aplicarDecisao={aplicarDecisao}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
                 emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou}
                 recarregarCatalogo={recarregarCatalogo} />)}
