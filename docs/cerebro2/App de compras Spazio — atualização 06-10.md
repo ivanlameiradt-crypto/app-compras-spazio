@@ -1,3 +1,5 @@
+> **SUBSTITUÍDA** pela atualização de 07/10/2026 (versão completa): `App de compras Spazio — atualização 07-10.md`. Fica aqui só como histórico.
+
 # App de compras Spazio — atualização de 06/10/2026
 
 > Para colar em **40 Notas próprias** do Cérebro 2. Atualiza a nota "App de compras Spazio" (que estava em 30/09).
