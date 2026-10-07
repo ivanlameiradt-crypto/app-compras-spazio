@@ -13,7 +13,7 @@ const lancando = (min: number, extra: Partial<NotaSefazLista> = {}): NotaSefazLi
   chave: CHAVE, emitente: 'MERCURIO ALIMENTOS S/A', numero: '002270833', emissao: '2026-10-07', valor_nf: 100, situacao: 'na_fila', lancada_em: null, nf_sischef: null,
   itens: [{ descricao: 'LAGARTO', qtd: 8, unidade_sischef: 'KG', produto_id: 3482196, associacao: 'sischef' }],
   parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 100 }],
-  lancamento_estado: 'lancando', lancamento_em: minutosAtras(min), lancamento_estado_em: minutosAtras(min), ...extra,
+  lancamento_estado: 'lancando', lancamento_estado_em: minutosAtras(min), ...extra,
 })
 const botaoVerificar = () => screen.getByRole('button', { name: 'Verificar o robô' })
 
