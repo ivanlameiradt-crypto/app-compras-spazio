@@ -102,6 +102,23 @@
 - **O ATACADAO (R$ 35,27) continua parado:** agora é você quem corrige, pelo app: LIMÃO SICILIANO e PEPINO JAPONÊS com os pesos do cupom (os dois têm de somar R$ 12,23).
 - O que **não** mudou: o robô ainda não aplica no SisChef a associação confirmada na aba de nota fiscal (etapa 2); as 4 notas seguem dependendo dos 6 itens associados no SisChef.
 
+## 07/10 de manhã — etapa 2 CONSTRUÍDA: "confirmou no app → o robô associa no SisChef e lança" (NÃO publicada: espera o seu "pode publicar")
+- **O que muda para você:** na aba Lançamento fiscal, item sem produto no SisChef **deixa de travar o Lançar** quando você confirmou o produto no app. Ao lançar, o robô
+  entra na importação da nota no SisChef, faz o de-para (Buscar/alterar → produto) e segue para o pedido. Embaixo do Lançar aparece o bloco amarelo **"Ao lançar, o robô vai
+  associar no SisChef: …"** com cada item, o produto e a conversão, e o aviso de que essa associação fica gravada lá para as próximas notas do fornecedor.
+- **Conversão de unidade:** nota em UN e produto em KG (lata de 395 g) → a caixa pergunta **"Quanto vale 1 UN em KG?"** (obrigatório) e mostra **"Vai gravar: 1 UN = 0,395 KG"**
+  antes de você confirmar. Quando o app não tem certeza da unidade do produto no SisChef (nome sem "(KG)", ou produto novo fora da lista), o campo é **opcional**; quando o app
+  acha que as unidades são iguais, fica o link **"O produto no SisChef está em outra unidade? Informar a conversão"**. Quem decide de verdade é o **robô**, olhando o cadastro
+  vivo do SisChef **antes de escrever qualquer coisa**: faltou ou sobrou conversão → ele para em "revisar" e o texto diz o que fazer no app (Trocar → mesmo produto → preencher
+  ou esvaziar o campo → lançar de novo).
+- **Decisões antigas (confirmadas antes desta etapa, ex.: SEARA CHICKEN em CX → NUGGETS em KG):** o app passa a pedir a conversão antes de liberar o Lançar.
+- **Por que não publiquei:** a publicação muda o banco (a função que grava a escolha ganha o campo da conversão), a Edge Function, o robô e o app, **na mesma janela**; e o
+  **1º lançamento real tem de ser acompanhado por você**, numa nota de valor baixo, porque o de-para que o robô grava no SisChef é **permanente** (fica mesmo cancelando a
+  importação). Sugestão: SEARA 000187105 (R$ 223,30, 1 item: você informa quanto vale 1 CX em KG) ou MERCURIO 002270833 (1 item em KG, sem conversão).
+- **Limite que fica:** nome do produto na lista com "(KG)" mas cadastro do SisChef em UN → o app exige a conversão e o robô a recusa; a saída é associar no SisChef (ou acertar o
+  cadastro). O robô avisa isso no texto.
+- Suíte: app 91 arquivos / 1.921 testes; robô 2.583 testes; revisão adversarial em duas rodadas (11 achados; os de risco corrigidos, os demais anotados no ESTADO).
+
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
    **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (depois trocada por "Lançamento fiscal", 3ª publicação) e o ✓ verde no painel de conferir.
@@ -109,8 +126,8 @@
    MERCURIO 002270833 (1 item, LAGARTO RESF) · MATEUS 000089284 (3 de 8 itens: CHOC LACTA BIS, LEITE COND TIROL, ÓLEO SOJA) · MATEUS 000089283 (1 item, queijo muçarela, R$ 5.417,31) · SEARA 000187105 (1 item).
    Saída: associar no SisChef, ou a caixa de associação no app (item 3). **MC CONTENTE 000002278**: chegou sem nenhum item ("xml resumido": a SEFAZ só entregou o resumo; o XML completo só vem
    depois da ciência da operação). Decisão sua: nota com informação faltando não é lançada; você a descartou (descartar só a tira do app; a compra segue pendente no SisChef).
-3. **Caixa de associação de itens no app:** etapa 1 no ar (seção acima). Falta a **etapa 2: o robô aplicar a decisão no SisChef** (ordem combinada:
-   associação no app → o robô aplica → teste acompanhado numa nota de valor baixo; a conversão UN × KG precisará de um campo "quanto vale 1 UN em KG").
+3. **Caixa de associação de itens no app:** etapa 1 no ar. **Etapa 2 construída em 07/10 (seção acima), à espera do seu "pode publicar"**: publicação em janela única
+   (banco → Edge Function → robô → app) e 1º lançamento real acompanhado por você numa nota de valor baixo.
 4. **FEITO em 06/10 (18h49 Belém): 1º lançamento real pela nuvem** — MERCURIO NF 002270842, R$ 2.922,28, Boleto, 3 parcelas; NF 2270842 no SisChef; conferido por você. A trava `MOTOR_NFE_LIGADO` está `ON`
    (não confundir com `MOTOR_CUPOM_LIGADO`, que é a do cupom). Todo "Confirmar" no app agora lança de verdade.
    2º lançamento real também feito: MATEUS 000089282, 3 parcelas digitadas de R$ 143,40. Próximo teste: uma nota com parcelas de VALORES DIFERENTES (prova a escrita do valor da parcela no SisChef).
