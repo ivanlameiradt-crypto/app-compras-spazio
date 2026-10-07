@@ -90,6 +90,18 @@
 - **Seu pedido "confirmou → o robô lança" (nota e cupom)** é a **etapa 2**: ainda não existe. A primeira vez tem de ser **acompanhada por você, numa nota de valor baixo** (o SisChef guarda a associação para as
   próximas notas do fornecedor). A planilha só **sugere**: ela não tem a conversão (UN×KG, caixa×kg).
 
+## Madrugada de 07/10 — você corrige o cupom parado DENTRO do app (publicado com a sua autorização condicional)
+- **Como funciona:** em "Lançar cupom" → "Últimos envios", no cupom "precisa de você", embaixo do bloco amarelo aparece **"Confirmar os itens deste cupom"**: para cada item sem
+  produto você toca na **proposta do sistema** (ou digita nome/palavra-chave/código e escolhe), digita o **peso que está no cupom**, toca em **"Confirmar este item"**. A
+  **conferência da soma** mostra bate/não bate (até R$ 0,02, a mesma regra do robô) e o botão **"Reenviar para lançar"** só acende quando bate. Em 2 ou 3 minutos o cupom vira
+  "lançado ✓" ou volta com um motivo novo. **"Lembrar"** (marcado) guarda a confirmação: nos próximos cupons o item passa direto.
+- **"📷 Ver a foto do cupom"**: em todo cupom parado, abre a foto dentro do cartão com "O que o robô leu" ao lado, para você conferir a leitura antes de corrigir.
+- **Cupom em UN e produto em KG** (ex.: uma peça de queijo): a caixa pede "quanto entra no estoque" e o **"Lembrar" vem desmarcado** — se marcar, a conversão desta compra vale para
+  as próximas; só marque em produto de peso/embalagem fixo (lata, pacote).
+- **Decidi sozinho (você dormia) — diga se discorda:** o botão da foto ficou só nos cupons parados (não nos lançados); peso digitado com ponto conta como decimal ("1.234" = 1,234 kg).
+- **O ATACADAO (R$ 35,27) continua parado:** agora é você quem corrige, pelo app: LIMÃO SICILIANO e PEPINO JAPONÊS com os pesos do cupom (os dois têm de somar R$ 12,23).
+- O que **não** mudou: o robô ainda não aplica no SisChef a associação confirmada na aba de nota fiscal (etapa 2); as 4 notas seguem dependendo dos 6 itens associados no SisChef.
+
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
    **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (depois trocada por "Lançamento fiscal", 3ª publicação) e o ✓ verde no painel de conferir.

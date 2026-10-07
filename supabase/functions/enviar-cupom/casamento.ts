@@ -31,6 +31,9 @@ export interface ItemCasado {
   // descritivos (o lançador e validar_cupom ignoram): ajudam a correção por voz
   casado_por: 'ean' | 'descricao' | null
   proposta: { insumo_id: string; insumo_nome: string } | null
+  /** A quantidade como está impressa no cupom (na unidade do cupom), também no item incerto: a caixa de correção do app a pré-preenche e
+   *  "Ver a foto do cupom" a mostra. Antes (v1) o incerto a perdia e o Ivan tinha de ler o peso de novo na foto. */
+  quantidade_cupom: number
 }
 
 /** Índice dos aprendizados CONFIRMADOS: por EAN, por `cnpj|descricao_norm` (do fornecedor) e por `descricao_norm` (sinônimo global). */
@@ -89,6 +92,7 @@ function aplicar(a: Aprendizado, item: ItemLidoIA, por: 'ean' | 'descricao'): It
     codigo_barras: item.codigo_barras,
     casado_por: por,
     proposta: null,
+    quantidade_cupom: item.quantidade,
   }
 }
 
@@ -103,6 +107,7 @@ function incerto(item: ItemLidoIA): ItemCasado {
     codigo_barras: item.codigo_barras,
     casado_por: null,
     proposta: propor(item.descricao),
+    quantidade_cupom: item.quantidade,
   }
 }
 

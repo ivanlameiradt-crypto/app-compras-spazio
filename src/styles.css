@@ -220,3 +220,25 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }
 .cupom .linha-parcela { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
 .cupom .linha-parcela label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+
+/* "Ver a foto do cupom" num envio parado: a foto dentro do cartão, com o que o robô leu ao lado (07/10) */
+.cupom .foto-cupom { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.cupom .foto-cupom figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.cupom .foto-cupom img { width: 100%; max-height: 70vh; object-fit: contain; border: 1px solid var(--linha); border-radius: 10px; background: #fff; }
+.cupom .foto-cupom figcaption { font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.cupom .foto-cupom figcaption ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.cupom .foto-cupom figcaption li { padding: 0; border: 0; font-size: 13px; }
+
+/* Corrigir o cupom parado dentro do app (07/10): a caixa de cada item pendente, a conferência da soma e o "Reenviar para lançar".
+   Reaproveita .associar/.achados/.escolhido/.marcar.lembrar da caixa de associação; aqui só o que é desta tela. */
+.cupom .corrigir-cupom { margin-top: 8px; }
+.cupom .corrigir-cupom > .grupo { margin-top: 4px; }
+.cupom .corrigir-cupom .corrigir-item { display: flex; flex-direction: column; gap: 4px; }
+.cupom .corrigir-cupom .corrigir-item > p { font-size: 14px; }
+.cupom .corrigir-cupom .associar { margin-top: 0; }
+.cupom .corrigir-cupom label { font-size: 13px; }
+.cupom .corrigir-cupom input[inputmode='decimal'] { max-width: 180px; }
+/* a conferência é uma lista de duas colunas (descrição à esquerda, valor à direita), ao contrário da lista empilhada da nota */
+.cupom .corrigir-cupom .soma-itens li { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cupom .corrigir-cupom .soma-itens li b { flex: none; white-space: nowrap; }
+.cupom .corrigir-cupom .acoes { margin-top: 4px; }

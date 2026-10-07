@@ -288,7 +288,7 @@ describe('enviar-cupom/index.ts — caminho feliz e disparo', () => {
     })
 
     // o aprendizado foi buscado pelos sinônimos globais (emitente_cnpj null) + o que a leitura trouxe (EAN e CNPJ, só dígitos)
-    expect(h.banco.consultasAprendizado).toEqual([`emitente_cnpj.is.null,codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`])
+    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`])
 
     // disparo: POST no workflow certo, ref master, cupom_id, PAT no cabeçalho (e só lá)
     expect(fetchFalso).toHaveBeenCalledTimes(1)
@@ -490,7 +490,7 @@ describe('enviar-cupom/index.ts — o que a IA devolve é dado não confiável',
     })
     await handler(envio())
     expect(h.banco.consultasAprendizado).toHaveLength(1)
-    expect(h.banco.consultasAprendizado[0]).toBe(`emitente_cnpj.is.null,codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`)
+    expect(h.banco.consultasAprendizado[0]).toBe(`and(emitente_cnpj.is.null,codigo_barras.is.null),codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`)
     expect(h.banco.consultasAprendizado[0]).not.toContain('confirmado')
   })
 
@@ -500,7 +500,7 @@ describe('enviar-cupom/index.ts — o que a IA devolve é dado não confiável',
     })
     const corpo = await corpoDe(await handler(envio()))
     // ainda consulta, mas recortada nos globais (emitente_cnpj null) — nunca a tabela inteira
-    expect(h.banco.consultasAprendizado).toEqual(['emitente_cnpj.is.null'])
+    expect(h.banco.consultasAprendizado).toEqual(['and(emitente_cnpj.is.null,codigo_barras.is.null)'])
     expect(corpo).toMatchObject({ estado: 'REVISAR' }) // o único aprendizado do banco é por fornecedor, não global
     expect(fetchFalso).not.toHaveBeenCalled()
   })
@@ -515,7 +515,7 @@ describe('enviar-cupom/index.ts — o que a IA devolve é dado não confiável',
       ...LEITURA, emitente_cnpj: '98.765.432/0001-10', itens: [{ ...LEITURA.itens[0], codigo_barras: null }],
     })
     const corpo = await corpoDe(await handler(envio()))
-    expect(h.banco.consultasAprendizado).toEqual([`emitente_cnpj.is.null,emitente_cnpj.in.("98765432000110")`])
+    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),emitente_cnpj.in.("98765432000110")`])
     expect(corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
     expect(h.banco.cupons[0]).toMatchObject({ itens: [{ sugestao_produto: { id: '777' }, casado_por: 'descricao', entrada_estoque: 4 }] })
     expect(fetchFalso).toHaveBeenCalledTimes(1)

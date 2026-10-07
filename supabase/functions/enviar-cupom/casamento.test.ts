@@ -206,3 +206,15 @@ describe('casarItens — sinônimo global (emitente_cnpj null, qualquer forneced
     expect(r.valor_unitario).toBeCloseTo(99.875, 9)
   })
 })
+
+describe('quantidade_cupom — a quantidade impressa no cupom fica em TODOS os itens (v2: a caixa de correção do app a pré-preenche)', () => {
+  it('no casado (mesmo com conversão) e no incerto', () => {
+    const [casado] = casarItens([item({ descricao: 'LEITE PO 80G', quantidade: 5, codigo_barras: '789' })], CNPJ,
+      [apr({ insumo_id: '111', codigo_barras: '789', fator_conversao: 0.08 })])
+    expect(casado.quantidade_cupom).toBe(5)
+    expect(casado.entrada_estoque).toBeCloseTo(0.4, 6)
+    const [incerto] = casarItens([item({ descricao: 'NUNCA VISTO', quantidade: 2.5 })], CNPJ, [])
+    expect(incerto.sugestao_produto).toBeNull()
+    expect(incerto.quantidade_cupom).toBe(2.5)   // antes (v1) o incerto perdia a quantidade e o Ivan tinha de ler o peso de novo na foto
+  })
+})

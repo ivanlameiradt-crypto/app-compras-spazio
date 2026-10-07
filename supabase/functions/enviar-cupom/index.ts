@@ -107,10 +107,12 @@ Deno.serve(async (req: Request) => {
       async buscarAprendizado(eans, chaves) {
         // Só o CONFIRMADO. Sempre traz os SINÔNIMOS GLOBAIS (emitente_cnpj null — o mesmo produto com descrições de
         // fornecedores diferentes, lista curada pequena), mais o que casa com esta leitura por EAN e pelo CNPJ do emitente.
-        // O recorte `emitente_cnpj.is.null` garante que nunca se traz a tabela inteira, mesmo sem EAN/CNPJ na leitura.
+        // O recorte dos globais (`emitente_cnpj` E `codigo_barras` nulos) garante que nunca se traz a tabela inteira, mesmo sem EAN/CNPJ na
+        // leitura: as linhas por EAN que o app grava ao corrigir um cupom (confirmar-cupom) também têm emitente_cnpj nulo e crescem a cada
+        // confirmação — elas só vêm quando o EAN está nesta leitura.
         const codigos = [...new Set(eans.filter(ehEan))]
         const cnpjs = [...new Set(chaves.map((k) => k.cnpj).filter(ehCnpj))]
-        const filtro: string[] = ['emitente_cnpj.is.null']
+        const filtro: string[] = ['and(emitente_cnpj.is.null,codigo_barras.is.null)']
         if (codigos.length) filtro.push(`codigo_barras.in.(${codigos.map((e) => `"${e}"`).join(',')})`)
         if (cnpjs.length) filtro.push(`emitente_cnpj.in.(${cnpjs.map((c) => `"${c}"`).join(',')})`)
         const { data, error } = await admin.from('cupom_aprendizado')

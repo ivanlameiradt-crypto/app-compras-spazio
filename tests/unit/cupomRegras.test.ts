@@ -29,7 +29,9 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     ])
     // 2,884 kg × R$ 9,90 − R$ 5,51 = R$ 23,04 (o LIMAO TAITI); R$ 35,27 − R$ 23,04 = R$ 12,23 para os dois itens sem peso
     expect(espacos(d.conferencia ?? '')).toBe('O cupom é R$ 35,27 e os itens já confirmados somam R$ 23,04: estes itens devem somar R$ 12,23 (peso × preço, com até 2 centavos de diferença).')
-    expect(d.solucao).toBe('Peça ao Claude e responda, por exemplo: “LIMAO SICILIANO: confirmo, __ kg; PEPINO JAPONES: confirmo, __ kg”. Ele grava a confirmação (nos próximos cupons desse fornecedor o item passa direto), refaz o cupom, confere a soma e o robô lança.')
+    // total lido e só item sem produto: dá para corrigir na própria tela (confirmar-cupom), sem passar pelo Claude
+    expect(d.corrigivel).toBe(true)
+    expect(d.solucao).toBe('Confirme cada item abaixo (o produto do SisChef e o peso que está no cupom) e toque em “Reenviar para lançar”. O app guarda a confirmação (nos próximos cupons desse fornecedor o item passa direto), confere a soma e o robô lança.')
   })
 
   it('1 item, sem proposta do sistema, peso já conhecido, total não lido, nenhum item já confirmado: cada variação muda o texto certo', () => {
@@ -39,13 +41,33 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     expect(sozinho.problema).toContain('Além disso, o total do cupom não foi lido.')
     expect(sozinho.pedidos).toEqual(['PEPINO JAPONES: dizer qual é o produto do SisChef e dizer o peso (kg) que está no cupom.'])
     expect(espacos(sozinho.conferencia ?? '')).toBe('O cupom é R$ 20,00: este item deve dar R$ 20,00 (peso × preço, com até 2 centavos de diferença).')   // nenhum item já confirmado
-    expect(sozinho.solucao).toContain('“PEPINO JAPONES: é <produto>, __ kg”')
+    // o total não foi lido: a tela não consegue conferir a soma (e a Edge Function recusaria), então o caminho continua sendo o Claude
+    expect(sozinho.corrigivel).toBe(false)
+    expect(sozinho.solucao).toContain('Peça ao Claude e responda, por exemplo: “PEPINO JAPONES: é <produto>, __ kg”')
     const comPeso = diagnosticoDoCupom(cupom({ motivo: 'x', itens: [{ ...PEPINO, entrada_estoque: 0.9 }, TAITI] }))!
     expect(comPeso.pedidos).toEqual(['PEPINO JAPONES: confirmar que é PEPINO JAPONÊS - INSUMOS (cód. 3484991).'])   // o peso já se sabe: não pede
     expect(comPeso.conferencia).toBeNull()                                                                         // a conta mistura item com peso: não oferece
-    expect(comPeso.solucao).toContain('“PEPINO JAPONES: confirmo”')
+    expect(comPeso.corrigivel).toBe(true)                                                                          // total lido: corrige na tela
+    expect(comPeso.solucao).toContain('Confirme cada item abaixo')
+    expect(comPeso.solucao).not.toContain('Peça ao Claude')
     const unidade = diagnosticoDoCupom(cupom({ motivo: 'x', itens: [{ ...PEPINO, unidade_cupom: 'UN' }] }))!
     expect(unidade.pedidos[0]).toContain('dizer a quantidade (un) que está no cupom')                              // unidade que não é peso: "quantidade"
+    expect(unidade.corrigivel).toBe(true)
+  })
+
+  it('corrigível na tela só com o total lido: motivo que diz "não consegui ler o total" (mesmo com valor gravado), total nulo ou zero → Claude', () => {
+    expect(diagnosticoDoCupom(cupom({ motivo: 'x; não consegui ler o total do cupom', valor_a_pagar: 35.27, itens: [PEPINO] }))!.corrigivel).toBe(false)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'x', valor_a_pagar: null, itens: [PEPINO] }))!.corrigivel).toBe(false)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'x', valor_a_pagar: 0, itens: [PEPINO] }))!.corrigivel).toBe(false)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'x', pedido_sischef: '163559145', itens: [PEPINO] }))!.corrigivel).toBe(false)   // já tem pedido no SisChef: o servidor recusaria (409)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'x', valor_a_pagar: 0, itens: [PEPINO] }))!.solucao).toContain('Peça ao Claude')
+    expect(diagnosticoDoCupom(cupom({ motivo: 'x', valor_a_pagar: 10, itens: [PEPINO, TAITI] }))!.corrigivel).toBe(true)   // soma que não fecha é problema da tela, não do caminho
+  })
+
+  it('com a quantidade lida no cupom guardada (v2), não pede o peso: a caixa de correção já o pré-preenche', () => {
+    const d = diagnosticoDoCupom(cupom({ motivo: 'x', itens: [{ ...PEPINO, quantidade_cupom: 0.912 }, TAITI] }))!
+    expect(d.pedidos).toEqual(['PEPINO JAPONES: confirmar que é PEPINO JAPONÊS - INSUMOS (cód. 3484991).'])
+    expect(d.conferencia).toBeNull()                                                                               // a conta mistura item com quantidade conhecida
   })
 
   it('sem total lido (0 ou nulo) ou com os itens já confirmados somando mais que o cupom: não há conta para conferir', () => {
@@ -78,6 +100,7 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     expect(d.itens).toEqual([])
     expect(d.pedidos).toEqual([])
     expect(d.conferencia).toBeNull()
+    expect(d.corrigivel).toBe(false)   // nada disso se resolve escolhendo produto na tela
   })
 
   it('o que pode ter chegado ao SisChef vem ANTES do resto: conferir/pedido aberto/já lançado ganham de "item sem produto"', () => {
@@ -85,6 +108,9 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     expect(diagnosticoDoCupom(cupom({ motivo: 'CONFERIR NO SISCHEF antes de repetir: x', itens }))!.problema).toMatch(/PODE já existir/)
     expect(diagnosticoDoCupom(cupom({ motivo: 'falha ao preencher o pagamento no Sischef: x', itens }))!.problema).toMatch(/pedido ABERTO/)
     expect(diagnosticoDoCupom(cupom({ motivo: 'JÁ LANÇADO em outro envio — NÃO reenviar', itens }))!.problema).toMatch(/já foi lançado/)
+    // e, mesmo com item sem produto e total lido, NÃO é corrigível na tela: reenviar poderia duplicar a compra (a Edge Function também recusa)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'CONFERIR NO SISCHEF antes de repetir: x', itens }))!.corrigivel).toBe(false)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'JÁ LANÇADO em outro envio — NÃO reenviar', itens }))!.corrigivel).toBe(false)
   })
 
   it('motivo que ninguém reconhece (ou ausente): não inventa causa; pede ao Claude e não repete o texto (a tela o mostra à parte)', () => {
@@ -92,6 +118,7 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     expect(d.problema).toContain('motivo que ainda não sei explicar')
     expect(d.problema).not.toContain('algo novo que o robô escreveu')
     expect(d.solucao).toContain('Peça ao Claude')
+    expect(d.corrigivel).toBe(false)
     expect(diagnosticoDoCupom(cupom({ motivo: null, itens: [TAITI] }))!.problema).toBe('O robô não conseguiu lançar este cupom.')
   })
 

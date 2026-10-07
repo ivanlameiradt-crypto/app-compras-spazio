@@ -239,7 +239,7 @@ describe('tratar', () => {
       chave: null, emitente_cnpj: '12345678000190', emitente_nome: 'ATACADAO', valor_a_pagar: 9, motivo: null,
       itens: [{
         sugestao_produto: { id: '333' }, entrada_estoque: 1, valor_unitario: 9, desconto_item: 0,
-        descricao_cupom: 'ARROZ 5KG', unidade_cupom: 'UN', codigo_barras: '789', casado_por: 'ean', proposta: null,
+        descricao_cupom: 'ARROZ 5KG', unidade_cupom: 'UN', codigo_barras: '789', casado_por: 'ean', proposta: null, quantidade_cupom: 1,
       }],
     })
   })
