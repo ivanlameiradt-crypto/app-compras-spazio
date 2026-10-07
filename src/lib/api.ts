@@ -601,8 +601,12 @@ function associacoesLidas(x: unknown): Record<string, AssociacaoApp> | null {
     const d = (v ?? {}) as Record<string, unknown>
     const id = Number(d.produto_id)
     if (!Number.isFinite(id) || typeof d.produto_nome !== 'string' || d.produto_nome.trim() === '') continue
+    // A conversão (quanto vale 1 unidade da nota em unidades do produto) TEM de passar: sem ela a tela nunca a vê, o aviso "falta a conversão" não
+    // sai e o Lançar fica apagado mesmo com o valor gravado no banco (SEARA, 07/10). Só número > 0 (o banco já exige até 4 casas e ≤ 10000).
+    const conversao = d.conversao == null || d.conversao === '' ? NaN : Number(d.conversao)
     saida[n] = {
       produto_id: id, produto_nome: d.produto_nome, unidade: typeof d.unidade === 'string' ? d.unidade : null,
+      ...(Number.isFinite(conversao) && conversao > 0 ? { conversao } : {}),
       por: typeof d.por === 'string' ? d.por : null, em: typeof d.em === 'string' ? d.em : null,
     }
   }
