@@ -16,7 +16,7 @@ import {
   AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, associacoesPeloRobo, bloqueiosDaNota,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
-  linhasIniciais, motivoDoDescarte, parseValorBr, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
+  linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta,
   type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
@@ -152,6 +152,20 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
     const atual = parseValorBr(linhas[ult].valor) ?? 0 // o que a última já tem (0 se vazia ou ilegível: aí não entrou na soma)
     onChange(linhas.map((l, j) => (j === ult ? { ...l, valor: formatarValorBr(Math.round((atual + (resultado.falta ?? 0)) * 100) / 100) } : l)))
   }
+  // Passou do valor da nota: tira o que passou da última (só se ela continua positiva).
+  const ultimaAtual = linhas.length > 0 ? parseValorBr(linhas[linhas.length - 1].valor) : null
+  const podeAjustar = resultado.falta != null && resultado.falta < 0 && ultimaAtual != null && Math.round((ultimaAtual + resultado.falta) * 100) > 0
+  const ajustarUltima = () => {
+    if (!podeAjustar || ultimaAtual == null || resultado.falta == null) return
+    const ult = linhas.length - 1
+    onChange(linhas.map((l, j) => (j === ult ? { ...l, valor: formatarValorBr(Math.round((ultimaAtual + resultado.falta!) * 100) / 100) } : l)))
+  }
+  // Divide o valor da nota igualmente nas linhas que já existem (as datas ficam como estão); o centavo que sobra vai para a última.
+  const dividido = dividirEmParcelas(nota.valor_nf, linhas.length)
+  const dividir = () => { if (dividido) onChange(linhas.map((l, i) => ({ ...l, valor: dividido[i] }))) }
+  // "Valores iguais" que não fecham por 1 ou 2 centavos (R$ 1.794,49 / 3): explica e aponta a saída, em vez de só dizer "faltam 0,01".
+  const iguaisMasNaoFecham = resultado.falta != null && resultado.falta !== 0 && Math.abs(resultado.falta) <= 0.05 && linhas.length >= 2 &&
+    resultado.parcelas.length === linhas.length && resultado.parcelas.every((p) => p.valor === resultado.parcelas[0].valor)
   return (
     <div className="editor-parcelas" data-testid="editor-parcelas">
       <div className="amarelo">
@@ -189,14 +203,23 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
         <button type="button" className="botao secundario" disabled={desabilitado || linhas.length >= 60} onClick={() => onChange([...linhas, { vencimento: '', valor: '' }])}>
           Adicionar parcela
         </button>
+        <button type="button" className="botao secundario" disabled={desabilitado || dividido == null} onClick={dividir}>Dividir em parcelas iguais</button>
         {resultado.falta != null && resultado.falta > 0 && (
           <button type="button" className="botao secundario" disabled={desabilitado} onClick={completar}>Preencher o que falta na última</button>
+        )}
+        {podeAjustar && (
+          <button type="button" className="botao secundario" disabled={desabilitado} onClick={ajustarUltima}>Ajustar a última parcela</button>
         )}
       </div>
       <p className={resultado.ok ? 'ok' : 'sub'} data-testid="resumo-parcelas">
         Soma {formatarReais(resultado.soma)} · nota {nota.valor_nf == null ? '?' : formatarReais(nota.valor_nf)}
         {resultado.ok ? ' · bate' : resultado.motivo ? ` · ${resultado.motivo}` : ''}
       </p>
+      {iguaisMasNaoFecham && nota.valor_nf != null && (
+        <p className="amarelo" data-testid="dica-centavo">
+          {formatarValorBr(nota.valor_nf)} não divide em {linhas.length} partes iguais ao centavo. Toque em “Dividir em parcelas iguais”: a última leva o centavo que sobra e o Lançar acende.
+        </p>
+      )}
     </div>
   )
 }
