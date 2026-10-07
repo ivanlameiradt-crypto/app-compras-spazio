@@ -328,7 +328,8 @@ describe('Cotações — Copiar mensagem e Copiar link', () => {
     const area = await screen.findByRole('textbox', { name: 'Texto para copiar' })
     expect(area).toHaveValue(textoDoLink(abrir))
     expect(area).toHaveAttribute('readonly')
-    expect(document.activeElement).toBe(area)
+    // o foco vem do useEffect do TextoParaCopiar, depois do commit: no runner lento o findByRole volta antes dele
+    await waitFor(() => expect(document.activeElement).toBe(area))
     expect(screen.getByText('Copie o texto abaixo (segure e escolha Copiar)')).toBeInTheDocument()
     // a pergunta aparece e o texto continua lá para copiar
     expect(screen.getByText('Enviou no WhatsApp?')).toBeInTheDocument()
