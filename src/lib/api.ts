@@ -792,17 +792,19 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
 function mensagemDaAssociacao(e: unknown): string {
   const texto = e instanceof Error ? e.message : ''
   if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
-  if (/nota não encontrada|não está mais na fila|descartada|pela metade|lançando esta nota|item não encontrado|já está associado|fora da lista/i.test(texto)) {
+  if (/nota não encontrada|não está mais na fila|descartada|pela metade|lançando esta nota|item não encontrado|já está associado|fora da lista|a conversão/i.test(texto)) {
     return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
   }
   return 'Não consegui guardar a escolha agora. Confira a internet e tente de novo.'
 }
 /**
  * Guarda a escolha do Ivan para UM item sem produto (cot_nfe_associar, admin): o produto vem da lista de insumos do app e o servidor grava
- * o nome e a unidade. Com `produtoId` nulo desfaz a escolha. Etapa 1: só GUARDA; nada muda no SisChef (o robô ainda não aplica a escolha).
+ * o nome e a unidade. Com `produtoId` nulo desfaz a escolha. `conversao` = quanto vale 1 unidade da nota em unidades do produto (só quando as
+ * unidades diferem; o banco confere o número); sempre vai como p_conversao, nulo quando não há — a função do banco só existe com os 4 parâmetros
+ * (etapa 2). Nada muda no SisChef aqui: é o robô, ao lançar, que aplica a decisão lá.
  */
-export async function associarItem(chave: string, n: number, produtoId: number | null): Promise<void> {
-  try { await chamar('cot_nfe_associar', { p_chave: chave, p_n: n, p_produto_id: produtoId }) }
+export async function associarItem(chave: string, n: number, produtoId: number | null, conversao: number | null = null): Promise<void> {
+  try { await chamar('cot_nfe_associar', { p_chave: chave, p_n: n, p_produto_id: produtoId, p_conversao: conversao }) }
   catch (e) { throw new ErroApi(mensagemDaAssociacao(e), e instanceof ErroApi ? e.status : undefined) }
 }
 /**

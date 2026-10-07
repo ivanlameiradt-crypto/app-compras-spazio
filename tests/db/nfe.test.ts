@@ -796,6 +796,76 @@ describe('Fase 3 — associar o produto de um item pelo app (cot_nfe_associar)',
     expect((h[1].depois as Json).associacao_app.decisao.produto_id).toBe(LEITE)
     expect((h[2].depois as Json).associacao_app.decisao).toBeNull()
   })
+
+  // ---------- ETAPA 2 (migração 20261212000001): a decisão ganha a conversão de unidade (1 unidade da nota = ? unidades do produto)
+  const associarConv = (db: PGlite, n: number, produto: number | null, conversao: number | null) =>
+    chamar(db, ADMIN, 'cot_nfe_associar($1, $2, $3, $4::numeric)', [CHAVE, n, produto, conversao])
+
+  it('etapa 2: a assinatura antiga de 3 parâmetros não existe mais; só a de 4, com p_conversao opcional (default null)', async () => {
+    const db = await bancoF3F()
+    const r = await db.query<{ f: string; args: string }>(
+      `select regexp_replace(p.oid::regprocedure::text, '\\s', '', 'g') as f, pg_get_function_arguments(p.oid) as args
+         from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'cot_nfe_associar'`)
+    expect(r.rows.map((x) => x.f.replace(/^public\./, ''))).toEqual(['cot_nfe_associar(text,integer,bigint,numeric)']) // uma só: sem ambiguidade para o PostgREST
+    expect(r.rows[0].args).toMatch(/p_conversao numeric DEFAULT NULL/i)
+  })
+
+  it('etapa 2: sem conversão (3 argumentos) a decisão sai com conversao null; com conversão grava o número; escolher de novo troca; o histórico leva a conversão', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [dois()])
+    await associar(db, ADMIN, 1, OLEO)                                         // o app antigo / unidades iguais: sem conversão
+    expect((await decisoes(db)).associacoes_app['1']).toMatchObject({ produto_id: OLEO, conversao: null })
+    expect(Object.keys((await decisoes(db)).associacoes_app['1'])).toContain('conversao') // a chave existe mesmo nula: o robô lê sem adivinhar
+    await associarConv(db, 2, LEITE, 0.395)                                    // lata de 395 g: NF em UN, produto em KG
+    expect((await decisoes(db)).associacoes_app['2']).toMatchObject({ produto_id: LEITE, unidade: 'kg', conversao: 0.395 })
+    await associarConv(db, 2, LEITE, 0.4)                                      // escolher de novo troca a conversão
+    expect((await decisoes(db)).associacoes_app['2'].conversao).toBe(0.4)
+    await associarConv(db, 2, LEITE, null)                                     // e pode voltar a ficar sem conversão
+    expect((await decisoes(db)).associacoes_app['2'].conversao).toBeNull()
+    const h = await como(db, ADMIN, `select depois from historico_alteracoes where tabela = 'cot_nfe' and registro = $1 order by id`, [CHAVE])
+    expect(h.map((x) => (x.depois as Json).associacao_app.decisao.conversao)).toEqual([null, 0.395, 0.4, null])
+  })
+
+  it('etapa 2: a conversão recusada: zero, negativa, acima de 10000 e com mais de 4 casas (nada é gravado); aceita 0,0001, 1 e 10000', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [nota()])
+    for (const [v, erro] of [
+      [0, 'a conversão precisa ser maior que zero e até 10000'],
+      [-1, 'a conversão precisa ser maior que zero e até 10000'],
+      [10001, 'a conversão precisa ser maior que zero e até 10000'],
+      [10000.0001, 'a conversão precisa ser maior que zero e até 10000'],
+      [0.12345, 'a conversão aceita no máximo 4 casas decimais'],
+      [0.00001, 'a conversão aceita no máximo 4 casas decimais'],
+    ] as const) {
+      expect(await erroDe(associarConv(db, 1, OLEO, v))).toBe(erro)
+    }
+    expect((await decisoes(db)).associacoes_app).toBeNull()                    // nenhuma recusa deixou rastro
+    expect(await como(db, ADMIN, `select count(*)::int as n from historico_alteracoes where tabela = 'cot_nfe'`)).toEqual([{ n: 0 }])
+    for (const v of [0.0001, 1, 10000]) {
+      await associarConv(db, 1, OLEO, v)
+      expect((await decisoes(db)).associacoes_app['1'].conversao).toBe(v)
+    }
+    // a conversão é conferida mesmo num desfazer: o número que chega aqui é o que o robô digita no SisChef, e lá fica para sempre
+    expect(await erroDe(associarConv(db, 1, null, 0))).toBe('a conversão precisa ser maior que zero e até 10000')
+    expect((await decisoes(db)).associacoes_app['1'].produto_id).toBe(OLEO)    // o desfazer recusado não desfez
+  })
+
+  it('etapa 2: desfazer continua funcionando com a conversão gravada (com 3 e com 4 argumentos)', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [dois()])
+    await associarConv(db, 1, LEITE, 0.395)
+    await associarConv(db, 2, LEITE, 2)
+    await associar(db, ADMIN, 1, null)                                         // 3 argumentos (default)
+    expect(Object.keys((await decisoes(db)).associacoes_app)).toEqual(['2'])
+    await associarConv(db, 2, null, null)                                      // 4 argumentos
+    expect((await decisoes(db)).associacoes_app).toBeNull()
+    const h = await como(db, ADMIN, `select antes, depois from historico_alteracoes where tabela = 'cot_nfe' and registro = $1 order by id`, [CHAVE])
+    expect((h[2].antes as Json).associacao_app.decisao.conversao).toBe(0.395)  // o histórico guarda o que foi desfeito, conversão inclusive
+    expect((h[2].depois as Json).associacao_app.decisao).toBeNull()
+  })
 })
 
 describe('Fase 3 — parcelas digitadas pelo Ivan (cot_nfe.parcelas_manuais)', () => {
