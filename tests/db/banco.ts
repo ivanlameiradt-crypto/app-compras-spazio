@@ -35,7 +35,9 @@ export async function limpar(db: PGlite): Promise<void> {
       // Fase 2, D: tabelas de recebimento e NF-e (cot_nfe_leituras não é alcançada por cascade)
       'cot_pedidos_acomp, cot_recebimentos, cot_fornecedores_cnpj, cot_nfe, cot_nfe_leituras, ' +
       // Fase 2, C2: regras da lista e fatores descartados
-      'lista_regras, cot_fator_descartes restart identity cascade',
+      'lista_regras, cot_fator_descartes, ' +
+      // Fase 3: palavras-chave e nome corrigido dos produtos
+      'cot_produto_busca restart identity cascade',
   )
   // cot_ia_config (Fase 2, B) tem uma linha só. O truncate de usuarios acima leva ela junto (FK mudado_por → usuarios),
   // então o upsert a recria com os padrões (nasce desligada). Sem a tabela (banco em base 1B nos testes de "antesDe"),

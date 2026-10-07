@@ -208,6 +208,14 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .associar-feito { font-size: 13px; }
 .cupom .confirmado { color: var(--ok-texto); font-weight: 600; }
 .cupom .conferir-itens li button.link { align-self: flex-start; }
+/* "Lembrar esta descrição" na caixa de associação; e os blocos que dizem o que está errado e como resolver (cupom parado, Lançar travado) */
+.cupom .associar .marcar.lembrar { font-size: 13px; align-items: flex-start; }
+.cupom .associar .marcar.lembrar input { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+.cupom .problema-cupom, .cupom .lancar-travado { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.cupom .problema-cupom p, .cupom .lancar-travado p { margin: 0; }
+.cupom .problema-cupom ul, .cupom .lancar-travado ul, .cupom .problema-cupom ol { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.cupom .problema-cupom li, .cupom .lancar-travado li { display: list-item; font-size: 14px; padding: 0; border: 0; }
+.cupom .problema-cupom ol li { padding-left: 2px; }
 .cupom button.link { background: none; border: 0; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font: inherit; }
 .cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }
 .cupom .linha-parcela { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }

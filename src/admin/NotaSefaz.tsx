@@ -7,10 +7,11 @@ import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import AssociarProduto from './AssociarProduto'
+import { nomeParaMostrar } from './associacaoRegras'
 import {
   AVISO_ASSOCIACAO_SO_NO_APP, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
   FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
-  linhasIniciais, motivoDoDescarte, parseValorBr, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
+  linhasIniciais, motivoDoDescarte, parseValorBr, pendenciasNoSischef, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
   traduzirMotivo, validarParcelasDigitadas,
   type LinhaParcela, type ResultadoParcelas,
 } from './notaSefazRegras'
@@ -57,11 +58,13 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
   catalogoFalhou: boolean
   /** Dá para escolher produto agora? Não, se o robô está lançando a nota ou ela ficou pela metade (o banco também recusa). */
   podeAssociar: boolean
-  salvarAssociacao: (n: number, produtoId: number | null) => Promise<void>
+  salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean) => Promise<void>
 }) {
   const f = resumoFinanceiro(nota)
+  // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
+  const [aberto, setAberto] = useState(() => nota.itens.some((it) => !itemAssociado(it) && decisaoDoItem(nota, it) == null))
   return (
-    <details className="conferir" data-testid="conferir">
+    <details className="conferir" data-testid="conferir" open={aberto} onToggle={(e) => setAberto((e.currentTarget as HTMLDetailsElement).open)}>
       <summary>Conferir itens e financeiro</summary>
       <div className="grupo">Itens e produtos associados</div>
       {nota.itens.length === 0 && <p className="sub" data-testid="conferir-sem-itens">Nenhum item lido: no SisChef esta nota costuma aparecer como “XML resumido” (só o resumo da nota, sem os itens).</p>}
@@ -77,7 +80,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
               <b className="produto">
                 {ok && <TickOk />}
                 {decisao && <TickOk rotulo="produto confirmado no app" testid="item-confirmado" />}
-                <span>{decisao ? decisao.produto_nome : nomeDoProduto(it)}</span>
+                <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
               </b>
               {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
               {!ok && it.n != null && (decisao != null || podeAssociar) && (
@@ -185,8 +188,10 @@ interface PropsNota {
   /** Lista de insumos do app para escolher o produto de um item sem produto (null = carregando) e se a leitura dela falhou. */
   catalogo: ProdutoCatalogo[] | null
   catalogoFalhou: boolean
+  /** Lê a lista de insumos de novo (depois de "Lembrar esta descrição", que muda as palavras-chave de um produto). */
+  recarregarCatalogo: () => Promise<void>
 }
-function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou }: PropsNota) {
+function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -225,8 +230,15 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok)
   // Escolher produto de um item sem produto: não com o robô lançando a nota nem com ela pela metade (o banco também recusa).
   const podeAssociar = estado !== 'erro' && !(estado === 'lancando' && !presa)
-  async function salvarAssociacao(n: number, produtoId: number | null) {
+  async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false) {
     await api.associarItem(nota.chave, n, produtoId)
+    // "Lembrar esta descrição": só reforça a busca da próxima vez. Falhar aqui NÃO desfaz a confirmação (que já está no banco).
+    if (lembrar && produtoId != null) {
+      const descricao = nota.itens.find((x) => x.n === n)?.descricao
+      if (descricao) {
+        try { if (await Promise.resolve(api.lembrarDescricao(produtoId, descricao))) await recarregarCatalogo() } catch { /* segue sem lembrar */ }
+      }
+    }
     await recarregar() // a decisão vem do banco: o item passa a mostrar o ✓ de confirmado
   }
 
@@ -342,6 +354,30 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
           <button type="button" className="botao" disabled={!podeLancar} onClick={() => { setErro(''); setConfirmando(true) }}>Lançar</button>
         </div>
       )}
+      {/* O Lançar apagado sem dizer por quê confunde: o motivo fica logo embaixo dele, com o que fazer (pedido do Ivan, 06/10 à noite). */}
+      {!confirmando && !robotOuMetade && bloqueios.some(bloqueioDeProduto) && (
+        <div className="amarelo lancar-travado" data-testid="lancar-travado">
+          <p>
+            <b>O Lançar está apagado porque falta produto no SisChef.</b> Confirmar o produto aqui no app só guarda a sua escolha: o robô ainda não a
+            aplica lá, e só lança nota cujos itens já têm produto no SisChef.
+          </p>
+          <p>Associe no SisChef:</p>
+          <ul>
+            {pendenciasNoSischef(nota).map((p, i) => {
+              const nomes = p.codigo != null ? nomeParaMostrar(catalogo, p.codigo, p.nome ?? '') : null
+              return (
+                <li key={i} data-testid="lancar-travado-item">
+                  <span>{semCodFor(p.descricao)}</span>{' → '}
+                  {p.codigo != null
+                    ? <><b>{p.codigo}</b>{nomes?.nome ? ` ${nomes.nome}` : ''}{nomes?.noSischef ? ` (no SisChef: ${nomes.noSischef})` : ''}</>
+                    : <>escolha o produto em “Conferir itens e financeiro”</>}
+                </li>
+              )
+            })}
+          </ul>
+          <p className="sub">Depois de associar lá, o botão libera na próxima leitura do SisChef.</p>
+        </div>
+      )}
       {descartavel && !confirmando && (descartando ? (
         <div className="bloco-envio" data-testid="confirmar-descarte">
           <p>Descartar a NF {nota.numero} de {nota.emitente}?</p>
@@ -409,6 +445,11 @@ export default function NotaSefaz() {
     return () => { vivo = false }
   }, [precisaCatalogo, catalogo])
 
+  /** Lê a lista de insumos de novo (as palavras-chave mudaram). Falha passageira: fica a lista que já está na tela. */
+  async function recarregarCatalogo(): Promise<void> {
+    try { const c = await Promise.resolve(api.catalogoProdutos()); if (c) setCatalogo(c) } catch { /* mantém a lista atual */ }
+  }
+
   /** Desfaz o descarte: a nota volta para "Notas a lançar". */
   async function voltar(chave: string) {
     if (voltando) return
@@ -445,7 +486,8 @@ export default function NotaSefaz() {
             <ul className="recentes">
               {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
-                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou} />)}
+                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou}
+                recarregarCatalogo={recarregarCatalogo} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
           </>

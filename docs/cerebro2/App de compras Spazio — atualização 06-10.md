@@ -71,6 +71,25 @@
 - **Ajuste (06/10, noite):** o editor das parcelas do boleto (MATEUS) e o "Como pagar" não abriam enquanto a nota esperava produto no SisChef. Agora abrem; o Lançar continua travado até os produtos
   estarem associados. O que você digita fica guardado neste aparelho e sobrevive a recarregar a página.
 
+## Noite de 06/10 — sua planilha de palavras-chave (no banco) e o que está pronto para publicar
+- **Planilha carregada no banco** (230 produtos: 227 com palavras-chave, 35 com nome corrigido), como você escreveu. Dois ajustes meus: "FARINHA DESÊMOLA" virou **"FARINHA DE SÊMOLA - INSUMOS (KG)"**
+  (parecia "de sêmola" sem espaço) e o queijo muçarela ganhou **"queijo muss"** (pedido seu). A seu pedido, o **limão Tahiti é o mesmo limão**: o produto LIMÃO ganhou "limão Tahiti / limão Taiti" como palavras-chave
+  (o limão siciliano segue outro produto).
+- **MAIONESE ALHO NEGRO e MAIONESE DA CASA** (você as apagou da planilha: a casa produz, com receita; não é produto de compra) **saíram da caixa de associação**. Conferi no banco: eram os únicos que estavam lá e
+  não estavam na planilha, e nada usa os dois. Em vez de apagá-los, ficam **escondidos**: a lista semanal vem do SisChef toda semana e os traria de volta (lá já ficam fora da compra, quantidade 0).
+- **NO AR (publicado depois do seu "pode publicar"; feche e reabra o app):** a caixa de associação acha por palavra-chave e pelo nome corrigido, e **sugere** o produto pelas suas palavras ("queijo muss" = mussarela);
+  quando nada bate com todas as palavras mostra os mais parecidos (não termina em "nada"); a opção **"Lembrar esta descrição"** (marcada) guarda a descrição da nota como palavra-chave do produto para a próxima vez;
+  o painel de itens abre sozinho; o **botão Lançar apagado agora diz o motivo logo embaixo e qual produto associar no SisChef**; e, no cupom, cada envio parado mostra **"O que está errado" e "Como resolver"**.
+- **Por que o Lançar das 4 notas está apagado:** todas têm item sem produto **no SisChef**. Confirmar no app só guarda a sua escolha; o robô ainda **não aplica** a escolha no SisChef (etapa 2). Para lançar hoje:
+  associar os 6 itens no SisChef (e me avisar para eu atualizar a leitura).
+- **Quando o app pede a sua ajuda (cupom e nota):** a tela diz **o que está errado**, **o que preciso de você** (lista item a item: confirmar o produto e, no cupom, o peso) e **como resolver**; no cupom ainda traz a conta
+  para você conferir (os itens sem peso devem somar R$ 12,23). Na nota, item que nada reconhece mostra "Não achei este produto pelas suas palavras-chave. Digite o nome..." e a caixa para digitar; ao confirmar, a
+  descrição fica guardada e na próxima vez o app já sugere. (A tela antiga do cupom, com "confira no Code", foi substituída por esta.) Ideia de caixa para confirmar o produto e o peso DENTRO do cupom: só protótipo; depende do seu OK.
+- **Cupom do ATACADAO (R$ 35,27) parado:** 2 itens (LIMAO SICILIANO, PEPINO JAPONES) sem produto **confirmado**; o robô nunca chuta. Falta você confirmar os 2 casamentos e dizer os pesos (kg) deles (o
+  sistema não guardou). Reenviar a foto não resolve.
+- **Seu pedido "confirmou → o robô lança" (nota e cupom)** é a **etapa 2**: ainda não existe. A primeira vez tem de ser **acompanhada por você, numa nota de valor baixo** (o SisChef guarda a associação para as
+  próximas notas do fornecedor). A planilha só **sugere**: ela não tem a conversão (UN×KG, caixa×kg).
+
 ## Pendências
 1. **Já no ar (06/10):** a correção da nota presa, o botão "Descartar nota", a quantidade com vírgula e a nota sem itens travada. Feche e reabra o app para pegar a versão nova.
    **Também no ar (2ª publicação de 06/10):** a Regra 4 (soma exata das parcelas), a aba "Lançamento de fiscal" (depois trocada por "Lançamento fiscal", 3ª publicação) e o ✓ verde no painel de conferir.

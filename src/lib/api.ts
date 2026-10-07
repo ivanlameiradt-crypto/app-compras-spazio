@@ -745,20 +745,46 @@ export async function restaurarNota(chave: string): Promise<void> {
   catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'voltar a nota para a fila'), e instanceof ErroApi ? e.status : undefined) }
 }
 
+/** As palavras-chave, os nomes corrigidos e os produtos escondidos. Banco ainda sem a coluna `ocultar` (migração 20261211000002 não aplicada): lê sem ela. */
+async function lerBuscaDosProdutos() {
+  const com = await supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido, ocultar').limit(1000)
+  if (com.error?.code === '42703') return supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido').limit(1000)
+  return com
+}
 /**
  * Os produtos que o Ivan pode escolher ao associar um item da nota: os insumos e bebidas que já estão no app (itens_semana; o código é o do
  * SisChef), UMA linha por produto, com o nome e a unidade da semana mais nova. Em ordem alfabética. Só o admin lê tudo (RLS).
+ *
+ * Junta o que o Ivan escreveu na planilha de 06/10 (cot_produto_busca): as palavras-chave de cada produto e, quando o nome do SisChef tem erro,
+ * o nome corrigido — que passa a ser o `nome` mostrado (o do SisChef fica em `nome_sischef`, e a busca acha por ele também). App publicado antes
+ * da migração: a tabela não existe e o catálogo vem como sempre, sem palavras. Qualquer outro erro nessa leitura é erro (a caixa avisa).
+ * O produto marcado `ocultar` (receita da casa, não é de compra) vem com `oculto: true`: a busca e as sugestões o ignoram.
  */
 export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
-  const { data, error, status } = await supabase.from('itens_semana').select('produto_id, produto, unidade, semana_id')
-    .order('semana_id', { ascending: false }).limit(1000)
-  if (error) throw new ErroApi(error.message, status, error.code)
+  const [lista, busca] = await Promise.all([
+    supabase.from('itens_semana').select('produto_id, produto, unidade, semana_id').order('semana_id', { ascending: false }).limit(1000),
+    lerBuscaDosProdutos(),
+  ])
+  if (lista.error) throw new ErroApi(lista.error.message, lista.status, lista.error.code)
   const porId = new Map<number, ProdutoCatalogo>()
-  for (const r of (data ?? []) as { produto_id: number | string; produto: string | null; unidade: string | null }[]) {
+  for (const r of (lista.data ?? []) as { produto_id: number | string; produto: string | null; unidade: string | null }[]) {
     const id = Number(r.produto_id)
     const nome = (r.produto ?? '').replace(/\s+/g, ' ').trim()
     if (!Number.isFinite(id) || nome === '' || porId.has(id)) continue // a 1ª de cada produto é a da semana mais nova
     porId.set(id, { produto_id: id, nome, unidade: r.unidade ?? null })
+  }
+  if (busca.error) {
+    if (!tabelaInexistente(busca.error.code)) throw new ErroApi(busca.error.message, busca.status, busca.error.code)
+  } else {
+    for (const r of (busca.data ?? []) as { produto_id: number | string; palavras: string | null; nome_corrigido: string | null; ocultar?: boolean | null }[]) {
+      const p = porId.get(Number(r.produto_id))
+      if (!p) continue // anotação de produto que não está na lista desta semana: não aparece
+      const palavras = (r.palavras ?? '').replace(/\s+/g, ' ').trim()
+      const corrigido = (r.nome_corrigido ?? '').replace(/\s+/g, ' ').trim()
+      if (palavras !== '') p.palavras = palavras
+      if (r.ocultar === true) p.oculto = true
+      if (corrigido !== '' && corrigido !== p.nome) { p.nome_sischef = p.nome; p.nome = corrigido }
+    }
   }
   return [...porId.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
@@ -778,6 +804,14 @@ function mensagemDaAssociacao(e: unknown): string {
 export async function associarItem(chave: string, n: number, produtoId: number | null): Promise<void> {
   try { await chamar('cot_nfe_associar', { p_chave: chave, p_n: n, p_produto_id: produtoId }) }
   catch (e) { throw new ErroApi(mensagemDaAssociacao(e), e instanceof ErroApi ? e.status : undefined) }
+}
+/**
+ * "Lembrar esta descrição": guarda a descrição que veio na nota como mais uma palavra-chave do produto que o Ivan confirmou (cot_produto_lembrar,
+ * admin), para a caixa de associação já sugeri-lo da próxima vez. true = acrescentou; false = já estava lá (ou não coube nos 500 caracteres).
+ * Só reforça a busca: quem chama não deve deixar uma falha daqui desfazer a confirmação.
+ */
+export async function lembrarDescricao(produtoId: number, texto: string): Promise<boolean> {
+  return (await chamarRet<boolean | null>('cot_produto_lembrar', { p_produto_id: produtoId, p_texto: texto })) === true
 }
 export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
 export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })

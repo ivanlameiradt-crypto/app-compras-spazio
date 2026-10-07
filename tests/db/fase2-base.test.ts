@@ -47,12 +47,14 @@ const F3C = '20261207000001_nfe_parcelas.sql'
 const F3D = '20261208000001_nfe_parcelas_manuais.sql'
 const F3E = '20261209000001_nfe_descartar.sql'
 const F3F = '20261210000001_nfe_associacao_app.sql'
+const F3G = '20261211000001_produto_busca.sql' // palavras-chave e nome corrigido dos produtos (caixa de associação)
+const F3H = '20261211000002_produto_busca_ocultar.sql' // produto de receita (não é de compra) some da caixa de associação
 // A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 vem depois da B; as da Fase 3 são as últimas por nome.
 const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [
@@ -77,6 +79,7 @@ const TABELAS_ESPERADAS = [
   'cot_nfe_leituras',
   'cot_pedidos',
   'cot_pedidos_acomp',
+  'cot_produto_busca', // Fase 3: palavras-chave e nome corrigido dos produtos
   'cot_recebimentos',
   'cot_vendedores',
   'historico_alteracoes',

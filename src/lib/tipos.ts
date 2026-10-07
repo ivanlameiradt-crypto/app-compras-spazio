@@ -399,9 +399,19 @@ export interface ItemNotaSefaz {
 export interface AssociacaoApp { produto_id: number; produto_nome: string; unidade: string | null; por?: string | null; em?: string | null }
 /** Produto da lista de insumos do app (itens_semana; o código é o do SisChef): o que o Ivan pode escolher ao associar um item da nota. */
 export interface ProdutoCatalogo {
-  produto_id: number; nome: string; unidade: string | null
+  produto_id: number
+  /** O nome que o app mostra: o CORRIGIDO pelo Ivan (cot_produto_busca), se houver; senão o da lista semanal (que é o do SisChef). */
+  nome: string
+  unidade: string | null
   /** Produto NOVO: o robô já o vê no SisChef (palpite do item), mas ele ainda não entrou na lista semanal de insumos do app; sem unidade conhecida. */
   novo?: boolean
+  /** O nome como está no SisChef, quando o Ivan o corrigiu (só vem se for diferente de `nome`): a busca também o acha por ele. */
+  nome_sischef?: string
+  /** Palavras-chave que o Ivan escreveu para achar o produto (cot_produto_busca; migração 20261211000001): texto livre, do jeito que ele escreveu. */
+  palavras?: string
+  /** Produto que o Ivan mandou esconder (a casa o PRODUZ, com receita: não é de compra; migração 20261211000002). Fica na lista só para dar nome a decisões
+   *  antigas; a busca, as sugestões e o palpite do robô o ignoram. */
+  oculto?: boolean
 }
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
@@ -486,6 +496,8 @@ export interface ItemCupomRecente {
   desconto_item: number | null
   sugestao_produto: { id: string } | null
   casado_por: string | null
+  /** O melhor candidato do sistema quando o item não tem produto confirmado (só pré-preenche a confirmação do Ivan). */
+  proposta?: { insumo_id: string; insumo_nome: string | null } | null
 }
 /** Linha de "Últimos envios" (SELECT por RLS de admin — e_admin() do Plano 1). */
 export interface CupomRecente {
