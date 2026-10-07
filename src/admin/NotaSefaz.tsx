@@ -17,7 +17,7 @@ import {
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
-  textoDoEstado, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal,
+  textoDoEstado, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta,
   type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
@@ -88,11 +88,14 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
               <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
               {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app"
                   embaixo, com a conversão quando houver). Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
-              <b className="produto">
-                {ok && <TickOk />}
-                {decisao && <TickOk rotulo={rotuloConfirmado} testid="item-confirmado" />}
-                <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
-              </b>
+              {/* Decisão ainda INCOMPLETA (falta a conversão): sem ✓ e sem repetir o nome aqui — o cartão logo embaixo mostra "Produto que eu indiquei" e o botão Confirmar. */}
+              {(!decisao || decisaoCompleta(it, decisao)) && (
+                <b className="produto">
+                  {ok && <TickOk />}
+                  {decisao && <TickOk rotulo={rotuloConfirmado} testid="item-confirmado" />}
+                  <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
+                </b>
+              )}
               {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
               {!ok && it.n != null && (decisao != null || podeAssociar) && (
                 <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} />

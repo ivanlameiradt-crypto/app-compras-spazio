@@ -142,6 +142,9 @@ function faltaNaDecisao(it: ItemNotaSefaz, d: AssociacaoApp | null): string | nu
   return null
 }
 
+/** A decisão do app para o item está COMPLETA (produto e, quando é certo que precisa, a conversão)? Só então o painel mostra o ✓ de "confirmado". */
+export const decisaoCompleta = (it: ItemNotaSefaz, d: AssociacaoApp | null): boolean => d != null && faltaNaDecisao(it, d) == null
+
 /** Item sem produto no SisChef cuja decisão do app está INCOMPLETA: é o que ainda TRAVA o Lançar (etapa 2). `falta` diz o que fazer no app; as unidades
  *  vêm para a tela montar o pedido de conversão. `codigo`/`nome` nulos = ainda sem produto escolhido; com produto = falta só a conversão. */
 export interface PendenciaParaLancar extends PendenciaSischef { n: number | null; falta: string; unidadeNota: string | null; unidadeProduto: string | null }
