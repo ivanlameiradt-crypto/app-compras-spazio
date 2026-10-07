@@ -5,7 +5,7 @@
 // para ele está completa (produto e, quando é CERTO que as unidades diferem — nota em UN, produto "(KG)" —, a conversão) — ao lançar, o robô aplica a
 // decisão na tela do SisChef, e a tela avisa embaixo do botão o que ele vai associar (fica gravado lá para as próximas notas do fornecedor). Quando o
 // app só desconfia da unidade (produto "un" ou novo) e o Ivan não informou a conversão, a linha do item avisa que o robô confere no SisChef e pode parar.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
@@ -245,6 +245,54 @@ function PagamentoSemanal({ plano, editando, desabilitado, onEditar, onMudar, on
   )
 }
 
+/** Depois de quanto tempo "lançando" a tela passa a perguntar sozinha ao servidor como terminou a execução do robô (uma nota leva ~3 min). */
+const MINUTOS_ATE_VERIFICAR = 5
+const INTERVALO_VERIFICAR = 60_000
+
+/**
+ * Nota "lançando": o botão "Verificar o robô" e a checagem automática. Em 07/10/2026 a execução da MERCURIO travou (o GitHub não instalou o
+ * navegador) e a nota ficou "lançando", com o Lançar apagado, por 30 min — sem ninguém saber por quê. Aqui o app pergunta ao servidor (que consulta
+ * o GitHub) como terminou a execução daquela nota: se caiu ANTES de tocar no SisChef, a nota volta liberada com a explicação; se caiu depois, fica
+ * "pela metade" e travada; se ainda roda, diz que está rodando. Nada é lançado por esta pergunta.
+ */
+function VerificarRobo({ nota, recarregar }: { nota: NotaSefazLista; recarregar: () => Promise<void> }) {
+  const [mensagem, setMensagem] = useState('')
+  const [verificando, setVerificando] = useState(false)
+  const ocupado = useRef(false)
+  const verificar = useCallback(async (manual: boolean) => {
+    if (ocupado.current) return
+    ocupado.current = true
+    setVerificando(true)
+    try {
+      const r = await api.verificarRobo(nota.chave)
+      if (!r) return
+      if (manual || r.situacao !== 'rodando') setMensagem(r.mensagem)
+      if (r.mudou) await recarregar() // a nota passou a "precisa de você" (liberada) ou "pela metade": a lista mostra o estado novo
+    } catch (e) {
+      if (manual) setMensagem(e instanceof Error ? e.message : 'Não consegui verificar o robô agora. Tente de novo.')
+    } finally {
+      ocupado.current = false
+      setVerificando(false)
+    }
+  }, [nota.chave, recarregar])
+  useEffect(() => {
+    const desde = Date.parse(nota.lancamento_estado_em ?? '')
+    if (!Number.isFinite(desde)) return
+    const tick = () => { if (Date.now() - desde >= MINUTOS_ATE_VERIFICAR * 60_000) void verificar(false) }
+    tick()
+    const id = setInterval(tick, INTERVALO_VERIFICAR)
+    return () => clearInterval(id)
+  }, [nota.lancamento_estado_em, verificar])
+  return (
+    <div className="verificar-robo" data-testid="verificar-robo">
+      <button type="button" className="link" disabled={verificando} onClick={() => void verificar(true)}>
+        {verificando ? 'Verificando…' : 'Verificar o robô'}
+      </button>
+      {mensagem && <div className="amarelo" data-testid="verificacao-msg">{mensagem}</div>}
+    </div>
+  )
+}
+
 interface PropsNota {
   nota: NotaSefazLista
   padroes: Record<string, string>
@@ -390,6 +438,7 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
         <div className={estado === 'erro' ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo)}</div>}
+      {estado === 'lancando' && <VerificarRobo nota={nota} recarregar={recarregar} />}
       {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
       {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}
       {bloqueios.map((b) => <div key={b} className={b === AVISO_FALTA_CONVERSAO ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}

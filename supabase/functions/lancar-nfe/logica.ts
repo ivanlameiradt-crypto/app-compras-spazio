@@ -19,7 +19,7 @@
 // Só recusa quando o XML JÁ traz boletos (lista não vazia): aí os boletos do XML prevalecem. A soma das digitadas tem de fechar
 // com o valor da nota ao centavo, sempre.
 
-export interface Corpo { chave?: unknown; forma?: unknown; parcelas?: unknown }
+export interface Corpo { chave?: unknown; forma?: unknown; parcelas?: unknown; acao?: unknown }
 /** Parcela digitada pelo Ivan quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS) ou ainda não foi lido. */
 export interface ParcelaManual { vencimento: string; valor: number }
 export interface UsuarioLinha { papel: string; ativo: boolean }
@@ -210,4 +210,108 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     return { status: 502, corpo: { erro: 'não consegui chamar o robô agora — tente de novo em instantes' } }
   }
   return { status: 202, corpo: { ok: true, chave, forma } }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Ação "verificar": o que houve com o robô de UMA nota que ficou "lançando"?
+// Em 07/10/2026 a execução da MERCURIO travou instalando o navegador e foi cancelada pelo GitHub 25 min depois, SEM ter tentado
+// nada no SisChef. A nota ficou "lançando" por 30 min, o botão apagado e ninguém soube dizer por quê. Esta ação pergunta ao GitHub
+// como terminou a execução daquela nota e, quando é seguro, devolve a nota ao Ivan com a explicação. Regra de ouro: só libera
+// ('revisar') quando o passo que LANÇA no SisChef nunca começou (conclusion 'skipped'); se ele começou e a execução morreu sem avisar,
+// a nota pode estar pela metade e vira 'erro' (o app nunca deixa lançar de novo uma nota 'erro').
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Uma execução do lancar-nfe.yml no GitHub (só o que a verificação usa). `titulo` é o display_title: "Lançar NF <numero> (<modo>)". */
+export interface Execucao { id: number; titulo: string; status: string; conclusao: string | null; criada_em: string }
+/** Um passo da execução (jobs[].steps[] da API do GitHub). */
+export interface PassoExecucao { name: string; status: string; conclusion: string | null }
+/** O que a verificação precisa saber da nota. */
+export interface NotaEstado {
+  chave: string; numero: string; situacao: string
+  lancamento_estado: string | null; lancamento_em: string | null; lancada_em: string | null; descartada_em: string | null
+}
+export interface DepsVerificar {
+  buscarUsuario(email: string): Promise<UsuarioLinha | null>
+  estadoDaNota(chave: string): Promise<NotaEstado | null>
+  /** As execuções mais recentes do lancar-nfe.yml (disparos manuais), da mais nova para a mais velha. Levanta se o GitHub não responde. */
+  execucoesDoRobo(): Promise<Execucao[]>
+  passosDaExecucao(id: number): Promise<PassoExecucao[]>
+  /** Compara-e-troca: só muda se a nota AINDA está 'lancando' (e sem lançada_em). true = mudou. */
+  marcarEstado(chave: string, estado: 'revisar' | 'erro', motivo: string, agoraIso: string): Promise<boolean>
+  agora(): Date
+}
+
+export type SituacaoVerificacao =
+  | 'nada_a_verificar' | 'aguardando' | 'rodando' | 'concluida' | 'sem_execucao' | 'liberada' | 'pela_metade'
+
+/** Nome do passo que lança no SisChef (workflow lancar-nfe.yml). */
+export const PASSO_QUE_LANCA = 'Lançar / ensaiar a nota'
+/** Antes disto a execução ainda pode nem ter aparecido no GitHub: não se conclui nada. */
+export const MINUTOS_PARA_CONCLUIR = 3
+/** O GitHub cria a execução logo depois do disparo; esta folga cobre diferença de relógio. */
+const FOLGA_MS = 2 * 60_000
+
+const COMO_TERMINOU: Record<string, string> = { cancelled: 'foi cancelada', failure: 'falhou', timed_out: 'estourou o tempo' }
+const respostaVerificacao = (situacao: SituacaoVerificacao, mensagem: string, extra: Record<string, unknown> = {}): Resultado =>
+  ({ status: 200, corpo: { ok: true, situacao, mensagem, ...extra } })
+
+export async function verificar(corpo: Corpo, chamador: string, deps: DepsVerificar): Promise<Resultado> {
+  const u = await deps.buscarUsuario(chamador.trim().toLowerCase())
+  if (!u || !u.ativo || u.papel !== 'admin') return { status: 403, corpo: { erro: 'apenas o administrador pode fazer isso' } }
+  const c: Corpo = corpo !== null && typeof corpo === 'object' ? corpo : {}
+  const chave = typeof c.chave === 'string' ? c.chave.trim() : ''
+  if (!RE_CHAVE.test(chave)) return { status: 400, corpo: { erro: 'chave da nota inválida' } }
+
+  const nota = await deps.estadoDaNota(chave)
+  if (!nota) return { status: 404, corpo: { erro: 'nota não encontrada' } }
+  if (nota.lancada_em || nota.situacao !== 'na_fila' || nota.descartada_em || nota.lancamento_estado !== 'lancando') {
+    return respostaVerificacao('nada_a_verificar', 'Esta nota não está esperando o robô.', { estado: nota.lancamento_estado })
+  }
+
+  const agora = deps.agora()
+  const reservadaEm = Date.parse(nota.lancamento_em ?? '')
+  if (!Number.isFinite(reservadaEm)) return respostaVerificacao('aguardando', 'Sem a hora do disparo não dá para conferir o robô.')
+  const minutos = Math.floor((agora.getTime() - reservadaEm) / 60_000)
+
+  let execucoes: Execucao[]
+  try { execucoes = await deps.execucoesDoRobo() } catch {
+    return { status: 502, corpo: { erro: 'não consegui consultar o GitHub agora — tente de novo em instantes' } }
+  }
+  const prefixo = `Lançar NF ${nota.numero} (`
+  const dela = execucoes
+    .filter((e) => e.titulo.startsWith(prefixo) && Date.parse(e.criada_em) >= reservadaEm - FOLGA_MS)
+    .sort((a, b) => Date.parse(b.criada_em) - Date.parse(a.criada_em))[0]
+
+  if (!dela) {
+    return minutos < MINUTOS_PARA_CONCLUIR
+      ? respostaVerificacao('aguardando', 'O robô acabou de ser chamado: aguarde um instante.')
+      : respostaVerificacao('sem_execucao',
+          `Não achei a execução desta nota no GitHub (disparada há ${minutos} min). Confira no SisChef se a nota entrou; se não entrou, a tela libera o Lançar sozinha aos 30 min.`)
+  }
+  if (dela.status !== 'completed') {
+    return respostaVerificacao('rodando', 'O robô ainda está trabalhando nesta nota. Aguarde.', { execucao: dela.id })
+  }
+  if (dela.conclusao === 'success') {
+    return respostaVerificacao('concluida',
+      'A execução do robô terminou bem, mas o app ainda não recebeu o resultado. Confira no SisChef se a nota entrou antes de lançar de novo.', { execucao: dela.id })
+  }
+
+  const como = COMO_TERMINOU[dela.conclusao ?? ''] ?? `terminou como "${dela.conclusao ?? 'desconhecido'}"`
+  let passos: PassoExecucao[]
+  try { passos = await deps.passosDaExecucao(dela.id) } catch {
+    return { status: 502, corpo: { erro: 'não consegui consultar o GitHub agora — tente de novo em instantes' } }
+  }
+  const lanca = passos.find((p) => p.name === PASSO_QUE_LANCA)
+  // 'skipped' = o passo que lança nunca começou (um passo anterior caiu ou o tempo acabou). Qualquer outra coisa — ou passo que não achamos —
+  // é tratada como "pode ter começado": nunca se libera a nota nesse caso.
+  const naoComecou = lanca != null && lanca.conclusion === 'skipped'
+
+  if (naoComecou) {
+    const motivo = `O robô não chegou a começar: a execução no GitHub ${como} antes de tocar no SisChef (por exemplo, travou ao preparar o navegador). Nada foi criado no SisChef; pode lançar de novo.`
+    const mudou = await deps.marcarEstado(chave, 'revisar', motivo, agora.toISOString())
+    return respostaVerificacao('liberada', mudou ? motivo : 'A nota já mudou de estado: recarregue a tela.', { execucao: dela.id, mudou })
+  }
+  const motivo = `A execução do robô ${como} depois de começar a lançar, sem avisar o resultado: a nota pode ter ficado pela metade. Confira no SisChef antes de qualquer coisa. Não lance de novo.`
+  const mudou = await deps.marcarEstado(chave, 'erro', motivo, agora.toISOString())
+  return respostaVerificacao('pela_metade', mudou ? motivo : 'A nota já mudou de estado: recarregue a tela.', { execucao: dela.id, mudou })
 }

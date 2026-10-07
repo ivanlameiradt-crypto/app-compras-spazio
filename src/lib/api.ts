@@ -721,6 +721,34 @@ export async function lancarNota(chave: string, forma: string, parcelas?: Parcel
   }
   throw new ErroApi(mensagemDoLancar(status, texto), status)
 }
+
+/** O que a Edge Function lancar-nfe (ação "verificar") diz sobre o robô de uma nota "lançando". */
+export interface VerificacaoRobo {
+  /** nada_a_verificar | aguardando | rodando | concluida | sem_execucao | liberada | pela_metade */
+  situacao: string
+  /** Texto em português, pronto para mostrar. */
+  mensagem: string
+  /** A nota mudou de estado (liberada ou pela metade): vale recarregar a lista. */
+  mudou: boolean
+}
+/**
+ * Pergunta ao servidor como terminou a execução do robô de UMA nota que ficou "lançando" (ele consulta o GitHub). Se a execução caiu ANTES de
+ * tocar no SisChef, a nota volta a poder ser lançada, com a explicação; se caiu depois, ela vira "pela metade" e fica travada. Não lança nada.
+ */
+export async function verificarRobo(chave: string): Promise<VerificacaoRobo> {
+  const { data, error } = await supabase.functions.invoke('lancar-nfe', { body: { chave, acao: 'verificar' } })
+  if (!error && data && typeof (data as { mensagem?: unknown }).mensagem === 'string') {
+    const d = data as { situacao?: unknown; mensagem: string; mudou?: unknown }
+    return { situacao: typeof d.situacao === 'string' ? d.situacao : '', mensagem: d.mensagem, mudou: d.mudou === true }
+  }
+  let texto = ''
+  const contexto = (error as { context?: Response } | null)?.context
+  if (contexto && typeof contexto.json === 'function') {
+    try { const corpo = await contexto.json(); if (corpo && typeof corpo.erro === 'string') texto = corpo.erro } catch { /* corpo não era JSON */ }
+  }
+  throw new ErroApi(texto ? texto.charAt(0).toUpperCase() + texto.slice(1) + '.' : 'Não consegui verificar o robô agora. Confira a internet e tente de novo.')
+}
+
 /**
  * Texto claro para o erro de descartar/restaurar. As mensagens do banco (cot_nfe_descartar) já são em português e dizem o motivo
  * (pela metade, robô lançando…): passam como vieram; falha de rede ou erro desconhecido vira um texto genérico.
