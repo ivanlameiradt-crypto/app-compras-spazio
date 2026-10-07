@@ -242,3 +242,16 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .corrigir-cupom .soma-itens li { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 10px; }
 .cupom .corrigir-cupom .soma-itens li b { flex: none; white-space: nowrap; }
 .cupom .corrigir-cupom .acoes { margin-top: 4px; }
+
+/* Etapa 2 da associação pelo app: embaixo do Lançar, o aviso do que o robô vai associar no SisChef ao lançar (.lancar-associa) tem a mesma forma
+   do "Lançar travado"; e o campo "Quanto vale 1 UN em KG?" da caixa de associação (pedir-conversao) não precisa da largura toda. */
+.cupom .lancar-associa { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.cupom .lancar-associa p { margin: 0; }
+.cupom .lancar-associa ul { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.cupom .lancar-associa li { display: list-item; font-size: 14px; padding: 0; border: 0; }
+.cupom .associar .pedir-conversao { display: flex; flex-direction: column; gap: 6px; }
+/* Conversão OPCIONAL (o app só desconfia da unidade): sem o amarelo de "falta algo", só uma moldura discreta — vazio é uma resposta válida. */
+.cupom .associar .pedir-conversao:not(.amarelo) { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--linha); font-size: 14px; }
+.cupom .associar .pedir-conversao label { font-size: 13px; color: inherit; }
+.cupom .associar .pedir-conversao input[inputmode='decimal'] { max-width: 180px; }
+.cupom .associar .pedir-conversao p { margin: 0; }
