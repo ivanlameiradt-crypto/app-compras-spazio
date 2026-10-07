@@ -3,7 +3,10 @@
 // Lógica pura em logica.ts (vitest); aqui só a ligação (Deno.serve, CORS, banco, GitHub). O GITHUB_PAT fica só no
 // servidor: nunca vai ao repo, ao log nem à resposta.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { filtroReservavel, tratar, type Corpo, type Deps, type NotaParaParcelas, type NotaReservada } from './logica.ts'
+import {
+  filtroReservavel, tratar, verificar,
+  type Corpo, type Deps, type DepsVerificar, type Execucao, type NotaEstado, type NotaParaParcelas, type NotaReservada, type PassoExecucao,
+} from './logica.ts'
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
@@ -111,6 +114,47 @@ Deno.serve(async (req: Request) => {
         }
       },
       agora: () => new Date(),
+    }
+
+    // ação "verificar": o que houve com o robô de uma nota que ficou "lançando" (consulta o GitHub; só muda a nota quando é seguro)
+    if (corpo && typeof corpo === 'object' && corpo.acao === 'verificar') {
+      const gh = (caminho: string) => fetch(`https://api.github.com/repos/${REPO}/${caminho}`, {
+        headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'lancar-nfe' },
+        signal: AbortSignal.timeout(15_000),
+      })
+      const depsVerificar: DepsVerificar = {
+        buscarUsuario: deps.buscarUsuario,
+        async estadoDaNota(chave) {
+          const { data, error } = await admin.from('cot_nfe')
+            .select('chave, numero, situacao, lancamento_estado, lancamento_em, lancada_em, descartada_em').eq('chave', chave).maybeSingle()
+          if (error) throw new Error(error.message)
+          return (data as NotaEstado | null) ?? null
+        },
+        async execucoesDoRobo() {
+          const r = await gh(`actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=20`)
+          // só o status HTTP no log (nunca a resposta inteira nem o token)
+          if (!r.ok) { console.error(`lancar-nfe: listar execuções falhou (HTTP ${r.status})`); throw new Error(`HTTP ${r.status}`) }
+          const j = await r.json() as { workflow_runs?: Array<{ id: number; display_title: string; status: string; conclusion: string | null; created_at: string }> }
+          return (j.workflow_runs ?? []).map((x): Execucao => ({ id: x.id, titulo: x.display_title, status: x.status, conclusao: x.conclusion, criada_em: x.created_at }))
+        },
+        async passosDaExecucao(id) {
+          const r = await gh(`actions/runs/${id}/jobs`)
+          if (!r.ok) { console.error(`lancar-nfe: listar passos falhou (HTTP ${r.status})`); throw new Error(`HTTP ${r.status}`) }
+          const j = await r.json() as { jobs?: Array<{ steps?: PassoExecucao[] }> }
+          return (j.jobs ?? []).flatMap((x) => x.steps ?? []).map((p) => ({ name: p.name, status: p.status, conclusion: p.conclusion }))
+        },
+        async marcarEstado(chave, estado, motivo, agoraIso) {
+          // compara-e-troca: só muda se a nota ainda está 'lancando' (se o robô acabou de avisar o resultado, não se sobrescreve)
+          const { data, error } = await admin.from('cot_nfe')
+            .update({ lancamento_estado: estado, lancamento_motivo: motivo, lancamento_estado_em: agoraIso, atualizado_em: agoraIso })
+            .eq('chave', chave).eq('lancamento_estado', 'lancando').is('lancada_em', null).select('chave')
+          if (error) throw new Error(error.message)
+          return (data ?? []).length > 0
+        },
+        agora: deps.agora,
+      }
+      const v = await verificar(corpo, chamador, depsVerificar)
+      return resposta(v.status, v.corpo, cors)
     }
 
     const r = await tratar(corpo, chamador, deps)

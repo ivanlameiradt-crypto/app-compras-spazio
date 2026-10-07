@@ -1,4 +1,7 @@
-import { CONTAS_PIX, filtroReservavel, montarNotaJson, normalizarForma, normalizarParcelas, somaParcelas, tratar, type Deps, type NotaReservada } from './logica'
+import {
+  CONTAS_PIX, PASSO_QUE_LANCA, filtroReservavel, montarNotaJson, normalizarForma, normalizarParcelas, somaParcelas, tratar, verificar,
+  type Deps, type DepsVerificar, type Execucao, type NotaEstado, type NotaReservada, type PassoExecucao,
+} from './logica'
 
 const CHAVE = '15261002164629000100550010014159761121141360'
 const AGORA = new Date('2026-10-06T12:00:00.000Z')
@@ -329,5 +332,148 @@ describe('tratar com parcelas digitadas (boleto sem duplicatas no XML, ou XML ai
     const parcelas = [{ vencimento: '2026-11-05', valor: 70 }, { vencimento: '2026-11-15', valor: 20.5 }, { vencimento: '2026-11-25', valor: 9.5 }]
     expect((await tratar({ chave: CHAVE, forma: 'boleto', parcelas }, 'a@b', d)).status).toBe(202)
     expect(d.reservas[0][4]).toEqual(parcelas) // o que a reserva grava (e o robô recebe) é exatamente o que o Ivan digitou, cada valor no seu lugar
+  })
+})
+
+// Ação "verificar" (07/10/2026): a execução da MERCURIO travou instalando o navegador e a nota ficou "lançando" por 30 min sem explicação.
+describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
+  const RESERVA = '2026-10-07T17:50:12.674Z'
+  const AGORA_V = new Date('2026-10-07T17:58:00.000Z') // 8 min depois
+  const nota = (extra: Partial<NotaEstado> = {}): NotaEstado => ({
+    chave: CHAVE, numero: '002270833', situacao: 'na_fila', lancamento_estado: 'lancando', lancamento_em: RESERVA, lancada_em: null, descartada_em: null, ...extra,
+  })
+  const exec = (extra: Partial<Execucao> = {}): Execucao => ({
+    id: 77, titulo: 'Lançar NF 002270833 (real)', status: 'completed', conclusao: 'cancelled', criada_em: '2026-10-07T17:50:14Z', ...extra,
+  })
+  const passos = (lancaConclusion: string | null): PassoExecucao[] => [
+    { name: 'Instalar dependências e o navegador', status: 'completed', conclusion: 'cancelled' },
+    { name: PASSO_QUE_LANCA, status: 'completed', conclusion: lancaConclusion },
+    { name: 'Aviso de falha por e-mail', status: 'completed', conclusion: 'success' },
+  ]
+  function deps(over: Partial<DepsVerificar> = {}): DepsVerificar & { marcas: unknown[][] } {
+    const marcas: unknown[][] = []
+    return {
+      marcas,
+      async buscarUsuario() { return { papel: 'admin', ativo: true } },
+      async estadoDaNota() { return nota() },
+      async execucoesDoRobo() { return [exec()] },
+      async passosDaExecucao() { return passos('skipped') },
+      async marcarEstado(...a) { marcas.push(a); return true },
+      agora: () => AGORA_V,
+      ...over,
+    }
+  }
+  const chamar = (d: DepsVerificar) => verificar({ chave: CHAVE, acao: 'verificar' }, 'a@b', d)
+  const sit = (r: { corpo: Record<string, unknown> }) => r.corpo.situacao
+
+  it('só o administrador verifica, e a chave tem de ser válida', async () => {
+    const d = deps({ async buscarUsuario() { return { papel: 'comprador', ativo: true } } })
+    expect((await chamar(d)).status).toBe(403)
+    expect((await verificar({ chave: 'x' }, 'a@b', deps())).status).toBe(400)
+    expect((await chamar(deps({ async estadoDaNota() { return null } }))).status).toBe(404)
+  })
+
+  it('nota que não está "lançando" (ou já lançada/descartada): nada a verificar, nada muda', async () => {
+    for (const extra of [{ lancamento_estado: 'revisar' }, { lancamento_estado: null }, { lancada_em: '2026-10-07T18:00:00Z' }, { situacao: 'lancada' }, { descartada_em: '2026-10-07T18:00:00Z' }]) {
+      const d = deps({ async estadoDaNota() { return nota(extra) } })
+      const r = await chamar(d)
+      expect([r.status, sit(r)]).toEqual([200, 'nada_a_verificar'])
+      expect(d.marcas).toEqual([])
+    }
+  })
+
+  it('execução cancelada com o passo que LANÇA nunca iniciado (skipped): libera a nota com a explicação (revisar)', async () => {
+    const d = deps()
+    const r = await chamar(d)
+    const c = r.corpo as { situacao: string; mensagem: string; mudou: boolean }
+    expect(c.situacao).toBe('liberada')
+    expect(c.mudou).toBe(true)
+    expect(c.mensagem).toContain('não chegou a começar')
+    expect(c.mensagem).toContain('Nada foi criado no SisChef')
+    expect(c.mensagem).toContain('foi cancelada')
+    expect(d.marcas).toHaveLength(1)
+    expect(d.marcas[0].slice(0, 3)).toEqual([CHAVE, 'revisar', c.mensagem])
+  })
+
+  it('execução que falhou ou estourou o tempo antes de lançar: também libera, dizendo como terminou', async () => {
+    for (const [conclusao, trecho] of [['failure', 'falhou'], ['timed_out', 'estourou o tempo']] as const) {
+      const r = await chamar(deps({ async execucoesDoRobo() { return [exec({ conclusao })] } }))
+      expect(sit(r)).toBe('liberada')
+      expect(r.corpo.mensagem as string).toContain(trecho)
+    }
+  })
+
+  it('o passo que lança JÁ começou (cancelado/falhou no meio): vira "erro" — pode estar pela metade, nunca libera', async () => {
+    for (const conclusao of ['cancelled', 'failure', 'success']) {
+      const d = deps({ async passosDaExecucao() { return passos(conclusao) } })
+      const r = await chamar(d)
+      expect(sit(r)).toBe('pela_metade')
+      expect(d.marcas[0].slice(0, 2)).toEqual([CHAVE, 'erro'])
+      expect(r.corpo.mensagem as string).toContain('Não lance de novo')
+    }
+  })
+
+  it('não achou o passo que lança (formato desconhecido): trata como "pode ter começado" (erro), nunca libera', async () => {
+    const d = deps({ async passosDaExecucao() { return [{ name: 'outro passo', status: 'completed', conclusion: 'skipped' }] } })
+    expect(sit(await chamar(d))).toBe('pela_metade')
+    expect(d.marcas[0][1]).toBe('erro')
+  })
+
+  it('execução ainda rodando: só diz que está rodando, não muda nada', async () => {
+    const d = deps({ async execucoesDoRobo() { return [exec({ status: 'in_progress', conclusao: null })] } })
+    expect(sit(await chamar(d))).toBe('rodando')
+    expect(d.marcas).toEqual([])
+  })
+
+  it('execução terminou bem mas a nota ainda está "lançando": avisa para conferir no SisChef, não muda nada', async () => {
+    const d = deps({ async execucoesDoRobo() { return [exec({ conclusao: 'success' })] } })
+    const r = await chamar(d)
+    expect(sit(r)).toBe('concluida')
+    expect(r.corpo.mensagem as string).toContain('Confira no SisChef')
+    expect(d.marcas).toEqual([])
+  })
+
+  it('sem execução: antes de 3 min aguarda; depois diz que não achou (e não mexe na nota)', async () => {
+    const semExec = { async execucoesDoRobo() { return [] as Execucao[] } }
+    const cedo = deps({ ...semExec, agora: () => new Date('2026-10-07T17:51:00.000Z') })
+    expect(sit(await chamar(cedo))).toBe('aguardando')
+    const tarde = deps(semExec)
+    expect(sit(await chamar(tarde))).toBe('sem_execucao')
+    expect(tarde.marcas).toEqual([])
+  })
+
+  it('ignora a execução de OUTRA nota e a de antes da reserva (execução velha da mesma nota)', async () => {
+    const outras = [
+      exec({ id: 1, titulo: 'Lançar NF 000055100 (real)' }),                                  // outra nota
+      exec({ id: 2, criada_em: '2026-10-07T16:00:00Z' }),                                      // mesma nota, mas de antes desta reserva
+      exec({ id: 3, titulo: 'Lançar NF-e de compra (nuvem)' }),                                // execução antiga, sem número no nome
+    ]
+    const d = deps({ async execucoesDoRobo() { return outras } })
+    expect(sit(await chamar(d))).toBe('sem_execucao')
+    expect(d.marcas).toEqual([])
+  })
+
+  it('com duas execuções da mesma nota vale a mais recente', async () => {
+    const d = deps({ async execucoesDoRobo() {
+      return [exec({ id: 9, status: 'in_progress', conclusao: null, criada_em: '2026-10-07T17:55:00Z' }), exec({ id: 8 })]
+    } })
+    expect(sit(await chamar(d))).toBe('rodando')
+  })
+
+  it('o GitHub não responde: 502 e nada muda', async () => {
+    const d = deps({ async execucoesDoRobo() { throw new Error('HTTP 403') } })
+    expect((await chamar(d)).status).toBe(502)
+    expect(d.marcas).toEqual([])
+    const d2 = deps({ async passosDaExecucao() { throw new Error('HTTP 500') } })
+    expect((await chamar(d2)).status).toBe(502)
+    expect(d2.marcas).toEqual([])
+  })
+
+  it('o robô avisou o resultado no meio da conferência (compara-e-troca falhou): não sobrescreve', async () => {
+    const d = deps({ async marcarEstado() { return false } })
+    const r = await chamar(d)
+    const c = r.corpo as { situacao: string; mudou: boolean; mensagem: string }
+    expect([c.situacao, c.mudou]).toEqual(['liberada', false])
+    expect(c.mensagem).toContain('já mudou de estado')
   })
 })
