@@ -190,7 +190,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
 
   // 4. produtos e itens refeitos.
   const itens: Item[] = [...originais]
-  const aprendizados: LinhaAprendizado[] = []
+  const aprendizados: { linha: LinhaAprendizado; indice: number }[] = []
   let naoLembrados = 0
   for (const x of conf.itens) {
     const produto = await deps.buscarProduto(x.insumo_id)
@@ -198,17 +198,35 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     const original = originais[x.indice]
     const uCupom = unidadeNorm(original.unidade_cupom)
     const uProduto = unidadeNorm(produto.unidade)
-    if (x.entrada === null && uCupom !== '' && uProduto !== '' && uCupom !== uProduto) {
+    const unidadesDiferem = uCupom !== '' && uProduto !== '' && uCupom !== uProduto
+    if (x.entrada === null && unidadesDiferem) {
       return { status: 400, corpo: { erro: `item ${x.indice + 1}: o cupom está em ${uCupom.toUpperCase()} e o produto é em ${uProduto.toUpperCase()}: informe quanto entra no estoque em ${uProduto.toUpperCase()}` } }
+    }
+    // o servidor não confia na tela: uma "conversão" entre unidades iguais (0,5 kg que "entram" como 0,4 kg) gravaria um fator que encolheria
+    // o estoque em todos os próximos cupons deste item
+    if (x.entrada !== null && !unidadesDiferem) {
+      return { status: 400, corpo: { erro: `item ${x.indice + 1}: o cupom e o produto estão na mesma unidade (ou a unidade não é conhecida): não informe quanto entra no estoque` } }
     }
     const refeito = refazerItem(original, x)
     if (!refeito.ok) return { status: 400, corpo: { erro: refeito.erro } }
     itens[x.indice] = refeito.item
     if (x.lembrar) {
       const linha = linhaDeAprendizado(original, x, produto, cupom.emitente_cnpj, refeito.fator)
-      if (linha) aprendizados.push(linha); else naoLembrados += 1
+      if (linha) aprendizados.push({ linha, indice: x.indice }); else naoLembrados += 1
     }
   }
+  // Dois itens do mesmo cupom com a MESMA chave de aprendizado (mesmo código de barras, ou mesma descrição deste fornecedor): com produtos
+  // diferentes o 2º gravaria por cima do 1º em silêncio — melhor recusar e deixar o Ivan desmarcar um "Lembrar"; com o mesmo produto basta uma linha.
+  const chaveDe = (l: LinhaAprendizado) => l.codigo_barras ?? `${l.emitente_cnpj}|${l.descricao_norm}`
+  const porChave = new Map<string, { linha: LinhaAprendizado; indice: number }>()
+  for (const a of aprendizados) {
+    const outro = porChave.get(chaveDe(a.linha))
+    if (!outro) { porChave.set(chaveDe(a.linha), a); continue }
+    if (outro.linha.insumo_id !== a.linha.insumo_id) {
+      return { status: 400, corpo: { erro: `os itens ${outro.indice + 1} e ${a.indice + 1} têm a mesma descrição no cupom e produtos diferentes: desmarque "Lembrar" em um deles` } }
+    }
+  }
+  const linhasDeAprendizado = [...porChave.values()].map((a) => a.linha)
 
   // 5. a soma tem de bater com o total (senão o robô recusaria depois do disparo, e o app mostra o erro agora).
   const soma = conferirSoma(itens, total)
@@ -223,7 +241,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
 
   // 7. aprendizado: depois de o cupom já estar na fila; uma falha aqui não desfaz a correção (só fica para a próxima vez).
   let lembrados = 0
-  for (const linha of aprendizados) {
+  for (const linha of linhasDeAprendizado) {
     try { await deps.gravarAprendizado(linha); lembrados += 1 } catch { naoLembrados += 1 }
   }
 

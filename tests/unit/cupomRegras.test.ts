@@ -64,6 +64,12 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     expect(diagnosticoDoCupom(cupom({ motivo: 'x', valor_a_pagar: 10, itens: [PEPINO, TAITI] }))!.corrigivel).toBe(true)   // soma que não fecha é problema da tela, não do caminho
   })
 
+  it('com a quantidade lida no cupom guardada (v2), não pede o peso: a caixa de correção já o pré-preenche', () => {
+    const d = diagnosticoDoCupom(cupom({ motivo: 'x', itens: [{ ...PEPINO, quantidade_cupom: 0.912 }, TAITI] }))!
+    expect(d.pedidos).toEqual(['PEPINO JAPONES: confirmar que é PEPINO JAPONÊS - INSUMOS (cód. 3484991).'])
+    expect(d.conferencia).toBeNull()                                                                               // a conta mistura item com quantidade conhecida
+  })
+
   it('sem total lido (0 ou nulo) ou com os itens já confirmados somando mais que o cupom: não há conta para conferir', () => {
     expect(diagnosticoDoCupom(cupom({ valor_a_pagar: null, motivo: 'x', itens: [PEPINO] }))!.conferencia).toBeNull()
     expect(diagnosticoDoCupom(cupom({ valor_a_pagar: 0, motivo: 'x', itens: [PEPINO] }))!.conferencia).toBeNull()

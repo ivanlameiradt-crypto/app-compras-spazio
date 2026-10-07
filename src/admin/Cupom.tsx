@@ -96,6 +96,19 @@ function ProblemaDoCupom({ c }: { c: CupomRecente }) {
  * estoque, que pode estar em outra unidade (5 un viram 0,4 kg) — por isso ela aparece como "entrou … no estoque", nunca com a unidade do cupom.
  */
 const num3 = (v: number): string => v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+/**
+ * O preço por unidade como está IMPRESSO no cupom. Num item casado com conversão (5 un → 0,4 kg) o `valor_unitario` gravado é o preço por unidade
+ * do ESTOQUE (R$ 99,875/kg): mostrá-lo ao lado de "5 un" contradiria o papel (R$ 7,99) e o Ivan concluiria que o robô leu errado. Refaz-se o preço
+ * do cupom = valor da linha ÷ quantidade do cupom; sem a quantidade do cupom (envio antigo) fica o que há.
+ */
+function precoDoCupom(it: ItemCupomRecente): number | null {
+  const v = Number(it.valor_unitario)
+  if (it.valor_unitario == null || !Number.isFinite(v)) return null
+  const q = Number(it.quantidade_cupom)
+  const e = Number(it.entrada_estoque)
+  if (it.quantidade_cupom != null && it.entrada_estoque != null && q > 0 && e > 0) return Math.round((v * e / q) * 100) / 100
+  return v
+}
 function qtdLida(it: ItemCupomRecente): string {
   if (it.quantidade_cupom != null && Number.isFinite(Number(it.quantidade_cupom))) {
     return `${num3(Number(it.quantidade_cupom))} ${(it.unidade_cupom ?? '').toLowerCase()}`.trim()
@@ -140,15 +153,18 @@ function FotoDoCupom({ c }: { c: CupomRecente }) {
           <figcaption>
             <b>O que o robô leu</b> (confira com a foto):
             <ul data-testid="leitura-robo">
-              {c.itens.map((it, i) => (
+              {c.itens.map((it, i) => {
+                const preco = precoDoCupom(it)
+                return (
                 <li key={i}>
                   <span>{it.descricao_cupom ?? 'item'}</span>
                   <span className="sub">
-                    {' · '}{qtdLida(it)}{it.valor_unitario != null && ` · ${formatarReais(Number(it.valor_unitario))}`}
+                    {' · '}{qtdLida(it)}{preco != null && ` · ${formatarReais(preco)}`}
                     {Number(it.desconto_item ?? 0) > 0 && ` · desconto ${formatarReais(Number(it.desconto_item))}`}
                   </span>
                 </li>
-              ))}
+                )
+              })}
             </ul>
             {c.valor_a_pagar != null && c.valor_a_pagar > 0 && <span className="sub">Total lido: {formatarReais(c.valor_a_pagar)}</span>}
           </figcaption>
@@ -186,6 +202,15 @@ export default function Cupom() {
       .catch(() => setFalhaRecentes(true))
   }
   useEffect(() => { carregarRecentes() }, [])
+
+  // Depois de um envio ou reenvio o cupom fica "na fila" e o robô leva 2 ou 3 minutos: enquanto houver cupom na fila a lista se atualiza sozinha a
+  // cada 30 s — sem isso o aviso "em 2 ou 3 minutos ele aparece como lançado" só se cumpriria recarregando a página.
+  const naFila = recentes.some((c) => c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO')
+  useEffect(() => {
+    if (!naFila) return
+    const id = setInterval(carregarRecentes, 30_000)
+    return () => clearInterval(id)
+  }, [naFila])
 
   const precisaCatalogo = recentes.some(corrigivel)
   useEffect(() => {

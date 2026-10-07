@@ -27,6 +27,8 @@ export interface DiagnosticoCupom {
 }
 
 const semProdutoConfirmado = (it: ItemCupomRecente): boolean => String(it.sugestao_produto?.id ?? '').trim() === ''
+/** Nem a entrada no estoque nem a quantidade lida no cupom existem: o peso só está na foto/no papel. */
+const semQuantidade = (it: ItemCupomRecente): boolean => it.entrada_estoque == null && it.quantidade_cupom == null
 
 /** O que o cupom pede ao Ivan sobre UM item: confirmar o produto (a proposta do sistema, ou dizer qual é) e, se o peso não ficou guardado, dizer o peso. */
 const GRANDEZA_PESO = /^(kg|g|gr|l|lt|ml)$/i
@@ -36,7 +38,8 @@ function pedidoDe(it: ItemCupomRecente): string {
   const nome = (it.proposta?.insumo_nome ?? '').trim()
   const produto = id === '' ? 'dizer qual é o produto do SisChef' : `confirmar que é ${nome !== '' ? `${nome} (cód. ${id})` : `o produto de cód. ${id}`}`
   const un = (it.unidade_cupom ?? '').trim().toLowerCase()
-  const falta = it.entrada_estoque == null ? ` e dizer ${GRANDEZA_PESO.test(un) ? 'o peso' : 'a quantidade'}${un !== '' ? ` (${un})` : ''} que está no cupom` : ''
+  // a quantidade só é pedida quando NINGUÉM a tem: nem a entrada no estoque nem a quantidade lida no cupom (envios a partir da v2 a guardam)
+  const falta = semQuantidade(it) ? ` e dizer ${GRANDEZA_PESO.test(un) ? 'o peso' : 'a quantidade'}${un !== '' ? ` (${un})` : ''} que está no cupom` : ''
   return `${desc}: ${produto}${falta}.`
 }
 
@@ -45,16 +48,16 @@ function exemploDe(it: ItemCupomRecente): string {
   const desc = (it.descricao_cupom ?? '').trim() || 'item'
   const un = (it.unidade_cupom ?? '').trim().toLowerCase()
   const resposta = String(it.proposta?.insumo_id ?? '').trim() === '' ? 'é <produto>' : 'confirmo'
-  return `${desc}: ${resposta}${it.entrada_estoque == null ? `, __ ${un || 'quantidade'}` : ''}`
+  return `${desc}: ${resposta}${semQuantidade(it) ? `, __ ${un || 'quantidade'}` : ''}`
 }
 
 /**
  * Quanto os itens pendentes devem somar para o cupom fechar: total do cupom − o que os itens já confirmados valem (entrada × preço − desconto, a mesma conta
- * do robô). Só quando NENHUM item pendente tem peso (senão a conta mistura o que já se sabe) e o total foi lido.
+ * do robô). Só quando NENHUM item pendente tem quantidade conhecida (nem entrada no estoque nem a lida no cupom — senão a conta mistura o que já se sabe) e o total foi lido.
  */
 function conferenciaDaSoma(c: CupomRecente, itens: ItemCupomRecente[], travando: ItemCupomRecente[]): string | null {
   const total = c.valor_a_pagar
-  if (total == null || !(total > 0) || !travando.every((it) => it.entrada_estoque == null)) return null
+  if (total == null || !(total > 0) || !travando.every(semQuantidade)) return null
   let confirmados = 0
   for (const it of itens) {
     if (semProdutoConfirmado(it)) continue

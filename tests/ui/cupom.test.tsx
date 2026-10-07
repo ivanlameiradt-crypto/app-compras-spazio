@@ -546,6 +546,22 @@ describe('Cupom — "Ver a foto do cupom" num envio parado (pedido do Ivan, 07/1
     expect(m.urlCupom).toHaveBeenCalledTimes(2)
   })
 
+  it('item casado com conversão (5 un → 0,4 kg): a lista mostra quantidade e preço COMO ESTÃO NO CUPOM (R$ 7,99), não o preço por kg do estoque', async () => {
+    m.urlCupom.mockResolvedValue('https://exemplo.test/assinada.jpg')
+    m.cuponsRecentes.mockResolvedValue([recente({ id: 'v2', estado: 'REVISAR', valor_a_pagar: 50, motivo: '1 item(ns) sem casamento confirmado — confira no Code',
+      foto_path: 'cupom/v2.jpg', itens: [
+        { descricao_cupom: 'OVO BRANCO DZ', unidade_cupom: 'UN', valor_unitario: 99.875, desconto_item: 0, entrada_estoque: 0.4, sugestao_produto: { id: '3487562' },
+          casado_por: 'ean', quantidade_cupom: 5 },
+        { descricao_cupom: 'ALFACE', unidade_cupom: 'UN', valor_unitario: 3.7, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null, quantidade_cupom: 2 },
+      ] })])
+    render(<Cupom />)
+    await userEvent.click(await botaoFoto())
+    const leitura = within(await screen.findByTestId('leitura-robo')).getAllByRole('listitem')
+    expect(leitura[0]).toHaveTextContent(/OVO BRANCO DZ · 5 un · R\$\s7,99/)     // o papel diz 7,99; o 99,875 é o preço por kg que o robô digita no estoque
+    expect(leitura[0]).not.toHaveTextContent(/99,8/)
+    expect(leitura[1]).toHaveTextContent(/ALFACE · 2 un · R\$\s3,70/)             // v2: a quantidade do item sem produto fica guardada
+  })
+
   it('a URL assinada falhou: avisa com o motivo e deixa tentar de novo', async () => {
     m.urlCupom.mockRejectedValue(new Error('Object not found'))
     m.cuponsRecentes.mockResolvedValue([COM_FOTO])

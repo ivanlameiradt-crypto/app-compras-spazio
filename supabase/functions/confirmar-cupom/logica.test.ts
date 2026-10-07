@@ -8,6 +8,9 @@ import {
   type Confirmacao, type CupomLinha, type Deps, type LinhaAprendizado, type Produto,
 } from './logica'
 import { normalizar } from './normalizar'
+// a prova de ponta a ponta do "Lembrar": a linha gravada aqui tem de ser a que o casamento da enviar-cupom acha no próximo cupom
+import { casarItens } from '../enviar-cupom/casamento'
+import type { ItemLidoIA } from '../enviar-cupom/esquema'
 
 type Item = Record<string, unknown>
 
@@ -600,8 +603,11 @@ describe('tratar — caminho feliz: o cupom do ATACADAO de 06/10 (R$ 35,27)', ()
   })
 
   it('entrada que arredonda para zero: 400 e nada gravado', async () => {
-    const deps = fakeDeps()
-    const r = await tratar(pedido([{ ...CONFIRMACOES[0], entrada: 0.0001 }, CONFIRMACOES[1]]), IVAN, deps)
+    // o cupom em UN e o produto em KG (só assim a entrada é aceita); 1 un que "entra" como 0,0001 kg arredonda para 0,000 kg
+    const itens = structuredClone(ITENS_ATACADAO)
+    itens[0] = { ...itens[0], unidade_cupom: 'UN' }
+    const deps = fakeDeps({ cupom: cupom({ itens }) })
+    const r = await tratar(pedido([{ ...CONFIRMACOES[0], quantidade: 1, entrada: 0.0001 }, CONFIRMACOES[1]]), IVAN, deps)
     expect(r.status).toBe(400)
     expect(r.corpo).toEqual({ erro: 'item 1: a quantidade do estoque arredonda para zero' })
     nadaGravado(deps)
@@ -654,5 +660,67 @@ describe('tratar — falhas depois da conferência', () => {
     expect(resumo).toMatch(/60 min/)
     expect(deps.atualizacoes).toHaveLength(1)
     expect(deps.aprendizados).toHaveLength(2)
+  })
+})
+
+describe('o servidor não confia na tela — conversão e chaves de aprendizado (revisão de 07/10)', () => {
+  it('entrada com as unidades IGUAIS (0,5 kg que "entram" como 0,4 kg) é recusada: gravaria um fator que encolhe o estoque nos próximos cupons', async () => {
+    const deps = fakeDeps()
+    const r = await tratar(pedido([{ ...CONFIRMACOES[0], entrada: 0.4 }, CONFIRMACOES[1]]), IVAN, deps)
+    expect(r.status).toBe(400)
+    expect(r.corpo.erro).toBe('item 1: o cupom e o produto estão na mesma unidade (ou a unidade não é conhecida): não informe quanto entra no estoque')
+    nadaGravado(deps)
+  })
+
+  it('dois itens pendentes com a MESMA descrição e produtos diferentes, ambos com "Lembrar": 400 (o 2º gravaria por cima do 1º em silêncio)', async () => {
+    const itens = structuredClone(ITENS_ATACADAO)
+    itens[1] = { ...itens[1], descricao_cupom: 'LIMAO SICILIANO' }
+    const deps = fakeDeps({ cupom: cupom({ itens }) })
+    const r = await tratar(pedido(), IVAN, deps)
+    expect(r.status).toBe(400)
+    expect(r.corpo.erro).toBe('os itens 1 e 2 têm a mesma descrição no cupom e produtos diferentes: desmarque "Lembrar" em um deles')
+    nadaGravado(deps)
+  })
+
+  it('mesma descrição e o MESMO produto: aceita e grava uma linha de aprendizado só', async () => {
+    const itens = structuredClone(ITENS_ATACADAO)
+    itens[1] = { ...itens[1], descricao_cupom: 'LIMAO SICILIANO' }
+    const deps = fakeDeps({ cupom: cupom({ itens }) })
+    const r = await tratar(pedido([CONFIRMACOES[0], { ...CONFIRMACOES[1], insumo_id: '3484974' }]), IVAN, deps)
+    expect(r.status).toBe(200)
+    expect(deps.aprendizados).toHaveLength(1)
+    expect(r.corpo.lembrados).toBe(1)
+  })
+})
+
+describe('"Lembrar" de ponta a ponta: a linha que a confirmar-cupom grava é a que a enviar-cupom usa para casar o próximo cupom', () => {
+  const lido = (o: Partial<ItemLidoIA> & { descricao: string }): ItemLidoIA =>
+    ({ quantidade: 1, unidade: 'KG', valor_unitario: 1, desconto: null, codigo_barras: null, ...o })
+
+  it('por CNPJ + descrição: o próximo "LIMAO SICILIANO" do ATACADAO casa com 3484974 (fator 1, preço do cupom); outro fornecedor não', () => {
+    const linha = linhaDeAprendizado(ITENS_ATACADAO[0], { ...CONFIRMACOES[0], entrada: null }, PRODUTOS['3484974'], CNPJ_ATACADAO, 1)!
+    expect(linha).not.toBeNull()
+    const [r] = casarItens([lido({ descricao: 'Limão  Siciliano', quantidade: 0.7, valor_unitario: 14.5 })], CNPJ_ATACADAO, [linha])
+    expect(r.sugestao_produto).toEqual({ id: '3484974' })
+    expect(r.casado_por).toBe('descricao')
+    expect(r.entrada_estoque).toBe(0.7)
+    expect(r.valor_unitario).toBe(14.5)
+    expect(casarItens([lido({ descricao: 'LIMAO SICILIANO' })], '11111111000191', [linha])[0].sugestao_produto).toBeNull()   // a chave é do fornecedor
+  })
+
+  it('por GTIN válido: vale para qualquer fornecedor e aplica o fator da conversão (5 un → 0,4 kg a R$ 99,875/kg)', () => {
+    const original: Item = { descricao_cupom: 'OVO BRANCO DZ', unidade_cupom: 'UN', valor_unitario: 7.99, desconto_item: 0, codigo_barras: EAN, quantidade_cupom: 5 }
+    const c: Confirmacao = { indice: 0, insumo_id: '3487562', quantidade: 5, entrada: 0.4, lembrar: true }
+    const refeito = refazerItem(original, c)
+    expect(refeito.ok).toBe(true)
+    if (!refeito.ok) return
+    const linha = linhaDeAprendizado(original, c, PRODUTOS['3487562'], null, refeito.fator)!
+    expect(linha).toMatchObject({ codigo_barras: EAN, emitente_cnpj: null, descricao_norm: null, insumo_id: '3487562', unidade_destino: 'KG', confirmado: true })
+    expect(linha.fator_conversao).toBeCloseTo(0.08, 12)
+    const [r] = casarItens([lido({ descricao: 'OVO BRANCO DZ', unidade: 'UN', quantidade: 5, valor_unitario: 7.99, codigo_barras: EAN })], '22222222000100', [linha])
+    expect(r.sugestao_produto).toEqual({ id: '3487562' })
+    expect(r.casado_por).toBe('ean')
+    expect(r.entrada_estoque).toBeCloseTo(0.4, 6)
+    expect(r.valor_unitario).toBeCloseTo(99.875, 9)
   })
 })
