@@ -81,6 +81,12 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             <input type="text" autoComplete="off" placeholder="Nome, palavra-chave ou código" value={texto} disabled={enviando}
               onChange={(e) => { setTexto(e.target.value); setErro('') }} />
           </label>
+          {!sugestao && !porPalavras && texto.trim() === '' && (
+            <p className="sub" data-testid="sem-sugestao">
+              Não achei este produto pelas suas palavras-chave. Digite o nome para procurar na sua lista: ao confirmar, a descrição desta nota fica
+              guardada e da próxima vez o app já sugere.
+            </p>
+          )}
           {sugestao && (
             <p className="sub" data-testid="sugestao-robo">
               Sugestão do robô:{' '}

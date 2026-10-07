@@ -16,27 +16,42 @@ const cupom = (extra: Partial<CupomRecente> = {}): CupomRecente => ({
 const espacos = (t: string) => t.replace(/\s/g, ' ')
 
 describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
-  it('o caso real: 2 itens sem produto confirmado → lista cada um com a proposta e o preço, e diz o que fazer (incluindo o peso que não ficou guardado)', () => {
+  it('o caso real: 2 itens sem produto confirmado → lista os fatos, a lista EXATA do que o Ivan informa (produto + peso), a conta para conferir e um exemplo de resposta', () => {
     const d = diagnosticoDoCupom(cupom({ motivo: '2 item(ns) sem casamento confirmado — confira no Code', itens: [LIMAO_SICILIANO, PEPINO, TAITI] }))!
     expect(d.problema).toBe('2 itens ainda não têm produto confirmado no SisChef (o robô nunca chuta: só lança item que você já confirmou uma vez para este fornecedor).')
     expect(d.itens.map((i) => ({ ...i, preco: i.preco && espacos(i.preco) }))).toEqual([
-      { descricao: 'LIMAO SICILIANO', proposta: 'LIMÃO SICILIANO - INSUMOS · cód. 3484974', preco: 'R$ 13,90 por KG' },
-      { descricao: 'PEPINO JAPONES', proposta: 'PEPINO JAPONÊS - INSUMOS · cód. 3484991', preco: 'R$ 5,79 por KG' },
+      { descricao: 'LIMAO SICILIANO', preco: 'R$ 13,90 por KG' },
+      { descricao: 'PEPINO JAPONES', preco: 'R$ 5,79 por KG' },
     ])                                                                                       // o LIMAO TAITI já está confirmado: não trava
-    expect(d.solucao).toContain('Peça ao Claude: “confirma os produtos do cupom do ATACADAO S.A.”')
-    expect(d.solucao).toContain('você confirma, ele grava a confirmação')
-    expect(d.solucao).toContain('o peso (kg) desses itens não ficou guardado')
+    expect(d.pedidos).toEqual([
+      'LIMAO SICILIANO: confirmar que é LIMÃO SICILIANO - INSUMOS (cód. 3484974) e dizer o peso (kg) que está no cupom.',
+      'PEPINO JAPONES: confirmar que é PEPINO JAPONÊS - INSUMOS (cód. 3484991) e dizer o peso (kg) que está no cupom.',
+    ])
+    // 2,884 kg × R$ 9,90 − R$ 5,51 = R$ 23,04 (o LIMAO TAITI); R$ 35,27 − R$ 23,04 = R$ 12,23 para os dois itens sem peso
+    expect(espacos(d.conferencia ?? '')).toBe('O cupom é R$ 35,27 e os itens já confirmados somam R$ 23,04: estes itens devem somar R$ 12,23 (peso × preço, com até 2 centavos de diferença).')
+    expect(d.solucao).toBe('Peça ao Claude e responda, por exemplo: “LIMAO SICILIANO: confirmo, __ kg; PEPINO JAPONES: confirmo, __ kg”. Ele grava a confirmação (nos próximos cupons desse fornecedor o item passa direto), refaz o cupom, confere a soma e o robô lança.')
   })
 
-  it('1 item: singular; sem proposta do sistema: proposta nula; sem emitente: "cupom"; peso já conhecido: não fala do peso; total não lido: avisa junto', () => {
-    const d = diagnosticoDoCupom(cupom({ emitente_nome: null, motivo: '1 item(ns) sem casamento confirmado — confira no Code; não consegui ler o total do cupom',
-      itens: [{ ...PEPINO, proposta: null, entrada_estoque: 0.9 }, TAITI] }))!
-    expect(d.problema.startsWith('1 item ainda não tem produto confirmado no SisChef')).toBe(true)
-    expect(d.problema).toContain('Além disso, o total do cupom não foi lido.')
-    expect(d.itens).toHaveLength(1)
-    expect(d.itens[0].proposta).toBeNull()
-    expect(d.solucao).toContain('“confirma os produtos do cupom do cupom”')
-    expect(d.solucao).not.toContain('peso')
+  it('1 item, sem proposta do sistema, peso já conhecido, total não lido, nenhum item já confirmado: cada variação muda o texto certo', () => {
+    const sozinho = diagnosticoDoCupom(cupom({ emitente_nome: null, valor_a_pagar: 20, motivo: '1 item(ns) sem casamento confirmado — confira no Code; não consegui ler o total do cupom',
+      itens: [{ ...PEPINO, proposta: null }] }))!
+    expect(sozinho.problema.startsWith('1 item ainda não tem produto confirmado no SisChef')).toBe(true)
+    expect(sozinho.problema).toContain('Além disso, o total do cupom não foi lido.')
+    expect(sozinho.pedidos).toEqual(['PEPINO JAPONES: dizer qual é o produto do SisChef e dizer o peso (kg) que está no cupom.'])
+    expect(espacos(sozinho.conferencia ?? '')).toBe('O cupom é R$ 20,00: este item deve dar R$ 20,00 (peso × preço, com até 2 centavos de diferença).')   // nenhum item já confirmado
+    expect(sozinho.solucao).toContain('“PEPINO JAPONES: é <produto>, __ kg”')
+    const comPeso = diagnosticoDoCupom(cupom({ motivo: 'x', itens: [{ ...PEPINO, entrada_estoque: 0.9 }, TAITI] }))!
+    expect(comPeso.pedidos).toEqual(['PEPINO JAPONES: confirmar que é PEPINO JAPONÊS - INSUMOS (cód. 3484991).'])   // o peso já se sabe: não pede
+    expect(comPeso.conferencia).toBeNull()                                                                         // a conta mistura item com peso: não oferece
+    expect(comPeso.solucao).toContain('“PEPINO JAPONES: confirmo”')
+    const unidade = diagnosticoDoCupom(cupom({ motivo: 'x', itens: [{ ...PEPINO, unidade_cupom: 'UN' }] }))!
+    expect(unidade.pedidos[0]).toContain('dizer a quantidade (un) que está no cupom')                              // unidade que não é peso: "quantidade"
+  })
+
+  it('sem total lido (0 ou nulo) ou com os itens já confirmados somando mais que o cupom: não há conta para conferir', () => {
+    expect(diagnosticoDoCupom(cupom({ valor_a_pagar: null, motivo: 'x', itens: [PEPINO] }))!.conferencia).toBeNull()
+    expect(diagnosticoDoCupom(cupom({ valor_a_pagar: 0, motivo: 'x', itens: [PEPINO] }))!.conferencia).toBeNull()
+    expect(diagnosticoDoCupom(cupom({ valor_a_pagar: 10, motivo: 'x', itens: [PEPINO, TAITI] }))!.conferencia).toBeNull()   // 23,04 já passa de 10
   })
 
   it('só os REVISAR têm diagnóstico', () => {
@@ -61,6 +76,8 @@ describe('diagnosticoDoCupom (o que está errado e como resolver)', () => {
     expect(d.problema).toMatch(problema)
     expect(d.solucao).toMatch(solucao)
     expect(d.itens).toEqual([])
+    expect(d.pedidos).toEqual([])
+    expect(d.conferencia).toBeNull()
   })
 
   it('o que pode ter chegado ao SisChef vem ANTES do resto: conferir/pedido aberto/já lançado ganham de "item sem produto"', () => {

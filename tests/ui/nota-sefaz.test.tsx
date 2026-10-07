@@ -1372,6 +1372,21 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         expect(screen.queryByTestId('sugestao-robo')).not.toBeInTheDocument()            // o palpite do robô era o produto escondido
       })
 
+      it('nada sugere o produto (nem o robô, nem as palavras-chave): a caixa diz o que fazer; some ao digitar e não aparece quando há sugestão', async () => {
+        aLancar(nota({ itens: [sem(1, { descricao: 'CÓD. FOR: 4471 PEITO FGO CONG IQF 1KG' })] }))
+        const a = render(<NotaSefaz />)
+        const dica = await screen.findByTestId('sem-sugestao')
+        expect(dica).toHaveTextContent('Não achei este produto pelas suas palavras-chave. Digite o nome para procurar na sua lista')
+        expect(dica).toHaveTextContent('da próxima vez o app já sugere')
+        await userEvent.type(await campo(), 'frango')
+        expect(screen.queryByTestId('sem-sugestao')).not.toBeInTheDocument()            // já está procurando
+        a.unmount()
+        aLancar(nota({ itens: [seara()] }))                                              // as palavras-chave sugerem: não precisa da dica
+        render(<NotaSefaz />)
+        await screen.findByTestId('sugestao-palavras')
+        expect(screen.queryByTestId('sem-sugestao')).not.toBeInTheDocument()
+      })
+
       it('o painel de conferir abre sozinho enquanto falta escolher produto, e fica fechado quando tudo já está associado', async () => {
         aLancar(nota({ itens: [sem(1)] }))
         const a = render(<NotaSefaz />)

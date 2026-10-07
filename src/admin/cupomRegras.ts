@@ -7,24 +7,63 @@
 import { formatarReais } from '../lib/regras'
 import type { CupomRecente, ItemCupomRecente } from '../lib/tipos'
 
-export interface ItemComProblema { descricao: string; proposta: string | null; preco: string | null }
+export interface ItemComProblema { descricao: string; preco: string | null }
 export interface DiagnosticoCupom {
   /** O que está errado, em uma frase que o Ivan entende. */
   problema: string
-  /** Os itens que travam o cupom (só quando o problema é de produto). */
+  /** Os itens que travam o cupom (só quando o problema é de produto): o que o cupom diz de cada um. */
   itens: ItemComProblema[]
+  /** O que o Ivan precisa INFORMAR, item a item ("LIMAO SICILIANO: confirmar que é LIMÃO SICILIANO - INSUMOS (cód. 3484974) e dizer o peso (kg) que está no cupom."). */
+  pedidos: string[]
+  /** Para ele conferir a própria resposta: quanto os itens sem peso devem somar (total do cupom − itens já confirmados), ou null se não dá para calcular. */
+  conferencia: string | null
   /** O que fazer para o cupom ficar apto a ser lançado pelo robô. */
   solucao: string
 }
 
 const semProdutoConfirmado = (it: ItemCupomRecente): boolean => String(it.sugestao_produto?.id ?? '').trim() === ''
 
-/** A proposta do sistema para o item ("LIMÃO SICILIANO - INSUMOS · cód. 3484974"), ou null se ele não teve proposta. */
-function propostaDe(it: ItemCupomRecente): string | null {
+/** O que o cupom pede ao Ivan sobre UM item: confirmar o produto (a proposta do sistema, ou dizer qual é) e, se o peso não ficou guardado, dizer o peso. */
+const GRANDEZA_PESO = /^(kg|g|gr|l|lt|ml)$/i
+function pedidoDe(it: ItemCupomRecente): string {
+  const desc = (it.descricao_cupom ?? '').trim() || 'item'
   const id = String(it.proposta?.insumo_id ?? '').trim()
-  if (id === '') return null
   const nome = (it.proposta?.insumo_nome ?? '').trim()
-  return nome !== '' ? `${nome} · cód. ${id}` : `cód. ${id}`
+  const produto = id === '' ? 'dizer qual é o produto do SisChef' : `confirmar que é ${nome !== '' ? `${nome} (cód. ${id})` : `o produto de cód. ${id}`}`
+  const un = (it.unidade_cupom ?? '').trim().toLowerCase()
+  const falta = it.entrada_estoque == null ? ` e dizer ${GRANDEZA_PESO.test(un) ? 'o peso' : 'a quantidade'}${un !== '' ? ` (${un})` : ''} que está no cupom` : ''
+  return `${desc}: ${produto}${falta}.`
+}
+
+/** Pedaço da resposta de exemplo para UM item ("LIMAO SICILIANO: confirmo, __ kg"). */
+function exemploDe(it: ItemCupomRecente): string {
+  const desc = (it.descricao_cupom ?? '').trim() || 'item'
+  const un = (it.unidade_cupom ?? '').trim().toLowerCase()
+  const resposta = String(it.proposta?.insumo_id ?? '').trim() === '' ? 'é <produto>' : 'confirmo'
+  return `${desc}: ${resposta}${it.entrada_estoque == null ? `, __ ${un || 'quantidade'}` : ''}`
+}
+
+/**
+ * Quanto os itens pendentes devem somar para o cupom fechar: total do cupom − o que os itens já confirmados valem (entrada × preço − desconto, a mesma conta
+ * do robô). Só quando NENHUM item pendente tem peso (senão a conta mistura o que já se sabe) e o total foi lido.
+ */
+function conferenciaDaSoma(c: CupomRecente, itens: ItemCupomRecente[], travando: ItemCupomRecente[]): string | null {
+  const total = c.valor_a_pagar
+  if (total == null || !(total > 0) || !travando.every((it) => it.entrada_estoque == null)) return null
+  let confirmados = 0
+  for (const it of itens) {
+    if (semProdutoConfirmado(it)) continue
+    const q = Number(it.entrada_estoque)
+    const v = Number(it.valor_unitario)
+    if (!Number.isFinite(q) || !Number.isFinite(v)) return null
+    const d = Number(it.desconto_item ?? 0)
+    confirmados += q * v - (Number.isFinite(d) ? d : 0)
+  }
+  confirmados = Math.round(confirmados * 100) / 100
+  const resto = Math.round((total - confirmados) * 100) / 100
+  if (!(resto > 0)) return null
+  const n = travando.length
+  return `O cupom é ${formatarReais(total)}${confirmados > 0 ? ` e os itens já confirmados somam ${formatarReais(confirmados)}` : ''}: ${n === 1 ? 'este item deve dar' : 'estes itens devem somar'} ${formatarReais(resto)} (peso × preço, com até 2 centavos de diferença).`
 }
 
 /** "R$ 13,90 por KG": o valor_unitario do cupom é o preço de UMA unidade (kg, un). */
@@ -43,7 +82,7 @@ const CLAUDE = 'Peça ao Claude'
 export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   if (c.estado !== 'REVISAR') return null
   const motivo = (c.motivo ?? '').trim()
-  const sem = (problema: string, solucao: string): DiagnosticoCupom => ({ problema, itens: [], solucao })
+  const sem = (problema: string, solucao: string): DiagnosticoCupom => ({ problema, itens: [], pedidos: [], conferencia: null, solucao })
 
   // Pode já existir compra no SisChef: nunca reenviar sem conferir.
   if (/^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_COMPRA_CLICADO/i.test(motivo)) {
@@ -70,12 +109,12 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
     const semTotal = /não consegui ler o total/i.test(motivo)
     // item sem produto confirmado chega sem `entrada_estoque` (a quantidade do estoque só se calcula depois do casamento) e o envio não guarda a
     // quantidade lida: ela só existe na foto/no cupom de papel
-    const semPeso = travando.some((it) => it.entrada_estoque == null)
-    const quem = (c.emitente_nome ?? '').trim() || 'cupom'
     return {
       problema: `${n === 1 ? '1 item ainda não tem' : `${n} itens ainda não têm`} produto confirmado no SisChef (o robô nunca chuta: só lança item que você já confirmou uma vez para este fornecedor).${semTotal ? ' Além disso, o total do cupom não foi lido.' : ''}`,
-      itens: travando.map((it) => ({ descricao: (it.descricao_cupom ?? '').trim() || 'item', proposta: propostaDe(it), preco: precoDe(it) })),
-      solucao: `${CLAUDE}: “confirma os produtos do cupom do ${quem}”. Ele mostra as propostas, você confirma, ele grava a confirmação (nos próximos cupons desse fornecedor o item passa direto), põe o cupom na fila e o robô lança.${semPeso ? ' Deixe o cupom de papel à mão: o peso (kg) desses itens não ficou guardado.' : ''}`,
+      itens: travando.map((it) => ({ descricao: (it.descricao_cupom ?? '').trim() || 'item', preco: precoDe(it) })),
+      pedidos: travando.map(pedidoDe),
+      conferencia: conferenciaDaSoma(c, itens, travando),
+      solucao: `${CLAUDE} e responda, por exemplo: “${travando.map(exemploDe).join('; ')}”. Ele grava a confirmação (nos próximos cupons desse fornecedor o item passa direto), refaz o cupom, confere a soma e o robô lança.`,
     }
   }
 

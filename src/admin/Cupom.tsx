@@ -53,13 +53,17 @@ function ProblemaDoCupom({ c }: { c: CupomRecente }) {
       <p><b>O que está errado:</b> {d.problema}</p>
       {d.itens.length > 0 && (
         <ul data-testid="cupom-problema-itens">
-          {d.itens.map((it, i) => (
-            <li key={i}>
-              <span>{it.descricao}</span>{it.preco && <span className="sub"> · {it.preco}</span>}
-              {' — '}{it.proposta ? <>proposta: <span>{it.proposta}</span></> : 'sem proposta do sistema'}
-            </li>
-          ))}
+          {d.itens.map((it, i) => <li key={i}><span>{it.descricao}</span>{it.preco && <span className="sub"> · {it.preco}</span>}</li>)}
         </ul>
+      )}
+      {d.pedidos.length > 0 && (
+        <>
+          <p><b>O que preciso de você:</b></p>
+          <ol data-testid="cupom-pedidos">
+            {d.pedidos.map((t, i) => <li key={i}>{t}</li>)}
+          </ol>
+          {d.conferencia && <p className="sub" data-testid="cupom-conferencia">Para conferir a sua resposta: {d.conferencia}</p>}
+        </>
       )}
       <p><b>Como resolver:</b> {d.solucao}</p>
       {c.motivo && <p className="sub">Motivo registrado: <span>{c.motivo}</span></p>}
