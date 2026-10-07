@@ -61,8 +61,8 @@ describe('NotaSefaz — nota "lançando" cujo robô pode ter caído (07/10: a ex
   it('o robô caiu antes de lançar: a tela recarrega, mostra a explicação e o Lançar volta', async () => {
     const motivo = 'O robô não chegou a começar: a execução no GitHub foi cancelada antes de tocar no SisChef (por exemplo, travou ao preparar o navegador). Nada foi criado no SisChef; pode lançar de novo.'
     m.notasALancar
-      .mockResolvedValueOnce([lancando(8)])
-      .mockResolvedValue([lancando(8, { lancamento_estado: 'revisar', lancamento_motivo: motivo })])
+      .mockResolvedValueOnce([lancando(1)])
+      .mockResolvedValue([lancando(1, { lancamento_estado: 'revisar', lancamento_motivo: motivo })])
     m.verificarRobo.mockResolvedValue({ situacao: 'liberada', mensagem: motivo, mudou: true })
     render(<NotaSefaz />)
     await screen.findByTestId('nota-a-lancar')
@@ -77,8 +77,8 @@ describe('NotaSefaz — nota "lançando" cujo robô pode ter caído (07/10: a ex
   it('o robô caiu no meio: a nota vira "pela metade" e o Lançar continua apagado', async () => {
     const motivo = 'A execução do robô foi cancelada depois de começar a lançar, sem avisar o resultado: a nota pode ter ficado pela metade. Confira no SisChef antes de qualquer coisa. Não lance de novo.'
     m.notasALancar
-      .mockResolvedValueOnce([lancando(8)])
-      .mockResolvedValue([lancando(8, { lancamento_estado: 'erro', lancamento_motivo: motivo })])
+      .mockResolvedValueOnce([lancando(1)])
+      .mockResolvedValue([lancando(1, { lancamento_estado: 'erro', lancamento_motivo: motivo })])
     m.verificarRobo.mockResolvedValue({ situacao: 'pela_metade', mensagem: motivo, mudou: true })
     render(<NotaSefaz />)
     await screen.findByTestId('nota-a-lancar')
