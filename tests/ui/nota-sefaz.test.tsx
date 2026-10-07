@@ -433,7 +433,7 @@ describe('NotaSefaz', () => {
       aLancar(nota({ lancamento_estado: 'lancando' }))
       const { unmount } = await montar()
       expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
-      expect(vi.getTimerCount()).toBe(1)
+      expect(vi.getTimerCount()).toBe(2)   // a releitura de 15 s (nota lançando) + a releitura de 3 min com o app aberto (07/10)
       unmount()
       expect(vi.getTimerCount()).toBe(0)
       await avancar(INTERVALO * 2)
