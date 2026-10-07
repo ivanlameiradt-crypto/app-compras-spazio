@@ -1,4 +1,27 @@
-import { dividirEmParcelas, parseValorBr } from '../../src/admin/notaSefazRegras'
+import { dividirEmParcelas, parseValorBr, validarParcelasDigitadas } from '../../src/admin/notaSefazRegras'
+
+describe('validarParcelasDigitadas: linha em branco não conta (07/10)', () => {
+  const L = (vencimento: string, valor: string) => ({ vencimento, valor })
+  it('linhas totalmente em branco no meio ou no fim são ignoradas', () => {
+    const r = validarParcelasDigitadas([L('2026-11-05', '100,00'), L('', ''), L('', '')], 100, '2026-10-05')
+    expect(r).toMatchObject({ ok: true, motivo: '', soma: 100 })
+    expect(r.parcelas).toEqual([{ vencimento: '2026-11-05', valor: 100 }])
+    const meio = validarParcelasDigitadas([L('2026-11-05', '60,00'), L('', ''), L('2026-11-12', '40,00')], 100, '2026-10-05')
+    expect(meio.ok).toBe(true)
+    expect(meio.parcelas).toHaveLength(2)
+  })
+
+  it('linha pela metade (só data, só valor) continua travando e o motivo usa o número da linha como aparece na tela', () => {
+    const r = validarParcelasDigitadas([L('2026-11-05', '100,00'), L('', ''), L('2026-11-12', '')], 100, '2026-10-05')
+    expect(r.ok).toBe(false)
+    expect(r.motivo).toBe('Parcela 3: informe o valor (ex.: 1.234,56)')
+    expect(validarParcelasDigitadas([L('2026-11-05', '100,00'), L('', '50')], 100, '2026-10-05').motivo).toBe('Parcela 2: informe o vencimento')
+  })
+
+  it('todas em branco: vale a regra de sempre (pede a parcela 1)', () => {
+    expect(validarParcelasDigitadas([L('', ''), L('', '')], 100, '2026-10-05')).toMatchObject({ ok: false, motivo: 'Parcela 1: informe o vencimento' })
+  })
+})
 
 const soma = (v: string[]) => v.reduce((t, x) => t + Math.round((parseValorBr(x) ?? 0) * 100), 0)
 
