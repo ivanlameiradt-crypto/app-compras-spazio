@@ -498,16 +498,44 @@ export interface ItemCupomRecente {
   casado_por: string | null
   /** O melhor candidato do sistema quando o item não tem produto confirmado (só pré-preenche a confirmação do Ivan). */
   proposta?: { insumo_id: string; insumo_nome: string | null } | null
+  /** Código de barras lido no cupom (quando o cupom o imprime): é por ele que o aprendizado vale para qualquer fornecedor. */
+  codigo_barras?: string | null
+  /** A quantidade como está impressa no cupom (na unidade do cupom), também nos itens ainda sem produto — cupons enviados a partir da v2 da
+   *  Edge Function enviar-cupom; os anteriores não a têm (o peso só existe na foto). */
+  quantidade_cupom?: number | null
 }
 /** Linha de "Últimos envios" (SELECT por RLS de admin — e_admin() do Plano 1). */
 export interface CupomRecente {
   id: string
   estado: EstadoCupom
   emitente_nome: string | null
+  /** CNPJ do emitente, só dígitos (ou null quando a leitura não o achou): é a chave do aprendizado por descrição. */
+  emitente_cnpj?: string | null
   valor_a_pagar: number | null
   pedido_sischef: string | null
   criado_em: string
   motivo: string | null
   teste: boolean
   itens: ItemCupomRecente[]
+  /** Caminho da foto no bucket privado `cupons` (null nos cupons semeados à mão): é o que o botão "Ver a foto do cupom" abre. */
+  foto_path?: string | null
+}
+/** Uma confirmação do Ivan para um item do cupom parado (corpo da Edge Function confirmar-cupom). */
+export interface ConfirmacaoItemCupom {
+  /** Posição do item em `itens` (0-based). */
+  indice: number
+  /** Cód. Interno do produto no SisChef. */
+  insumo_id: string
+  /** A quantidade que está impressa no cupom, na unidade DO CUPOM (kg, un…). */
+  quantidade: number
+  /** Quanto entra no estoque, na unidade DO PRODUTO, quando ela é outra (cupom em UN, produto em KG). Ausente = a mesma quantidade (fator 1). */
+  entrada?: number
+  /** Guardar o aprendizado: nos próximos cupons este item (mesmo código de barras, ou mesma descrição deste fornecedor) passa direto. */
+  lembrar: boolean
+}
+/** Resposta da Edge Function confirmar-cupom: o resumo do reenvio mais quantas confirmações com "lembrar" ficaram (ou não) guardadas. */
+export interface RespostaConfirmacaoCupom extends ResumoEnvioCupom {
+  lembrados?: number
+  /** Confirmações com "lembrar" que NÃO ficaram guardadas em cupom_aprendizado: no próximo cupom desse fornecedor o item para de novo. */
+  nao_lembrados?: number
 }

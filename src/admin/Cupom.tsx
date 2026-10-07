@@ -5,9 +5,12 @@ import * as api from '../lib/api'
 import { reduzirFoto } from '../lib/foto'
 import { formatarReais } from '../lib/regras'
 import { CONTAS_PIX, CONTA_DINHEIRO, CONTA_TESOURARIA, FORMAS } from '../cupom/formasPagamento'
-import type { CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ResumoEnvioCupom } from '../lib/tipos'
+import type {
+  CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
+} from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import { diagnosticoDoCupom } from './cupomRegras'
+import CorrigirCupom from './CorrigirCupom'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
   PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
@@ -43,6 +46,23 @@ const pedeAtencao = (r: ResumoEnvioCupom): boolean => r.estado === 'REVISAR' || 
 const linhaDoItem = (it: ItemCupomRecente): LinhaDetalhe =>
   ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, unidade: it.unidade_cupom, valor: it.valor_unitario })
 
+/** Cupom parado que o Ivan corrige DENTRO do app (item sem produto confirmado, com o total lido): só nesses a caixa de correção aparece. */
+const corrigivel = (c: CupomRecente): boolean => c.estado === 'REVISAR' && diagnosticoDoCupom(c)?.corrigivel === true
+
+/**
+ * O que a tela diz logo depois de um "Reenviar para lançar" aceito pelo servidor; `amarelo` quando o cupom ficou na fila sem o disparo automático
+ * ou quando alguma confirmação com "Lembrar" não ficou guardada — sem o aviso o Ivan acreditaria que o item passa direto da próxima vez, e ele
+ * pararia de novo sem explicação (a correção deste cupom em si foi aceita do mesmo jeito).
+ */
+interface AvisoReenvio { classe: 'ok' | 'amarelo'; texto: string }
+function avisoDeReenvio(r: RespostaConfirmacaoCupom): AvisoReenvio {
+  const n = r.nao_lembrados ?? 0
+  const naoGuardou = n > 0 ? `a confirmação de ${n} item(ns) não ficou guardada: no próximo cupom ${n === 1 ? 'ele para' : 'eles param'} de novo.` : ''
+  if (r.disparo_ok === false) return { classe: 'amarelo', texto: naoGuardou ? `${r.resumo}. Além disso, ${naoGuardou}` : r.resumo }
+  if (naoGuardou) return { classe: 'amarelo', texto: `Cupom corrigido e reenviado para lançar, mas ${naoGuardou}` }
+  return { classe: 'ok', texto: 'Cupom corrigido e reenviado para lançar. Em 2 ou 3 minutos ele aparece como “lançado ✓” ou volta com um motivo novo.' }
+}
+
 /** Cupom parado ("precisa de você"): o que está errado e o que fazer para o robô poder lançá-lo (pedido do Ivan, 06/10 à noite). O motivo técnico
  *  registrado fica embaixo, em letra pequena, para conferência. */
 function ProblemaDoCupom({ c }: { c: CupomRecente }) {
@@ -71,6 +91,73 @@ function ProblemaDoCupom({ c }: { c: CupomRecente }) {
   )
 }
 
+/**
+ * Quantidade do item como o robô a leu no cupom (v2 da Edge Function). Nos cupons antigos ela não ficou guardada: o que existe é a ENTRADA no
+ * estoque, que pode estar em outra unidade (5 un viram 0,4 kg) — por isso ela aparece como "entrou … no estoque", nunca com a unidade do cupom.
+ */
+const num3 = (v: number): string => v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+function qtdLida(it: ItemCupomRecente): string {
+  if (it.quantidade_cupom != null && Number.isFinite(Number(it.quantidade_cupom))) {
+    return `${num3(Number(it.quantidade_cupom))} ${(it.unidade_cupom ?? '').toLowerCase()}`.trim()
+  }
+  if (it.entrada_estoque != null && Number.isFinite(Number(it.entrada_estoque))) return `entrou ${num3(Number(it.entrada_estoque))} no estoque (qtd do cupom não guardada)`
+  return 'qtd não guardada'
+}
+
+/**
+ * "Ver a foto do cupom" (pedido do Ivan, 07/10): num envio parado, abre a foto DENTRO do cartão, com a lista do que o robô leu ao lado, para
+ * ele conferir se a leitura (produto, quantidade, preço) bate com o papel antes de corrigir. A URL é assinada na hora (bucket privado `cupons`,
+ * só o admin lê) e vale 10 min — por isso cada abertura pede uma URL nova: reaproveitar a anterior viraria uma imagem quebrada sem aviso.
+ */
+function FotoDoCupom({ c }: { c: CupomRecente }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [aberta, setAberta] = useState(false)
+  const [abrindo, setAbrindo] = useState(false)
+  const [erro, setErro] = useState('')
+  if (!c.foto_path) return null
+  async function abrir() {
+    if (aberta) { setAberta(false); return }
+    setErro('')
+    setAbrindo(true)
+    try {
+      setUrl(await api.urlCupom(c.foto_path!))
+      setAberta(true)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não consegui abrir a foto agora.')
+    } finally {
+      setAbrindo(false)
+    }
+  }
+  return (
+    <div className="foto-cupom" data-testid="foto-cupom">
+      <button type="button" className="link" disabled={abrindo} onClick={() => void abrir()}>
+        {abrindo ? 'Abrindo a foto…' : aberta ? 'Fechar a foto' : '📷 Ver a foto do cupom'}
+      </button>
+      {erro && <p className="erro" role="alert">Não consegui abrir a foto: {erro}</p>}
+      {aberta && url && (
+        <figure>
+          <img src={url} alt="Foto do cupom fiscal enviada" />
+          <figcaption>
+            <b>O que o robô leu</b> (confira com a foto):
+            <ul data-testid="leitura-robo">
+              {c.itens.map((it, i) => (
+                <li key={i}>
+                  <span>{it.descricao_cupom ?? 'item'}</span>
+                  <span className="sub">
+                    {' · '}{qtdLida(it)}{it.valor_unitario != null && ` · ${formatarReais(Number(it.valor_unitario))}`}
+                    {Number(it.desconto_item ?? 0) > 0 && ` · desconto ${formatarReais(Number(it.desconto_item))}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {c.valor_a_pagar != null && c.valor_a_pagar > 0 && <span className="sub">Total lido: {formatarReais(c.valor_a_pagar)}</span>}
+          </figcaption>
+        </figure>
+      )}
+    </div>
+  )
+}
+
 export default function Cupom() {
   const [forma, setForma] = useState<FormaCupom | null>(null)
   const [contaPix, setContaPix] = useState<string | null>(null)
@@ -85,6 +172,13 @@ export default function Cupom() {
   // a última carga dos "Últimos envios" falhou? (não pode aparecer como lista vazia: esconderia migração/coluna faltando ou RLS errada)
   const [falhaRecentes, setFalhaRecentes] = useState(false)
   const [expandido, setExpandido] = useState<string | null>(null) // qual "Últimos envios" está aberto mostrando o detalhe
+  // Lista de insumos do app para a caixa de correção (escolher o produto de um item pendente). Só é lida quando algum envio parado é corrigível,
+  // e UMA vez: a lista muda pouco e cada leitura é pesada (molde: NotaSefaz).
+  const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
+  const [catalogoFalhou, setCatalogoFalhou] = useState(false)
+  // aviso por cupom depois de "Reenviar para lançar": preso ao id (a lista recarrega e o cupom muda de estado) e mostrado só enquanto ele está na fila
+  // — quando vira "lançado ✓" ou volta a REVISAR com outro motivo, o aviso velho contradiria o estado novo
+  const [reenviados, setReenviados] = useState<Record<string, AvisoReenvio>>({})
 
   function carregarRecentes() {
     api.cuponsRecentes()
@@ -92,6 +186,22 @@ export default function Cupom() {
       .catch(() => setFalhaRecentes(true))
   }
   useEffect(() => { carregarRecentes() }, [])
+
+  const precisaCatalogo = recentes.some(corrigivel)
+  useEffect(() => {
+    if (!precisaCatalogo || catalogo !== null) return
+    let vivo = true
+    Promise.resolve(api.catalogoProdutos())
+      .then((c) => { if (vivo) { setCatalogo(c ?? []); setCatalogoFalhou(false) } })
+      .catch(() => { if (vivo) setCatalogoFalhou(true) })
+    return () => { vivo = false }
+  }, [precisaCatalogo, catalogo])
+
+  /** O servidor aceitou a correção: guarda o aviso deste cupom e recarrega a lista (ele volta como "na fila"). */
+  function aoReenviar(id: string, r: RespostaConfirmacaoCupom) {
+    setReenviados((m) => ({ ...m, [id]: avisoDeReenvio(r) }))
+    carregarRecentes()
+  }
 
   async function escolherFoto(arquivo: File | undefined) {
     if (!arquivo) return
@@ -200,7 +310,14 @@ export default function Cupom() {
                   <span><b>{ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}{valor && ` · ${valor}`}</span>
                   <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                 </button>
+                {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (
+                  <p className={reenviados[c.id].classe} data-testid="reenviado">{reenviados[c.id].texto}</p>
+                )}
                 {c.estado === 'REVISAR' && <ProblemaDoCupom c={c} />}
+                {c.estado === 'REVISAR' && <FotoDoCupom c={c} />}
+                {corrigivel(c) && (
+                  <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} />
+                )}
                 {aberto && <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} />}
               </li>
             )

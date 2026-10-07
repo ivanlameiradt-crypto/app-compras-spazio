@@ -28,7 +28,7 @@ vi.mock('../../src/lib/supabase', () => ({
 }))
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
-  cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
+  confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
   associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
@@ -482,6 +482,30 @@ describe('Sub-fase 3: cupom', () => {
     await expect(enviarCupom('cupom/abc.jpg', { forma: 'sem_cartao' })).rejects.toThrow('apenas o administrador pode fazer isso')
   })
 
+  it('confirmarCupom chama a Edge Function com cupom_id e as confirmações item a item; devolve o resumo com os contadores do aprendizado', async () => {
+    invoke.mockResolvedValue({ data: { cupom_id: 'c1', estado: 'PENDENTE', resumo: 'corrigido e reenviado para lançar', disparo_ok: true, lembrados: 1, nao_lembrados: 1 }, error: null })
+    const itens = [
+      { indice: 0, insumo_id: '3484974', quantidade: 0.5, lembrar: true },
+      { indice: 1, insumo_id: '3484991', quantidade: 3, entrada: 1.5, lembrar: false },   // cupom em UN, produto em KG: manda quanto entra no estoque
+    ]
+    const r = await confirmarCupom('aaf54e6f-0000-4000-8000-000000000001', itens)
+    expect(invoke).toHaveBeenCalledWith('confirmar-cupom', { body: { cupom_id: 'aaf54e6f-0000-4000-8000-000000000001', itens } })
+    expect(r).toEqual({ cupom_id: 'c1', estado: 'PENDENTE', resumo: 'corrigido e reenviado para lançar', disparo_ok: true, lembrados: 1, nao_lembrados: 1 })
+  })
+
+  it('confirmarCupom: erro da função (corpo JSON) vira a mensagem certa — a da soma que não bate, que a tela mostra ao Ivan', async () => {
+    const erro = 'a soma dos itens (R$ 41,57) não bate com o total do cupom (R$ 35,27): diferença de R$ 6,30. Confira os pesos.'
+    const context = { json: async () => ({ erro, soma: 41.57, total: 35.27 }) } as unknown as Response
+    invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context } })
+    await expect(confirmarCupom('aaf54e6f-0000-4000-8000-000000000001', [{ indice: 0, insumo_id: '3484974', quantidade: 2, lembrar: true }])).rejects.toThrow(erro)
+  })
+
+  it('confirmarCupom: erro sem corpo JSON fica com a mensagem padrão do supabase-js', async () => {
+    invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
+    await expect(confirmarCupom('aaf54e6f-0000-4000-8000-000000000001', [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }]))
+      .rejects.toThrow('Failed to send a request to the Edge Function')
+  })
+
   it('subirFotoCupom sobe ao bucket cupons; "já existe" não é erro', async () => {
     upload.mockResolvedValue({ error: null })
     await subirFotoCupom('cupom/abc.jpg', new Blob([new Uint8Array(3)], { type: 'image/jpeg' }))
@@ -515,7 +539,9 @@ describe('Sub-fase 3: cupom', () => {
     from.mockReturnValue(q)
     await cuponsRecentes()
     const colunas = String(q.select.mock.calls[0][0]).split(',').map((c) => c.trim())
-    expect(colunas).toEqual(expect.arrayContaining(['id', 'estado', 'emitente_nome', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens']))
+    expect(colunas).toEqual(expect.arrayContaining([
+      'id', 'estado', 'emitente_nome', 'emitente_cnpj', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens', 'foto_path',
+    ]))
   })
 
   it('cuponsRecentes: valor_a_pagar nulo continua null (não vira 0, que a tela mostraria como "R$ 0,00")', async () => {

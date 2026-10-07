@@ -19,6 +19,11 @@ export interface DiagnosticoCupom {
   conferencia: string | null
   /** O que fazer para o cupom ficar apto a ser lançado pelo robô. */
   solucao: string
+  /**
+   * A correção pode ser feita na própria tela (item sem produto confirmado, com o total lido): o Ivan escolhe o produto e digita a quantidade,
+   * e a Edge Function confirmar-cupom refaz e reenvia. Nos outros casos o caminho continua sendo o Claude/SisChef.
+   */
+  corrigivel: boolean
 }
 
 const semProdutoConfirmado = (it: ItemCupomRecente): boolean => String(it.sugestao_produto?.id ?? '').trim() === ''
@@ -82,7 +87,7 @@ const CLAUDE = 'Peça ao Claude'
 export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   if (c.estado !== 'REVISAR') return null
   const motivo = (c.motivo ?? '').trim()
-  const sem = (problema: string, solucao: string): DiagnosticoCupom => ({ problema, itens: [], pedidos: [], conferencia: null, solucao })
+  const sem = (problema: string, solucao: string): DiagnosticoCupom => ({ problema, itens: [], pedidos: [], conferencia: null, solucao, corrigivel: false })
 
   // Pode já existir compra no SisChef: nunca reenviar sem conferir.
   if (/^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_COMPRA_CLICADO/i.test(motivo)) {
@@ -107,6 +112,9 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   if (travando.length > 0) {
     const n = travando.length
     const semTotal = /não consegui ler o total/i.test(motivo)
+    // Só dá para corrigir na tela com o total lido: sem ele nem a tela nem a Edge Function confirmar-cupom conseguem conferir a soma (ela recusa).
+    // a mesma trava do servidor (confirmar-cupom): com pedido já aberto no SisChef, reenviar poderia duplicar a compra — não se corrige pelo app
+    const corrigivel = !semTotal && c.valor_a_pagar != null && Number(c.valor_a_pagar) > 0 && c.pedido_sischef == null
     // item sem produto confirmado chega sem `entrada_estoque` (a quantidade do estoque só se calcula depois do casamento) e o envio não guarda a
     // quantidade lida: ela só existe na foto/no cupom de papel
     return {
@@ -114,7 +122,10 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
       itens: travando.map((it) => ({ descricao: (it.descricao_cupom ?? '').trim() || 'item', preco: precoDe(it) })),
       pedidos: travando.map(pedidoDe),
       conferencia: conferenciaDaSoma(c, itens, travando),
-      solucao: `${CLAUDE} e responda, por exemplo: “${travando.map(exemploDe).join('; ')}”. Ele grava a confirmação (nos próximos cupons desse fornecedor o item passa direto), refaz o cupom, confere a soma e o robô lança.`,
+      solucao: corrigivel
+        ? 'Confirme cada item abaixo (o produto do SisChef e o peso que está no cupom) e toque em “Reenviar para lançar”. O app guarda a confirmação (nos próximos cupons desse fornecedor o item passa direto), confere a soma e o robô lança.'
+        : `${CLAUDE} e responda, por exemplo: “${travando.map(exemploDe).join('; ')}”. Ele grava a confirmação (nos próximos cupons desse fornecedor o item passa direto), refaz o cupom, confere a soma e o robô lança.`,
+      corrigivel,
     }
   }
 

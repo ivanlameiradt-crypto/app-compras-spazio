@@ -4,7 +4,7 @@ import * as api from '../../src/lib/api'
 import * as foto from '../../src/lib/foto'
 import Cupom from '../../src/admin/Cupom'
 import { CONTA_DINHEIRO, CONTA_TESOURARIA, CONTAS_PIX } from '../../src/cupom/formasPagamento'
-import type { CupomRecente, ResumoEnvioCupom } from '../../src/lib/tipos'
+import type { CupomRecente, ItemCupomRecente, ProdutoCatalogo, ResumoEnvioCupom } from '../../src/lib/tipos'
 
 vi.mock('../../src/lib/api')
 vi.mock('../../src/lib/foto')
@@ -427,16 +427,17 @@ describe('Cupom — "Últimos envios"', () => {
   })
 })
 
-describe('Cupom — "precisa de você" diz o que está errado e como resolver (pedido do Ivan, 06/10 à noite)', () => {
-  const ITENS_ATACADAO = [
-    { descricao_cupom: 'LIMAO SICILIANO', unidade_cupom: 'KG', valor_unitario: 13.9, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null,
-      proposta: { insumo_id: '3484974', insumo_nome: 'LIMÃO SICILIANO - INSUMOS' } },
-    { descricao_cupom: 'PEPINO JAPONES', unidade_cupom: 'KG', valor_unitario: 5.79, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null,
-      proposta: { insumo_id: '3484991', insumo_nome: 'PEPINO JAPONÊS - INSUMOS' } },
-    { descricao_cupom: 'LIMAO TAITI TROPICAL', unidade_cupom: 'KG', valor_unitario: 9.9, desconto_item: 5.51, entrada_estoque: 2.884, sugestao_produto: { id: '3469643' },
-      casado_por: 'descricao', proposta: null },
-  ]
+/** O cupom do ATACADAO de 06/10 (R$ 35,27): 2 itens sem produto confirmado (só com a proposta do sistema) e 1 já aprendido. */
+const ITENS_ATACADAO: ItemCupomRecente[] = [
+  { descricao_cupom: 'LIMAO SICILIANO', unidade_cupom: 'KG', valor_unitario: 13.9, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null,
+    proposta: { insumo_id: '3484974', insumo_nome: 'LIMÃO SICILIANO - INSUMOS' } },
+  { descricao_cupom: 'PEPINO JAPONES', unidade_cupom: 'KG', valor_unitario: 5.79, desconto_item: 0, entrada_estoque: null, sugestao_produto: null, casado_por: null,
+    proposta: { insumo_id: '3484991', insumo_nome: 'PEPINO JAPONÊS - INSUMOS' } },
+  { descricao_cupom: 'LIMAO TAITI TROPICAL', unidade_cupom: 'KG', valor_unitario: 9.9, desconto_item: 5.51, entrada_estoque: 2.884, sugestao_produto: { id: '3469643' },
+    casado_por: 'descricao', proposta: null },
+]
 
+describe('Cupom — "precisa de você" diz o que está errado e como resolver (pedido do Ivan, 06/10 à noite)', () => {
   it('o cupom do ATACADAO: o bloco aparece SEM abrir o detalhe, com o problema, os itens com a proposta, a solução e o motivo registrado', async () => {
     m.cuponsRecentes.mockResolvedValue([recente({ id: 'aaf54e6f', estado: 'REVISAR', emitente_nome: 'ATACADAO S.A.', valor_a_pagar: 35.27,
       motivo: '2 item(ns) sem casamento confirmado — confira no Code', itens: ITENS_ATACADAO })])
@@ -453,7 +454,8 @@ describe('Cupom — "precisa de você" diz o que está errado e como resolver (p
     expect(pedidos[1]).toHaveTextContent('PEPINO JAPONES: confirmar que é PEPINO JAPONÊS - INSUMOS (cód. 3484991) e dizer o peso (kg) que está no cupom.')
     expect(bloco).toHaveTextContent('O que preciso de você:')
     expect(screen.getByTestId('cupom-conferencia')).toHaveTextContent(/Para conferir a sua resposta: O cupom é R\$\s35,27 e os itens já confirmados somam R\$\s23,04: estes itens devem somar R\$\s12,23/)
-    expect(bloco).toHaveTextContent('Como resolver: Peça ao Claude e responda, por exemplo: “LIMAO SICILIANO: confirmo, __ kg; PEPINO JAPONES: confirmo, __ kg”.')
+    // com o total lido o cupom é corrigível NA TELA: a solução aponta para a caixa logo abaixo, não mais para o Claude
+    expect(bloco).toHaveTextContent('Como resolver: Confirme cada item abaixo (o produto do SisChef e o peso que está no cupom) e toque em “Reenviar para lançar”.')
     expect(screen.getByText('2 item(ns) sem casamento confirmado — confira no Code')).toBeInTheDocument()   // o motivo técnico continua à mostra (pequeno)
     expect(bloco).toHaveClass('amarelo')
     expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()            // o detalhe dos itens segue fechado
@@ -499,5 +501,362 @@ describe('Cupom — "precisa de você" diz o que está errado e como resolver (p
     const resultado = await screen.findByTestId('resultado')
     expect(resultado).toHaveTextContent('enviado para lançar')
     expect(resultado).not.toHaveTextContent('NÃO foi lançado')
+  })
+})
+
+describe('Cupom — "Ver a foto do cupom" num envio parado (pedido do Ivan, 07/10)', () => {
+  const COM_FOTO = recente({ id: 'aaf54e6f', estado: 'REVISAR', emitente_nome: 'ATACADAO S.A.', valor_a_pagar: 35.27,
+    motivo: '2 item(ns) sem casamento confirmado — confira no Code', itens: ITENS_ATACADAO, foto_path: 'cupom/aaf54e6f.jpg' })
+  const botaoFoto = () => screen.findByRole('button', { name: /Ver a foto do cupom/ })
+
+  it('o botão aparece só no envio parado (REVISAR) que tem a foto guardada; nos outros estados seria ruído', async () => {
+    m.cuponsRecentes.mockResolvedValue([
+      COM_FOTO,
+      recente({ id: 'b', estado: 'REVISAR', motivo: 'item sem casamento', foto_path: null }),       // semeado à mão: sem foto
+      recente({ id: 'c', estado: 'LANCADO', foto_path: 'cupom/c.jpg' }),
+      recente({ id: 'd', estado: 'PENDENTE', foto_path: 'cupom/d.jpg' }),
+    ])
+    render(<Cupom />)
+    const linhas = await screen.findAllByTestId('cupom-recente')
+    expect(within(linhas[0]).getByRole('button', { name: /Ver a foto do cupom/ })).toBeInTheDocument()
+    for (const l of linhas.slice(1)) expect(within(l).queryByRole('button', { name: /Ver a foto do cupom/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()                               // fechada até ele tocar
+  })
+
+  it('tocar pede a URL assinada com o foto_path, mostra a imagem e o que o robô leu (com a quantidade e a unidade do cupom); "Fechar a foto" recolhe', async () => {
+    m.urlCupom.mockResolvedValue('https://exemplo.test/assinada.jpg')
+    m.cuponsRecentes.mockResolvedValue([COM_FOTO])
+    render(<Cupom />)
+    await userEvent.click(await botaoFoto())
+    expect(m.urlCupom).toHaveBeenCalledWith('cupom/aaf54e6f.jpg')
+    expect(await screen.findByRole('img', { name: 'Foto do cupom fiscal enviada' })).toHaveAttribute('src', 'https://exemplo.test/assinada.jpg')
+    const leitura = within(screen.getByTestId('leitura-robo')).getAllByRole('listitem')
+    expect(leitura).toHaveLength(3)
+    expect(leitura[0]).toHaveTextContent(/LIMAO SICILIANO · qtd não guardada · R\$\s13,90/)   // envio antigo: o peso do item sem produto só existe na foto
+    // envio antigo (antes da v2): só a ENTRADA no estoque ficou guardada, e ela pode estar em outra unidade — por isso não ganha a unidade do cupom
+    expect(leitura[2]).toHaveTextContent(/LIMAO TAITI TROPICAL · entrou 2,884 no estoque \(qtd do cupom não guardada\) · R\$\s9,90 · desconto R\$\s5,51/)
+    expect(screen.getByText(/Total lido: R\$\s35,27/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fechar a foto' }))
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(await botaoFoto()).toBeEnabled()
+
+    await userEvent.click(await botaoFoto())                                                  // abrir de novo pede OUTRA URL: a anterior vence em 10 min e viraria imagem quebrada
+    await screen.findByRole('img', { name: 'Foto do cupom fiscal enviada' })
+    expect(m.urlCupom).toHaveBeenCalledTimes(2)
+  })
+
+  it('a URL assinada falhou: avisa com o motivo e deixa tentar de novo', async () => {
+    m.urlCupom.mockRejectedValue(new Error('Object not found'))
+    m.cuponsRecentes.mockResolvedValue([COM_FOTO])
+    render(<Cupom />)
+    await userEvent.click(await botaoFoto())
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não consegui abrir a foto: Object not found')
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(await botaoFoto()).toBeEnabled()
+  })
+})
+
+describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade + conferência da soma + "Reenviar para lançar" (pedido do Ivan, 07/10)', () => {
+  const CATALOGO: ProdutoCatalogo[] = [
+    { produto_id: 3484974, nome: 'LIMÃO SICILIANO - INSUMOS', unidade: 'kg', palavras: 'LIMÃO SICILIANO' },
+    { produto_id: 3484991, nome: 'PEPINO JAPONÊS - INSUMOS', unidade: 'kg' },
+    { produto_id: 3469643, nome: 'LIMÃO - INSUMOS', unidade: 'kg' },
+  ]
+  // com o CNPJ do emitente: é por ele (+ a descrição) que o servidor guarda o aprendizado destes itens, que não têm código de barras
+  const ATACADAO = recente({ id: 'aaf54e6f', estado: 'REVISAR', emitente_nome: 'ATACADAO S.A.', emitente_cnpj: '75315333000109', valor_a_pagar: 35.27,
+    motivo: '2 item(ns) sem casamento confirmado — confira no Code', itens: ITENS_ATACADAO })
+  type RespostaConfirmar = Awaited<ReturnType<typeof api.confirmarCupom>>
+  const ACEITO: RespostaConfirmar = { cupom_id: 'aaf54e6f', estado: 'PENDENTE', resumo: 'corrigido e reenviado para lançar', disparo_ok: true, lembrados: 2, nao_lembrados: 0 }
+  /** A lista: o ATACADAO parado e, depois de um reenvio aceito, ele já "na fila" (PENDENTE, sem motivo) — como o banco devolve de verdade. */
+  const naFila = () => m.cuponsRecentes.mockResolvedValueOnce([ATACADAO]).mockResolvedValue([{ ...ATACADAO, estado: 'PENDENTE', motivo: null }])
+
+  beforeEach(() => {
+    m.catalogoProdutos.mockResolvedValue(CATALOGO)
+    m.confirmarCupom.mockResolvedValue(ACEITO)
+  })
+
+  /** Os blocos de item pendente da caixa de correção (um por item sem produto). */
+  const itensDaCaixa = async () => within(await screen.findByTestId('corrigir-cupom')).getAllByTestId('corrigir-item')
+  const reenviar = () => screen.getByTestId('reenviar')
+  const soma = () => screen.getByTestId('corrigir-soma')
+  /** Aceita a proposta do sistema, digita o peso e confirma o item. */
+  const confirmarPelaProposta = async (item: HTMLElement, nome: string, peso: string) => {
+    await userEvent.click(await within(item).findByRole('button', { name: nome }))
+    await userEvent.type(within(item).getByLabelText('Peso (kg) que está no cupom'), peso)
+    await userEvent.click(within(item).getByRole('button', { name: 'Confirmar este item' }))
+  }
+
+  it('a caixa aparece só no cupom corrigível: item sem produto E total lido (não na foto ilegível, no "conferir no SisChef", no total não lido nem fora de REVISAR)', async () => {
+    m.cuponsRecentes.mockResolvedValue([
+      ATACADAO,
+      recente({ id: 'b', estado: 'REVISAR', emitente_nome: null, valor_a_pagar: 0, motivo: 'não consegui ler a foto do cupom' }),
+      recente({ id: 'c', estado: 'REVISAR', motivo: 'CONFERIR NO SISCHEF: GERAR_COMPRA_CLICADO', itens: ITENS_ATACADAO }),
+      recente({ id: 'd', estado: 'REVISAR', valor_a_pagar: 0, motivo: '2 item(ns) sem casamento confirmado; não consegui ler o total do cupom', itens: ITENS_ATACADAO }),
+      recente({ id: 'e', estado: 'LANCADO', itens: ITENS_ATACADAO }),
+    ])
+    render(<Cupom />)
+    const linhas = await screen.findAllByTestId('cupom-recente')
+    expect(within(linhas[0]).getByTestId('corrigir-cupom')).toBeInTheDocument()
+    for (const l of linhas.slice(1)) expect(within(l).queryByTestId('corrigir-cupom')).not.toBeInTheDocument()
+    expect(within(linhas[0]).getByTestId('cupom-problema-itens')).toBeInTheDocument()        // o bloco "O que está errado" continua lá
+    expect(screen.getAllByTestId('cupom-problema')).toHaveLength(4)
+  })
+
+  it('sem cupom corrigível a lista de produtos nem é lida', async () => {
+    m.cuponsRecentes.mockResolvedValue([recente({ id: 'e', estado: 'LANCADO' }), recente({ id: 'f', estado: 'REVISAR', motivo: 'não consegui ler a foto do cupom', valor_a_pagar: 0 })])
+    render(<Cupom />)
+    await screen.findAllByTestId('cupom-recente')
+    expect(m.catalogoProdutos).not.toHaveBeenCalled()
+  })
+
+  it('fluxo completo: proposta + peso, busca + peso, a soma bate, "Reenviar para lançar" manda as confirmações e a tela avisa e recarrega', async () => {
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    expect(itens).toHaveLength(2)                                                            // só os 2 sem produto; o LIMAO TAITI já está confirmado
+    expect(itens[0]).toHaveTextContent(/LIMAO SICILIANO · R\$\s13,90 por KG/)
+    expect(itens[1]).toHaveTextContent(/PEPINO JAPONES · R\$\s5,79 por KG/)
+    expect(reenviar()).toBeDisabled()
+    expect(soma()).toHaveTextContent(/Soma R\$\s23,04 · cupom R\$\s35,27 · falta confirmar os itens acima/)  // só o LIMAO TAITI conta por enquanto
+    expect(soma()).toHaveClass('sub')
+
+    // 1º item: a proposta do sistema vira o produto com um toque; o peso é o que está impresso no cupom
+    await userEvent.click(await within(itens[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
+    expect(within(itens[0]).queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()   // escolhido: o campo dá lugar ao produto
+    expect(itens[0]).toHaveTextContent('cód. 3484974 · KG')
+    expect(within(itens[0]).getByRole('button', { name: 'Confirmar este item' })).toBeDisabled()   // sem o peso não confirma
+    await userEvent.type(within(itens[0]).getByLabelText('Peso (kg) que está no cupom'), '0,5')
+    expect(itens[0]).toHaveTextContent(/Linha: 0,5 kg × R\$\s13,90 = R\$\s6,95/)
+    await userEvent.click(within(itens[0]).getByRole('button', { name: 'Confirmar este item' }))
+    expect(itens[0]).toHaveTextContent(/✓ LIMÃO SICILIANO - INSUMOS · 0,5 kg → R\$\s6,95/)
+    expect(within(itens[0]).getByRole('button', { name: 'Trocar' })).toBeInTheDocument()
+    expect(reenviar()).toBeDisabled()                                                        // ainda falta o pepino
+
+    // 2º item: pela busca na lista de insumos
+    await userEvent.type(within(itens[1]).getByLabelText('Produto do SisChef'), 'pepino')
+    const achados = within(within(itens[1]).getByTestId('achados'))
+    expect(achados.getAllByRole('button')).toHaveLength(1)
+    expect(achados.getByRole('button')).toHaveTextContent('PEPINO JAPONÊS - INSUMOS')
+    expect(achados.getByRole('button')).toHaveTextContent('cód. 3484991 · KG')
+    await userEvent.click(achados.getByRole('button'))
+    await userEvent.type(within(itens[1]).getByLabelText('Peso (kg) que está no cupom'), '0,912')
+    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Confirmar este item' }))
+
+    // a conferência: uma linha por item do cupom, os já confirmados marcados; a soma fecha em R$ 35,27
+    const conferencia = within(screen.getByTestId('corrigir-conferencia')).getAllByRole('listitem')
+    expect(conferencia).toHaveLength(3)
+    expect(conferencia[0]).toHaveTextContent(/^LIMAO SICILIANO\s*R\$\s6,95$/)
+    expect(conferencia[1]).toHaveTextContent(/^PEPINO JAPONES\s*R\$\s5,28$/)                 // 0,912 × 5,79 = 5,28048 → 5,28 (a 2 casas, como o robô)
+    expect(conferencia[2]).toHaveTextContent(/^LIMAO TAITI TROPICAL \(já confirmado\)\s*R\$\s23,04$/)
+    expect(soma()).toHaveTextContent(/Soma R\$\s35,27 · cupom R\$\s35,27 · bate/)
+    expect(soma()).toHaveClass('ok')
+    expect(reenviar()).toBeEnabled()
+
+    await userEvent.click(reenviar())
+    await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('aaf54e6f', [
+      { indice: 0, insumo_id: '3484974', quantidade: 0.5, lembrar: true },
+      { indice: 1, insumo_id: '3484991', quantidade: 0.912, lembrar: true },
+    ]))
+    const aviso = await screen.findByTestId('reenviado')
+    expect(aviso).toHaveTextContent('Cupom corrigido e reenviado para lançar. Em 2 ou 3 minutos ele aparece como “lançado ✓” ou volta com um motivo novo.')
+    expect(aviso).toHaveClass('ok')
+    expect(m.cuponsRecentes).toHaveBeenCalledTimes(2)                                        // carga inicial + depois do reenvio
+    expect(m.catalogoProdutos).toHaveBeenCalledTimes(1)                                       // a lista de produtos é lida uma vez só
+  })
+
+  it('peso errado: a soma não bate, o botão fica apagado e a tela diz a diferença; "Trocar" deixa corrigir o peso', async () => {
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await confirmarPelaProposta(itens[0], 'LIMÃO SICILIANO - INSUMOS', '0,5')
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '2')                   // 2 kg × R$ 5,79 = R$ 11,58 (o certo era 0,912 kg)
+    expect(soma()).toHaveTextContent(/Soma R\$\s41,57 · cupom R\$\s35,27 · diferença de R\$\s6,30: confira os pesos/)
+    expect(soma()).toHaveClass('erro')
+    expect(reenviar()).toBeDisabled()
+    expect(m.confirmarCupom).not.toHaveBeenCalled()
+
+    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Trocar' }))
+    const peso = within(itens[1]).getByLabelText('Peso (kg) que está no cupom')
+    expect(peso).toHaveValue('2')                                                             // volta com o que ele tinha digitado
+    await userEvent.clear(peso)
+    await userEvent.type(peso, '0,912')
+    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Confirmar este item' }))
+    expect(soma()).toHaveClass('ok')
+    expect(reenviar()).toBeEnabled()
+  })
+
+  it('o servidor recusa (409: o cupom já não está parado): o erro aparece como alerta, nada recarrega e o botão volta a habilitar', async () => {
+    m.confirmarCupom.mockRejectedValue(new Error('este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela'))
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await confirmarPelaProposta(itens[0], 'LIMÃO SICILIANO - INSUMOS', '0,5')
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    expect(await screen.findByRole('alert')).toHaveTextContent('este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela')
+    expect(reenviar()).toBeEnabled()
+    expect(screen.queryByTestId('reenviado')).not.toBeInTheDocument()
+    expect(m.cuponsRecentes).toHaveBeenCalledTimes(1)
+  })
+
+  it('durante o reenvio: "Reenviando…" apagado, os itens travados, e o 2º toque não manda de novo', async () => {
+    let concluir!: (r: RespostaConfirmar) => void
+    m.confirmarCupom.mockReturnValueOnce(new Promise<RespostaConfirmar>((r) => { concluir = r }))
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await confirmarPelaProposta(itens[0], 'LIMÃO SICILIANO - INSUMOS', '0,5')
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    const botao = await screen.findByRole('button', { name: 'Reenviando…' })
+    expect(botao).toBeDisabled()
+    expect(within(itens[0]).getByRole('button', { name: 'Trocar' })).toBeDisabled()          // trocar no meio do envio mandaria uma coisa e mostraria outra
+    await userEvent.click(botao)
+    expect(m.confirmarCupom).toHaveBeenCalledTimes(1)
+    concluir(ACEITO)
+    expect(await screen.findByTestId('reenviado')).toBeInTheDocument()
+  })
+
+  it('servidor aceitou mas o disparo automático falhou: o aviso fica amarelo, com o resumo do servidor', async () => {
+    m.confirmarCupom.mockResolvedValue({ ...ACEITO, disparo_ok: false, resumo: 'corrigido, mas o disparo automático falhou — o cupom ficou na fila' })
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await confirmarPelaProposta(itens[0], 'LIMÃO SICILIANO - INSUMOS', '0,5')
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    const aviso = await screen.findByTestId('reenviado')
+    expect(aviso).toHaveTextContent('corrigido, mas o disparo automático falhou — o cupom ficou na fila')
+    expect(aviso).toHaveClass('amarelo')
+    expect(aviso).not.toHaveClass('ok')
+  })
+
+  it('servidor aceitou mas não conseguiu guardar a confirmação de algum item (nao_lembrados): aviso amarelo dizendo que ele vai parar de novo', async () => {
+    m.confirmarCupom.mockResolvedValue({ ...ACEITO, lembrados: 1, nao_lembrados: 1 })
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await confirmarPelaProposta(itens[0], 'LIMÃO SICILIANO - INSUMOS', '0,5')
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    const aviso = await screen.findByTestId('reenviado')
+    expect(aviso).toHaveTextContent(
+      'Cupom corrigido e reenviado para lançar, mas a confirmação de 1 item(ns) não ficou guardada: no próximo cupom ele para de novo.',
+    )
+    expect(aviso).toHaveClass('amarelo')
+    expect(m.cuponsRecentes).toHaveBeenCalledTimes(2)                                        // a correção em si foi aceita: a lista recarrega
+  })
+
+  it('o aviso "reenviado" só vale enquanto o cupom está na fila: se ele volta REVISAR com outro motivo (ou vira lançado), o aviso some', async () => {
+    m.cuponsRecentes.mockResolvedValueOnce([ATACADAO])
+      .mockResolvedValue([{ ...ATACADAO, estado: 'REVISAR', motivo: 'falha ao preencher o pagamento no Sischef: campo X' }])
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await confirmarPelaProposta(itens[0], 'LIMÃO SICILIANO - INSUMOS', '0,5')
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    await waitFor(() => expect(m.cuponsRecentes).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText(/pedido ABERTO e nada foi pago/)).toBeInTheDocument()     // o estado novo manda
+    expect(screen.queryByTestId('reenviado')).not.toBeInTheDocument()                        // um "reenviado" verde em cima do problema novo seria contradição
+  })
+
+  it('desmarcar "Lembrar" num item manda lembrar:false só nele', async () => {
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await userEvent.click(await within(itens[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
+    const lembrar = within(itens[0]).getByRole('checkbox', { name: 'Lembrar: da próxima vez, “LIMAO SICILIANO” deste fornecedor já passa direto' })
+    expect(lembrar).toBeChecked()                                                             // marcado de início: lembrar é o normal
+    await userEvent.click(lembrar)
+    await userEvent.type(within(itens[0]).getByLabelText('Peso (kg) que está no cupom'), '0,5')
+    await userEvent.click(within(itens[0]).getByRole('button', { name: 'Confirmar este item' }))
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('aaf54e6f', [
+      { indice: 0, insumo_id: '3484974', quantidade: 0.5, lembrar: false },
+      { indice: 1, insumo_id: '3484991', quantidade: 0.912, lembrar: true },
+    ]))
+  })
+
+  it('cupom sem CNPJ do emitente (e item sem código de barras): não oferece o "Lembrar", explica por quê e manda lembrar:false', async () => {
+    m.cuponsRecentes.mockResolvedValue([{ ...ATACADAO, emitente_cnpj: null }])
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await userEvent.click(await within(itens[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
+    expect(within(itens[0]).queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(itens[0]).toHaveTextContent('Não dá para lembrar este item (o cupom não trouxe o CNPJ do emitente nem um código de barras válido).')
+    await userEvent.type(within(itens[0]).getByLabelText('Peso (kg) que está no cupom'), '0,5')
+    await userEvent.click(within(itens[0]).getByRole('button', { name: 'Confirmar este item' }))
+    await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
+    await userEvent.click(reenviar())
+    // sem chave o servidor não teria como guardar: lembrar:false, para o `nao_lembrados` da resposta só contar falha de verdade
+    await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('aaf54e6f', [
+      { indice: 0, insumo_id: '3484974', quantidade: 0.5, lembrar: false },
+      { indice: 1, insumo_id: '3484991', quantidade: 0.912, lembrar: false },
+    ]))
+  })
+
+  it('sem CNPJ, o "Lembrar" só é oferecido no item cujo código de barras é um GTIN válido (código cortado ou interno não serve de chave)', async () => {
+    const itens = [{ ...ITENS_ATACADAO[0], codigo_barras: '7891234567895' }, { ...ITENS_ATACADAO[1], codigo_barras: '7891234' }, ITENS_ATACADAO[2]]
+    m.cuponsRecentes.mockResolvedValue([{ ...ATACADAO, emitente_cnpj: null, itens }])
+    render(<Cupom />)
+    const caixas = await itensDaCaixa()
+    await userEvent.click(await within(caixas[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
+    expect(within(caixas[0]).getByRole('checkbox')).toBeChecked()
+    await userEvent.click(await within(caixas[1]).findByRole('button', { name: 'PEPINO JAPONÊS - INSUMOS' }))
+    expect(within(caixas[1]).queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(caixas[1]).toHaveTextContent('Não dá para lembrar este item')
+  })
+
+  it('cupom em UN e produto em KG: pede quanto entra no estoque e manda `entrada`; a quantidade lida no cupom já vem preenchida', async () => {
+    const QUEIJO: ItemCupomRecente = { descricao_cupom: 'QUEIJO MINAS PC', unidade_cupom: 'UN', valor_unitario: 25, desconto_item: 0, entrada_estoque: null,
+      sugestao_produto: null, casado_por: null, proposta: null, quantidade_cupom: 1 }
+    m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3500001, nome: 'QUEIJO MINAS - INSUMOS', unidade: 'kg' }])
+    m.cuponsRecentes.mockResolvedValue([recente({ id: 'q1', estado: 'REVISAR', emitente_nome: 'MERCADO X', emitente_cnpj: '12345678000199', valor_a_pagar: 25,
+      motivo: '1 item(ns) sem casamento confirmado — confira no Code', itens: [QUEIJO] })])
+    render(<Cupom />)
+    const [item] = await itensDaCaixa()
+    expect(item).toHaveTextContent(/QUEIJO MINAS PC · R\$\s25,00 por UN/)
+    await userEvent.type(await within(item).findByLabelText('Produto do SisChef'), 'queijo')
+    await userEvent.click(within(within(item).getByTestId('achados')).getByRole('button', { name: /QUEIJO MINAS - INSUMOS/ }))
+    expect(within(item).getByLabelText('Quantidade (un) que está no cupom')).toHaveValue('1')   // o robô leu "1" no cupom: ele só confere
+    expect(item).toHaveTextContent('O cupom está em UN e este produto é em KG: diga quanto entra no estoque')
+    const confirmar = within(item).getByRole('button', { name: 'Confirmar este item' })
+    expect(confirmar).toBeDisabled()                                                          // sem a entrada o servidor recusaria: nem deixa confirmar
+    await userEvent.type(within(item).getByLabelText('Quanto entra no estoque (KG)'), '0,8')
+    expect(item).toHaveTextContent(/Linha: 1 un × R\$\s25,00 = R\$\s25,00 · entra 0,8 kg no estoque/)   // a conversão preserva o valor da linha
+    // com conversão o "Lembrar" começa DESMARCADO e diz que o fator também fica guardado: numa peça de peso variável o fator desta compra lançaria a
+    // próxima com o peso errado sem ninguém ver; só pacote de peso fixo merece a marca
+    const lembrar = within(item).getByRole('checkbox', { name: /Lembrar também a conversão \(1 UN = 0,8 KG\): só marque se “QUEIJO MINAS PC” vem sempre com o mesmo peso ou embalagem/ })
+    expect(lembrar).not.toBeChecked()
+    await userEvent.click(confirmar)
+    expect(item).toHaveTextContent(/✓ QUEIJO MINAS - INSUMOS · 1 un → R\$\s25,00/)
+    expect(soma()).toHaveClass('ok')
+    await userEvent.click(reenviar())
+    await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('q1', [{ indice: 0, insumo_id: '3500001', quantidade: 1, entrada: 0.8, lembrar: false }]))
+  })
+
+  it('proposta do sistema que não está na lista de insumos vira só um aviso (o servidor a recusaria): ele procura na busca', async () => {
+    m.catalogoProdutos.mockResolvedValue([CATALOGO[1], CATALOGO[2]])                           // sem o LIMÃO SICILIANO
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    await within(itens[0]).findByLabelText('Produto do SisChef')
+    expect(itens[0]).toHaveTextContent('Proposta do sistema: LIMÃO SICILIANO - INSUMOS (cód. 3484974) — não está na sua lista: procure abaixo')
+    expect(within(itens[0]).queryByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' })).not.toBeInTheDocument()
+    await userEvent.type(within(itens[0]).getByLabelText('Produto do SisChef'), 'xyzxyz')
+    expect(itens[0]).toHaveTextContent('Nada na sua lista de insumos com isso.')
+    expect(within(itens[0]).queryByTestId('achados')).not.toBeInTheDocument()
+  })
+
+  it('a lista de produtos não carregou: a caixa avisa e não tem como escolher produto', async () => {
+    m.catalogoProdutos.mockRejectedValue(new Error('rede'))
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    expect(await within(itens[0]).findByRole('alert')).toHaveTextContent('Não consegui carregar a lista de produtos. Atualize a página.')
+    expect(within(itens[0]).queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
+    expect(reenviar()).toBeDisabled()
   })
 })

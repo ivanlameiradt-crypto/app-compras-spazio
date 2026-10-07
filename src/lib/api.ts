@@ -4,10 +4,10 @@ import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
-  Abertura, AssociacaoApp, Compra, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem, HistoricoItem,
-  IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
+  Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
+  HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
   LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
-  Preparo, ProdutoCatalogo, Recebimento, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
+  Preparo, ProdutoCatalogo, Recebimento, RespostaConfirmacaoCupom, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
 /** Erro vindo do Supabase, com o status HTTP e o código (PostgREST/Postgres) para a fila saber se tenta de novo. */
@@ -894,10 +894,21 @@ export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom, t
   return data as ResumoEnvioCupom
 }
 
+/**
+ * Chama a Edge Function confirmar-cupom: num cupom parado em REVISAR por item sem produto confirmado, o Ivan confirma (produto + quantidade
+ * do cupom) item a item e o servidor refaz os itens, confere a soma, volta o cupom a PENDENTE, guarda o aprendizado e dispara o robô.
+ * O erro da função (soma que não bate, cupom que já saiu de REVISAR…) vem no corpo JSON e vira a mensagem que a tela mostra.
+ */
+export async function confirmarCupom(cupomId: string, itens: ConfirmacaoItemCupom[]): Promise<RespostaConfirmacaoCupom> {
+  const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, itens } })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+  return data as RespostaConfirmacaoCupom
+}
+
 /** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
   const r = checar(await supabase.from('cupom')
-    .select('id, estado, emitente_nome, valor_a_pagar, pedido_sischef, criado_em, motivo, teste, itens')
+    .select('id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, motivo, teste, itens, foto_path')
     .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
   return r.map((c) => ({
     ...c,
