@@ -9,7 +9,7 @@ import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
 } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { diagnosticoDoCupom } from './cupomRegras'
+import { diagnosticoDoCupom, envioRepetido } from './cupomRegras'
 import CorrigirCupom from './CorrigirCupom'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
@@ -332,14 +332,16 @@ export default function Cupom() {
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
                   onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}{valor && ` · ${valor}`}</span>
+                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}{valor && ` · ${valor}`}</span>
                   <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                 </button>
                 {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (
                   <p className={reenviados[c.id].classe} data-testid="reenviado">{reenviados[c.id].texto}</p>
                 )}
-                {c.estado === 'REVISAR' && <ProblemaDoCupom c={c} />}
-                {c.estado === 'REVISAR' && <FotoDoCupom c={c} />}
+                {/* envio repetido de um cupom já lançado: a compra já está no SisChef — concluído, sem bloco de problema, foto nem caixa */}
+                {envioRepetido(c) && <p className="sub" data-testid="envio-repetido">Envio repetido: este cupom já tinha sido lançado em outro envio. Nada a fazer.</p>}
+                {c.estado === 'REVISAR' && !envioRepetido(c) && <ProblemaDoCupom c={c} />}
+                {c.estado === 'REVISAR' && !envioRepetido(c) && <FotoDoCupom c={c} />}
                 {corrigivel(c) && (
                   <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} />
                 )}

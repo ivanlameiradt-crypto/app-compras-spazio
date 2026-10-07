@@ -84,6 +84,13 @@ function precoDe(it: ItemCupomRecente): string | null {
 const CLAUDE = 'Peça ao Claude'
 
 /**
+ * Envio REPETIDO de um cupom que já foi lançado em outro envio (o robô marca REVISAR com "JÁ LANÇADO em outro envio"): a compra já está no
+ * SisChef, então não há nada a corrigir — a tela o mostra como concluído, sem o bloco "precisa de você" (pedido do Ivan, 07/10: "não precisa
+ * relatar algo que já foi feito").
+ */
+export const envioRepetido = (c: CupomRecente): boolean => c.estado === 'REVISAR' && /já lançado em outro envio/i.test(c.motivo ?? '')
+
+/**
  * O diagnóstico de um envio que está em REVISAR (null para os outros estados). A ordem importa: primeiro o que pode ter chegado ao SisChef
  * (conferir antes de qualquer coisa), depois o que é só dado do cupom. Texto que ninguém reconhece vira o motivo cru + o pedido genérico.
  */

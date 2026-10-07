@@ -461,6 +461,21 @@ describe('Cupom — "precisa de você" diz o que está errado e como resolver (p
     expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()            // o detalhe dos itens segue fechado
   })
 
+  it('envio repetido de um cupom já lançado: aparece como "já lançado ✓", sem bloco amarelo, sem foto e sem caixa (pedido do Ivan, 07/10)', async () => {
+    m.cuponsRecentes.mockResolvedValue([
+      recente({ id: 'r1', estado: 'REVISAR', emitente_nome: 'MATEUS SUPERMERCADOS SA', valor_a_pagar: 54.49, foto_path: 'cupom/r1.jpg',
+        motivo: 'JÁ LANÇADO em outro envio — NÃO reenviar (duplicaria a compra)', itens: ITENS_ATACADAO }),
+    ])
+    render(<Cupom />)
+    const linha = await screen.findByTestId('cupom-recente')
+    expect(linha.querySelector('b')?.textContent).toBe('já lançado ✓')
+    expect(screen.getByTestId('envio-repetido')).toHaveTextContent('Envio repetido: este cupom já tinha sido lançado em outro envio. Nada a fazer.')
+    expect(screen.queryByTestId('cupom-problema')).not.toBeInTheDocument()                 // não é pendência: nada de "O que está errado"
+    expect(screen.queryByRole('button', { name: /Ver a foto do cupom/ })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('corrigir-cupom')).not.toBeInTheDocument()
+    expect(linha).not.toHaveTextContent('precisa de você')
+  })
+
   it('foto ilegível: diz para tirar outra foto', async () => {
     m.cuponsRecentes.mockResolvedValue([recente({ estado: 'REVISAR', emitente_nome: null, valor_a_pagar: 0, motivo: 'não consegui ler a foto do cupom' })])
     render(<Cupom />)
