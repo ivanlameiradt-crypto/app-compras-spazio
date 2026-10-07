@@ -1,5 +1,8 @@
-import { MAX_RESULTADOS, buscarProdutos, nomeParaMostrar, sugestaoNoCatalogo, sugestaoPorPalavras, unidadesDiferem } from '../../src/admin/associacaoRegras'
-import type { ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
+import {
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, buscarProdutos, conversaoDaDecisao, formatarConversao, nomeParaMostrar, parseConversao, rotuloUnidade,
+  situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
+} from '../../src/admin/associacaoRegras'
+import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
 
 const p = (produto_id: number, nome: string, unidade: string | null = 'kg'): ProdutoCatalogo => ({ produto_id, nome, unidade })
 const CATALOGO: ProdutoCatalogo[] = [
@@ -52,15 +55,47 @@ describe('buscarProdutos (a caixa de associação)', () => {
   })
 })
 
-describe('unidadesDiferem', () => {
-  it('compara sem ligar para maiúsculas e espaços; sem uma das unidades, não dá para dizer (false)', () => {
-    expect(unidadesDiferem('UN', 'un')).toBe(false)
-    expect(unidadesDiferem(' KG ', 'kg')).toBe(false)
-    expect(unidadesDiferem('UN', 'kg')).toBe(true)
-    expect(unidadesDiferem('CX', 'un')).toBe(true)
-    expect(unidadesDiferem(null, 'kg')).toBe(false)
-    expect(unidadesDiferem('UN', undefined)).toBe(false)
-    expect(unidadesDiferem('', 'kg')).toBe(false)
+describe('situacaoConversao (a caixa pede, oferece ou esconde o campo da conversão?)', () => {
+  // A unidade da lista do app é um palpite pelo nome: "kg" (nome com "(KG)") é confiável; "un" é o chute para todo o resto; null = produto novo.
+  // O robô é quem confere no cadastro vivo antes de gravar: o app só OBRIGA quando tem certeza, e "opcional" nunca trava o Lançar.
+  const NOTAS: (string | null)[] = ['UN', 'KG', 'CX', 'L', 'PCT', '', null]
+  const esperado = (nota: string | null, produto: string | null): ReturnType<typeof situacaoConversao> => {
+    const n = (nota ?? '').trim().toUpperCase()
+    const p = (produto ?? '').trim().toLowerCase()
+    if (n === '') return 'oculta'                       // sem a unidade da nota não há o que comparar (o robô também barra)
+    if (p === '') return 'opcional'                     // produto novo: unidade desconhecida
+    if (p === 'kg') return n === 'KG' ? 'oculta' : 'obrigatoria'
+    return n === 'UN' ? 'oculta' : 'opcional'           // "un" é chute: no SisChef pode ser PCT/CX…
+  }
+
+  it.each<string | null>(['kg', 'un', null, 'KG', ' un '])('produto %j × todas as unidades da nota (UN, KG, CX, L, PCT, vazia, null)', (produto) => {
+    for (const nota of NOTAS) expect([nota, produto, situacaoConversao(nota, produto)]).toEqual([nota, produto, esperado(nota, produto)])
+  })
+
+  it('a tabela completa, escrita por extenso (para ninguém depender só da função espelho acima)', () => {
+    // produto "kg" (confiável): só KG × KG esconde; o resto OBRIGA
+    expect(situacaoConversao('KG', 'kg')).toBe('oculta')
+    expect(situacaoConversao('UN', 'kg')).toBe('obrigatoria')
+    expect(situacaoConversao('CX', 'kg')).toBe('obrigatoria')
+    expect(situacaoConversao('L', 'kg')).toBe('obrigatoria')
+    expect(situacaoConversao('PCT', 'KG')).toBe('obrigatoria')
+    // produto "un" (chute): UN × UN esconde; o resto só OFERECE
+    expect(situacaoConversao('UN', 'un')).toBe('oculta')
+    expect(situacaoConversao('UN', ' un ')).toBe('oculta')
+    expect(situacaoConversao('KG', 'un')).toBe('opcional')                      // impasse (a) da revisão: antes obrigava "1 KG em UN"
+    expect(situacaoConversao('CX', 'un')).toBe('opcional')
+    expect(situacaoConversao('L', 'un')).toBe('opcional')
+    expect(situacaoConversao('PCT', 'un')).toBe('opcional')
+    // produto novo (unidade desconhecida): sempre OFERECE
+    for (const nota of ['UN', 'KG', 'CX', 'L', 'PCT']) expect(situacaoConversao(nota, null)).toBe('opcional')
+    expect(situacaoConversao('UN', undefined)).toBe('opcional')
+    // nota sem unidade: nada a comparar
+    for (const produto of ['kg', 'un', null, 'KG', ' un ']) {
+      expect(situacaoConversao('', produto)).toBe('oculta')
+      expect(situacaoConversao(null, produto)).toBe('oculta')
+    }
+    expect(situacaoConversao(undefined, 'kg')).toBe('oculta')
+    expect(situacaoConversao(' kg ', 'KG')).toBe('oculta')                     // espaços e maiúsculas não importam
   })
 })
 
@@ -251,5 +286,94 @@ describe('produto escondido (receita da casa, não é de compra): MAIONESE DA CA
     expect(sugestaoNoCatalogo({ ...nota('MAIONESE'), sugestao: { id: '3661383', nome: 'MAIONESE DA CASA' } }, MAIONESES)).toBeNull()
     expect(sugestaoNoCatalogo({ ...nota('MAIONESE'), sugestao: { id: '3474674', nome: 'MAIONESE MARIANA' } }, MAIONESES)?.produto_id).toBe(3474674)
     expect(nomeParaMostrar(MAIONESES, 3661383, 'GUARDADO')).toEqual({ nome: 'MAIONESE DA CASA (KG)', noSischef: undefined })
+  })
+})
+
+// ---------- conversão de unidade (etapa 2): o que a caixa aceita, como mostra e o que lê da decisão gravada
+describe('parseConversao (o que o Ivan digita em "Quanto vale 1 UN em KG?")', () => {
+  it('aceita vírgula ou ponto como decimal, espaços em volta e número sem a parte inteira', () => {
+    expect(parseConversao('0,395')).toBe(0.395)
+    expect(parseConversao('0.395')).toBe(0.395)
+    expect(parseConversao(',5')).toBe(0.5)
+    expect(parseConversao('2')).toBe(2)
+    expect(parseConversao(' 1 ')).toBe(1)
+  })
+
+  it('os limites são os do banco (cot_nfe_associar) e do robô (conversao_decidida): > 0, até 10000, até 4 casas', () => {
+    expect(CONVERSAO_MAXIMA).toBe(10000)
+    expect(CONVERSAO_CASAS).toBe(4)
+    expect(parseConversao('0,0001')).toBe(0.0001)
+    expect(parseConversao('10000')).toBe(10000)
+    expect(parseConversao('0')).toBeNull()                 // zero não converte nada
+    expect(parseConversao('0,00001')).toBeNull()           // 5 casas: o modal do SisChef só tem 4
+    expect(parseConversao('0,12345')).toBeNull()
+    expect(parseConversao('10001')).toBeNull()
+    expect(parseConversao('10000,0001')).toBeNull()        // passa do máximo por uma fração
+  })
+
+  it('recusa texto, negativo, vazio, ponto de milhar e notação científica (fail-closed: o número vai para o SisChef para sempre)', () => {
+    for (const ruim of ['', '   ', 'abc', '-1', '1,', '1.000,5', '1e3', '1,5,5', '100000']) expect(parseConversao(ruim)).toBeNull()
+  })
+
+  it('ponto E vírgula no mesmo texto é recusado (não dá para saber qual é o milhar): "1.000,5", "1,000.5", "1.5,"', () => {
+    for (const ambiguo of ['1.000,5', '1,000.5', '1.5,', ',1.', '10.000,0001']) expect([ambiguo, parseConversao(ambiguo)]).toEqual([ambiguo, null])
+    expect(parseConversao('1.000')).toBe(1)                // só ponto: é decimal (1,000 = 1), por isso formatarConversao não pode pôr milhar
+  })
+})
+
+describe('formatarConversao e textoConversao (como a tela mostra a conversão)', () => {
+  it('jeito brasileiro na vírgula, até 4 casas, sem zeros à toa e SEM ponto de milhar (o texto volta para o campo e "1.000" seria lido como 1)', () => {
+    expect(formatarConversao(0.395)).toBe('0,395')
+    expect(formatarConversao(2)).toBe('2')
+    expect(formatarConversao(1.5)).toBe('1,5')
+    expect(formatarConversao(0.0001)).toBe('0,0001')
+    expect(formatarConversao(1000)).toBe('1000')
+    expect(formatarConversao(1234.5)).toBe('1234,5')
+    expect(formatarConversao(10000)).toBe('10000')
+  })
+
+  it('ida e volta: o que a tela mostra, o campo lê de volta igual (achado 2 da revisão: 1000 virava "1.000" e era gravado como 1)', () => {
+    for (const v of [0.395, 1, 1000, 1234.5, 10000, 0.0001, 2.5]) expect([v, parseConversao(formatarConversao(v))]).toEqual([v, v])
+  })
+
+  it('"1 UN = 0,395 KG" só quando a unidade do produto é confiável (produto "(KG)", conversão obrigatória); sem a unidade da nota só "conversão 0,395"', () => {
+    expect(textoConversao('UN', 'kg', 0.395)).toBe('1 UN = 0,395 KG')
+    expect(textoConversao(' cx ', 'KG', 12)).toBe('1 CX = 12 KG')
+    expect(textoConversao(null, 'kg', 2)).toBe('conversão 2')
+    expect(textoConversao('', 'un', 2)).toBe('conversão 2')
+  })
+
+  it('unidade do produto que é palpite ("un") ou desconhecida (produto novo): "na unidade do produto no SisChef", nunca "= 2 UN"', () => {
+    // Revisão adversarial: a linha "confirmado no app" dizia "1 KG = 2 UN" para um produto que no SisChef pode estar em PCT — a unidade "un" da
+    // lista é um chute pelo nome. Antes, sem a unidade do produto, saía "conversão 2"; agora a frase é a mesma do eco "Vai gravar", nos três lugares.
+    expect(textoConversao('KG', 'un', 2)).toBe('1 KG = 2 na unidade do produto no SisChef')
+    expect(textoConversao('UN', 'un', 3)).toBe('1 UN = 3 na unidade do produto no SisChef')         // unidades "iguais", conversão aberta pelo link
+    expect(textoConversao('KG', 'kg', 2)).toBe('1 KG = 2 na unidade do produto no SisChef')         // idem com "(KG)" no nome e nota em KG
+    expect(textoConversao('UN', '', 2)).toBe('1 UN = 2 na unidade do produto no SisChef')           // produto novo (sem unidade na lista)
+    expect(textoConversao('UN', undefined, 0.5)).toBe('1 UN = 0,5 na unidade do produto no SisChef')
+    expect(textoConversao('UN', null, 1000)).toBe('1 UN = 1000 na unidade do produto no SisChef')  // sem ponto de milhar aqui também
+  })
+
+  it('rotuloUnidade: maiúsculas sem espaços; desconhecida = vazio', () => {
+    expect(rotuloUnidade(' kg ')).toBe('KG')
+    expect(rotuloUnidade('un')).toBe('UN')
+    expect(rotuloUnidade(null)).toBe('')
+    expect(rotuloUnidade(undefined)).toBe('')
+  })
+})
+
+describe('conversaoDaDecisao (o que está gravado em cot_nfe.associacoes_app)', () => {
+  const dec = (extra: Partial<AssociacaoApp> = {}): AssociacaoApp => ({ produto_id: 5, produto_nome: 'PRODUTO 5', unidade: 'kg', ...extra })
+  it('número > 0 vale; decisão da etapa 1 (sem o campo), null, zero, negativo ou lixo = nenhuma conversão', () => {
+    expect(conversaoDaDecisao(dec({ conversao: 0.395 }))).toBe(0.395)
+    expect(conversaoDaDecisao(dec({ conversao: 2 }))).toBe(2)
+    expect(conversaoDaDecisao(dec())).toBeNull()
+    expect(conversaoDaDecisao(dec({ conversao: null }))).toBeNull()
+    expect(conversaoDaDecisao(dec({ conversao: 0 }))).toBeNull()
+    expect(conversaoDaDecisao(dec({ conversao: -1 }))).toBeNull()
+    expect(conversaoDaDecisao(dec({ conversao: Number.NaN }))).toBeNull()
+    expect(conversaoDaDecisao(dec({ conversao: '0,5' as unknown as number }))).toBeNull()   // texto vindo de um banco velho: não é número
+    expect(conversaoDaDecisao(null)).toBeNull()
+    expect(conversaoDaDecisao(undefined)).toBeNull()
   })
 })

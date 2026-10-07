@@ -1,12 +1,24 @@
 // Caixa de associação de produto (aba "Lançamento fiscal"): para um item da nota que ainda não tem produto no SisChef, o Ivan digita o produto
 // (a lista é a de insumos e bebidas que já está no app, com as palavras-chave e os nomes corrigidos que ele escreveu), escolhe, toca em Confirmar
 // e o item ganha o ✓ verde de "confirmado".
-// ETAPA 1: só GUARDA a escolha (cot_nfe_associar). O robô ainda não a aplica no SisChef, e por isso o Lançar da nota continua travado.
+// ETAPA 1 só GUARDAVA a escolha (cot_nfe_associar) e o Lançar continuava travado. ETAPA 2 ("confirmou no app → pode lançar"): ao lançar, o robô
+// aplica a escolha na tela de importação do SisChef. Como o de-para que ele grava lá é PERMANENTE para o código do fornecedor, a decisão tem de
+// estar COMPLETA antes: quando a unidade da nota é diferente da unidade do produto (UN × KG), o SisChef abre um modal de conversão e pergunta
+// quanto vale 1 unidade da nota em unidades do produto — e quem sabe isso é o Ivan (lata de 395 g → 0,395). Por isso a caixa PEDE o valor, em vez
+// de adivinhar (uma peça de peso variável, por exemplo, não deve ter conversão fixa: aí o certo é escolher outro produto ou associar no SisChef).
+// MAS a unidade que a lista do app conhece é um palpite pelo nome ("kg" só com "(KG)" no nome; "un" para todo o resto; nada para produto novo), e
+// quem confere de verdade é o robô, no cadastro vivo do SisChef, antes de gravar. Então o campo da conversão tem três jeitos (situacaoConversao):
+// OBRIGATÓRIO quando é certo que o SisChef vai pedir (nota em UN, produto "(KG)"); OPCIONAL quando o app só desconfia (produto "un" ou novo) — aí
+// o Ivan informa se souber, e se deixar vazio o robô para a nota pedindo, caso precise; ESCONDIDO quando as unidades batem — com um link para
+// abrir, para o caso raro de o produto estar em outra unidade no SisChef apesar do nome.
 // "Lembrar esta descrição" (marcado de início): ao confirmar, a descrição que veio na nota vira palavra-chave do produto, e da próxima vez a caixa
 // já o sugere — é assim que a lista do Ivan aprende sem travar.
 import { useMemo, useState } from 'react'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
-import { buscarProdutos, sugestaoNoCatalogo, sugestaoPorPalavras, unidadesDiferem } from './associacaoRegras'
+import {
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, formatarConversao, parseConversao, rotuloUnidade, situacaoConversao,
+  sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
+} from './associacaoRegras'
 
 interface Props {
   item: ItemNotaSefaz
@@ -18,11 +30,14 @@ interface Props {
   /** O que o Ivan já confirmou para este item, ou null. */
   decisao: AssociacaoApp | null
   /** Guarda a escolha (`produtoId`) ou a desfaz (null); recarrega a nota. `lembrar` = deixar a descrição da nota como palavra-chave do produto.
-   *  Lança Error com texto claro se falhar. */
-  salvar: (n: number, produtoId: number | null, lembrar?: boolean) => Promise<void>
+   *  `conversao` = quanto vale 1 unidade da nota em unidades do produto no SisChef (null = o Ivan não informou: ou as unidades batem, ou ele deixou
+   *  para o robô conferir no cadastro vivo). Lança Error com texto claro se falhar. */
+  salvar: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
 }
 
-const unid = (u: string | null | undefined): string => (u ?? '').trim().toUpperCase()
+// As regras puras da conversão (parseConversao, formatarConversao, textoConversao, conversaoDaDecisao) moram em associacaoRegras.ts, com
+// teste unitário; aqui fica só a tela.
+
 /** A descrição da nota sem o "CÓD. FOR: 123" do SisChef, e curta para caber na frase da opção "Lembrar". */
 const descricaoCurta = (d: string | undefined): string => {
   const t = (d ?? '').replace(/^CÓD\. FOR:\s*\S+\s*/i, '').replace(/\s+/g, ' ').trim()
@@ -34,6 +49,8 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   const [escolhido, setEscolhido] = useState<ProdutoCatalogo | null>(null)
   const [trocando, setTrocando] = useState(false) // já havia escolha confirmada e o Ivan quer mudá-la
   const [lembrar, setLembrar] = useState(true)
+  const [conversaoTexto, setConversaoTexto] = useState('') // o que o Ivan digitou no campo da conversão ("Quanto vale 1 UN em KG?")
+  const [conversaoAberta, setConversaoAberta] = useState(false) // o Ivan abriu o campo pelo link, no caso em que ele fica escondido (unidades iguais)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -43,12 +60,27 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
   const resumoDaNota = descricaoCurta(item.descricao)
 
+  // Como fica o campo da conversão para o produto escolhido (ver o cabeçalho e associacaoRegras.situacaoConversao):
+  // "obrigatoria" = campo aberto e o Confirmar espera um número; "opcional" = campo aberto, pode ficar vazio; "oculta" = sem campo, só um link para abrir.
+  const situacao = escolhido != null ? situacaoConversao(item.unidade_sischef, escolhido.unidade) : 'oculta'
+  const campoVisivel = escolhido != null && (situacao !== 'oculta' || conversaoAberta)
+  // Em qualquer modo: texto digitado e inválido trava o Confirmar (nunca se grava um palpite); campo vazio só trava quando é obrigatório.
+  const conversao = conversaoTexto.trim() !== '' ? parseConversao(conversaoTexto) : null
+  const conversaoInvalida = conversaoTexto.trim() !== '' && conversao == null
+  const podeConfirmar = !enviando && !conversaoInvalida && (situacao !== 'obrigatoria' || conversao != null)
+  const unidadeNota = rotuloUnidade(item.unidade_sischef)
+  // O eco usa o MESMO texto que a linha "confirmado no app" e o bloco "o robô vai associar" (associacaoRegras.textoConversao): só nomeia a unidade do
+  // produto quando ela é confiável ("(KG)" no nome); nos outros modos a unidade da lista é um chute, e dizer "= 2 UN" quando no SisChef o produto pode
+  // estar em PCT enganaria o Ivan — aí fica "na unidade do produto no SisChef". Antes e depois de confirmar, a tela diz a mesma coisa.
+  const ecoConversao = conversao != null && escolhido != null ? textoConversao(item.unidade_sischef, escolhido.unidade, conversao) : null
+
   async function guardar(produtoId: number | null) {
     if (enviando) return
     setEnviando(true); setErro('')
     try {
-      await salvar(n, produtoId, produtoId != null && lembrar && resumoDaNota !== '')
-      setEscolhido(null); setTexto(''); setTrocando(false)
+      // conversão = o número válido digitado, ou null (campo vazio); desfazer (produtoId nulo) manda null
+      await salvar(n, produtoId, produtoId != null && lembrar && resumoDaNota !== '', produtoId != null ? conversao : null)
+      setEscolhido(null); setTexto(''); setConversaoTexto(''); setConversaoAberta(false); setTrocando(false)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui guardar a escolha agora. Tente de novo.')
     } finally {
@@ -56,19 +88,33 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
     }
   }
 
-  // Já confirmado: o ✓ e o nome ficam no item (lá em cima); aqui só o aviso de confirmado e o "Trocar".
+  // Já confirmado: o ✓ e o nome ficam no item (lá em cima); aqui só o aviso de confirmado (com a conversão, se houver) e o "Trocar".
   if (decisao && !trocando) {
+    const conv = conversaoDaDecisao(decisao)
     return (
       <div className="associar-feito" data-testid="associacao-confirmada">
-        <span className="confirmado">confirmado no app · cód. {decisao.produto_id}</span>{' '}
+        <span className="confirmado">
+          confirmado no app · cód. {decisao.produto_id}{conv != null && ` · ${textoConversao(item.unidade_sischef, decisao.unidade, conv)}`}
+        </span>{' '}
         <button type="button" className="link" onClick={() => { setErro(''); setTrocando(true) }}>Trocar</button>
       </div>
     )
   }
 
-  const escolher = (p: ProdutoCatalogo) => { setEscolhido(p); setTexto('') }
+  const escolher = (p: ProdutoCatalogo) => {
+    setEscolhido(p); setTexto('')
+    // "Trocar" e escolher o MESMO produto só serve para mexer na conversão — é o caminho de volta que o robô manda quando para a nota ("toque em
+    // Trocar, escolha o mesmo produto, preencha a conversão"). Por isso o campo abre SEMPRE nesse caso, mesmo quando as unidades batem e ele ficaria
+    // escondido, e mesmo sem conversão gravada (o robô só pede quando ela está vazia: se o campo não aparecesse, o Ivan procuraria um campo que não
+    // existe). Havendo valor gravado, ele já vem preenchido (sem ponto de milhar, para ser lido de volta igual) — o Ivan vê o que vai regravar.
+    const conv = conversaoDaDecisao(decisao)
+    const mesmoProduto = decisao?.produto_id === p.produto_id
+    setConversaoTexto(mesmoProduto && conv != null ? formatarConversao(conv) : '')
+    setConversaoAberta(mesmoProduto)
+  }
+  const escolherOutro = () => { setEscolhido(null); setConversaoTexto(''); setConversaoAberta(false) }
   const detalhe = (p: ProdutoCatalogo): string =>
-    `cód. ${p.produto_id}${p.unidade ? ` · ${unid(p.unidade)}` : ''}${p.nome_sischef ? ` · no SisChef: ${p.nome_sischef}` : ''}`
+    `cód. ${p.produto_id}${p.unidade ? ` · ${rotuloUnidade(p.unidade)}` : ''}${p.nome_sischef ? ` · no SisChef: ${p.nome_sischef}` : ''}`
 
   return (
     <div className="associar" data-testid="associar-produto">
@@ -132,16 +178,65 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             <b>{escolhido.nome}</b>{' '}
             <span className="sub">
               {/* só o curto (código e unidade) não quebra; o "no SisChef: nome" é longo e tem de poder quebrar, senão a caixa estoura a tela */}
-              <span className="sem-quebra">cód. {escolhido.produto_id}{escolhido.unidade ? ` · ${unid(escolhido.unidade)}` : ''}{escolhido.novo ? ' · novo, ainda fora da lista semanal' : ''}</span>
+              <span className="sem-quebra">cód. {escolhido.produto_id}{escolhido.unidade ? ` · ${rotuloUnidade(escolhido.unidade)}` : ''}{escolhido.novo ? ' · novo, ainda fora da lista semanal' : ''}</span>
               {escolhido.nome_sischef && ` · no SisChef: ${escolhido.nome_sischef}`}{' · '}
-              <button type="button" className="link" disabled={enviando} onClick={() => setEscolhido(null)}>Escolher outro</button>
+              <button type="button" className="link" disabled={enviando} onClick={escolherOutro}>Escolher outro</button>
             </span>
           </div>
-          {unidadesDiferem(item.unidade_sischef, escolhido.unidade) && (
-            <div className="amarelo" data-testid="aviso-unidade">
-              A nota vem em {unid(item.unidade_sischef)} e este produto é em {unid(escolhido.unidade)}: na etapa do robô vou pedir a conversão
-              (quanto vale 1 {unid(item.unidade_sischef)} em {unid(escolhido.unidade)}).
+          {campoVisivel && (
+            <div className={`${situacao === 'obrigatoria' ? 'amarelo ' : ''}pedir-conversao`} data-testid="pedir-conversao">
+              {situacao === 'obrigatoria' ? (
+                <>
+                  {/* A nota vem em UN e o produto é em KG: o SisChef vai pedir a conversão no modal "UN DIFERE", e o robô digita o que estiver aqui.
+                      Esse de-para fica gravado lá para as próximas notas do fornecedor, por isso é o Ivan quem informa (não se adivinha). */}
+                  <label>Quanto vale 1 {unidadeNota} em {rotuloUnidade(escolhido.unidade)}?
+                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={conversaoTexto} disabled={enviando}
+                      onChange={(e) => { setConversaoTexto(e.target.value); setErro('') }} />
+                  </label>
+                  <p className="sub">Ex.: lata de 395 g = 0,395. O robô grava essa conversão no SisChef junto com a associação.</p>
+                </>
+              ) : (
+                <>
+                  {/* O app não sabe ao certo em que unidade este produto está no SisChef (a unidade da lista é um palpite pelo nome, ou o produto é
+                      novo e nem isso tem). Não dá para obrigar um número que talvez nem seja pedido — e não dá para esconder o campo, senão o robô
+                      para pedindo a conversão num campo que não existe. Fica opcional: o Ivan informa se souber; vazio = "no SisChef é a mesma unidade". */}
+                  <label>Quanto vale 1 {unidadeNota} na unidade do produto no SisChef? (opcional)
+                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={conversaoTexto} disabled={enviando}
+                      onChange={(e) => { setConversaoTexto(e.target.value); setErro('') }} />
+                  </label>
+                  <p className="sub">
+                    {escolhido.novo
+                      ? 'Produto fora da lista semanal: o app não conhece a unidade dele no SisChef. '
+                      : situacao === 'oculta'
+                        ? 'Pelo nome, o produto parece estar na mesma unidade da nota no SisChef. '
+                        : 'A lista do app não sabe ao certo a unidade deste produto no SisChef. '}
+                    Se lá ele também for em {unidadeNota}, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Trocar), escolha o mesmo produto e informe.
+                  </p>
+                </>
+              )}
+              {conversaoInvalida && (
+                <p className="erro" data-testid="conversao-invalida">
+                  Número maior que zero, até {formatarConversao(CONVERSAO_MAXIMA)}, com até {CONVERSAO_CASAS} casas (vírgula ou ponto).
+                </p>
+              )}
+              {/* Eco do que foi entendido: "0,395" e "0.395" são a mesma coisa, "1000" é mil — o Ivan vê o número que vai para o SisChef antes de confirmar */}
+              {ecoConversao && <p className="sub" data-testid="conversao-eco">Vai gravar: {ecoConversao}</p>}
             </div>
+          )}
+          {unidadeNota === '' && (
+            // A leitura do SisChef não trouxe a unidade deste item na nota. Sem ela nem o app nem o robô sabem se precisa de conversão, e o robô NÃO
+            // associa às cegas (o de-para é permanente): ao lançar, ele para a nota antes de gravar. Melhor o Ivan saber disso já, com a saída.
+            <p className="sub" data-testid="nota-sem-unidade">
+              A leitura do SisChef não trouxe a unidade deste item na nota. A escolha fica guardada, mas ao lançar o robô vai parar antes de associar
+              e pedir para atualizar a lista de notas; se a unidade continuar em branco, associe este item no SisChef.
+            </p>
+          )}
+          {escolhido != null && situacao === 'oculta' && !conversaoAberta && unidadeNota !== '' && (
+            <p className="sub">
+              <button type="button" className="link" data-testid="abrir-conversao" disabled={enviando} onClick={() => setConversaoAberta(true)}>
+                O produto no SisChef está em outra unidade? Informar a conversão
+              </button>
+            </p>
           )}
           {resumoDaNota !== '' && (
             <label className="marcar lembrar" data-testid="lembrar-descricao">
@@ -150,7 +245,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             </label>
           )}
           <div className="acoes">
-            <button type="button" className="botao" disabled={enviando} onClick={() => void guardar(escolhido.produto_id)}>
+            <button type="button" className="botao" disabled={!podeConfirmar} onClick={() => void guardar(escolhido.produto_id)}>
               {enviando ? 'Confirmando…' : 'Confirmar'}
             </button>
           </div>

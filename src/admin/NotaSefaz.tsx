@@ -1,18 +1,23 @@
 // Aba "Lançamento fiscal" (Fase 3; até 06/10/2026 chamava-se "Lançamento de nota SEFAZ"). Lista as notas da fila da SEFAZ (cot_nfe, situacao 'na_fila'): por nota, "Como pagar"
 // + botão Lançar (dois toques: Lançar → Confirmar) e o estado do robô; e os últimos lançamentos, com o detalhe clicável — o MESMO
 // componente do cupom (DetalheLancamento). A segurança real é a RLS + a Edge Function lancar-nfe (admin, reserva da nota).
+// ETAPA 2 da associação pelo app ("confirmou no app → pode lançar"): item sem produto no SisChef não trava mais o Lançar quando a decisão do app
+// para ele está completa (produto e, quando é CERTO que as unidades diferem — nota em UN, produto "(KG)" —, a conversão) — ao lançar, o robô aplica a
+// decisão na tela do SisChef, e a tela avisa embaixo do botão o que ele vai associar (fica gravado lá para as próximas notas do fornecedor). Quando o
+// app só desconfia da unidade (produto "un" ou novo) e o Ivan não informou a conversão, a linha do item avisa que o robô confere no SisChef e pode parar.
 import { useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import AssociarProduto from './AssociarProduto'
-import { nomeParaMostrar } from './associacaoRegras'
+import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import {
-  AVISO_ASSOCIACAO_SO_NO_APP, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, bloqueiosDaNota, formaInicial, formaNaoProvada,
-  FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
-  linhasIniciais, motivoDoDescarte, parseValorBr, pendenciasNoSischef, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma, textoDoEstado,
-  traduzirMotivo, validarParcelasDigitadas,
+  AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, associacoesPeloRobo, bloqueiosDaNota,
+  formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
+  limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
+  linhasIniciais, motivoDoDescarte, parseValorBr, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
+  textoDoEstado, traduzirMotivo, validarParcelasDigitadas,
   type LinhaParcela, type ResultadoParcelas,
 } from './notaSefazRegras'
 
@@ -58,7 +63,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
   catalogoFalhou: boolean
   /** Dá para escolher produto agora? Não, se o robô está lançando a nota ou ela ficou pela metade (o banco também recusa). */
   podeAssociar: boolean
-  salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean) => Promise<void>
+  salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
 }) {
   const f = resumoFinanceiro(nota)
   // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
@@ -72,14 +77,19 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
         {nota.itens.map((it, i) => {
           const ok = itemAssociado(it)
           const decisao = decisaoDoItem(nota, it) // o que o Ivan confirmou NO APP para este item (só existe se ele ainda não tem produto no SisChef)
+          const conversao = conversaoDaDecisao(decisao) // o que o robô vai digitar no modal de conversão do SisChef (null = nada)
+          // o rótulo do ✓ de confirmado também lê a conversão (leitor de tela), já que o texto dela fica na linha "confirmado no app" embaixo
+          const rotuloConfirmado = conversao != null && decisao
+            ? `produto confirmado no app, ${textoConversao(it.unidade_sischef, decisao.unidade, conversao)}`
+            : 'produto confirmado no app'
           return (
             <li key={i} data-testid="conferir-item">
               <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
-              {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app" embaixo).
-                  Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
+              {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app"
+                  embaixo, com a conversão quando houver). Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
               <b className="produto">
                 {ok && <TickOk />}
-                {decisao && <TickOk rotulo="produto confirmado no app" testid="item-confirmado" />}
+                {decisao && <TickOk rotulo={rotuloConfirmado} testid="item-confirmado" />}
                 <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
               </b>
               {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
@@ -137,7 +147,8 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
       </div>
       {aguardandoProduto && (
         <p className="sub" data-testid="parcelas-aguardando">
-          Pode digitar as parcelas já: elas ficam guardadas neste aparelho. O Lançar só libera quando os produtos estiverem associados no SisChef.
+          Pode digitar as parcelas já: elas ficam guardadas neste aparelho. O Lançar só libera quando todo item tiver produto (associado no SisChef ou
+          confirmado aqui no app, com a conversão de unidade se precisar).
         </p>
       )}
       {linhas.map((l, i) => (
@@ -228,10 +239,14 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
   const exigeParcelas = precisaDigitarParcelas(nota, forma)
   const resultadoParcelas = validarParcelasDigitadas(linhas, nota.valor_nf, nota.emissao)
   const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok)
+  // Etapa 2: o que AINDA trava o Lançar por item sem produto (decisão do app incompleta) e o que o robô vai associar no SisChef ao lançar (decisão completa).
+  const pendencias = pendenciasParaLancar(nota)
+  const peloRobo = associacoesPeloRobo(nota)
   // Escolher produto de um item sem produto: não com o robô lançando a nota nem com ela pela metade (o banco também recusa).
   const podeAssociar = estado !== 'erro' && !(estado === 'lancando' && !presa)
-  async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false) {
-    await api.associarItem(nota.chave, n, produtoId)
+  // `conversao` = quanto vale 1 unidade da nota em unidades do produto (só quando as unidades diferem); sempre vai à RPC, nula quando não há.
+  async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false, conversao: number | null = null) {
+    await api.associarItem(nota.chave, n, produtoId, conversao ?? null)
     // "Lembrar esta descrição": só reforça a busca da próxima vez. Falhar aqui NÃO desfaz a confirmação (que já está no banco).
     if (lembrar && produtoId != null) {
       const descricao = nota.itens.find((x) => x.n === n)?.descricao
@@ -292,7 +307,8 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
 
       {soLancar && (
         <div className="ok" data-testid="nota-pronta">
-          Pronta para lançar: todos os itens associados e {financeiro.parcelas.length === 1 ? '1 boleto fecha' : `${financeiro.parcelas.length} boletos fecham`} com o valor da nota.
+          Pronta para lançar: todos os itens {peloRobo.length > 0 ? 'com produto (os confirmados no app, o robô associa ao lançar)' : 'associados'} e{' '}
+          {financeiro.parcelas.length === 1 ? '1 boleto fecha' : `${financeiro.parcelas.length} boletos fecham`} com o valor da nota.
           {aprendido > 0 && <> Fornecedor aprendido ({aprendido} notas seguidas lançadas em boleto sem problema): pode só confirmar.</>}
         </div>
       )}
@@ -305,7 +321,8 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo)}</div>}
       {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
-      {bloqueios.map((b) => <div key={b} className={b === AVISO_ASSOCIACAO_SO_NO_APP ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
+      {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}
+      {bloqueios.map((b) => <div key={b} className={b === AVISO_FALTA_CONVERSAO ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
 
       {soLancar ? (
         <div className="sub" data-testid="pagamento-fixo">
@@ -354,28 +371,58 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, outraLancando, emEnv
           <button type="button" className="botao" disabled={!podeLancar} onClick={() => { setErro(''); setConfirmando(true) }}>Lançar</button>
         </div>
       )}
-      {/* O Lançar apagado sem dizer por quê confunde: o motivo fica logo embaixo dele, com o que fazer (pedido do Ivan, 06/10 à noite). */}
-      {!confirmando && !robotOuMetade && bloqueios.some(bloqueioDeProduto) && (
+      {/* O Lançar apagado sem dizer por quê confunde: o motivo fica logo embaixo dele, com o que fazer (pedido do Ivan, 06/10 à noite).
+          Etapa 2: o que trava é a decisão do app INCOMPLETA (sem produto, ou produto em outra unidade sem a conversão) — resolve-se aqui mesmo,
+          na caixa de associação; associar direto no SisChef continua valendo (aí o botão libera na próxima leitura de lá). */}
+      {!confirmando && !robotOuMetade && pendencias.length > 0 && (
         <div className="amarelo lancar-travado" data-testid="lancar-travado">
           <p>
-            <b>O Lançar está apagado porque falta produto no SisChef.</b> Confirmar o produto aqui no app só guarda a sua escolha: o robô ainda não a
-            aplica lá, e só lança nota cujos itens já têm produto no SisChef.
+            <b>
+              O Lançar está apagado porque {pendencias.every((p) => p.codigo != null) ? 'falta a conversão de unidade de algum item' : 'falta produto no SisChef em algum item'}.
+            </b>{' '}
+            Decida aqui no app: ao lançar, o robô associa no SisChef (e grava a conversão, quando houver). Ou associe direto no SisChef.
           </p>
-          <p>Associe no SisChef:</p>
+          <p>O que falta:</p>
           <ul>
-            {pendenciasNoSischef(nota).map((p, i) => {
+            {pendencias.map((p, i) => {
               const nomes = p.codigo != null ? nomeParaMostrar(catalogo, p.codigo, p.nome ?? '') : null
               return (
                 <li key={i} data-testid="lancar-travado-item">
                   <span>{semCodFor(p.descricao)}</span>{' → '}
                   {p.codigo != null
-                    ? <><b>{p.codigo}</b>{nomes?.nome ? ` ${nomes.nome}` : ''}{nomes?.noSischef ? ` (no SisChef: ${nomes.noSischef})` : ''}</>
-                    : <>escolha o produto em “Conferir itens e financeiro”</>}
+                    ? <><b>{p.codigo}</b>{nomes?.nome ? ` ${nomes.nome}` : ''}{nomes?.noSischef ? ` (no SisChef: ${nomes.noSischef})` : ''} · {p.falta}</>
+                    : p.n != null ? <>escolha o produto em “Conferir itens e financeiro”</> : <>{p.falta}</>}
                 </li>
               )
             })}
           </ul>
-          <p className="sub">Depois de associar lá, o botão libera na próxima leitura do SisChef.</p>
+          <p className="sub">Se associar no SisChef, o botão libera na próxima leitura de lá.</p>
+        </div>
+      )}
+      {/* Nada trava, mas há decisão do app a aplicar: antes de lançar, o Ivan vê o que o robô vai gravar no SisChef — o de-para por código do
+          fornecedor é PERMANENTE lá (vale para as próximas notas), por isso o aviso fica junto do botão, inclusive na pergunta "Confirmar?". */}
+      {!travada && peloRobo.length > 0 && (
+        <div className="amarelo lancar-associa" data-testid="lancar-associa">
+          <p><b>Ao lançar, o robô vai associar no SisChef:</b></p>
+          <ul>
+            {peloRobo.map((a) => {
+              const nomes = nomeParaMostrar(catalogo, a.produto_id, a.produto_nome)
+              return (
+                <li key={a.n} data-testid="lancar-associa-item">
+                  <span>item {a.n} {semCodFor(a.descricao)}</span>{' → '}
+                  <b>{nomes.nome}</b> (cód. {a.produto_id}){nomes.noSischef ? ` (no SisChef: ${nomes.noSischef})` : ''}
+                  {a.conversao != null && ` · ${textoConversao(a.unidadeNota, a.unidadeProduto, a.conversao)}`}
+                  {/* A unidade que a lista do app tem para este produto é um palpite (ou não existe: produto novo) e o Ivan não informou a conversão.
+                      A decisão vale, mas o robô confere no cadastro vivo do SisChef e pode parar a nota pedindo o fator — melhor avisar antes.
+                      Se a NOTA veio sem unidade, o robô para antes de associar (não grava de-para às cegas): o aviso diz isso e a saída. */}
+                  {a.unidadeIncerta && (rotuloUnidade(a.unidadeNota) === ''
+                    ? <span className="sub"> · a leitura não trouxe a unidade deste item na nota: o robô vai parar antes de associar (atualize a lista de notas ou associe no SisChef)</span>
+                    : <span className="sub"> · unidade no SisChef não confirmada pelo app: o robô confere lá e pode parar pedindo a conversão</span>)}
+                </li>
+              )
+            })}
+          </ul>
+          <p className="sub">Essa associação fica gravada no SisChef para as próximas notas deste fornecedor.</p>
         </div>
       )}
       {descartavel && !confirmando && (descartando ? (

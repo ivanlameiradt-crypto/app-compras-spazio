@@ -1,6 +1,7 @@
 // Regras puras da aba "Lançamento fiscal" (Fase 3; até 06/10/2026 "Lançamento de nota SEFAZ"): "Como pagar", memória por fornecedor, bloqueios e textos.
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
+import { conversaoDaDecisao, rotuloUnidade, situacaoConversao } from './associacaoRegras'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
@@ -86,9 +87,15 @@ export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>
 }
 
 // ---------- bloqueios
-export const AVISO_ITEM_SEM_PRODUTO = 'Item sem produto no SisChef: associe lá antes de lançar'
-/** Todo item sem produto no SisChef já tem a escolha CONFIRMADA no app (etapa 1: o app só guarda; o robô ainda não aplica a escolha na tela do SisChef). */
-export const AVISO_ASSOCIACAO_SO_NO_APP = 'Os produtos já estão confirmados no app, mas o robô ainda não os aplica no SisChef: associe lá antes de lançar (a aplicação automática é a próxima etapa)'
+// ETAPA 2 da associação pelo app (migração 20261212000001): o robô, ao lançar, aplica na tela do SisChef o produto que o Ivan confirmou no app. Por isso o
+// item sem produto no SisChef só trava o Lançar enquanto a decisão do app para ele está INCOMPLETA: sem produto escolhido, ou com produto que o app TEM
+// CERTEZA de estar em outra unidade (nota em UN, produto "(KG)") e sem a conversão (quanto vale 1 unidade da nota em unidades do produto — é o que o
+// robô digita no modal do SisChef). Quando o app só DESCONFIA (a unidade "un" da lista é um chute pelo nome; produto novo não tem unidade), a decisão
+// vale sem conversão: o robô lê o cadastro vivo do SisChef e, se precisar do fator, para a nota em "revisar" antes de gravar qualquer coisa
+// (associacaoRegras.situacaoConversao explica o porquê).
+export const AVISO_ITEM_SEM_PRODUTO = 'Item sem produto no SisChef: escolha o produto na caixa de associação (ou associe no SisChef) antes de lançar'
+/** Todo item sem produto no SisChef já tem o produto confirmado no app, mas em algum deles as unidades diferem e falta a conversão. */
+export const AVISO_FALTA_CONVERSAO = 'Produto confirmado no app, mas falta a conversão de unidade: informe na caixa de associação antes de lançar'
 export const AVISO_CONTA_ESPECIAL = 'Conta especial: essa nota não é lançada pelo app'
 /**
  * Nota que a leitura do SisChef trouxe sem itens: não há o que conferir, e o robô também recusa. No SisChef ela costuma aparecer como
@@ -98,8 +105,8 @@ export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: no SisChef ela costu
 
 const itemSemProduto = (it: ItemNotaSefaz): boolean =>
   it.produto_id == null || String(it.produto_id).trim() === '' || (it.associacao ?? '').trim().toLowerCase() === 'painel'
-/** Item com produto de verdade no SisChef: o "✓ verde" do painel de conferir. É o MESMO critério que libera ou trava o Lançar
- *  (um ✓ nunca aparece num item que bloqueia a nota, nem some de um que a deixa passar). */
+/** Item com produto de verdade no SisChef: o "✓ verde" do painel de conferir. Um item com ✓ nunca trava o Lançar; um sem ✓ trava, SALVO se a decisão
+ *  do app para ele está completa (etapa 2: o robô aplica a decisão ao lançar — ver pendenciasParaLancar). */
 export const itemAssociado = (it: ItemNotaSefaz): boolean => !itemSemProduto(it)
 /** A escolha que o Ivan CONFIRMOU no app para este item (pelo número do item na NF), ou null. Só existe para item que ainda não tem produto de
  *  verdade no SisChef: se ele já vem associado de lá, vale o SisChef. */
@@ -107,8 +114,10 @@ export function decisaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz): AssociacaoA
   if (it.n == null || !n.associacoes_app || !itemSemProduto(it)) return null
   return n.associacoes_app[String(it.n)] ?? null
 }
-/** Item que ainda NÃO tem produto de verdade no SisChef, com o produto que o Ivan confirmou no app para ele (se confirmou): é o que ele precisa
- *  associar LÁ para o Lançar liberar (enquanto o robô não aplica a escolha). `codigo`/`nome` nulos = ainda sem escolha no app. */
+/** TODO item que ainda NÃO tem produto de verdade no SisChef, com o produto que o Ivan confirmou no app para ele (se confirmou). `codigo`/`nome`
+ *  nulos = ainda sem escolha no app. Era a lista do "associe no SisChef" da etapa 1; a tela da etapa 2 usa pendenciasParaLancar (o que ainda trava) e
+ *  associacoesPeloRobo (o que o robô vai aplicar) e não a chama mais. Fica como regra pura (com teste): é a lista de quem prefere o caminho de
+ *  associar direto no SisChef, se a tela voltar a querer mostrá-la. */
 export interface PendenciaSischef { descricao: string; codigo: number | null; nome: string | null }
 export function pendenciasNoSischef(n: NotaSefazLista): PendenciaSischef[] {
   return n.itens.filter(itemSemProduto).map((it) => {
@@ -116,17 +125,81 @@ export function pendenciasNoSischef(n: NotaSefazLista): PendenciaSischef[] {
     return { descricao: it.descricao ?? 'item', codigo: d?.produto_id ?? null, nome: d?.produto_nome ?? null }
   })
 }
-/** Bloqueio que só diz "falta produto no SisChef": a nota ainda NÃO pode ser lançada, mas dá para preparar o resto (forma de pagamento e parcelas). */
-export const bloqueioDeProduto = (b: string): boolean => b === AVISO_ITEM_SEM_PRODUTO || b === AVISO_ASSOCIACAO_SO_NO_APP
+
+/** A conversão da decisão foi informada (número > 0)? A régua é a mesma da caixa de associação (associacaoRegras.conversaoDaDecisao). */
+const conversaoInformada = (d: AssociacaoApp): boolean => conversaoDaDecisao(d) != null
+/**
+ * O que ainda FALTA na decisão do app para um item sem produto no SisChef (texto para o Ivan), ou null = decisão completa. Só trava quando a conversão
+ * é OBRIGATÓRIA (situacaoConversao: nota em UN/CX/… e produto "(KG)" na lista — aí é certo que o SisChef vai pedir o fator) e ela não foi informada.
+ * Nos outros casos ("opcional": produto "un", que é um chute pelo nome, ou produto novo sem unidade; "oculta": unidades iguais ou nota sem unidade) a
+ * decisão está completa: o robô confere no cadastro vivo do SisChef e, se precisar da conversão, para a nota em "revisar" antes de gravar.
+ */
+function faltaNaDecisao(it: ItemNotaSefaz, d: AssociacaoApp | null): string | null {
+  if (d == null) return it.n == null ? 'este item veio sem número na nota: associe no SisChef' : 'escolha o produto na caixa de associação'
+  if (situacaoConversao(it.unidade_sischef, d.unidade) === 'obrigatoria' && !conversaoInformada(d)) {
+    return `informe quanto vale 1 ${rotuloUnidade(it.unidade_sischef)} em ${rotuloUnidade(d.unidade)} na caixa de associação`
+  }
+  return null
+}
+
+/** Item sem produto no SisChef cuja decisão do app está INCOMPLETA: é o que ainda TRAVA o Lançar (etapa 2). `falta` diz o que fazer no app; as unidades
+ *  vêm para a tela montar o pedido de conversão. `codigo`/`nome` nulos = ainda sem produto escolhido; com produto = falta só a conversão. */
+export interface PendenciaParaLancar extends PendenciaSischef { n: number | null; falta: string; unidadeNota: string | null; unidadeProduto: string | null }
+export function pendenciasParaLancar(n: NotaSefazLista): PendenciaParaLancar[] {
+  const pendencias: PendenciaParaLancar[] = []
+  for (const it of n.itens) {
+    if (!itemSemProduto(it)) continue
+    const d = decisaoDoItem(n, it)
+    const falta = faltaNaDecisao(it, d)
+    if (falta == null) continue
+    pendencias.push({
+      descricao: it.descricao ?? 'item', codigo: d?.produto_id ?? null, nome: d?.produto_nome ?? null, n: it.n ?? null, falta,
+      unidadeNota: it.unidade_sischef ?? null, unidadeProduto: d?.unidade ?? null,
+    })
+  }
+  return pendencias
+}
+
+/** O que o robô vai associar na tela do SisChef ao lançar (etapa 2): item sem produto no SisChef com decisão COMPLETA do app. `conversao` = o que o
+ *  robô digita no modal de conversão (null = não digita). Essa associação fica gravada no SisChef para as próximas notas do fornecedor: a tela avisa.
+ *  `unidadeIncerta` = o app não tem certeza de que o robô vai conseguir associar sem parar: ou a conversão era "opcional" e ficou vazia (a unidade do
+ *  produto na lista é um palpite; o robô pode parar pedindo o fator depois de olhar o cadastro vivo), ou a NOTA veio sem unidade (`unidadeNota` vazia:
+ *  o robô não associa às cegas e para pedindo uma nova leitura). A decisão vale nos dois casos, mas a tela avisa ao lado do item, para o Ivan não
+ *  se surpreender com um "revisar" logo depois de lançar. */
+export interface AssociacaoPeloRobo {
+  n: number; descricao: string; produto_id: number; produto_nome: string; conversao: number | null; unidadeNota: string | null; unidadeProduto: string | null
+  unidadeIncerta: boolean
+}
+export function associacoesPeloRobo(n: NotaSefazLista): AssociacaoPeloRobo[] {
+  const lista: AssociacaoPeloRobo[] = []
+  for (const it of n.itens) {
+    if (!itemSemProduto(it) || it.n == null) continue
+    const d = decisaoDoItem(n, it)
+    if (d == null || faltaNaDecisao(it, d) != null) continue
+    const conversao = conversaoDaDecisao(d)
+    lista.push({
+      n: it.n, descricao: it.descricao ?? 'item', produto_id: d.produto_id, produto_nome: d.produto_nome,
+      conversao, unidadeNota: it.unidade_sischef ?? null, unidadeProduto: d.unidade ?? null,
+      // sem conversão informada, a dúvida existe quando o app só desconfia das unidades (não "oculta") OU quando a nota nem trouxe a unidade
+      unidadeIncerta: conversao == null && (rotuloUnidade(it.unidade_sischef) === '' || situacaoConversao(it.unidade_sischef, d.unidade) !== 'oculta'),
+    })
+  }
+  return lista
+}
+
+/** Bloqueio que só diz "falta produto (ou conversão) no app/SisChef": a nota ainda NÃO pode ser lançada, mas dá para preparar o resto (forma de
+ *  pagamento e parcelas). */
+export const bloqueioDeProduto = (b: string): boolean => b === AVISO_ITEM_SEM_PRODUTO || b === AVISO_FALTA_CONVERSAO
 const contaEspecial = (emitente: string): boolean => /KONDO|MERCADO\s+LIVRE/.test(emitente.toUpperCase())
 
-/** Motivos (em português) pelos quais esta nota NÃO pode ser lançada pelo app; lista vazia = pode. */
+/** Motivos (em português) pelos quais esta nota NÃO pode ser lançada pelo app; lista vazia = pode. Item sem produto no SisChef só conta enquanto a
+ *  decisão do app para ele está incompleta (pendenciasParaLancar): com todas completas, o robô associa ao lançar. */
 export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   const b: string[] = []
   if (contaEspecial(n.emitente)) b.push(AVISO_CONTA_ESPECIAL)
   if (n.itens.length === 0) b.push(AVISO_SEM_ITENS)
-  const semProduto = n.itens.filter(itemSemProduto)
-  if (semProduto.length > 0) b.push(semProduto.every((it) => decisaoDoItem(n, it) != null) ? AVISO_ASSOCIACAO_SO_NO_APP : AVISO_ITEM_SEM_PRODUTO)
+  const pendencias = pendenciasParaLancar(n)
+  if (pendencias.length > 0) b.push(pendencias.every((p) => p.codigo != null) ? AVISO_FALTA_CONVERSAO : AVISO_ITEM_SEM_PRODUTO)
   return b
 }
 
@@ -151,7 +224,10 @@ export function podeDescartar(n: NotaSefazLista): boolean {
 export function motivoDoDescarte(n: NotaSefazLista): string {
   const partes: string[] = []
   if (n.itens.length === 0) partes.push(MOTIVO_SEM_ITENS)
-  if (n.itens.some(itemSemProduto)) partes.push('Item sem produto no SisChef')
+  // o motivo gravado diz o que de fato travou: item ainda sem produto escolhido, ou produto já confirmado no app ao qual só faltava a conversão
+  const pendencias = pendenciasParaLancar(n)
+  if (pendencias.some((p) => p.codigo == null)) partes.push('Item sem produto no SisChef')
+  if (pendencias.some((p) => p.codigo != null)) partes.push('Item confirmado no app sem a conversão de unidade')
   if (contaEspecial(n.emitente)) partes.push('Conta especial')
   if (n.lancamento_estado === 'revisar') partes.push(`O robô parou: ${traduzirMotivo(n.lancamento_motivo) || 'confira a nota'}`)
   return partes.join('; ').slice(0, 300)
@@ -221,9 +297,6 @@ export function resumoFinanceiro(n: NotaSefazLista): ResumoFinanceiro {
   return { lido, parcelas, soma, total, diferenca, bate }
 }
 
-/** Itens sem produto de verdade no SisChef (os mesmos que bloqueiam o Lançar). */
-export const itensSemProduto = (n: NotaSefazLista): ItemNotaSefaz[] => n.itens.filter(itemSemProduto)
-
 export interface ProntidaoNota {
   pronta: boolean
   motivos: string[]
@@ -232,15 +305,23 @@ export interface ProntidaoNota {
 }
 
 /**
- * Regra 2 do Ivan: a nota está "pronta" (só falta lançar) quando TODOS os itens estão associados no SisChef, o pagamento é em
- * boleto (a nota tem duplicatas) e os boletos fecham com o valor da nota. Qualquer coisa fora disso vira motivo, em português,
- * e a nota segue o fluxo normal (conferir e escolher como pagar). Nota bloqueada, lançando ou pela metade nunca é "pronta".
+ * Regra 2 do Ivan: a nota está "pronta" (só falta lançar) quando TODOS os itens estão associados no SisChef — ou, desde a etapa 2, têm decisão
+ * completa do app, que o robô aplica ao lançar —, o pagamento é em boleto (a nota tem duplicatas) e os boletos fecham com o valor da nota.
+ * Qualquer coisa fora disso vira motivo, em português, e a nota segue o fluxo normal (conferir e escolher como pagar). Nota bloqueada, lançando
+ * ou pela metade nunca é "pronta".
  */
 export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   const motivos: string[] = []
   if (n.itens.length === 0) motivos.push('A nota chegou sem itens')
-  const sem = itensSemProduto(n).length
-  if (sem > 0) motivos.push(sem === 1 ? '1 item sem produto no SisChef' : `${sem} itens sem produto no SisChef`)
+  const pendencias = pendenciasParaLancar(n)
+  const semProduto = pendencias.filter((p) => p.codigo == null).length
+  const semConversao = pendencias.length - semProduto
+  if (semProduto > 0) motivos.push(semProduto === 1 ? '1 item sem produto no SisChef' : `${semProduto} itens sem produto no SisChef`)
+  if (semConversao > 0) {
+    motivos.push(semConversao === 1
+      ? '1 item confirmado no app sem a conversão de unidade'
+      : `${semConversao} itens confirmados no app sem a conversão de unidade`)
+  }
   const f = resumoFinanceiro(n)
   let financeiro: string | null = null
   if (!f.lido) financeiro = 'Boletos ainda não lidos do XML (próxima leitura)'

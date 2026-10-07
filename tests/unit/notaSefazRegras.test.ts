@@ -2,8 +2,8 @@ import {
   FORMA_PADRAO, bloqueiosDaNota, formaInicial, formaLembrada, formaValida, lembrarForma, precisaEscolherForma, rotuloForma, textoDoEstado,
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
-  AVISO_ASSOCIACAO_SO_NO_APP, AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, bloqueioDeProduto,
-  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef,
+  AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, AVISO_FALTA_CONVERSAO, bloqueioDeProduto,
+  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -62,7 +62,7 @@ describe('notaSefazRegras', () => {
     expect(bloqueiosDaNota(nota({ emitente: 'kondo comercio' }))).toEqual(['Conta especial: essa nota não é lançada pelo app'])
     expect(bloqueiosDaNota(nota({ emitente: 'MERCADO   LIVRE' }))).toHaveLength(1)
     const semProduto = { descricao: 'Y', qtd: 1, unidade_sischef: 'KG', produto_id: null }
-    expect(bloqueiosDaNota(nota({ itens: [semProduto] }))).toEqual(['Item sem produto no SisChef: associe lá antes de lançar'])
+    expect(bloqueiosDaNota(nota({ itens: [semProduto] }))).toEqual(['Item sem produto no SisChef: escolha o produto na caixa de associação (ou associe no SisChef) antes de lançar'])
     expect(bloqueiosDaNota(nota({ itens: [{ ...semProduto, produto_id: 5, associacao: ' Painel ' }] }))).toHaveLength(1)
     expect(bloqueiosDaNota(nota({ emitente: 'KONDO', itens: [semProduto] }))).toHaveLength(2)
   })
@@ -98,21 +98,160 @@ describe('notaSefazRegras', () => {
       expect(decisaoDoItem(n, painel)).toEqual(dec(6))
     })
 
-    it('a decisão NUNCA destrava o Lançar (etapa 1: o robô ainda não aplica): sem decisão = aviso de sempre; todos decididos = aviso "confirmado no app"; misto = o de sempre', () => {
+    it('etapa 2: a decisão COMPLETA destrava o Lançar (o robô aplica ao lançar); sem decisão = aviso de sempre; misto = o de sempre; só falta conversão = aviso próprio', () => {
       expect(bloqueiosDaNota(nota({ itens: [sem(1)] }))).toEqual([AVISO_ITEM_SEM_PRODUTO])
-      expect(bloqueiosDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
-      expect(bloqueiosDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': dec(5), '2': dec(6) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
+      expect(bloqueiosDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([])            // produto em UN, nota em UN: completa
+      expect(bloqueiosDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': dec(5), '2': dec(6) } }))).toEqual([])
       expect(bloqueiosDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ITEM_SEM_PRODUTO])
       const comAssociado = { descricao: 'Z', qtd: 1, unidade_sischef: 'UN', produto_id: 9, associacao: 'sischef', n: 3 }
-      expect(bloqueiosDaNota(nota({ itens: [comAssociado, sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([AVISO_ASSOCIACAO_SO_NO_APP])
+      expect(bloqueiosDaNota(nota({ itens: [comAssociado, sem(1)], associacoes_app: { '1': dec(5) } }))).toEqual([])
       expect(bloqueiosDaNota(nota({ itens: [comAssociado] }))).toEqual([])                              // todo associado no SisChef: pode lançar
-      expect(prontidaoDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) }, valor_nf: 10, parcelas: [{ numero: '1', vencimento: '2026-11-01', valor: 10 }] })).pronta).toBe(false)
+      // produto em KG para item em UN: sem a conversão a decisão está incompleta (o robô não saberia o que digitar no modal do SisChef)
+      const kg = { ...dec(5), unidade: 'kg' }
+      expect(bloqueiosDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': kg } }))).toEqual([AVISO_FALTA_CONVERSAO])
+      expect(bloqueiosDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': { ...kg, conversao: 0.395 } } }))).toEqual([])
+      expect(bloqueiosDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': kg } }))).toEqual([AVISO_ITEM_SEM_PRODUTO]) // um ainda sem produto: vale o aviso de sempre
+      expect(bloqueiosDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': kg }, emitente: 'KONDO' }))).toEqual([AVISO_CONTA_ESPECIAL, AVISO_FALTA_CONVERSAO])
+      // nota "pronta" (regra 2): a decisão completa vale como item associado
+      const boleto = { valor_nf: 10, parcelas: [{ numero: '1', vencimento: '2026-11-01', valor: 10 }] }
+      expect(prontidaoDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': dec(5) }, ...boleto })).pronta).toBe(true)
+      expect(prontidaoDaNota(nota({ itens: [sem(1)], associacoes_app: { '1': kg }, ...boleto })).motivos).toEqual(['1 item confirmado no app sem a conversão de unidade'])
+      expect(prontidaoDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': kg, '2': kg }, ...boleto })).motivos).toEqual(['2 itens confirmados no app sem a conversão de unidade'])
+      expect(prontidaoDaNota(nota({ itens: [sem(1), sem(2)], associacoes_app: { '1': kg }, ...boleto })).motivos)
+        .toEqual(['1 item sem produto no SisChef', '1 item confirmado no app sem a conversão de unidade'])
+    })
+
+    describe('etapa 2: pendenciasParaLancar (o que AINDA trava) e associacoesPeloRobo (o que o robô aplica no SisChef ao lançar)', () => {
+      const item = (n: number | null, unidade: string | null, extra: Record<string, unknown> = {}) =>
+        ({ descricao: `ITEM ${n}`, qtd: 1, unidade_sischef: unidade, produto_id: null, n, ...extra })
+      const decisao = (id: number, unidade: string | null, conversao?: number | null) =>
+        ({ produto_id: id, produto_nome: `PRODUTO ${id}`, unidade, ...(conversao === undefined ? {} : { conversao }) })
+
+      it('sem decisão → pendência "escolha o produto" (sem código) e nada para o robô', () => {
+        const n = nota({ itens: [item(1, 'UN')] })
+        expect(pendenciasParaLancar(n)).toEqual([
+          { descricao: 'ITEM 1', codigo: null, nome: null, n: 1, falta: 'escolha o produto na caixa de associação', unidadeNota: 'UN', unidadeProduto: null },
+        ])
+        expect(associacoesPeloRobo(n)).toEqual([])
+      })
+
+      it('decisão completa (unidades iguais, mesmo com maiúscula diferente) → sem pendência; o robô associa, sem conversão e sem dúvida de unidade', () => {
+        const n = nota({ itens: [item(1, 'UN')], associacoes_app: { '1': decisao(5, 'un') } })
+        expect(pendenciasParaLancar(n)).toEqual([])
+        expect(associacoesPeloRobo(n)).toEqual([
+          { n: 1, descricao: 'ITEM 1', produto_id: 5, produto_nome: 'PRODUTO 5', conversao: null, unidadeNota: 'UN', unidadeProduto: 'un', unidadeIncerta: false },
+        ])
+        expect(associacoesPeloRobo(nota({ itens: [item(1, 'KG')], associacoes_app: { '1': decisao(5, 'kg') } }))).toMatchObject([{ conversao: null, unidadeIncerta: false }])
+      })
+
+      it('unidades diferentes (UN × KG) sem conversão → pendência pedindo a conversão (com o produto já escolhido); com conversão → ok e o robô leva o número', () => {
+        const semConv = nota({ itens: [item(1, 'UN')], associacoes_app: { '1': decisao(5, 'kg') } })
+        expect(pendenciasParaLancar(semConv)).toEqual([
+          { descricao: 'ITEM 1', codigo: 5, nome: 'PRODUTO 5', n: 1, falta: 'informe quanto vale 1 UN em KG na caixa de associação', unidadeNota: 'UN', unidadeProduto: 'kg' },
+        ])
+        expect(associacoesPeloRobo(semConv)).toEqual([])
+        expect(pendenciasParaLancar(nota({ itens: [item(1, 'UN')], associacoes_app: { '1': decisao(5, 'kg', null) } }))).toHaveLength(1)    // null explícito = sem conversão
+        expect(pendenciasParaLancar(nota({ itens: [item(1, 'UN')], associacoes_app: { '1': decisao(5, 'kg', 0) } }))).toHaveLength(1)       // zero não é conversão
+        const comConv = nota({ itens: [item(1, 'UN')], associacoes_app: { '1': decisao(5, 'kg', 0.395) } })
+        expect(pendenciasParaLancar(comConv)).toEqual([])
+        expect(associacoesPeloRobo(comConv)).toEqual([
+          { n: 1, descricao: 'ITEM 1', produto_id: 5, produto_nome: 'PRODUTO 5', conversao: 0.395, unidadeNota: 'UN', unidadeProduto: 'kg', unidadeIncerta: false },
+        ])
+        // produto "(KG)" é a única unidade confiável da lista: CX e L contra KG também OBRIGAM
+        expect(pendenciasParaLancar(nota({ itens: [item(1, 'CX')], associacoes_app: { '1': decisao(5, 'kg') } })).map((p) => p.falta))
+          .toEqual(['informe quanto vale 1 CX em KG na caixa de associação'])
+        expect(pendenciasParaLancar(nota({ itens: [item(1, 'L')], associacoes_app: { '1': decisao(5, 'kg') } }))).toHaveLength(1)
+      })
+
+      it('nota em KG (ou CX, PCT…) e produto "un" na lista: a conversão é só OPCIONAL — não trava, e o robô é avisado de que a unidade é incerta', () => {
+        // Impasse (a) da revisão: "un" é o palpite da lista para todo nome sem "(KG)"; no SisChef o produto pode estar em KG mesmo. Se o app obrigasse
+        // "1 KG em UN", o Ivan digitaria 1 e o robô recusaria ("mesma unidade: tire a conversão"). Agora a decisão vale sem conversão e o robô confere.
+        const semConv = nota({ itens: [item(1, 'KG')], associacoes_app: { '1': decisao(5, 'un') } })
+        expect(pendenciasParaLancar(semConv)).toEqual([])
+        expect(bloqueiosDaNota(semConv)).toEqual([])
+        expect(associacoesPeloRobo(semConv)).toEqual([
+          { n: 1, descricao: 'ITEM 1', produto_id: 5, produto_nome: 'PRODUTO 5', conversao: null, unidadeNota: 'KG', unidadeProduto: 'un', unidadeIncerta: true },
+        ])
+        // se o Ivan informou a conversão (ele sabe que no SisChef é em UN), ela vai e a dúvida some
+        const comConv = nota({ itens: [item(1, 'KG')], associacoes_app: { '1': decisao(5, 'un', 2) } })
+        expect(pendenciasParaLancar(comConv)).toEqual([])
+        expect(associacoesPeloRobo(comConv)).toMatchObject([{ conversao: 2, unidadeIncerta: false }])
+        for (const un of ['CX', 'PCT', 'L']) {
+          expect(pendenciasParaLancar(nota({ itens: [item(1, un)], associacoes_app: { '1': decisao(5, 'un') } }))).toEqual([])
+          expect(associacoesPeloRobo(nota({ itens: [item(1, un)], associacoes_app: { '1': decisao(5, 'un') } }))).toMatchObject([{ unidadeIncerta: true }])
+        }
+        // nota "pronta" (regra 2): a decisão opcional sem conversão também conta como completa
+        const boleto = { valor_nf: 10, parcelas: [{ numero: '1', vencimento: '2026-11-01', valor: 10 }] }
+        expect(prontidaoDaNota(nota({ ...semConv, ...boleto })).pronta).toBe(true)
+        expect(podeDescartar(nota({ ...semConv }))).toBe(false)                                            // nada trava: não há o que descartar
+      })
+
+      it('unidade do produto desconhecida (null: produto novo, fora da lista) → opcional: não trava, robô avisado da dúvida; unidade da nota ausente → nada a comparar', () => {
+        const produtoNovo = nota({ itens: [item(1, 'UN')], associacoes_app: { '1': decisao(5, null) } })
+        expect(pendenciasParaLancar(produtoNovo)).toEqual([])
+        expect(associacoesPeloRobo(produtoNovo)).toMatchObject([{ n: 1, produto_id: 5, conversao: null, unidadeNota: 'UN', unidadeProduto: null, unidadeIncerta: true }])
+        expect(associacoesPeloRobo(nota({ itens: [item(1, 'KG')], associacoes_app: { '1': decisao(5, null, 0.5) } }))).toMatchObject([{ conversao: 0.5, unidadeIncerta: false }])
+        // nota SEM unidade: nada trava (não há o que pedir ao Ivan), mas o robô NÃO associa às cegas — para antes de gravar, pedindo nova leitura.
+        // Revisão adversarial: antes `unidadeIncerta` era false aqui ("oculta") e a tela liberava sem avisar; agora avisa, para o Ivan não se surpreender.
+        for (const vazia of [null, '', '  ']) {
+          const semUnidadeNota = nota({ itens: [item(1, vazia)], associacoes_app: { '1': decisao(5, 'kg') } })
+          expect(pendenciasParaLancar(semUnidadeNota)).toEqual([])
+          expect(associacoesPeloRobo(semUnidadeNota)).toMatchObject([{ unidadeNota: vazia, conversao: null, unidadeIncerta: true }])
+        }
+        // com a conversão informada a dúvida some (o Ivan já disse o fator; se a nota continuar sem unidade, o robô ainda para, mas isso é dele)
+        expect(associacoesPeloRobo(nota({ itens: [item(1, null)], associacoes_app: { '1': decisao(5, 'kg', 0.5) } }))).toMatchObject([{ unidadeIncerta: false }])
+      })
+
+      it('item que JÁ tem produto no SisChef nunca é pendência nem associação pelo robô (mesmo com decisão gravada); item "painel" conta como sem produto', () => {
+        const associado = item(1, 'UN', { produto_id: 9, associacao: 'sischef' })
+        const painel = item(2, 'UN', { produto_id: 9, associacao: 'painel' })
+        const n = nota({ itens: [associado, painel], associacoes_app: { '1': decisao(5, 'kg'), '2': decisao(6, 'un') } })
+        expect(pendenciasParaLancar(n)).toEqual([])
+        expect(associacoesPeloRobo(n).map((a) => a.n)).toEqual([2])
+        expect(pendenciasParaLancar(nota({ itens: [associado] }))).toEqual([])
+        expect(pendenciasParaLancar(nota({ itens: [painel] })).map((p) => p.falta)).toEqual(['escolha o produto na caixa de associação'])
+      })
+
+      it('item sem número na NF não tem como receber decisão: pendência própria (associe no SisChef) e nunca vai ao robô', () => {
+        const n = nota({ itens: [item(null, 'UN')], associacoes_app: { 'null': decisao(5, 'un') } })
+        expect(pendenciasParaLancar(n).map((p) => [p.n, p.falta])).toEqual([[null, 'este item veio sem número na nota: associe no SisChef']])
+        expect(associacoesPeloRobo(n)).toEqual([])
+      })
+
+      it('nota mista: a ordem dos itens é mantida e cada lista só tem o seu', () => {
+        const n = nota({
+          itens: [item(1, 'UN', { produto_id: 9, associacao: 'sischef' }), item(2, 'UN'), item(3, 'UN'), item(4, 'UN'), item(5, 'UN')],
+          associacoes_app: { '3': decisao(5, 'un'), '4': decisao(6, 'kg'), '5': decisao(7, 'kg', 2) },
+        })
+        expect(pendenciasParaLancar(n).map((p) => p.n)).toEqual([2, 4])
+        expect(associacoesPeloRobo(n).map((a) => [a.n, a.conversao])).toEqual([[3, null], [5, 2]])
+        expect(pendenciasNoSischef(n).map((p) => p.codigo)).toEqual([null, 5, 6, 7])                   // a lista da etapa 1 segue com TODOS os sem produto
+      })
+
+      it('nota mista com unidades variadas: só o UN × "kg" sem conversão trava; KG × "un", produto novo e CX × "un" seguem para o robô, marcados como incertos', () => {
+        const n = nota({
+          itens: [item(1, 'UN'), item(2, 'KG'), item(3, 'CX'), item(4, 'UN'), item(5, 'KG'), item(6, 'PCT')],
+          associacoes_app: {
+            '1': decisao(5, 'kg'),            // UN × kg sem conversão: trava (obrigatória)
+            '2': decisao(6, 'un'),            // KG × un: opcional, vazio → incerta
+            '3': decisao(7, null),            // produto novo em CX: opcional, vazio → incerta
+            '4': decisao(8, 'un'),            // UN × un: oculta → certa
+            '5': decisao(9, 'kg'),            // KG × kg: oculta → certa
+            '6': decisao(10, 'un', 12),       // PCT × un com conversão: opcional preenchida → certa
+          },
+        })
+        expect(pendenciasParaLancar(n).map((p) => [p.n, p.falta])).toEqual([[1, 'informe quanto vale 1 UN em KG na caixa de associação']])
+        expect(bloqueiosDaNota(n)).toEqual([AVISO_FALTA_CONVERSAO])
+        expect(associacoesPeloRobo(n).map((a) => [a.n, a.conversao, a.unidadeIncerta])).toEqual([
+          [2, null, true], [3, null, true], [4, null, false], [5, null, false], [6, 12, false],
+        ])
+      })
     })
   })
 
   it('bloqueioDeProduto: só os avisos de "falta produto" deixam preparar a nota (forma de pagamento e parcelas); conta especial e nota sem itens não', () => {
     expect(bloqueioDeProduto(AVISO_ITEM_SEM_PRODUTO)).toBe(true)
-    expect(bloqueioDeProduto(AVISO_ASSOCIACAO_SO_NO_APP)).toBe(true)
+    expect(bloqueioDeProduto(AVISO_FALTA_CONVERSAO)).toBe(true)
     expect(bloqueioDeProduto(AVISO_CONTA_ESPECIAL)).toBe(false)
     expect(bloqueioDeProduto(AVISO_SEM_ITENS)).toBe(false)
     expect(bloqueioDeProduto('qualquer outro')).toBe(false)
@@ -188,6 +327,14 @@ describe('notaSefazRegras', () => {
     it('pode descartar quando o app a trava (sem itens, item sem produto, conta especial) ou o robô parou nela (revisar)', () => {
       expect(podeDescartar(nota({ itens: [] }))).toBe(true)
       expect(podeDescartar(nota({ itens: [semProduto] }))).toBe(true)
+      // etapa 2: com a decisão completa do app o item não trava mais, então a nota em ordem não tem o descartar (nem o motivo "sem produto")
+      const decidido = nota({ itens: [{ ...semProduto, n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } })
+      expect(podeDescartar(decidido)).toBe(false)
+      expect(motivoDoDescarte({ ...decidido, emitente: 'KONDO' })).toBe('Conta especial')
+      // nota em UN e produto "(KG)" sem a conversão: é certo que falta (obrigatória) → trava → dá para descartar
+      expect(podeDescartar(nota({ itens: [{ ...semProduto, unidade_sischef: 'UN', n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } }))).toBe(true)
+      // nota em KG e produto "un" (palpite da lista): a conversão é só opcional → nada trava → sem descartar (o robô confere no SisChef)
+      expect(podeDescartar(nota({ itens: [{ ...semProduto, n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'un' } } }))).toBe(false)
       expect(podeDescartar(nota({ emitente: 'KONDO COMERCIO' }))).toBe(true)
       expect(podeDescartar(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' }))).toBe(true)
     })
@@ -210,6 +357,12 @@ describe('notaSefazRegras', () => {
       expect(motivoDoDescarte(nota({ itens: [] }))).toBe(MOTIVO_SEM_ITENS)
       expect(motivoDoDescarte(nota({ itens: [semProduto] }))).toBe('Item sem produto no SisChef')
       expect(motivoDoDescarte(nota({ emitente: 'MERCADO LIVRE LTDA', itens: [semProduto] }))).toBe('Item sem produto no SisChef; Conta especial')
+      // etapa 2: produto JÁ confirmado no app (nota em UN, produto "(KG)") ao qual só falta a conversão — o motivo gravado diz isso, não "sem produto"
+      const soFaltaConversao = { itens: [{ ...semProduto, unidade_sischef: 'UN', n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } }
+      expect(motivoDoDescarte(nota(soFaltaConversao))).toBe('Item confirmado no app sem a conversão de unidade')
+      // um item de cada tipo: os dois motivos, nesta ordem
+      expect(motivoDoDescarte(nota({ ...soFaltaConversao, itens: [...soFaltaConversao.itens, { ...semProduto, n: 2 }] })))
+        .toBe('Item sem produto no SisChef; Item confirmado no app sem a conversão de unidade')
       expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'sem boletos na nota — pagamento manual' })))
         .toBe('O robô parou: A nota não tem boleto: escolha como pagar')
       expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: null }))).toBe('O robô parou: confira a nota')

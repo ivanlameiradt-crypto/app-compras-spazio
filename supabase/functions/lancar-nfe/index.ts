@@ -12,7 +12,9 @@ const ORIGENS_PERMITIDAS = new Set([
 ])
 const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
 const WORKFLOW = 'lancar-nfe.yml'
-const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens, parcelas_manuais'
+// associacoes_app (etapa 2): a decisão que o Ivan confirmou no app para item sem produto no SisChef vai junto ao robô, que a
+// aplica na tela ao lançar (montarNotaJson, em logica.ts). Sem ela aqui, a nota chegaria ao robô como se nada tivesse sido decidido.
+const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens, parcelas_manuais, associacoes_app'
 
 function cabecalhosCors(origem: string | null): Record<string, string> {
   return {

@@ -917,12 +917,20 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     await expect(lembrarDescricao(1854713, 'x')).rejects.toMatchObject({ name: 'ErroApi' })
   })
 
-  it('associarItem chama cot_nfe_associar com a chave, o número do item e o produto (nulo desfaz)', async () => {
+  it('associarItem chama cot_nfe_associar com a chave, o número do item e o produto (nulo desfaz); sem conversão manda p_conversao nulo (a função só existe com 4 parâmetros)', async () => {
     rpc.mockResolvedValue({ data: null, error: null })
     await associarItem('d'.repeat(44), 2, 3138573)
-    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 2, p_produto_id: 3138573 })
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 2, p_produto_id: 3138573, p_conversao: null })
     await associarItem('d'.repeat(44), 2, null)
-    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 2, p_produto_id: null })
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 2, p_produto_id: null, p_conversao: null })
+  })
+
+  it('associarItem com conversão (etapa 2: 1 UN da nota = 0,395 KG do produto) manda p_conversao com o número', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await associarItem('d'.repeat(44), 3, 3469626, 0.395)
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 3, p_produto_id: 3469626, p_conversao: 0.395 })
+    await associarItem('d'.repeat(44), 3, 3469626, null)                                  // explícito: sem conversão
+    expect(rpc).toHaveBeenLastCalledWith('cot_nfe_associar', { p_chave: 'd'.repeat(44), p_n: 3, p_produto_id: 3469626, p_conversao: null })
   })
 
   it.each([
@@ -931,6 +939,8 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     ['este item já está associado no SisChef', 'Este item já está associado no SisChef.'],
     ['produto fora da lista de insumos', 'Produto fora da lista de insumos.'],
     ['o robô está lançando esta nota agora: aguarde terminar', 'O robô está lançando esta nota agora: aguarde terminar.'],
+    ['a conversão aceita no máximo 4 casas decimais', 'A conversão aceita no máximo 4 casas decimais.'],
+    ['a conversão precisa ser maior que zero e até 10000', 'A conversão precisa ser maior que zero e até 10000.'],
     ['TypeError: Failed to fetch', 'Não consegui guardar a escolha agora. Confira a internet e tente de novo.'],
   ])('associarItem: erro do banco "%s" vira texto claro', async (msg, esperado) => {
     rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })

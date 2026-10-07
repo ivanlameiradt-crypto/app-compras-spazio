@@ -395,8 +395,20 @@ export interface ItemNotaSefaz {
   sugestao?: { id: number | string; nome: string } | null
 }
 /** Produto que o Ivan escolheu e CONFIRMOU no app para um item sem produto no SisChef (cot_nfe.associacoes_app; migração 20261210000001).
- *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 1: só guardado; o robô ainda não aplica no SisChef. */
-export interface AssociacaoApp { produto_id: number; produto_nome: string; unidade: string | null; por?: string | null; em?: string | null }
+ *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 2 (migração 20261212000001): o robô aplica a decisão na tela do SisChef
+ *  ao lançar, e para isso ela pode trazer a conversão de unidade. */
+export interface AssociacaoApp {
+  produto_id: number
+  produto_nome: string
+  /** Unidade do produto na lista de insumos do app; null = desconhecida (produto novo, fora da lista): aí quem decide a conversão é o robô,
+   *  pelo cadastro vivo do SisChef. */
+  unidade: string | null
+  /** Quanto vale 1 unidade da NOTA em unidades do PRODUTO (lata de 395 g: NF em UN, produto em KG → 0.395). Só faz sentido quando as unidades
+   *  diferem; null/ausente = sem conversão (decisão antiga ou unidades iguais). O banco exige > 0, ≤ 10000 e até 4 casas. */
+  conversao?: number | null
+  por?: string | null
+  em?: string | null
+}
 /** Produto da lista de insumos do app (itens_semana; o código é o do SisChef): o que o Ivan pode escolher ao associar um item da nota. */
 export interface ProdutoCatalogo {
   produto_id: number

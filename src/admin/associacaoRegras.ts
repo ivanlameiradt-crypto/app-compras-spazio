@@ -1,7 +1,8 @@
-// Regras puras da caixa de associação de produto (aba "Lançamento fiscal"): busca na lista de insumos do app, sugestão pelas palavras-chave do Ivan
-// e comparação de unidades. Sem rede nem React (os testes de tela trocam o api inteiro por um mock).
+// Regras puras da caixa de associação de produto (aba "Lançamento fiscal"): busca na lista de insumos do app, sugestão pelas palavras-chave do Ivan,
+// quando a conversão de unidade é obrigatória/opcional/escondida (situacaoConversao) e como ela é lida e mostrada (etapa 2). Sem rede nem React (os
+// testes de tela trocam o api inteiro por um mock).
 import { normalizar } from '../lib/regras'
-import type { ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
+import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
 
 /** Quantos produtos a busca mostra de uma vez (o resto some atrás de "digite mais letras"). */
 export const MAX_RESULTADOS = 8
@@ -116,12 +117,34 @@ export function nomeParaMostrar(catalogo: ProdutoCatalogo[] | null, id: number, 
   return p ? { nome: p.nome, noSischef: p.nome_sischef } : { nome: guardado }
 }
 
-const unidadeNorm = (u: string | null | undefined): string => (u ?? '').trim().toLowerCase()
-/** A unidade do item na NF e a do produto escolhido são diferentes (UN × KG)? Sem uma das duas, não dá para dizer: false. */
-export function unidadesDiferem(unidadeNota: string | null | undefined, unidadeProduto: string | null | undefined): boolean {
-  const a = unidadeNorm(unidadeNota)
-  const b = unidadeNorm(unidadeProduto)
-  return a !== '' && b !== '' && a !== b
+/** O que a caixa faz com o campo da conversão para este par de unidades (ver situacaoConversao). */
+export type SituacaoConversao = 'obrigatoria' | 'opcional' | 'oculta'
+
+/**
+ * Decide se a caixa de associação PEDE a conversão de unidade, só OFERECE o campo, ou o esconde — comparando a unidade da nota (item.unidade_sischef,
+ * já normalizada pelo robô: UN, KG, CX, L, PCT…) com a unidade do produto na lista do app (ProdutoCatalogo.unidade / AssociacaoApp.unidade).
+ *
+ * POR QUE três respostas e não só "igual/diferente": a unidade da lista do app é um PALPITE tirado do nome do produto. "kg" só aparece quando o nome
+ * tem "(KG)" — isso é confiável. "un" é o que sobra para TODOS os outros nomes — é um chute: no cadastro vivo do SisChef o produto pode estar em UN,
+ * mas também em PCT, CX, L… E produto novo (fora da lista semanal) não tem unidade nenhuma aqui. Quem tem a palavra final é o ROBÔ: antes de escrever
+ * no SisChef ele lê o cadastro vivo e confere (nfe_decisoes_app.conferir_conversoes): se faltar conversão, ou se houver conversão com unidades iguais,
+ * ele para a nota em "revisar" sem gravar nada. Por isso o app só OBRIGA quando tem certeza; nos outros casos deixa o Ivan informar se souber.
+ *
+ * Regra (nota = sem espaços, em maiúsculas; produto = sem espaços, em minúsculas; vazio/null = desconhecida):
+ *  - nota desconhecida → "oculta" (sem a unidade da nota não há o que comparar; o robô também barra isso antes de associar);
+ *  - produto "kg": nota "KG" → "oculta"; qualquer outra → "obrigatoria" (certeza de que o SisChef vai pedir o fator no modal "UN DIFERE");
+ *  - produto "un" (ou qualquer palpite que não seja "kg"): nota igual → "oculta"; diferente → "opcional" (pode ser que no SisChef sejam iguais);
+ *  - produto desconhecida (produto novo) → "opcional".
+ * "opcional" NUNCA trava o Lançar (notaSefazRegras.faltaNaDecisao); "oculta" ainda pode ser aberta por um link na caixa, para o caso raro de o
+ * produto estar em outra unidade no SisChef apesar do nome.
+ */
+export function situacaoConversao(unidadeNota: string | null | undefined, unidadeProduto: string | null | undefined): SituacaoConversao {
+  const nota = (unidadeNota ?? '').trim().toUpperCase()
+  const produto = (unidadeProduto ?? '').trim().toLowerCase()
+  if (nota === '') return 'oculta'
+  if (produto === '') return 'opcional'
+  if (produto === 'kg') return nota === 'KG' ? 'oculta' : 'obrigatoria'
+  return nota === produto.toUpperCase() ? 'oculta' : 'opcional'
 }
 
 /**
@@ -138,3 +161,50 @@ export function sugestaoNoCatalogo(it: ItemNotaSefaz, catalogo: ProdutoCatalogo[
   const nome = (it.sugestao?.nome ?? '').replace(/\s+/g, ' ').trim()
   return nome === '' ? null : { produto_id: id, nome, unidade: null, novo: true }
 }
+
+// ---------- conversão de unidade (etapa 2: o número que o robô digita no modal "UN DIFERE" do SisChef ao associar o produto)
+
+/** Unidade como a tela a mostra ("UN", "KG"); vazio quando desconhecida. */
+export const rotuloUnidade = (u: string | null | undefined): string => (u ?? '').trim().toUpperCase()
+
+/** Limites da conversão: os mesmos do banco (cot_nfe_associar) e do robô (motor_logica.conversao_decidida), que é quem digita o valor no SisChef. */
+export const CONVERSAO_MAXIMA = 10_000
+export const CONVERSAO_CASAS = 4
+
+/**
+ * "0,395" / "0.395" / ",5" / "2" → 0.395 / 0.395 / 0.5 / 2. Aceita vírgula ou ponto como decimal (ponto sem vírgula é decimal, não milhar: a conversão
+ * é um número pequeno). Texto com ponto E vírgula ao mesmo tempo ("1.000,5") é recusado: não dá para saber qual é o milhar e qual é o decimal, e um
+ * fator 1000 vezes errado ficaria gravado no SisChef para sempre. Válido só se > 0, ≤ 10000 e com até 4 casas; qualquer outra coisa (texto, zero,
+ * negativo, 5 casas) → null, e o Confirmar fica desabilitado. Fail-closed de propósito: o que o robô digitar no modal do SisChef fica gravado para as
+ * próximas notas do fornecedor.
+ */
+export function parseConversao(texto: string): number | null {
+  const t = texto.trim()
+  if (t.includes('.') && t.includes(',')) return null
+  if (!new RegExp(`^(\\d{1,5}|\\d{0,5}[.,]\\d{1,${CONVERSAO_CASAS}})$`).test(t)) return null
+  const n = Number(t.replace(',', '.'))
+  return Number.isFinite(n) && n > 0 && n <= CONVERSAO_MAXIMA ? n : null
+}
+/**
+ * 0.395 → "0,395"; 1000 → "1000" (jeito brasileiro na vírgula, até 4 casas, sem zeros à toa e SEM ponto de milhar). Sem milhar de propósito: o texto
+ * volta para o campo da caixa (o "Trocar" pré-preenche com ele) e parseConversao lê "1.000" como 1 — com o milhar, uma conversão de 1000 viraria 1 em
+ * silêncio. Regra: parseConversao(formatarConversao(v)) tem de ser v.
+ */
+export const formatarConversao = (v: number): string => v.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: CONVERSAO_CASAS })
+/**
+ * A conversão como a tela a mostra (eco "Vai gravar", linha "confirmado no app", bloco "o robô vai associar"). "1 UN = 0,395 KG" só quando a unidade
+ * do produto é CONFIÁVEL — situacaoConversao "obrigatoria", isto é, produto com "(KG)" no nome. Nos outros casos a unidade da lista do app é um palpite
+ * ("un" para todo nome sem "(KG)") ou não existe (produto novo): escrever "1 UN = 2 UN" quando no SisChef o produto pode estar em PCT enganaria o
+ * Ivan, então fica "1 UN = 2 na unidade do produto no SisChef" — a mesma frase nos três lugares, para a tela não se contradizer. Sem a unidade da
+ * nota (decisão antiga, leitura sem unidade) não há com o que comparar: só "conversão 0,395".
+ */
+export function textoConversao(unidadeNota: string | null | undefined, unidadeProduto: string | null | undefined, conversao: number): string {
+  const a = rotuloUnidade(unidadeNota)
+  const v = formatarConversao(conversao)
+  if (a === '') return `conversão ${v}`
+  if (situacaoConversao(unidadeNota, unidadeProduto) === 'obrigatoria') return `1 ${a} = ${v} ${rotuloUnidade(unidadeProduto)}`
+  return `1 ${a} = ${v} na unidade do produto no SisChef`
+}
+/** A conversão da decisão foi informada (número > 0)? Decisão gravada antes da etapa 2 não tem o campo: conta como não informada (null). */
+export const conversaoDaDecisao = (d: AssociacaoApp | null | undefined): number | null =>
+  d != null && typeof d.conversao === 'number' && Number.isFinite(d.conversao) && d.conversao > 0 ? d.conversao : null
