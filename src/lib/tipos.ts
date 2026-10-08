@@ -526,6 +526,8 @@ export interface CupomRecente {
   valor_a_pagar: number | null
   pedido_sischef: string | null
   criado_em: string
+  /** Última atualização da linha: o robô a grava ao terminar, então num cupom LANCADO é o momento em que ele foi lançado (mostrado em "Lançado em"). */
+  atualizado_em?: string | null
   motivo: string | null
   teste: boolean
   itens: ItemCupomRecente[]

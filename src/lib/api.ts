@@ -942,7 +942,7 @@ export async function confirmarCupom(cupomId: string, itens: ConfirmacaoItemCupo
 /** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
   const r = checar(await supabase.from('cupom')
-    .select('id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, motivo, teste, itens, foto_path')
+    .select('id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path')
     .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
   return r.map((c) => ({
     ...c,
