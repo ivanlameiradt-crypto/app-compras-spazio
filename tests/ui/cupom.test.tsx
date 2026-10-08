@@ -841,7 +841,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(caixas[1]).toHaveTextContent('Não dá para lembrar este item')
   })
 
-  it('cupom em UN e produto em KG: pede quanto entra no estoque e manda `entrada`; a quantidade lida no cupom já vem preenchida', async () => {
+  it('cupom em UN e produto em KG: pergunta o peso de 1 un, o app multiplica e manda `entrada`; a quantidade lida no cupom já vem preenchida', async () => {
     const QUEIJO: ItemCupomRecente = { descricao_cupom: 'QUEIJO MINAS PC', unidade_cupom: 'UN', valor_unitario: 25, desconto_item: 0, entrada_estoque: null,
       sugestao_produto: null, casado_por: null, proposta: null, quantidade_cupom: 1 }
     m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3500001, nome: 'QUEIJO MINAS - INSUMOS', unidade: 'kg' }])
@@ -853,10 +853,10 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await userEvent.type(await within(item).findByLabelText('Produto do SisChef'), 'queijo')
     await userEvent.click(within(within(item).getByTestId('achados')).getByRole('button', { name: /QUEIJO MINAS - INSUMOS/ }))
     expect(within(item).getByLabelText('Quantidade (un) que está no cupom')).toHaveValue('1')   // o robô leu "1" no cupom: ele só confere
-    expect(item).toHaveTextContent('O cupom está em UN e este produto é em KG: diga quanto entra no estoque')
+    expect(item).toHaveTextContent('O produto é controlado em KG no SisChef e o cupom está em UN. Quanto pesa 1 UN, em kg?')
     const confirmar = within(item).getByRole('button', { name: 'Confirmar este item' })
     expect(confirmar).toBeDisabled()                                                          // sem a entrada o servidor recusaria: nem deixa confirmar
-    await userEvent.type(within(item).getByLabelText('Quanto entra no estoque (KG)'), '0,8')
+    await userEvent.type(within(item).getByLabelText('Peso de 1 UN (kg)'), '0,8')
     expect(item).toHaveTextContent(/Linha: 1 un × R\$\s25,00 = R\$\s25,00 · entra 0,8 kg no estoque/)   // a conversão preserva o valor da linha
     // com conversão o "Lembrar" começa DESMARCADO e diz que o fator também fica guardado: numa peça de peso variável o fator desta compra lançaria a
     // próxima com o peso errado sem ninguém ver; só pacote de peso fixo merece a marca
@@ -867,6 +867,97 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(soma()).toHaveClass('ok')
     await userEvent.click(reenviar())
     await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('q1', [{ indice: 0, insumo_id: '3500001', quantidade: 1, entrada: 0.8, lembrar: false }]))
+  })
+
+  describe('caixa do peso de 1 unidade (regras do Ivan, 08/10)', () => {
+    const item = (over: Partial<ItemCupomRecente>): ItemCupomRecente => ({ descricao_cupom: 'X', unidade_cupom: 'UN', valor_unitario: 18, desconto_item: 0,
+      entrada_estoque: null, sugestao_produto: null, casado_por: null, proposta: null, quantidade_cupom: 3, ...over })
+    const cupomCom = (it: ItemCupomRecente, total: number) => recente({ id: 'p1', estado: 'REVISAR', emitente_nome: 'ATACADAO S.A.', emitente_cnpj: '12345678000199',
+      valor_a_pagar: total, motivo: '1 item(ns) sem casamento confirmado — confira no Code', itens: [it] })
+    const escolherProduto = async (item0: HTMLElement, busca: string, nome: RegExp) => {
+      await userEvent.type(await within(item0).findByLabelText('Produto do SisChef'), busca)
+      await userEvent.click(within(within(item0).getByTestId('achados')).getByRole('button', { name: nome }))
+    }
+
+    it('farinha láctea: 3 UN sem peso no nome — pergunta o peso de 1 un, 0,600 vira 1,8 kg e o fator guardado é 1 UN = 0,6 KG', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3476411, nome: 'FARINHA LÁCTEA - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'FAR.LACTEA NESTLE' }), 54)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'lactea', /FARINHA LÁCTEA/)
+      expect(item0).toHaveTextContent('Quanto pesa 1 UN, em kg?')
+      expect(within(item0).getByLabelText('Peso de 1 UN (kg)')).toHaveValue('')               // sem peso no nome: o app não chuta
+      expect(within(item0).getByRole('button', { name: 'Confirmar este item' })).toBeDisabled()
+      await userEvent.type(within(item0).getByLabelText('Peso de 1 UN (kg)'), '0,600')
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('Vai entrar no estoque: 3 un × 0,6 kg = 1,8 kg')
+      const lembrar = within(item0).getByRole('checkbox', { name: /\(1 UN = 0,6 KG\)/ })
+      expect(lembrar).not.toBeChecked()
+      await userEvent.click(lembrar)
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476411', quantidade: 3, entrada: 1.8, lembrar: true }]))
+    })
+
+    it('iogurte: o peso (850g) está no nome — o campo já vem com 0,85 e entram 8,5 kg', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 1855909, nome: 'IOGURTE NATURAL - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'IOG CANTO MINAS NATURAL 850g', unidade_cupom: 'GF', quantidade_cupom: 10, valor_unitario: 18.88 }), 188.8)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'iogurte', /IOGURTE NATURAL/)
+      expect(within(item0).getByLabelText('Peso de 1 GF (kg)')).toHaveValue('0,85')
+      expect(within(item0).getByTestId('peso-do-nome')).toBeInTheDocument()
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('10 gf × 0,85 kg = 8,5 kg')
+      expect(within(item0).getByRole('checkbox', { name: /Lembrar/ })).toBeChecked()           // a conta saiu do próprio nome do cupom
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '1855909', quantidade: 10, entrada: 8.5, lembrar: true }]))
+    })
+
+    it('trava: 850 kg por unidade parece errado — "Usar 0,85" corrige; "Não, é isso mesmo" libera', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 1855909, nome: 'IOGURTE NATURAL - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'IOGURTE SEM PESO NO NOME', quantidade_cupom: 10, valor_unitario: 18.88 }), 188.8)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'iogurte', /IOGURTE NATURAL/)
+      await userEvent.type(within(item0).getByLabelText('Peso de 1 UN (kg)'), '850')
+      expect(within(item0).getByTestId('numero-absurdo')).toHaveTextContent('850 kg por UN parece errado')
+      expect(within(item0).getByTestId('numero-absurdo')).toHaveTextContent('Você quis dizer 0,85 kg?')
+      expect(within(item0).getByRole('button', { name: 'Confirmar este item' })).toBeDisabled()
+      await userEvent.click(within(item0).getByRole('button', { name: 'Não, é isso mesmo' }))
+      expect(within(item0).getByRole('button', { name: 'Confirmar este item' })).toBeEnabled()    // o Ivan decidiu: libera (a soma do cupom ainda confere)
+      await userEvent.type(within(item0).getByLabelText('Peso de 1 UN (kg)'), '0')                // mexeu no número: pergunta de novo
+      expect(within(item0).getByTestId('numero-absurdo')).toBeInTheDocument()
+      await userEvent.clear(within(item0).getByLabelText('Peso de 1 UN (kg)'))
+      await userEvent.type(within(item0).getByLabelText('Peso de 1 UN (kg)'), '850')
+      await userEvent.click(within(item0).getByRole('button', { name: 'Usar 0,85' }))
+      expect(within(item0).getByLabelText('Peso de 1 UN (kg)')).toHaveValue('0,85')
+      expect(within(item0).queryByTestId('numero-absurdo')).not.toBeInTheDocument()
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('= 8,5 kg')
+    })
+
+    it('abacate em gramas e produto em kg: converte sozinho (500 g = 0,5 kg), sem campo para digitar', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3469827, nome: 'ABACATE - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'ABACATE', unidade_cupom: 'G', quantidade_cupom: 500, valor_unitario: 0.009 }), 4.5)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'abacate', /ABACATE/)
+      expect(within(item0).getByTestId('entrada-automatica')).toHaveTextContent('entram 0,5 kg (500 g ÷ 1.000)')
+      expect(within(item0).queryByLabelText(/Peso de 1/)).not.toBeInTheDocument()
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3469827', quantidade: 500, entrada: 0.5, lembrar: true }]))
+    })
+
+    it('pacote com produto em UN: pergunta quantas unidades vêm em 1 pacote', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 1836982, nome: 'COCA COLA 350 ML', unidade: 'un' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'COCA COLA BARCODE', unidade_cupom: 'PCT', quantidade_cupom: 12, valor_unitario: 21.9 }), 262.8)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'coca', /COCA COLA 350/)
+      expect(item0).toHaveTextContent('Quantas unidades vêm em 1 PCT?')
+      await userEvent.type(within(item0).getByLabelText('Unidades em 1 PCT'), '6')
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('12 pct × 6 un = 72 un')
+    })
   })
 
   it('proposta do sistema que não está na lista de insumos vira só um aviso (o servidor a recusaria): ele procura na busca', async () => {

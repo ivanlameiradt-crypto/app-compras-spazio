@@ -12,6 +12,7 @@ const CASOS: [string, string, number, number | null, 1 | 2 | null][] = [
   ['ABACATE', 'G', 500, 0.5, 2],                                  // Regra 2 em gramas
   ['MOLHO QJO CHEDDAR 1X1,5Kg', 'UN', 1, 1.5, 1],                 // "1X" = uma embalagem de 1,5 kg
   ['REQ.CHEDDAR CATUPIRY 1X1,010K', 'UN', 1, 1.01, 1],            // "K" = kg
+  ['FAR.LACTEA NESTLE 1X600G', 'UN', 3, 1.8, 1],                  // cupom do Atacadão: "1X600G" = 1 embalagem de 600 g; 3 un = 1,8 kg
   ['MANJERICAO REGIONAL', 'MC', 3, null, null],                   // maço, sem peso no nome: o Ivan decide
   ['ALFACE CRESPA HID.', 'UND', 8, null, null],                   // unidade, sem peso no nome: o Ivan decide
   ['ALFACE CRESPA HID. 1X1UND', 'UN', 3, null, null],
