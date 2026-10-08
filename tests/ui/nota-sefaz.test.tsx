@@ -53,6 +53,21 @@ describe('NotaSefaz', () => {
     expect(screen.getByText('Nenhuma nota lançada ainda.')).toBeInTheDocument()
   })
 
+  it('nome fantasia do app (pedido do Ivan, 08/10): as linhas mostram a fantasia (CNPJ lido da chave), sem fantasia a razão; o detalhe da lançada traz "Fornecedor: razão · CNPJ"', async () => {
+    const chaveMateus = '15' + '2610' + '03995515011363' + '55'.padEnd(24, '0')
+    m.fantasiasDosFornecedores.mockResolvedValue({ '03995515011363': 'MATEUS SUPERMERCADOS' })
+    aLancar(nota({ chave: chaveMateus, emitente: 'MATEUS SUPERMERCADOS SA', numero: '89284', valor_nf: 500 }), nota({ chave: '2'.repeat(44), emitente: 'MERCURIO ALIMENTOS S/A', numero: '9', valor_nf: 10 }))
+    m.notasLancadas.mockResolvedValue([nota({ chave: chaveMateus, emitente: 'MATEUS SUPERMERCADOS SA', numero: '89000', valor_nf: 321, situacao: 'lancada', lancada_em: '2026-10-07T12:00:00Z', nf_sischef: '777' })])
+    render(<NotaSefaz />)
+    await waitFor(() => expect(screen.getAllByTestId('nota-a-lancar')[0]).toHaveTextContent('MATEUS SUPERMERCADOS · NF 89284'))
+    expect(screen.getAllByTestId('nota-a-lancar')[0]).not.toHaveTextContent('MATEUS SUPERMERCADOS SA')
+    expect(screen.getAllByTestId('nota-a-lancar')[1]).toHaveTextContent('MERCURIO ALIMENTOS S/A')               // sem fantasia: a razão
+    const lancada = await screen.findByTestId('nota-lancada')
+    expect(lancada).toHaveTextContent('lançada ✓ · MATEUS SUPERMERCADOS · NF 89000')
+    await userEvent.click(within(lancada).getByRole('button'))
+    expect(await screen.findByTestId('detalhe-fornecedor')).toHaveTextContent('Fornecedor: MATEUS SUPERMERCADOS SA · CNPJ 03.995.515/0113-63')
+  })
+
   it('lista as notas a lançar (emitente, NF, valor)', async () => {
     aLancar(nota({ chave: '1'.repeat(44), emitente: 'MATEUS', numero: '555', valor_nf: 1291.3 }))
     render(<NotaSefaz />)

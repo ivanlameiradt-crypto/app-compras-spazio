@@ -41,15 +41,17 @@ const limpar = (t: string | null | undefined): string => (t ?? '').replace(/\s+/
 
 /**
  * Regra do Ivan (08/10/2026): o SisChef recebe só o CNPJ e a RAZÃO SOCIAL (mais estado e município, que ele exige). O nome FANTASIA fica só no app (tabela
- * fornecedor_app): aparece nas informações do lançamento dos fornecedores que o Ivan cadastrou por aqui. Devolve "FANTASIA · RAZÃO" para mostrar, ou só a razão
- * quando não há fantasia (ou ela é igual à razão).
+ * fornecedor_app) e é o NOME QUE O APP MOSTRA do fornecedor nos "Últimos envios" (ex.: "ATACADÃO"); sem fantasia cadastrada, mostra a razão social. A razão social
+ * (e o CNPJ) aparecem na linha "Fornecedor:" do detalhe do lançamento.
  */
-export function nomeParaMostrar(razao: string | null | undefined, fantasia: string | null | undefined): string {
-  const r = limpar(razao)
-  const f = limpar(fantasia)
-  if (!f) return r
-  if (!r) return f
-  return f.toUpperCase() === r.toUpperCase() ? r : `${f} · ${r}`
+export function nomeDoFornecedor(razao: string | null | undefined, fantasia: string | null | undefined): string {
+  return limpar(fantasia) || limpar(razao)
+}
+
+/** O CNPJ do emitente que está dentro da chave de acesso da NF-e (44 dígitos: UF 2, AAMM 4, CNPJ 14, …). Vazio se a chave não tem 44 dígitos. */
+export function cnpjDaChave(chave: string | null | undefined): string {
+  const d = soDigitos(chave ?? '')
+  return d.length === 44 ? d.slice(6, 20) : ''
 }
 
 /** O que a consulta pública do CNPJ devolve (a Edge Function consultar-cnpj). */

@@ -917,8 +917,22 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       render(<Cupom />)
       expect(await screen.findByTestId('cadastrar-fornecedor')).toHaveTextContent('Fornecedor não cadastrado no SisChef')
       expect(screen.getByLabelText('CNPJ')).toHaveValue('63.540.861/0001-82')
-      await waitFor(() => expect(screen.getByTestId('cupom-recente')).toHaveTextContent('AN DESCARTÁVEIS · A. N. DA SILVA DESCARTAVEIS LTDA'))
+      await waitFor(() => expect(screen.getByTestId('cupom-recente')).toHaveTextContent('AN DESCARTÁVEIS · R$ 159,60'))
       expect(screen.queryByTestId('corrigir-cupom')).not.toBeInTheDocument()          // não é caso de escolher produto
+    })
+
+    it('cupom lançado: a linha mostra o nome FANTASIA do app (sem fantasia, a razão social) e o detalhe traz "Fornecedor: razão · CNPJ"', async () => {
+      m.fantasiasDosFornecedores.mockResolvedValue({ '75315333032655': 'ATACADÃO' })
+      m.cuponsRecentes.mockResolvedValue([
+        recente({ id: 'a', estado: 'LANCADO', emitente_nome: 'ATACADAO S.A.', emitente_cnpj: '75315333032655', valor_a_pagar: 1397.82, pedido_sischef: '163915658', atualizado_em: '2026-10-08T19:03:34Z', itens: [item({ sugestao_produto: { id: '1' }, entrada_estoque: 1 })] }),
+        recente({ id: 'b', estado: 'LANCADO', emitente_nome: 'A. N. DA SILVA DESCARTAVEIS LTDA', emitente_cnpj: '63540861000182', valor_a_pagar: 159.6, pedido_sischef: '163935008', itens: [item({ sugestao_produto: { id: '1' }, entrada_estoque: 1 })] }),
+      ])
+      render(<Cupom />)
+      await waitFor(() => expect(screen.getAllByTestId('cupom-recente')[0]).toHaveTextContent('ATACADÃO · R$ 1.397,82'))
+      expect(screen.getAllByTestId('cupom-recente')[0]).not.toHaveTextContent('ATACADAO S.A.')            // a razão fica só no detalhe
+      expect(screen.getAllByTestId('cupom-recente')[1]).toHaveTextContent('A. N. DA SILVA DESCARTAVEIS LTDA · R$ 159,60')   // sem fantasia: a razão
+      await userEvent.click(within(screen.getAllByTestId('cupom-recente')[0]).getAllByRole('button')[0])
+      expect(await screen.findByTestId('detalhe-fornecedor')).toHaveTextContent('Fornecedor: ATACADAO S.A. · CNPJ 75.315.333/0326-55')
     })
 
     it('descrição mudou: o fornecedor já mandou algo parecido e confirmado — o app avisa "antes vinha como X" e um toque confirma', async () => {

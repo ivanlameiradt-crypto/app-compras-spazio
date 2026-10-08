@@ -1,4 +1,4 @@
-import { CADASTRO_CONCLUIDO, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, nomeParaMostrar, problemaDoFormulario, soDigitos } from '../../src/admin/fornecedorRegras'
+import { CADASTRO_CONCLUIDO, cnpjDaChave, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor, problemaDoFormulario, soDigitos } from '../../src/admin/fornecedorRegras'
 
 describe('fornecedorNaoEncontrado — lê o motivo que o robô grava', () => {
   it('nome e CNPJ do cupom', () => {
@@ -26,13 +26,14 @@ describe('CNPJ', () => {
   })
 })
 
-describe('nomeParaMostrar — a fantasia só existe no app', () => {
-  it('"FANTASIA · RAZÃO"; sem fantasia (ou igual à razão) só a razão', () => {
-    expect(nomeParaMostrar('A. N. DA SILVA DESCARTAVEIS LTDA', 'AN DESCARTÁVEIS')).toBe('AN DESCARTÁVEIS · A. N. DA SILVA DESCARTAVEIS LTDA')
-    expect(nomeParaMostrar('A. N. DA SILVA DESCARTAVEIS LTDA', '')).toBe('A. N. DA SILVA DESCARTAVEIS LTDA')
-    expect(nomeParaMostrar('A. N. DA SILVA DESCARTAVEIS LTDA', undefined)).toBe('A. N. DA SILVA DESCARTAVEIS LTDA')
-    expect(nomeParaMostrar('ABC LTDA', 'abc ltda')).toBe('ABC LTDA')
-    expect(nomeParaMostrar('', 'SÓ FANTASIA')).toBe('SÓ FANTASIA')
+describe('nomeDoFornecedor — a fantasia só existe no app e é o nome que o app mostra', () => {
+  it('mostra a fantasia quando há; sem fantasia, a razão social', () => {
+    expect(nomeDoFornecedor('ATACADAO S.A.', 'ATACADÃO')).toBe('ATACADÃO')
+    expect(nomeDoFornecedor('A. N. DA SILVA DESCARTAVEIS LTDA', '')).toBe('A. N. DA SILVA DESCARTAVEIS LTDA')
+    expect(nomeDoFornecedor('A. N. DA SILVA DESCARTAVEIS LTDA', undefined)).toBe('A. N. DA SILVA DESCARTAVEIS LTDA')
+    expect(nomeDoFornecedor('A. N. DA SILVA DESCARTAVEIS LTDA', '   ')).toBe('A. N. DA SILVA DESCARTAVEIS LTDA')
+    expect(nomeDoFornecedor('', 'SÓ FANTASIA')).toBe('SÓ FANTASIA')
+    expect(nomeDoFornecedor(null, null)).toBe('')
   })
 })
 
@@ -52,5 +53,14 @@ describe('CADASTRO_CONCLUIDO', () => {
     expect(CADASTRO_CONCLUIDO('CADASTRADO')).toBe(true)
     expect(CADASTRO_CONCLUIDO('JA_EXISTIA')).toBe(true)
     for (const e of ['PENDENTE', 'PROCESSANDO', 'REVISAR', null, undefined] as const) expect(CADASTRO_CONCLUIDO(e)).toBe(false)
+  })
+})
+
+describe('cnpjDaChave — o CNPJ do emitente dentro da chave da NF-e', () => {
+  it('posições 7 a 20 da chave de 44 dígitos; chave que não tem 44 dígitos = vazio', () => {
+    expect(cnpjDaChave('15261003995515011363550010000892841000000017')).toBe('03995515011363')
+    expect(cnpjDaChave('1526 1003995515011363 550010000892841000000017')).toBe('03995515011363')
+    expect(cnpjDaChave('123')).toBe('')
+    expect(cnpjDaChave(null)).toBe('')
   })
 })
