@@ -18,6 +18,8 @@ const h = vi.hoisted(() => {
     aprendizado: [] as L[],
     /** produto_planilha: a unidade do SisChef escrita pelo Ivan (manda sobre a de itens_semana) */
     planilha: [] as L[],
+    /** fornecedor_cadastro: os pedidos de cadastro de fornecedor feitos pelo app */
+    cadastros: [] as L[],
     tokens: {} as Record<string, string>,
     /** toda operação pedida ao banco, na ordem: prova o que foi filtrado e que o UPDATE do cupom vem antes do aprendizado */
     operacoes: [] as { tabela: string; tipo: 'select' | 'insert' | 'update'; filtros: Filtro[]; dados?: L }[],
@@ -54,6 +56,7 @@ const h = vi.hoisted(() => {
       if (this.tabela === 'itens_semana') return banco.itensSemana
       if (this.tabela === 'cupom_aprendizado') return banco.aprendizado
       if (this.tabela === 'produto_planilha') return banco.planilha
+      if (this.tabela === 'fornecedor_cadastro') return banco.cadastros
       throw new Error(`tabela ${this.tabela} não prevista no banco falso`)
     }
     private filtrar(linhas: L[]): L[] {
@@ -345,6 +348,52 @@ describe('confirmar-cupom/index.ts — caminho feliz (o cupom do ATACADAO de 06/
     expect(init.signal).toBeInstanceOf(AbortSignal)
 
     semVazamento(JSON.stringify(corpo))
+  })
+
+  describe('"Reenviar este cupom" depois de cadastrar o fornecedor (reenviar_fornecedor) — pedido do Ivan, 08/10', () => {
+    const SEM_FORNECEDOR = 'fornecedor não encontrado no Sischef (ATACADAO S.A., CNPJ 75315333000109)'
+    const parado = (over: Linha = {}) => cupomAtacadao({ motivo: SEM_FORNECEDOR, itens: [structuredClone(ITENS_ATACADAO[2])], valor_a_pagar: '23.04', ...over })
+    const reenviar = () => pedido({ cupom_id: CUPOM_ID, reenviar_fornecedor: true })
+    const cadastro = (over: Linha = {}) => ({ cnpj: CNPJ_ATACADAO, razao_social: 'ATACADAO S.A.', estado: 'CADASTRADO', cupom_id: CUPOM_ID, criado_em: '2026-10-08T21:00:00Z', ...over })
+
+    it('fornecedor cadastrado: volta o cupom a PENDENTE sem mexer nos itens e dispara o workflow uma vez', async () => {
+      h.banco.cupons = [parado()]
+      h.banco.cadastros = [cadastro()]
+      const r = await handler(reenviar())
+      expect(r.status).toBe(200)
+      expect(await corpoDe(r)).toMatchObject({ estado: 'PENDENTE', resumo: 'reenviado para lançar', disparo_ok: true })
+      expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null, emitente_cnpj: CNPJ_ATACADAO })
+      expect((cupomNoBanco().itens as Linha[])[0]).toEqual(ITENS_ATACADAO[2])
+      expect(fetchFalso).toHaveBeenCalledTimes(1)
+    })
+    it('JA_EXISTIA também vale; o CNPJ que o Ivan corrigiu ao cadastrar passa para o cupom (o robô acha o fornecedor por ele)', async () => {
+      h.banco.cupons = [parado()]
+      h.banco.cadastros = [cadastro({ estado: 'JA_EXISTIA', cnpj: '11831785000160', razao_social: 'MERCURIO ALIMENTOS S/A' })]
+      expect((await handler(reenviar())).status).toBe(200)
+      expect(cupomNoBanco()).toMatchObject({ emitente_cnpj: '11831785000160', emitente_nome: 'MERCURIO ALIMENTOS S/A' })
+    })
+    it('sem cadastro pronto (nenhum, PENDENTE, PROCESSANDO ou REVISAR): 409 e nada muda nem é disparado', async () => {
+      for (const estado of [null, 'PENDENTE', 'PROCESSANDO', 'REVISAR']) {
+        h.banco.cupons = [parado()]
+        h.banco.cadastros = estado ? [cadastro({ estado })] : []
+        const r = await handler(reenviar())
+        expect(r.status).toBe(409)
+        expect(cupomNoBanco()).toMatchObject({ estado: 'REVISAR', motivo: SEM_FORNECEDOR })
+      }
+      expect(fetchFalso).not.toHaveBeenCalled()
+    })
+    it('só vale para cupom parado por fornecedor: outro motivo, item sem produto, soma errada ou já lançado ⇒ recusa', async () => {
+      h.banco.cadastros = [cadastro()]
+      h.banco.cupons = [parado({ motivo: 'não consegui ler o total do cupom' })]
+      expect((await handler(reenviar())).status).toBe(409)
+      h.banco.cupons = [cupomAtacadao({ motivo: SEM_FORNECEDOR })]                    // ainda tem 2 itens sem produto
+      expect((await handler(reenviar())).status).toBe(409)
+      h.banco.cupons = [parado({ valor_a_pagar: '99.00' })]
+      expect((await handler(reenviar())).status).toBe(400)
+      h.banco.cupons = [parado({ pedido_sischef: '123' })]
+      expect((await handler(reenviar())).status).toBe(409)
+      expect(fetchFalso).not.toHaveBeenCalled()
+    })
   })
 
   describe('"Confirmar e lançar" (so_confirmar): cupom em que todos os itens já vieram conhecidos — pedido do Ivan, 08/10', () => {

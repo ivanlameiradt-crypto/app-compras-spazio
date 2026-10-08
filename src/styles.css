@@ -255,3 +255,9 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .associar .pedir-conversao label { font-size: 13px; color: inherit; }
 .cupom .associar .pedir-conversao input[inputmode='decimal'] { max-width: 180px; }
 .cupom .associar .pedir-conversao p { margin: 0; }
+
+/* Cadastrar fornecedor dentro do app (08/10): o CNPJ, os dados da consulta, razão social composta, estado/município e o "Reenviar este cupom" */
+.cupom .cadastrar-fornecedor { margin-top: 8px; }
+.cupom .cadastrar-fornecedor label { font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.cupom .cadastrar-fornecedor .duas-colunas { display: grid; grid-template-columns: 110px 1fr; gap: 8px; }
+.cupom .cadastrar-fornecedor .sub { margin: 0; }

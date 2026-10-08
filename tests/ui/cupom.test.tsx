@@ -909,6 +909,18 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '1855909', quantidade: 10, entrada: 8.5, lembrar: true }]))
     })
 
+    it('fornecedor não cadastrado no SisChef: aparece a caixa "Cadastrar fornecedor" no cupom parado; com a fantasia do app, a linha mostra "FANTASIA · RAZÃO"', async () => {
+      m.fantasiasDosFornecedores.mockResolvedValue({ '63540861000182': 'AN DESCARTÁVEIS' })
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      m.cuponsRecentes.mockResolvedValue([recente({ id: 'p1', estado: 'REVISAR', emitente_nome: 'A. N. DA SILVA DESCARTAVEIS LTDA', emitente_cnpj: '63540861000182', valor_a_pagar: 159.6,
+        motivo: 'fornecedor não encontrado no Sischef (A. N. DA SILVA DESCARTAVEIS LTDA, CNPJ 63540861000182)', itens: [item({ sugestao_produto: { id: '3836906' }, entrada_estoque: 6, valor_unitario: 26.6 })] })])
+      render(<Cupom />)
+      expect(await screen.findByTestId('cadastrar-fornecedor')).toHaveTextContent('Fornecedor não cadastrado no SisChef')
+      expect(screen.getByLabelText('CNPJ')).toHaveValue('63.540.861/0001-82')
+      await waitFor(() => expect(screen.getByTestId('cupom-recente')).toHaveTextContent('AN DESCARTÁVEIS · A. N. DA SILVA DESCARTAVEIS LTDA'))
+      expect(screen.queryByTestId('corrigir-cupom')).not.toBeInTheDocument()          // não é caso de escolher produto
+    })
+
     it('descrição mudou: o fornecedor já mandou algo parecido e confirmado — o app avisa "antes vinha como X" e um toque confirma', async () => {
       m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3482196, nome: 'TOMATE ITALIANO - INSUMOS (KG)', unidade: 'kg' }])
       m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'TOMATE ITAL. GRAUDO KG', unidade_cupom: 'KG', quantidade_cupom: 3.2, valor_unitario: 10,

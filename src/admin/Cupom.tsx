@@ -11,6 +11,8 @@ import type {
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import { diagnosticoDoCupom, envioRepetido } from './cupomRegras'
 import CorrigirCupom from './CorrigirCupom'
+import CadastrarFornecedor from './CadastrarFornecedor'
+import { fornecedorNaoEncontrado, nomeParaMostrar } from './fornecedorRegras'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
   PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
@@ -45,6 +47,14 @@ const pedeAtencao = (r: ResumoEnvioCupom): boolean => r.estado === 'REVISAR' || 
 /** Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade + unidade que entrou · valor). */
 const linhaDoItem = (it: ItemCupomRecente): LinhaDetalhe =>
   ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, unidade: it.unidade_cupom, valor: it.valor_unitario })
+
+/** As ações da caixa "Cadastrar fornecedor" (rede pelo api). */
+const ACOES_FORNECEDOR = {
+  consultarCnpj: (cnpj: string) => api.consultarCnpj(cnpj),
+  cadastrar: (p: Parameters<typeof api.pedirCadastroFornecedor>[0]) => api.pedirCadastroFornecedor(p),
+  statusDoCadastro: (cnpj: string) => api.statusDoCadastroFornecedor(cnpj),
+  reenviarCupom: (id: string) => api.reenviarCupomDoFornecedor(id),
+}
 
 /** Cupom parado que o Ivan corrige DENTRO do app (item sem produto confirmado, com o total lido): só nesses a caixa de correção aparece. */
 const corrigivel = (c: CupomRecente): boolean => c.estado === 'REVISAR' && diagnosticoDoCupom(c)?.corrigivel === true
@@ -202,6 +212,13 @@ export default function Cupom() {
       .catch(() => setFalhaRecentes(true))
   }
   useEffect(() => { carregarRecentes() }, [])
+  // Nome fantasia (só existe no app): aparece junto da razão social nos fornecedores que o Ivan cadastrou por aqui.
+  const [fantasias, setFantasias] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let vivo = true
+    Promise.resolve(api.fantasiasDosFornecedores()).then((f) => { if (vivo) setFantasias(f ?? {}) }).catch(() => undefined)
+    return () => { vivo = false }
+  }, [])
 
   // Depois de um envio ou reenvio o cupom fica "na fila" e o robô leva 2 ou 3 minutos: enquanto houver cupom na fila a lista se atualiza sozinha a
   // cada 30 s — sem isso o aviso "em 2 ou 3 minutos ele aparece como lançado" só se cumpriria recarregando a página.
@@ -332,7 +349,7 @@ export default function Cupom() {
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
                   onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ?? 'cupom'}{valor && ` · ${valor}`}</span>
+                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ? nomeParaMostrar(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && ` · ${valor}`}</span>
                   <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                 </button>
                 {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (
@@ -342,6 +359,9 @@ export default function Cupom() {
                 {envioRepetido(c) && <p className="sub" data-testid="envio-repetido">Envio repetido: este cupom já tinha sido lançado em outro envio. Nada a fazer.</p>}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <ProblemaDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <FotoDoCupom c={c} />}
+                {c.estado === 'REVISAR' && !envioRepetido(c) && fornecedorNaoEncontrado(c.motivo) && (
+                  <CadastrarFornecedor cupom={c} acoes={ACOES_FORNECEDOR} aoReenviar={() => { setReenviados((m) => ({ ...m, [c.id]: { classe: 'ok', texto: 'Reenviado: o cupom entrou na fila e o robô lança em 2 ou 3 minutos.' } })); carregarRecentes() }} />
+                )}
                 {corrigivel(c) && (
                   <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} />
                 )}

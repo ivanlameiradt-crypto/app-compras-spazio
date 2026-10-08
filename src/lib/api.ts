@@ -980,6 +980,38 @@ export async function confirmarCupom(cupomId: string, itens: ConfirmacaoItemCupo
   return data as RespostaConfirmacaoCupom
 }
 
+/** O que a consulta pública do CNPJ devolve (Edge Function consultar-cnpj). */
+export async function consultarCnpj(cnpj: string): Promise<{ cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string }> {
+  const { data, error } = await supabase.functions.invoke('consultar-cnpj', { body: { cnpj } })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+  return data as { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string }
+}
+/** Pede o cadastro do fornecedor (o robô cadastra no SisChef só CNPJ + razão social + estado + município; a fantasia fica no app). */
+export async function pedirCadastroFornecedor(pedido: { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id: string }): Promise<void> {
+  const { error } = await supabase.functions.invoke('cadastrar-fornecedor', { body: pedido })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+}
+/** O pedido de cadastro mais recente deste CNPJ (RLS de admin); null se nunca pedido ou se a tabela ainda não existe. */
+export async function statusDoCadastroFornecedor(cnpj: string): Promise<{ estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null } | null> {
+  const r = await supabase.from('fornecedor_cadastro').select('estado, motivo').eq('cnpj', cnpj).order('criado_em', { ascending: false }).limit(1)
+  if (r.error) { if (tabelaInexistente(r.error.code)) return null; throw new ErroApi(r.error.message, r.status, r.error.code) }
+  const linha = ((r.data ?? []) as { estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null }[])[0]
+  return linha ?? null
+}
+/** Depois do cadastro do fornecedor, o Ivan toca em "Reenviar este cupom": o cupom volta à fila e o robô lança. */
+export async function reenviarCupomDoFornecedor(cupomId: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, reenviar_fornecedor: true } })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+}
+/** Nome fantasia por CNPJ dos fornecedores cadastrados pelo app (só existe no app; o SisChef não o recebe). Falha ou tabela ausente = nenhum. */
+export async function fantasiasDosFornecedores(): Promise<Record<string, string>> {
+  const r = await supabase.from('fornecedor_app').select('cnpj, nome_fantasia').limit(2000)
+  if (r.error) return {}
+  const mapa: Record<string, string> = {}
+  for (const x of (r.data ?? []) as { cnpj: string; nome_fantasia: string | null }[]) if ((x.nome_fantasia ?? '').trim() !== '') mapa[x.cnpj] = x.nome_fantasia as string
+  return mapa
+}
+
 /** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
   const r = checar(await supabase.from('cupom')
