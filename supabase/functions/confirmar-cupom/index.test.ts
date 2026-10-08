@@ -356,6 +356,21 @@ describe('confirmar-cupom/index.ts — caminho feliz (o cupom do ATACADAO de 06/
     cupomIntocado()
   })
 
+  it('produto que o Ivan acrescentou pela planilha (descrição + unidade), fora de itens_semana, é aceito; sem descrição na planilha continua "não está na lista"', async () => {
+    h.banco.itensSemana = h.banco.itensSemana.filter((l) => l.produto_id !== 3484991)
+    h.banco.planilha = [{ produto_id: 3484991, unidade: 'KG', descricao: 'PEPINO JAPONÊS - INSUMOS (PLANILHA)' }]
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(200)
+    expect(h.banco.aprendizado.some((a) => a.insumo_id === '3484991' && a.insumo_nome === 'PEPINO JAPONÊS - INSUMOS (PLANILHA)' && a.unidade_destino === 'kg')).toBe(true)
+    h.banco.cupons = [cupomAtacadao()]
+    h.banco.aprendizado = []
+    h.banco.planilha = [{ produto_id: 3484991, unidade: 'KG', descricao: '' }]
+    const r2 = await handler(confirmacao())
+    expect(r2.status).toBe(400)
+    expect(await corpoDe(r2)).toEqual({ erro: 'item 2: o produto cód. 3484991 não está na lista de insumos do app' })
+    cupomIntocado()
+  })
+
   it('o produto vem da linha MAIS RECENTE de itens_semana (order id desc, limit 1): a semana velha dizia UN e faria a confirmação falhar', async () => {
     const r = await handler(confirmacao())
     expect(r.status).toBe(200)

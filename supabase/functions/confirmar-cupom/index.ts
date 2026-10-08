@@ -67,13 +67,17 @@ Deno.serve(async (req: Request) => {
           .eq('produto_id', Number(id)).order('semana_id', { ascending: false }).order('id', { ascending: false }).limit(1)
         if (error) throw new Error(error.message)
         const linha = (data ?? [])[0] as { produto_id: number; produto: string | null; unidade: string | null } | undefined
-        if (!linha) return null
-        // A unidade da planilha do Ivan (produto_planilha, 08/10) manda sobre a de itens_semana — a mesma regra da caixa do app (api.catalogoProdutos).
-        // Falha de leitura (tabela ainda não criada) = segue com a de itens_semana.
-        const { data: pl } = await admin.from('produto_planilha').select('unidade').eq('produto_id', Number(id)).maybeSingle()
-        const daPlanilha = String((pl as { unidade?: string | null } | null)?.unidade ?? '').trim().toLowerCase()
-        const unidade = daPlanilha === 'kg' || daPlanilha === 'un' ? daPlanilha : linha.unidade
-        return { id: String(linha.produto_id), nome: linha.produto, unidade } satisfies Produto
+        // A planilha do Ivan (produto_planilha, 08/10) manda na unidade e acrescenta produtos que ele pôs com o nome do SisChef (fora de itens_semana) — a mesma
+        // regra da caixa do app (api.catalogoProdutos). Falha de leitura (tabela ainda sem a coluna `descricao`) = só a lista de itens_semana.
+        const { data: pl } = await admin.from('produto_planilha').select('unidade, descricao').eq('produto_id', Number(id)).maybeSingle()
+        const p = pl as { unidade?: string | null; descricao?: string | null } | null
+        const daPlanilha = String(p?.unidade ?? '').trim().toLowerCase()
+        const unidadePlanilha = daPlanilha === 'kg' || daPlanilha === 'un' ? daPlanilha : null
+        if (!linha) {
+          const nome = String(p?.descricao ?? '').replace(/\s+/g, ' ').trim()
+          return nome !== '' && unidadePlanilha ? ({ id: String(Number(id)), nome, unidade: unidadePlanilha } satisfies Produto) : null
+        }
+        return { id: String(linha.produto_id), nome: linha.produto, unidade: unidadePlanilha ?? linha.unidade } satisfies Produto
       },
       async atualizarCupom(id, itens) {
         // compara-e-troca num UPDATE só: quem chega com uma tela velha (cupom já reenviado/lançado) recebe [].
