@@ -10,6 +10,7 @@ import * as api from '../lib/api'
 import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
+import { cnpjDaChave, formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
@@ -343,6 +344,8 @@ function VerificarRobo({ nota, recarregar }: { nota: NotaSefazLista; recarregar:
 
 interface PropsNota {
   nota: NotaSefazLista
+  /** O nome que a linha mostra: o fantasia do app (fornecedor_app) ou, sem ele, a razão social. */
+  nomeExibido?: string
   padroes: Record<string, string>
   /** Notas seguidas lançadas em boleto por fornecedor (CNPJ): 3 ou mais = fornecedor "aprendido". */
   seguidas: Record<string, number>
@@ -363,7 +366,7 @@ interface PropsNota {
   /** Lê a lista de insumos de novo (depois de "Lembrar esta descrição", que muda as palavras-chave de um produto). */
   recarregarCatalogo: () => Promise<void>
 }
-function NotaALancar({ nota, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo }: PropsNota) {
+function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -477,7 +480,7 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, aplicarDecisao, outr
   return (
     <li data-testid="nota-a-lancar" className="nota-lancar">
       <div className="recente-linha">
-        <span><b>{nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
+        <span><b>{nomeExibido ?? nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
       </div>
 
       {soLancar && (
@@ -650,6 +653,15 @@ export default function NotaSefaz() {
   // Lista de insumos do app (itens_semana) para escolher o produto de um item sem produto. Só é lida quando alguma nota tem esse tipo de item.
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
   const [catalogoFalhou, setCatalogoFalhou] = useState(false)
+  // Nome fantasia por CNPJ (só existe no app; pedido do Ivan, 08/10): é o nome que as linhas mostram; a razão social fica no detalhe.
+  const [fantasias, setFantasias] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let vivo = true
+    Promise.resolve(api.fantasiasDosFornecedores()).then((f) => { if (vivo) setFantasias(f ?? {}) }).catch(() => undefined)
+    return () => { vivo = false }
+  }, [])
+  const cnpjDe = (n: NotaSefazLista): string => n.cnpj_emitente || cnpjDaChave(n.chave)
+  const nomeDe = (n: NotaSefazLista): string => nomeDoFornecedor(n.emitente, fantasias[cnpjDe(n)])
 
   // Devolve a promessa para o "Lançar" esperar a lista nova (a nota passa a 'lancando') antes de liberar o botão.
   // `silencioso` (releitura automática / depois do Lançar): uma falha passageira não esconde a lista que já está na tela.
@@ -759,7 +771,7 @@ export default function NotaSefaz() {
         : (
           <>
             <ul className="recentes">
-              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)} aplicarDecisao={aplicarDecisao}
+              {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} nomeExibido={nomeDe(n)} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)} aplicarDecisao={aplicarDecisao}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
                 emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou}
                 recarregarCatalogo={recarregarCatalogo} />)}
@@ -778,7 +790,7 @@ export default function NotaSefaz() {
           <ul className="conferir-itens">
             {descartadas.map((n) => (
               <li key={n.chave} data-testid="nota-descartada">
-                <span><b>{n.emitente}</b> · NF {n.numero} · {ddmm(n.emissao)}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
+                <span><b>{nomeDe(n)}</b> · NF {n.numero} · {ddmm(n.emissao)}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
                 {n.descartada_motivo && <span className="sub">Motivo: {n.descartada_motivo}</span>}
                 {descartadaVoltouComItens(n) && (
                   <span className="ok" data-testid="descartada-com-itens">
@@ -806,10 +818,11 @@ export default function NotaSefaz() {
                 <li key={n.chave} data-testid="nota-lancada">
                   <button type="button" className="recente-linha" aria-expanded={aberto}
                     onClick={() => setExpandido(aberto ? null : n.chave)}>
-                    <span><b>lançada ✓</b> · {n.emitente} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
+                    <span><b>lançada ✓</b> · {nomeDe(n)} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
                     <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                   </button>
-                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map(linhaDoItem)} />}
+                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map(linhaDoItem)}
+                    fornecedor={`${n.emitente}${cnpjDe(n) ? ` · CNPJ ${formatarCnpj(cnpjDe(n))}` : ''}`} />}
                 </li>
               )
             })}

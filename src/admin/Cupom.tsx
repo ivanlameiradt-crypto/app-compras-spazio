@@ -12,7 +12,7 @@ import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLanca
 import { diagnosticoDoCupom, envioRepetido } from './cupomRegras'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
-import { fornecedorNaoEncontrado, nomeParaMostrar } from './fornecedorRegras'
+import { formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor } from './fornecedorRegras'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
   PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
@@ -349,7 +349,7 @@ export default function Cupom() {
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
                   onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ? nomeParaMostrar(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && ` · ${valor}`}</span>
+                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && ` · ${valor}`}</span>
                   <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                 </button>
                 {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (
@@ -369,6 +369,7 @@ export default function Cupom() {
                     terminar. O "envio repetido" é REVISAR (a compra foi lançada em outro envio) e não tem hora própria, então não mostra. */}
                 {aberto && (
                   <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} rotuloQuando="Lançado em" rotuloQtd={false}
+                    fornecedor={c.emitente_nome ? `${c.emitente_nome}${c.emitente_cnpj ? ` · CNPJ ${formatarCnpj(c.emitente_cnpj)}` : ''}` : null}
                     quando={c.estado === 'LANCADO' && c.atualizado_em ? formatarDataHora(c.atualizado_em) : null} />
                 )}
               </li>
