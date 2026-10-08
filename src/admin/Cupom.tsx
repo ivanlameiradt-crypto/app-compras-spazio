@@ -3,7 +3,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import * as api from '../lib/api'
 import { reduzirFoto } from '../lib/foto'
-import { formatarReais } from '../lib/regras'
+import { formatarDataHora, formatarReais } from '../lib/regras'
 import { CONTAS_PIX, CONTA_DINHEIRO, CONTA_TESOURARIA, FORMAS } from '../cupom/formasPagamento'
 import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
@@ -345,7 +345,12 @@ export default function Cupom() {
                 {corrigivel(c) && (
                   <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} />
                 )}
-                {aberto && <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} />}
+                {/* Lançado em: dia e hora do lançamento (pedido do Ivan, 07/10, igual ao da aba fiscal). Só cupom LANCADO: o robô grava atualizado_em ao
+                    terminar. O "envio repetido" é REVISAR (a compra foi lançada em outro envio) e não tem hora própria, então não mostra. */}
+                {aberto && (
+                  <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} rotuloQuando="Lançado em"
+                    quando={c.estado === 'LANCADO' && c.atualizado_em ? formatarDataHora(c.atualizado_em) : null} />
+                )}
               </li>
             )
           })}
