@@ -218,3 +218,25 @@ describe('quantidade_cupom — a quantidade impressa no cupom fica em TODOS os i
     expect(incerto.quantidade_cupom).toBe(2.5)   // antes (v1) o incerto perdia a quantidade e o Ivan tinha de ler o peso de novo na foto
   })
 })
+
+describe('casarItens — fornecedor que mudou a descrição (regra da palavra-chave, 08/10)', () => {
+  const CNPJ = '12345678000190'
+  const antigo = { codigo_barras: null, emitente_cnpj: CNPJ, descricao_norm: 'tomate italiano', insumo_id: '3482196', insumo_nome: 'TOMATE ITALIANO - INSUMOS (KG)', fator_conversao: 1, unidade_destino: 'kg', confirmado: true }
+  const item = (descricao: string) => ({ descricao, quantidade: 3.2, unidade: 'KG', valor_unitario: 10, desconto: 0, codigo_barras: null })
+
+  it('descrição nova com palavras em comum com o que o fornecedor já mandou: o item incerto leva o aviso "antes vinha como"', () => {
+    const [r] = casarItens([item('TOMATE ITAL. GRAUDO KG')], CNPJ, [antigo])
+    expect(r.sugestao_produto).toBeNull()
+    expect(r.conhecidos_do_fornecedor).toEqual([{ insumo_id: '3482196', insumo_nome: 'TOMATE ITALIANO - INSUMOS (KG)', descricao_norm: 'tomate italiano' }])
+  })
+  it('não avisa quando nada se parece, quando é de outro fornecedor ou quando o aprendizado não está confirmado', () => {
+    expect(casarItens([item('BANANA PRATA')], CNPJ, [antigo])[0].conhecidos_do_fornecedor).toBeUndefined()
+    expect(casarItens([item('TOMATE ITAL. GRAUDO')], '99999999000199', [antigo])[0].conhecidos_do_fornecedor).toBeUndefined()
+    expect(casarItens([item('TOMATE ITAL. GRAUDO')], CNPJ, [{ ...antigo, confirmado: false }])[0].conhecidos_do_fornecedor).toBeUndefined()
+  })
+  it('item que o aprendizado casa não leva o aviso (só o incerto)', () => {
+    const [r] = casarItens([item('TOMATE ITALIANO')], CNPJ, [antigo])
+    expect(r.sugestao_produto).toEqual({ id: '3482196' })
+    expect(r.conhecidos_do_fornecedor).toBeUndefined()
+  })
+})

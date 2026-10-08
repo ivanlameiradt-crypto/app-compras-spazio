@@ -8,6 +8,7 @@ import * as api from '../lib/api'
 import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
 import { buscarProdutos } from './associacaoRegras'
+import { sugerirPorPalavras } from './palavraChave'
 import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 
@@ -95,6 +96,16 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
     const p = lista.find((x) => x.produto_id === id)
     return p && !p.oculto ? p : null
   }, [it.proposta, lista])
+  // Regra da palavra-chave (Ivan, 08/10): sem proposta do sistema, o app sugere pelas palavras da descrição do SisChef (planilha) — 'forte' = o Ivan só confirma.
+  const porPalavras = useMemo(() => (proposta ? null : sugerirPorPalavras(lista, it.descricao_cupom ?? '', it.unidade_cupom)), [proposta, lista, it.descricao_cupom, it.unidade_cupom])
+  // A descrição mudou (pedido do Ivan, 08/10): o fornecedor já mandou algo parecido, confirmado, e o app avisa em vez de calar.
+  const antes = useMemo(() => {
+    for (const k of it.conhecidos_do_fornecedor ?? []) {
+      const p = lista.find((x) => String(x.produto_id) === String(k.insumo_id) && !x.oculto)
+      if (p) return { descricao_norm: k.descricao_norm, produto: p }
+    }
+    return null
+  }, [it.conhecidos_do_fornecedor, lista])
   const descricao = (it.descricao_cupom ?? '').replace(/\s+/g, ' ').trim() || 'item'
   const unCupom = minusc(it.unidade_cupom)
   const conf = confirmacaoDe(it, estado)
@@ -125,8 +136,15 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
     const m = modoDaEntrada(it, p)
     const regra = qCupom != null && minusc(p.unidade) === 'kg' ? entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom) : null
     const sugerido = m === 'por_unidade' && regra?.regra === 1 && qCupom ? qtd(regra.kg / qCupom) : ''
-    mudar({ produto: p, entrada: '', peso: sugerido, forcar: false, lembrar: !itemSempreManual(it) && (!precisaConversao(it.unidade_cupom, p.unidade) || m === 'auto' || sugerido !== '') })
+    const novo: Partial<EstadoItem> = { produto: p, entrada: '', peso: sugerido, forcar: false, lembrar: !itemSempreManual(it) && (!precisaConversao(it.unidade_cupom, p.unidade) || m === 'auto' || sugerido !== '') }
+    mudar(novo)
     setTexto('')
+    return novo
+  }
+  // "Confirmar" da sugestão: escolhe o produto e, se não falta nenhum número (mesma unidade e quantidade lida), já confirma o item — um toque só.
+  const confirmarSugestao = (p: ProdutoCatalogo) => {
+    const novo = escolher(p)
+    if (confirmacaoDe(it, { ...estado, ...novo }) !== null) mudar({ confirmado: true })
   }
 
   return (
@@ -144,6 +162,36 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             <p className="sub">Proposta do sistema:{' '}
               <button type="button" className="link" disabled={travado} onClick={() => escolher(proposta)}>{proposta.nome}</button>
             </p>
+          )}
+          {antes && (
+            <div className="sugestao" data-testid="descricao-mudou">
+              <p className="sub">
+                A descrição mudou: este fornecedor já mandou “{antes.descricao_norm}” e você confirmou como <b>{antes.produto.nome}</b>. É o mesmo produto?
+              </p>
+              <div className="acoes">
+                <button type="button" className="botao" disabled={travado} onClick={() => confirmarSugestao(antes.produto)}>Sim, é este</button>
+              </div>
+            </div>
+          )}
+          {porPalavras && (
+            <div className="sugestao" data-testid="sugestao-palavras">
+              <p className="sub">
+                {porPalavras.forca === 'forte' ? 'O app acha que é este (as palavras batem com o SisChef):' : 'Nenhum produto tem todas as palavras. O mais parecido:'}{' '}
+                <b>{porPalavras.produto.nome}</b>
+              </p>
+              <div className="acoes">
+                <button type="button" className="botao" disabled={travado} onClick={() => confirmarSugestao(porPalavras.produto)}>
+                  {porPalavras.forca === 'forte' ? 'Confirmar' : 'Usar este'}
+                </button>
+              </div>
+              {porPalavras.alternativas.length > 0 && (
+                <p className="sub">Outras opções:{' '}
+                  {porPalavras.alternativas.map((a) => (
+                    <button key={a.produto_id} type="button" className="link" disabled={travado} onClick={() => escolher(a)}>{a.nome}</button>
+                  ))}
+                </p>
+              )}
+            </div>
           )}
           {!proposta && it.proposta && (
             <p className="sub">
@@ -287,9 +335,22 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
   const soma = useMemo(() => somaDoCupom(cupom, confirmadas), [cupom, confirmadas])
   const completo = soma.faltam.length === 0
   const podeReenviar = completo && soma.bate && !enviando
+  // Todos os itens já vieram conhecidos: nada a escolher, só conferir e confirmar o cupom inteiro (pedido do Ivan, 08/10)
+  const soConfirmar = pendentes.length === 0
 
   async function reenviar() {
     if (!podeReenviar) return
+    if (soConfirmar) {
+      setEnviando(true); setErro('')
+      try {
+        aoReenviar(await api.confirmarCupom(cupom.id, [], true))
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : 'Não consegui confirmar agora. Tente de novo.')
+      } finally {
+        setEnviando(false)
+      }
+      return
+    }
     const itens: ConfirmacaoItemCupom[] = []
     for (const i of pendentes) {
       const e = estadoDe(i)
@@ -322,7 +383,21 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
 
   return (
     <div className="associar corrigir-cupom" data-testid="corrigir-cupom">
-      <div className="grupo">Confirmar os itens deste cupom</div>
+      <div className="grupo">{soConfirmar ? 'Confira os itens e confirme' : 'Confirmar os itens deste cupom'}</div>
+      {soConfirmar && (cupom.itens ?? []).map((it, i) => {
+        const produto = (catalogo ?? []).find((p) => String(p.produto_id) === String(it.sugestao_produto?.id))
+        return (
+          <div key={i} className="corrigir-item" data-testid="item-conhecido">
+            <p>
+              <b>{(it.descricao_cupom ?? '').trim() || 'item'}</b> <span className="tag-conhecido">Já conhecido</span>
+            </p>
+            <p className="sub">
+              {produto ? produto.nome : `produto cód. ${it.sugestao_produto?.id ?? '?'}`}
+              {it.entrada_estoque != null && <> · entra {qtd(Number(it.entrada_estoque))} {produto?.unidade ? minusc(produto.unidade) : ''} no estoque</>}
+            </p>
+          </div>
+        )
+      })}
       {pendentes.map((i) => {
         const it = cupom.itens[i]
         return (
@@ -358,7 +433,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
 
       <div className="acoes">
         <button type="button" className="botao" data-testid="reenviar" disabled={!podeReenviar} onClick={() => void reenviar()}>
-          {enviando ? 'Reenviando…' : 'Reenviar para lançar'}
+          {enviando ? (soConfirmar ? 'Confirmando…' : 'Reenviando…') : soConfirmar ? 'Confirmar e lançar' : 'Reenviar para lançar'}
         </button>
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}

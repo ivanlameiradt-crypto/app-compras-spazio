@@ -347,6 +347,43 @@ describe('confirmar-cupom/index.ts — caminho feliz (o cupom do ATACADAO de 06/
     semVazamento(JSON.stringify(corpo))
   })
 
+  describe('"Confirmar e lançar" (so_confirmar): cupom em que todos os itens já vieram conhecidos — pedido do Ivan, 08/10', () => {
+    const todoConhecido = (over: Linha = {}) => cupomAtacadao({ motivo: 'CONFIRMAR: 1 item(ns) já conhecido(s) — confira e confirme no app', itens: [structuredClone(ITENS_ATACADAO[2])], valor_a_pagar: '23.04', ...over })
+    const confirmarTudo = (extra: Linha = {}) => pedido({ cupom_id: CUPOM_ID, so_confirmar: true, ...extra })
+
+    it('confere a soma, volta a PENDENTE sem mexer nos itens e dispara o workflow uma vez', async () => {
+      h.banco.cupons = [todoConhecido()]
+      const r = await handler(confirmarTudo())
+      expect(r.status).toBe(200)
+      expect(await corpoDe(r)).toEqual({ cupom_id: CUPOM_ID, estado: 'PENDENTE', resumo: 'confirmado e enviado para lançar', disparo_ok: true, lembrados: 0, nao_lembrados: 0 })
+      expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null })
+      expect((cupomNoBanco().itens as Linha[])[0]).toEqual(ITENS_ATACADAO[2])
+      expect(fetchFalso).toHaveBeenCalledTimes(1)
+    })
+    it('só vale para o cupom que espera a confirmação: motivo de outro tipo ou item sem produto ⇒ 409, nada muda, nada é disparado', async () => {
+      h.banco.cupons = [todoConhecido({ motivo: 'não consegui ler o total do cupom' })]
+      expect((await handler(confirmarTudo())).status).toBe(409)
+      h.banco.cupons = [cupomAtacadao({ motivo: 'CONFIRMAR: 3 item(ns)' })]               // ainda tem 2 itens sem produto
+      expect((await handler(confirmarTudo())).status).toBe(409)
+      expect(fetchFalso).not.toHaveBeenCalled()
+      expect(escritas()).toEqual([])
+    })
+    it('soma que não bate com o total ⇒ 400; não aceita lista de itens junto', async () => {
+      h.banco.cupons = [todoConhecido({ valor_a_pagar: '99.00' })]
+      const r = await handler(confirmarTudo())
+      expect(r.status).toBe(400)
+      expect(await corpoDe(r)).toMatchObject({ erro: expect.stringMatching(/não bate com o total/) })
+      h.banco.cupons = [todoConhecido()]
+      expect((await handler(confirmarTudo({ itens: CONFIRMACOES }))).status).toBe(400)
+      expect(fetchFalso).not.toHaveBeenCalled()
+    })
+    it('cupom já lançado (pedido no SisChef) ⇒ 409', async () => {
+      h.banco.cupons = [todoConhecido({ pedido_sischef: '123' })]
+      expect((await handler(confirmarTudo())).status).toBe(409)
+      expect(fetchFalso).not.toHaveBeenCalled()
+    })
+  })
+
   it('a unidade do produto vem da planilha do Ivan (produto_planilha) quando ele está nela: o limão em KG em itens_semana, UN na planilha', async () => {
     h.banco.planilha = [{ produto_id: 3484974, unidade: 'UN' }]
     const r = await handler(confirmacao())

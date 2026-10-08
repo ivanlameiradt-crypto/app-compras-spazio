@@ -6,6 +6,7 @@ import { normalizar } from './normalizar.ts'
 import { CATALOGO } from './catalogo.ts'
 import type { ItemLidoIA } from './esquema.ts'
 import { entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos.ts'
+import { palavrasDe } from './palavras.ts'
 
 /** Uma linha de cupom_aprendizado (Plano 1). */
 export interface Aprendizado {
@@ -35,6 +36,9 @@ export interface ItemCasado {
   /** A quantidade como está impressa no cupom (na unidade do cupom), também no item incerto: a caixa de correção do app a pré-preenche e
    *  "Ver a foto do cupom" a mostra. Antes (v1) o incerto a perdia e o Ivan tinha de ler o peso de novo na foto. */
   quantidade_cupom: number
+  /** Só no item INCERTO (regra da palavra-chave, 08/10): o que ESTE fornecedor já mandou e o Ivan confirmou, com palavras em comum com a descrição nova
+   *  (até 3). O app mostra "antes vinha como X: mesmo produto?" — a descrição mudou e o app avisa em vez de calar. Descritivo: o robô ignora. */
+  conhecidos_do_fornecedor?: { insumo_id: string; insumo_nome: string | null; descricao_norm: string }[]
 }
 
 /** Índice dos aprendizados CONFIRMADOS: por EAN, por `cnpj|descricao_norm` (do fornecedor) e por `descricao_norm` (sinônimo global). */
@@ -104,7 +108,26 @@ function aplicar(a: Aprendizado, item: ItemLidoIA, por: 'ean' | 'descricao'): It
   }
 }
 
-function incerto(item: ItemLidoIA): ItemCasado {
+/** O que este fornecedor já mandou (confirmado) e se parece com a descrição nova: pelo menos uma palavra que identifica produto em comum; os que mais se parecem primeiro. */
+function conhecidosParecidos(item: ItemLidoIA, cnpj: string | null, aprendizados: Aprendizado[]): NonNullable<ItemCasado['conhecidos_do_fornecedor']> {
+  if (!cnpj) return []
+  const doItem = palavrasDe(item.descricao)
+  if (doItem.length === 0) return []
+  const achados: { a: Aprendizado; n: number }[] = []
+  const vistos = new Set<string>()
+  for (const a of aprendizados) {
+    if (!a.confirmado || a.emitente_cnpj !== cnpj || !a.descricao_norm) continue
+    const n = palavrasDe(a.descricao_norm).filter((w) => doItem.includes(w)).length
+    const chave = `${a.insumo_id}|${a.descricao_norm}`
+    if (n === 0 || vistos.has(chave)) continue
+    vistos.add(chave)
+    achados.push({ a, n })
+  }
+  achados.sort((x, y) => y.n - x.n)
+  return achados.slice(0, 3).map(({ a }) => ({ insumo_id: a.insumo_id, insumo_nome: a.insumo_nome, descricao_norm: a.descricao_norm as string }))
+}
+
+function incerto(item: ItemLidoIA, conhecidos: NonNullable<ItemCasado['conhecidos_do_fornecedor']> = []): ItemCasado {
   return {
     sugestao_produto: null,
     entrada_estoque: null,
@@ -116,11 +139,13 @@ function incerto(item: ItemLidoIA): ItemCasado {
     casado_por: null,
     proposta: propor(item.descricao),
     quantidade_cupom: item.quantidade,
+    ...(conhecidos.length > 0 ? { conhecidos_do_fornecedor: conhecidos } : {}),
   }
 }
 
 export function casarItem(item: ItemLidoIA, emitenteCnpj: string | null,
-  idx: ReturnType<typeof indexarAprendizado>): ItemCasado {
+  idx: ReturnType<typeof indexarAprendizado>, aprendizados: Aprendizado[] = []): ItemCasado {
+  const semCasamento = () => incerto(item, conhecidosParecidos(item, emitenteCnpj, aprendizados))
   // 1. EAN confirmado manda.
   if (item.codigo_barras) {
     const porEan = idx.porEan.get(item.codigo_barras)
@@ -137,11 +162,11 @@ export function casarItem(item: ItemLidoIA, emitenteCnpj: string | null,
   // 2.5. sinônimo global (descricao_norm, qualquer fornecedor) — o aprendizado do próprio fornecedor acima tem precedência.
   const porDescGlobal = idx.porDescGlobal.get(descNorm)
   if (porDescGlobal) return eanDiverge(porDescGlobal) ? incerto(item) : aplicar(porDescGlobal, item, 'descricao')
-  // 3. nada confirmado → incerto (REVISAR), com proposta p/ pré-preencher.
-  return incerto(item)
+  // 3. nada confirmado → incerto (REVISAR), com proposta p/ pré-preencher e, se o fornecedor já mandou algo parecido, o aviso "antes vinha como X".
+  return semCasamento()
 }
 
 export function casarItens(itens: ItemLidoIA[], emitenteCnpj: string | null, aprendizados: Aprendizado[]): ItemCasado[] {
   const idx = indexarAprendizado(aprendizados)
-  return itens.map((i) => casarItem(i, emitenteCnpj, idx))
+  return itens.map((i) => casarItem(i, emitenteCnpj, idx, aprendizados))
 }

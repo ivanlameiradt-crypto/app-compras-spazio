@@ -231,6 +231,23 @@ describe('tratar', () => {
     expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
   })
 
+  it('confirmar antes (pedido do Ivan, 08/10): tudo casado ⇒ REVISAR com motivo CONFIRMAR:, itens já associados e NADA é disparado', async () => {
+    const deps = { ...fakeDeps({ aprendizado: [CONFIRMADO] }), exigirConfirmacao: true }
+    const r = await tratar({ foto_path: 'cupom/a.jpg', pagamento: PG }, IVAN, deps)
+    expect(deps.gravou[0]).toMatchObject({ estado: 'REVISAR', foto_path: 'cupom/a.jpg' })
+    expect(String(deps.gravou[0].motivo)).toMatch(/^CONFIRMAR: 1 item\(ns\) já conhecido\(s\)/)
+    expect((deps.gravou[0].itens as { sugestao_produto: { id: string } }[])[0].sugestao_produto).toEqual({ id: '333' })   // já vem associado
+    expect(deps.disparou).toEqual([])
+    expect(r.corpo).toMatchObject({ estado: 'REVISAR', disparo_ok: false, resumo: 'todos os itens já conhecidos — confira e confirme no app' })
+  })
+
+  it('confirmar antes não muda os outros casos: item incerto continua REVISAR com o motivo de sempre', async () => {
+    const deps = { ...fakeDeps({ aprendizado: [] }), exigirConfirmacao: true }
+    await tratar({ foto_path: 'cupom/a.jpg', pagamento: PG }, IVAN, deps)
+    expect(String(deps.gravou[0].motivo)).toMatch(/sem casamento confirmado/)
+    expect(String(deps.gravou[0].motivo)).not.toMatch(/CONFIRMAR:/)
+  })
+
   it('a linha PENDENTE sai no formato do contrato do robô (itens, pagamento, total, emitente)', async () => {
     const deps = fakeDeps({ aprendizado: [CONFIRMADO] })
     await tratar({ foto_path: 'cupom/a.jpg', pagamento: { forma: 'pix', conta: 'PIX ITAU IJ' } }, IVAN, deps)

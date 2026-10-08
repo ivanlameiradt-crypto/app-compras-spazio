@@ -6,7 +6,9 @@
 // Sem globais do Deno nem rede: banco e GitHub entram por `deps` (molde enviar-cupom/logica.ts). index.ts monta `deps` e chama `tratar`.
 import { normalizar } from './normalizar.ts'
 
-export interface Corpo { cupom_id?: unknown; itens?: unknown }
+export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown }
+/** O cupom está todo casado e só espera o Ivan conferir e confirmar (o mesmo texto de enviar-cupom/logica.ts e de src/admin/cupomRegras.ts). */
+export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
 export interface UsuarioLinha { papel: string; ativo: boolean }
 /** A linha `cupom` como o banco a devolve (itens em JSONB; numeric pode vir como texto). */
 export interface CupomLinha {
@@ -166,7 +168,10 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   const c: Corpo = corpo !== null && typeof corpo === 'object' ? corpo : {}
   const cupomId = typeof c.cupom_id === 'string' ? c.cupom_id.trim() : ''
   if (!/^[0-9a-f-]{36}$/i.test(cupomId)) return { status: 400, corpo: { erro: 'sem o cupom' } }
-  const conf = lerConfirmacoes(c.itens)
+  // "Confirmar e lançar" de um cupom em que TODOS os itens já vieram conhecidos (pedido do Ivan, 08/10): sem itens a confirmar um a um.
+  const soConfirmar = c.so_confirmar === true
+  if (soConfirmar && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'confirmar o cupom inteiro não leva itens: confirme os itens um a um ou o cupom todo' } }
+  const conf = soConfirmar ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
   if (!conf.ok) return { status: 400, corpo: { erro: conf.erro } }
 
   // 3. o cupom tem de estar parado por item sem produto, e nada pode ter chegado ao SisChef.
@@ -182,6 +187,22 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!(total > 0)) return { status: 409, corpo: { erro: 'o total deste cupom não foi lido: sem ele não dá para conferir a soma; peça ao Claude' } }
   const originais = Array.isArray(cupom.itens) ? (cupom.itens as Item[]) : []
   const pendentes = originais.map((it, i) => (semProduto(it) ? i : -1)).filter((i) => i >= 0)
+  if (soConfirmar) {
+    // só vale para o cupom que o envio deixou esperando a confirmação (motivo CONFIRMAR:) e em que todo item já tem produto
+    if (!(cupom.motivo ?? '').trim().startsWith(CONFIRMAR_PREFIXO) || pendentes.length > 0) {
+      return { status: 409, corpo: { erro: 'este cupom ainda tem item sem produto (ou não está esperando só a sua confirmação): atualize a tela' } }
+    }
+    const soma = conferirSoma(originais, total)
+    if (!soma.bate) {
+      return { status: 400, corpo: { erro: `a soma dos itens (${brl(soma.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(soma.diferenca))}.`, soma: soma.soma, total } }
+    }
+    if (!(await deps.atualizarCupom(cupomId, originais))) {
+      return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
+    }
+    let disparou = false
+    try { await deps.dispararLancamento(cupomId); disparou = true } catch { /* quem registra o motivo é o index.ts */ }
+    return { status: 200, corpo: { cupom_id: cupomId, estado: PENDENTE, resumo: disparou ? 'confirmado e enviado para lançar' : AVISO_DISPARO_FALHOU, disparo_ok: disparou, lembrados: 0, nao_lembrados: 0 } }
+  }
   if (pendentes.length === 0) return { status: 409, corpo: { erro: 'este cupom não tem item sem produto para confirmar' } }
   const faltando = pendentes.filter((i) => !conf.itens.some((x) => x.indice === i))
   if (faltando.length > 0) return { status: 400, corpo: { erro: `falta confirmar o item ${faltando.map((i) => i + 1).join(', ')}` } }

@@ -136,3 +136,16 @@ describe('envioRepetido — reenvio de um cupom que já foi lançado não é pen
     expect(envioRepetido(cupom({ estado: 'LANCADO', motivo: 'JÁ LANÇADO em outro envio' }))).toBe(false)
   })
 })
+
+describe('diagnosticoDoCupom — cupom todo casado esperando a confirmação (motivo CONFIRMAR:, pedido do Ivan, 08/10)', () => {
+  it('é corrigível na tela (só confirmar) quando o total foi lido e não há pedido no SisChef', () => {
+    const d = diagnosticoDoCupom(cupom({ motivo: 'CONFIRMAR: 1 item(ns) já conhecido(s) — confira e confirme no app', itens: [TAITI], valor_a_pagar: 23.04 }))!
+    expect(d.corrigivel).toBe(true)
+    expect(d.problema).toMatch(/Todos os itens já são conhecidos/)
+    expect(d.solucao).toMatch(/Confirmar e lançar/)
+  })
+  it('sem total lido ou com pedido já aberto não se confirma pela tela', () => {
+    expect(diagnosticoDoCupom(cupom({ motivo: 'CONFIRMAR: 1 item(ns)', itens: [TAITI], valor_a_pagar: 0 }))!.corrigivel).toBe(false)
+    expect(diagnosticoDoCupom(cupom({ motivo: 'CONFIRMAR: 1 item(ns)', itens: [TAITI], valor_a_pagar: 23.04, pedido_sischef: '123' }))!.corrigivel).toBe(false)
+  })
+})

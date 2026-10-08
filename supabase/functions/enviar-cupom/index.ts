@@ -76,6 +76,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const deps: Deps = {
+      exigirConfirmacao: (Deno.env.get('CUPOM_CONFIRMAR_ANTES') ?? '').trim().toUpperCase() !== 'OFF', // liga por padrão (pedido do Ivan, 08/10)
       async buscarUsuario(email) {
         const { data } = await admin.from('usuarios').select('papel, ativo').eq('email', email).maybeSingle()
         return (data as { papel: string; ativo: boolean } | null) ?? null
