@@ -931,7 +931,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       const conhecido = await screen.findByTestId('item-conhecido')
       expect(conhecido).toHaveTextContent('TOMATE ITALIANO')
       expect(conhecido).toHaveTextContent('Já conhecido')
-      expect(conhecido).toHaveTextContent('TOMATE ITALIANO - INSUMOS (KG)')
+      await waitFor(() => expect(conhecido).toHaveTextContent('TOMATE ITALIANO - INSUMOS (KG)'))     // o nome vem da lista de produtos, que carrega depois
       expect(soma()).toHaveTextContent('bate')
       expect(reenviar()).toHaveTextContent('Confirmar e lançar')
       await userEvent.click(reenviar())
