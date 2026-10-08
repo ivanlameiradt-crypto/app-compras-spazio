@@ -65,6 +65,7 @@ function fakeDeps(o: Partial<Deps> & { cupom?: CupomLinha | null } = {}): Deps &
     async lerCupom() { return linha },
     async buscarProduto(id) { return PRODUTOS[id] ?? null },
     async atualizarCupom(id, itens) { registro.ordem.push('atualizar'); registro.atualizacoes.push({ id, itens }); return true },
+    async cadastroDoFornecedor() { return null },
     async gravarAprendizado(l) { registro.ordem.push('aprender'); registro.aprendizados.push(l) },
     async dispararLancamento(id) { registro.ordem.push('disparar'); registro.disparos.push(id) },
   }

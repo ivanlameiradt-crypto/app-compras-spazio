@@ -6,9 +6,13 @@
 // Sem globais do Deno nem rede: banco e GitHub entram por `deps` (molde enviar-cupom/logica.ts). index.ts monta `deps` e chama `tratar`.
 import { normalizar } from './normalizar.ts'
 
-export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown }
+export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown }
 /** O cupom está todo casado e só espera o Ivan conferir e confirmar (o mesmo texto de enviar-cupom/logica.ts e de src/admin/cupomRegras.ts). */
 export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
+/** O motivo que o robô de cupom grava quando o fornecedor não está no Sischef (cupom_navegador.py) — o app deixa cadastrá-lo e reenviar o cupom. */
+export const FORNECEDOR_PREFIXO = /^fornecedor não encontrado no Sischef/i
+/** O pedido de cadastro de fornecedor mais recente deste cupom (tabela fornecedor_cadastro). */
+export interface CadastroLinha { cnpj: string; razao_social: string; estado: string }
 export interface UsuarioLinha { papel: string; ativo: boolean }
 /** A linha `cupom` como o banco a devolve (itens em JSONB; numeric pode vir como texto). */
 export interface CupomLinha {
@@ -42,7 +46,9 @@ export interface Deps {
   lerCupom(id: string): Promise<CupomLinha | null>
   buscarProduto(id: string): Promise<Produto | null>
   /** UPDATE condicionado (estado REVISAR e sem pedido): true se trocou exatamente a linha; false se ela já não estava assim. */
-  atualizarCupom(id: string, itens: Record<string, unknown>[]): Promise<boolean>
+  atualizarCupom(id: string, itens: Record<string, unknown>[], extras?: Record<string, unknown>): Promise<boolean>
+  /** O pedido de cadastro de fornecedor mais recente feito para este cupom (null = nenhum). */
+  cadastroDoFornecedor(cupomId: string): Promise<CadastroLinha | null>
   gravarAprendizado(linha: LinhaAprendizado): Promise<void>
   dispararLancamento(cupomId: string): Promise<void>
 }
@@ -170,8 +176,10 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!/^[0-9a-f-]{36}$/i.test(cupomId)) return { status: 400, corpo: { erro: 'sem o cupom' } }
   // "Confirmar e lançar" de um cupom em que TODOS os itens já vieram conhecidos (pedido do Ivan, 08/10): sem itens a confirmar um a um.
   const soConfirmar = c.so_confirmar === true
-  if (soConfirmar && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'confirmar o cupom inteiro não leva itens: confirme os itens um a um ou o cupom todo' } }
-  const conf = soConfirmar ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
+  // "Reenviar este cupom" depois de cadastrar o fornecedor (pedido do Ivan, 08/10): também sem itens a confirmar
+  const reenviarFornecedor = c.reenviar_fornecedor === true
+  if ((soConfirmar || reenviarFornecedor) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'confirmar o cupom inteiro não leva itens: confirme os itens um a um ou o cupom todo' } }
+  const conf = soConfirmar || reenviarFornecedor ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
   if (!conf.ok) return { status: 400, corpo: { erro: conf.erro } }
 
   // 3. o cupom tem de estar parado por item sem produto, e nada pode ter chegado ao SisChef.
@@ -187,6 +195,28 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!(total > 0)) return { status: 409, corpo: { erro: 'o total deste cupom não foi lido: sem ele não dá para conferir a soma; peça ao Claude' } }
   const originais = Array.isArray(cupom.itens) ? (cupom.itens as Item[]) : []
   const pendentes = originais.map((it, i) => (semProduto(it) ? i : -1)).filter((i) => i >= 0)
+  if (reenviarFornecedor) {
+    // só vale para o cupom parado por fornecedor não cadastrado, com todos os itens já com produto, depois de o cadastro do fornecedor ter dado certo
+    if (!FORNECEDOR_PREFIXO.test((cupom.motivo ?? '').trim()) || pendentes.length > 0) {
+      return { status: 409, corpo: { erro: 'este cupom não está parado só por fornecedor não cadastrado: atualize a tela' } }
+    }
+    const cadastro = await deps.cadastroDoFornecedor(cupomId)
+    if (!cadastro || (cadastro.estado !== 'CADASTRADO' && cadastro.estado !== 'JA_EXISTIA')) {
+      return { status: 409, corpo: { erro: 'o fornecedor ainda não foi cadastrado no SisChef: espere o aviso de cadastro pronto' } }
+    }
+    const soma = conferirSoma(originais, total)
+    if (!soma.bate) {
+      return { status: 400, corpo: { erro: `a soma dos itens (${brl(soma.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(soma.diferenca))}.`, soma: soma.soma, total } }
+    }
+    // o robô acha o fornecedor pelo CNPJ do cupom: se o Ivan corrigiu o CNPJ ao cadastrar, o cupom passa a trazer o cadastrado
+    const extras = cadastro.cnpj !== cupom.emitente_cnpj ? { emitente_cnpj: cadastro.cnpj, emitente_nome: cadastro.razao_social } : undefined
+    if (!(await deps.atualizarCupom(cupomId, originais, extras))) {
+      return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
+    }
+    let disparou = false
+    try { await deps.dispararLancamento(cupomId); disparou = true } catch { /* quem registra o motivo é o index.ts */ }
+    return { status: 200, corpo: { cupom_id: cupomId, estado: PENDENTE, resumo: disparou ? 'reenviado para lançar' : AVISO_DISPARO_FALHOU, disparo_ok: disparou, lembrados: 0, nao_lembrados: 0 } }
+  }
   if (soConfirmar) {
     // só vale para o cupom que o envio deixou esperando a confirmação (motivo CONFIRMAR:) e em que todo item já tem produto
     if (!(cupom.motivo ?? '').trim().startsWith(CONFIRMAR_PREFIXO) || pendentes.length > 0) {

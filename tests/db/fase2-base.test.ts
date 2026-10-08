@@ -53,13 +53,14 @@ const F3I = '20261212000001_nfe_associacao_conversao.sql' // etapa 2 da associa�
 const F3J = '20261213000001_nfe_conversao_item_associado.sql' // conversão de unidade para item que já vem associado no SisChef com UN DIFERE (cot_nfe_converter_item)
 const F3K = '20261214000001_produto_planilha.sql' // a unidade de cada produto vem da planilha do Ivan (produto_planilha)
 const F3L = '20261215000001_nfe_associar_unidade_planilha.sql' // a unidade da decisão do app vem da planilha do Ivan (cot_nfe_associar)
+const F3N = '20261217000001_fornecedor_cadastro.sql' // cadastro de fornecedor pelo app (fornecedor_cadastro, fornecedor_app)
 const F3M = '20261216000001_produto_planilha_descricao.sql' // produto acrescentado pela planilha (descrição) entra na lista de insumos e em cot_nfe_associar
 // A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 vem depois da B; as da Fase 3 são as últimas por nome.
 const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [
@@ -87,6 +88,8 @@ const TABELAS_ESPERADAS = [
   'cot_produto_busca', // Fase 3: palavras-chave e nome corrigido dos produtos
   'cot_recebimentos',
   'cot_vendedores',
+  'fornecedor_app', // nome fantasia por CNPJ, só do app
+  'fornecedor_cadastro', // pedidos de cadastro de fornecedor no SisChef feitos pelo app
   'historico_alteracoes',
   'itens_semana',
   'lista_regras', // C2

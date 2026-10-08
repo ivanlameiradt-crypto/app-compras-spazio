@@ -119,6 +119,11 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
       'Tire outra foto, com o cupom inteiro, esticado e com boa luz, e envie de novo.')
   }
 
+  // O SisChef não tem o fornecedor (o robô não cadastra sozinho): o app deixa o Ivan cadastrar (caixa "Cadastrar fornecedor") e reenviar o cupom
+  if (/^fornecedor não encontrado no Sischef/i.test(motivo)) {
+    return sem('O SisChef não tem este fornecedor cadastrado, então o robô não lançou nada.',
+      'Confira o CNPJ na caixa abaixo, toque em “Cadastrar no SisChef” e, quando aparecer “cadastrado”, toque em “Reenviar este cupom”.')
+  }
   // Todo casado, esperando só a confirmação do Ivan (pedido dele, 08/10): o envio deixa o cupom em REVISAR com o motivo CONFIRMAR:
   if (motivo.startsWith(CONFIRMAR_PREFIXO)) {
     const total = c.valor_a_pagar != null && Number(c.valor_a_pagar) > 0

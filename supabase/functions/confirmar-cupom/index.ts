@@ -79,10 +79,15 @@ Deno.serve(async (req: Request) => {
         }
         return { id: String(linha.produto_id), nome: linha.produto, unidade: unidadePlanilha ?? linha.unidade } satisfies Produto
       },
-      async atualizarCupom(id, itens) {
+      async cadastroDoFornecedor(cupomId) {
+        const { data, error } = await admin.from('fornecedor_cadastro').select('cnpj, razao_social, estado').eq('cupom_id', cupomId).order('criado_em', { ascending: false }).limit(1)
+        if (error) throw new Error(error.message)
+        return ((data ?? [])[0] as { cnpj: string; razao_social: string; estado: string } | undefined) ?? null
+      },
+      async atualizarCupom(id, itens, extras) {
         // compara-e-troca num UPDATE só: quem chega com uma tela velha (cupom já reenviado/lançado) recebe [].
         const { data, error } = await admin.from('cupom')
-          .update({ itens, estado: 'PENDENTE', motivo: null, atualizado_em: agora() })
+          .update({ itens, estado: 'PENDENTE', motivo: null, atualizado_em: agora(), ...(extras ?? {}) })
           .eq('id', id).eq('estado', 'REVISAR').is('pedido_sischef', null).select('id')
         if (error) throw new Error(error.message)
         return (data ?? []).length === 1

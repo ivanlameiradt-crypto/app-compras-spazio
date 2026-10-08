@@ -149,3 +149,12 @@ describe('diagnosticoDoCupom — cupom todo casado esperando a confirmação (mo
     expect(diagnosticoDoCupom(cupom({ motivo: 'CONFIRMAR: 1 item(ns)', itens: [TAITI], valor_a_pagar: 23.04, pedido_sischef: '123' }))!.corrigivel).toBe(false)
   })
 })
+
+describe('diagnosticoDoCupom — fornecedor não cadastrado no SisChef (pedido do Ivan, 08/10)', () => {
+  it('explica o problema e aponta a caixa de cadastro; não é correção de item', () => {
+    const d = diagnosticoDoCupom(cupom({ motivo: 'fornecedor não encontrado no Sischef (A. N. DA SILVA DESCARTAVEIS LTDA, CNPJ 63540861000182)', itens: [TAITI] }))!
+    expect(d.problema).toMatch(/não tem este fornecedor/)
+    expect(d.solucao).toMatch(/Cadastrar no SisChef/)
+    expect(d.corrigivel).toBe(false)
+  })
+})
