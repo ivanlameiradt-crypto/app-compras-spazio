@@ -868,6 +868,83 @@ describe('Fase 3 — associar o produto de um item pelo app (cot_nfe_associar)',
   })
 })
 
+describe('Fase 3 — conversão de item que JÁ vem associado no SisChef com UN DIFERE (cot_nfe_converter_item)', () => {
+  const atual = bancoRecebimento(null)
+  const banco = async () => atual()
+  const CREME = 1855900
+  const converter = (db: PGlite, quem: string, n: number, conversao: number | null, chave = CHAVE) =>
+    chamar(db, quem, 'cot_nfe_converter_item($1, $2, $3::numeric)', [chave, n, conversao])
+  async function decisoes(db: PGlite): Promise<Json> {
+    const [r] = await como(db, ADMIN, 'select associacoes_app, itens from cot_nfe where chave = $1', [CHAVE])
+    return r
+  }
+  // item 1 já associado no SisChef (creme de leite); item 2 sem produto
+  const duas = () => nota({
+    itens: [nfeItem({ produto_id: String(CREME), associacao: 'sischef', produto_nome: 'CREME DE LEITE - INSUMOS', descricao: 'CÓD. FOR: 376611 CREME DE LEITE - INSUMOS' }),
+            nfeItem({ n: 2, cod_forn: '99', descricao: 'LEITE COND TIROL' })],
+  })
+
+  it('o admin informa a conversão: grava com origem "sischef", o produto que a leitura viu e quem/quando; os itens não mudam', async () => {
+    const db = await banco()
+    await sync(db, [duas()])
+    await converter(db, ADMIN, 1, 1)
+    const r = await decisoes(db)
+    expect(Object.keys(r.associacoes_app)).toEqual(['1'])
+    expect(r.associacoes_app['1']).toMatchObject({ produto_id: CREME, produto_nome: 'CREME DE LEITE - INSUMOS', unidade: null, origem: 'sischef', conversao: 1 })
+    expect(String(r.associacoes_app['1'].por)).toContain('@')
+    expect((r.itens as Json[]).map((i) => [i.n, i.produto_id])).toEqual([[1, String(CREME)], [2, null]])
+    await converter(db, ADMIN, 1, 0.5)                                       // informar de novo troca
+    expect((await decisoes(db)).associacoes_app['1'].conversao).toBe(0.5)
+    const h = await como(db, ADMIN, `select depois from historico_alteracoes where tabela = 'cot_nfe' and registro = $1 order by id`, [CHAVE])
+    expect(h.map((x) => (x.depois as Json).associacao_app.decisao.conversao)).toEqual([1, 0.5])
+  })
+
+  it('item sem produto no SisChef é recusado (quem escolhe o produto é a caixa de associação)', async () => {
+    const db = await banco()
+    await sync(db, [duas()])
+    expect(await erroDe(converter(db, ADMIN, 2, 1))).toBe('este item ainda não está associado no SisChef: escolha o produto na caixa de associação')
+    expect(await erroDe(converter(db, ADMIN, 9, 1))).toBe('item não encontrado na nota')
+    expect((await decisoes(db)).associacoes_app).toBeNull()
+  })
+
+  it('a mesma régua da conversão: zero, negativa, acima de 10000 e com mais de 4 casas são recusadas sem deixar rastro', async () => {
+    const db = await banco()
+    await sync(db, [duas()])
+    for (const [v, erro] of [[0, 'a conversão precisa ser maior que zero e até 10000'], [-1, 'a conversão precisa ser maior que zero e até 10000'],
+      [10001, 'a conversão precisa ser maior que zero e até 10000'], [0.12345, 'a conversão aceita no máximo 4 casas decimais']] as const) {
+      expect(await erroDe(converter(db, ADMIN, 1, v))).toBe(erro)
+    }
+    expect((await decisoes(db)).associacoes_app).toBeNull()
+    expect(await como(db, ADMIN, `select count(*)::int as n from historico_alteracoes where tabela = 'cot_nfe'`)).toEqual([{ n: 0 }])
+  })
+
+  it('nula desfaz só a conversão de origem "sischef"; uma decisão de produto do app no mesmo número nunca é apagada por aqui', async () => {
+    const db = await banco()
+    await sync(db, [duas()])
+    await converter(db, ADMIN, 1, 2)
+    await converter(db, ADMIN, 1, null)
+    expect((await decisoes(db)).associacoes_app).toBeNull()                  // voltou a NULL, não {}
+    await converter(db, ADMIN, 2, null)                                      // não havia nada: não dá erro
+    await db.query(`update cot_nfe set associacoes_app = '{"2": {"produto_id": 1, "origem": "lista"}}'::jsonb where chave = $1`, [CHAVE])
+    await converter(db, ADMIN, 2, null)
+    expect((await decisoes(db)).associacoes_app['2'].origem).toBe('lista')
+  })
+
+  it('as mesmas travas da associação: nota fora da fila, descartada, pela metade ou com o robô lançando; só o admin', async () => {
+    const db = await banco()
+    await sync(db, [duas()])
+    await db.query(`update cot_nfe set lancamento_estado = 'lancando', lancamento_em = now() where chave = $1`, [CHAVE])
+    expect(await erroDe(converter(db, ADMIN, 1, 1))).toBe('o robô está lançando esta nota agora: aguarde terminar')
+    await db.query(`update cot_nfe set lancamento_estado = 'erro' where chave = $1`, [CHAVE])
+    expect(await erroDe(converter(db, ADMIN, 1, 1))).toBe('esta nota ficou pela metade: confira no SisChef')
+    await db.query(`update cot_nfe set lancamento_estado = 'revisar' where chave = $1`, [CHAVE])
+    await converter(db, ADMIN, 1, 1)                                         // "revisar" é justamente quando o Ivan informa
+    await db.query(`update cot_nfe set descartada_em = now() where chave = $1`, [CHAVE])
+    expect(await erroDe(converter(db, ADMIN, 1, 1))).toMatch(/descartada/)
+    await expect(como(db, 'anon', `select cot_nfe_converter_item($1, 1, 1)`, [CHAVE])).rejects.toThrow(/permission denied/)
+  })
+})
+
 describe('Fase 3 — parcelas digitadas pelo Ivan (cot_nfe.parcelas_manuais)', () => {
   const atualF3D = bancoRecebimento(null)
   const bancoF3D = async () => atualF3D()

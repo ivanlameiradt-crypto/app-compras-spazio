@@ -824,7 +824,7 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
 function mensagemDaAssociacao(e: unknown): string {
   const texto = e instanceof Error ? e.message : ''
   if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
-  if (/nota não encontrada|não está mais na fila|descartada|pela metade|lançando esta nota|item não encontrado|já está associado|fora da lista|a conversão/i.test(texto)) {
+  if (/nota não encontrada|não está mais na fila|descartada|pela metade|lançando esta nota|item não encontrado|já está associado|ainda não está associado|código do produto|fora da lista|a conversão/i.test(texto)) {
     return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
   }
   return 'Não consegui guardar a escolha agora. Confira a internet e tente de novo.'
@@ -837,6 +837,14 @@ function mensagemDaAssociacao(e: unknown): string {
  */
 export async function associarItem(chave: string, n: number, produtoId: number | null, conversao: number | null = null): Promise<void> {
   try { await chamar('cot_nfe_associar', { p_chave: chave, p_n: n, p_produto_id: produtoId, p_conversao: conversao }) }
+  catch (e) { throw new ErroApi(mensagemDaAssociacao(e), e instanceof ErroApi ? e.status : undefined) }
+}
+/**
+ * Guarda a conversão de unidade de um item que JÁ vem associado no SisChef mas com UN DIFERE (cot_nfe_converter_item, admin): o robô a registra no modal
+ * do SisChef ao lançar. `conversao` nula desfaz. Quem escolhe o produto continua sendo a caixa de associação (item sem produto).
+ */
+export async function converterItem(chave: string, n: number, conversao: number | null): Promise<void> {
+  try { await chamar('cot_nfe_converter_item', { p_chave: chave, p_n: n, p_conversao: conversao }) }
   catch (e) { throw new ErroApi(mensagemDaAssociacao(e), e instanceof ErroApi ? e.status : undefined) }
 }
 /**

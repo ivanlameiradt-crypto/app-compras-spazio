@@ -12,12 +12,13 @@ import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipo
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
+import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import {
   AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, associacoesPeloRobo, bloqueiosDaNota,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
-  textoDoEstado, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta,
+  textoDoEstado, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeConversao, conversaoDeItemAssociado,
   type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
@@ -59,7 +60,7 @@ function TickOk({ rotulo = 'produto associado no SisChef', testid = 'item-ok' }:
 }
 
 /** "Conferir": o que foi associado a cada item e o financeiro (boletos contra o valor da nota), para o Ivan abrir e checar. */
-function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAssociacao }: {
+function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAssociacao, salvarConversaoItem }: {
   nota: NotaSefazLista
   /** Lista de insumos do app (null = carregando) e se a leitura dela falhou. */
   catalogo: ProdutoCatalogo[] | null
@@ -67,11 +68,13 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
   /** Dá para escolher produto agora? Não, se o robô está lançando a nota ou ela ficou pela metade (o banco também recusa). */
   podeAssociar: boolean
   salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
+  /** Guarda a conversão de um item que já vem associado do SisChef com UN DIFERE (nula desfaz). */
+  salvarConversaoItem: (n: number, conversao: number | null) => Promise<void>
 }) {
   const f = resumoFinanceiro(nota)
   const quartaDaMaues = ehPagamentoSemanal(nota) ? planoSemanal(nota, [])?.quarta ?? null : null
   // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
-  const [aberto, setAberto] = useState(() => nota.itens.some((it) => !itemAssociado(it) && decisaoDoItem(nota, it) == null))
+  const [aberto, setAberto] = useState(() => nota.itens.some((it) => (!itemAssociado(it) && decisaoDoItem(nota, it) == null) || itemPedeConversao(nota, it)))
   return (
     <details className="conferir" data-testid="conferir" open={aberto} onToggle={(e) => setAberto((e.currentTarget as HTMLDetailsElement).open)}>
       <summary>Conferir itens e financeiro</summary>
@@ -102,6 +105,11 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
               {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
               {!ok && it.n != null && (decisao != null || podeAssociar) && (
                 <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} />
+              )}
+              {/* Item que já vem associado, mas o SisChef o marcou UN DIFERE: aparece SÓ quando o robô parou pedindo (ou o Ivan já informou) — vazio, para o Ivan dizer o número */}
+              {ok && it.n != null && (
+                <ConversaoItemAssociado item={{ ...it, n: it.n }} atual={conversaoDeItemAssociado(nota, it)} pede={itemPedeConversao(nota, it)}
+                  desabilitado={!podeAssociar} salvar={salvarConversaoItem} />
               )}
             </li>
           )
@@ -417,6 +425,12 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, aplicarDecisao, outr
     await recarregar() // a decisão vem do banco: o item passa a mostrar o ✓ de confirmado
   }
 
+  // Conversão de um item que já vem associado do SisChef com UN DIFERE: grava e relê (a decisão vem do banco).
+  async function salvarConversaoItem(n: number, conversao: number | null) {
+    await api.converterItem(nota.chave, n, conversao)
+    try { await recarregar() } catch { /* já está gravado: a caixa mostra o que foi guardado mesmo sem a releitura */ }
+  }
+
   function escolher(nova: string) {
     setEscolha(nova); setConfirmando(false); setErro('')
     lembrarForma(nota.emitente, nova)
@@ -476,7 +490,8 @@ function NotaALancar({ nota, padroes, seguidas, recarregar, aplicarDecisao, outr
       {!soLancar && !exigeParcelas && prontidao.financeiro && !bloqueios.length && estado == null && (
         <div className="amarelo" data-testid="aviso-financeiro">{prontidao.financeiro}</div>
       )}
-      <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao} />
+      <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao}
+        salvarConversaoItem={salvarConversaoItem} />
       {estadoTexto && (
         <div className={estado === 'erro' ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}

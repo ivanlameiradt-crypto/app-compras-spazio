@@ -126,6 +126,28 @@ export function pendenciasNoSischef(n: NotaSefazLista): PendenciaSischef[] {
   })
 }
 
+// ---------- item que JÁ vem associado no SisChef, mas com "UN DIFERE" (nota em UN, cadastro em KG, sem conversão registrada)
+/** CÓD. FOR do item como o SisChef o mostra na descrição ("CÓD. FOR: 376611 CREME DE LEITE…" → "376611"); null quando não dá para ler. */
+export const codForDoItem = (it: ItemNotaSefaz): string | null => /^\s*C[OÓ]D\.?\s*FOR\.?:?\s*(\S+)/i.exec(it.descricao ?? '')?.[1] ?? null
+/** Os CÓD. FOR que o robô disse estarem com UN DIFERE sem conversão: o motivo é "UN DIFERE sem conversão na tela: CÓD. FOR 376611; 132534 (no app, …)". */
+export function codsComUnDifere(motivo: string | null | undefined): string[] {
+  const m = /UN DIFERE sem convers[ãa]o na tela:\s*([^(]*)/i.exec(motivo ?? '')
+  return m ? [...new Set(m[1].match(/\d{2,}/g) ?? [])] : []
+}
+/** O robô parou (nota em "revisar") porque ESTE item, que já vem associado do SisChef, está com UN DIFERE e ninguém informou a conversão: é o que o Ivan tem
+ *  de informar no app (a caixa de conversão do item). Não trava o Lançar — ele pode também registrar a conversão direto no SisChef. */
+export function itemPedeConversao(n: NotaSefazLista, it: ItemNotaSefaz): boolean {
+  if (n.lancamento_estado !== 'revisar' || !itemAssociado(it)) return false
+  const cod = codForDoItem(it)
+  return cod != null && codsComUnDifere(n.lancamento_motivo).includes(cod)
+}
+/** A conversão que o Ivan JÁ informou no app para um item que vem associado do SisChef (decisão com origem "sischef"), ou null. */
+export function conversaoDeItemAssociado(n: NotaSefazLista, it: ItemNotaSefaz): number | null {
+  if (it.n == null || !itemAssociado(it)) return null
+  const d = n.associacoes_app?.[String(it.n)]
+  return d != null && (d.origem ?? '').trim().toLowerCase() === 'sischef' ? conversaoDaDecisao(d) : null
+}
+
 /** A conversão da decisão foi informada (número > 0)? A régua é a mesma da caixa de associação (associacaoRegras.conversaoDaDecisao). */
 const conversaoInformada = (d: AssociacaoApp): boolean => conversaoDaDecisao(d) != null
 /**
