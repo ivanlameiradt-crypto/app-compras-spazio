@@ -784,6 +784,25 @@ async function lerBuscaDosProdutos() {
   return com
 }
 /**
+ * A unidade de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → 'kg' | 'un'. Falha de leitura (tabela ainda não criada, rede)
+ * devolve vazio: o catálogo segue com a unidade de itens_semana, como antes da planilha — melhor que derrubar a caixa de associação inteira.
+ */
+async function lerPlanilhaDeUnidades(): Promise<Map<number, string>> {
+  const mapa = new Map<number, string>()
+  try {
+    const r = await supabase.from('produto_planilha').select('produto_id, unidade').limit(1000)
+    if (r.error) { console.warn('catalogoProdutos: não li a planilha de unidades', r.error.code); return mapa }
+    for (const x of (r.data ?? []) as { produto_id: number | string; unidade: string | null }[]) {
+      const id = Number(x.produto_id)
+      const u = String(x.unidade ?? '').trim().toLowerCase()
+      if (Number.isFinite(id) && (u === 'kg' || u === 'un')) mapa.set(id, u)
+    }
+  } catch (e) {
+    console.warn('catalogoProdutos: não li a planilha de unidades', e instanceof Error ? e.name : '')
+  }
+  return mapa
+}
+/**
  * Os produtos que o Ivan pode escolher ao associar um item da nota: os insumos e bebidas que já estão no app (itens_semana; o código é o do
  * SisChef), UMA linha por produto, com o nome e a unidade da semana mais nova. Em ordem alfabética. Só o admin lê tudo (RLS).
  *
@@ -797,6 +816,7 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
     supabase.from('itens_semana').select('produto_id, produto, unidade, semana_id').order('semana_id', { ascending: false }).limit(1000),
     lerBuscaDosProdutos(),
   ])
+  const planilha = await lerPlanilhaDeUnidades()
   if (lista.error) throw new ErroApi(lista.error.message, lista.status, lista.error.code)
   const porId = new Map<number, ProdutoCatalogo>()
   for (const r of (lista.data ?? []) as { produto_id: number | string; produto: string | null; unidade: string | null }[]) {
@@ -817,6 +837,11 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
       if (r.ocultar === true) p.oculto = true
       if (corrigido !== '' && corrigido !== p.nome) { p.nome_sischef = p.nome; p.nome = corrigido }
     }
+  }
+  // A unidade que o Ivan escreveu na planilha "Produtos - como eu lanço no SisChef" (08/10) MANDA sobre a de itens_semana, que o app só adivinhava pelo nome.
+  for (const [id, unidade] of planilha) {
+    const p = porId.get(id)
+    if (p) p.unidade = unidade
   }
   return [...porId.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }

@@ -16,6 +16,8 @@ const h = vi.hoisted(() => {
     cupons: [] as L[],
     itensSemana: [] as L[],
     aprendizado: [] as L[],
+    /** produto_planilha: a unidade do SisChef escrita pelo Ivan (manda sobre a de itens_semana) */
+    planilha: [] as L[],
     tokens: {} as Record<string, string>,
     /** toda operação pedida ao banco, na ordem: prova o que foi filtrado e que o UPDATE do cupom vem antes do aprendizado */
     operacoes: [] as { tabela: string; tipo: 'select' | 'insert' | 'update'; filtros: Filtro[]; dados?: L }[],
@@ -51,6 +53,7 @@ const h = vi.hoisted(() => {
       if (this.tabela === 'cupom') return banco.cupons
       if (this.tabela === 'itens_semana') return banco.itensSemana
       if (this.tabela === 'cupom_aprendizado') return banco.aprendizado
+      if (this.tabela === 'produto_planilha') return banco.planilha
       throw new Error(`tabela ${this.tabela} não prevista no banco falso`)
     }
     private filtrar(linhas: L[]): L[] {
@@ -192,6 +195,7 @@ beforeEach(() => {
     { id: 4, produto_id: 3487562, produto: 'OVO - INSUMOS', unidade: 'KG' },
   ]
   h.banco.aprendizado = []
+  h.banco.planilha = []
   h.banco.tokens = { 'tok-ivan': 'ivan@spazio.com', 'tok-joao': 'joao@spazio.com' }
   h.banco.operacoes = []
   h.banco.lancarAntesDoUpdate = false
@@ -341,6 +345,15 @@ describe('confirmar-cupom/index.ts — caminho feliz (o cupom do ATACADAO de 06/
     expect(init.signal).toBeInstanceOf(AbortSignal)
 
     semVazamento(JSON.stringify(corpo))
+  })
+
+  it('a unidade do produto vem da planilha do Ivan (produto_planilha) quando ele está nela: o limão em KG em itens_semana, UN na planilha', async () => {
+    h.banco.planilha = [{ produto_id: 3484974, unidade: 'UN' }]
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(400)
+    expect(await corpoDe(r)).toEqual({ erro: 'item 1: o cupom está em KG e o produto é em UN: informe quanto entra no estoque em UN' })
+    expect(h.banco.operacoes.some((op) => op.tabela === 'produto_planilha' && op.filtros.some(([, c, v]) => c === 'produto_id' && v === 3484974))).toBe(true)
+    cupomIntocado()
   })
 
   it('o produto vem da linha MAIS RECENTE de itens_semana (order id desc, limit 1): a semana velha dizia UN e faria a confirmação falhar', async () => {

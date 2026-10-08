@@ -67,7 +67,13 @@ Deno.serve(async (req: Request) => {
           .eq('produto_id', Number(id)).order('semana_id', { ascending: false }).order('id', { ascending: false }).limit(1)
         if (error) throw new Error(error.message)
         const linha = (data ?? [])[0] as { produto_id: number; produto: string | null; unidade: string | null } | undefined
-        return linha ? ({ id: String(linha.produto_id), nome: linha.produto, unidade: linha.unidade } satisfies Produto) : null
+        if (!linha) return null
+        // A unidade da planilha do Ivan (produto_planilha, 08/10) manda sobre a de itens_semana — a mesma regra da caixa do app (api.catalogoProdutos).
+        // Falha de leitura (tabela ainda não criada) = segue com a de itens_semana.
+        const { data: pl } = await admin.from('produto_planilha').select('unidade').eq('produto_id', Number(id)).maybeSingle()
+        const daPlanilha = String((pl as { unidade?: string | null } | null)?.unidade ?? '').trim().toLowerCase()
+        const unidade = daPlanilha === 'kg' || daPlanilha === 'un' ? daPlanilha : linha.unidade
+        return { id: String(linha.produto_id), nome: linha.produto, unidade } satisfies Produto
       },
       async atualizarCupom(id, itens) {
         // compara-e-troca num UPDATE só: quem chega com uma tela velha (cupom já reenviado/lançado) recebe [].
