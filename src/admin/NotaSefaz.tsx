@@ -146,26 +146,35 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   const fornecedor = nota.cnpj_emitente ? FORNECEDORES_XML_SEM_PAGAMENTO[nota.cnpj_emitente] : undefined
   const xmlNaoLido = nota.parcelas == null // null = a leitura do SisChef ainda não abriu o XML desta nota ([] = leu e não há boletos)
   const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
+  // Linhas "em uso": as que têm alguma coisa digitada (linha totalmente em branco é só uma linha aberta e não conta; se TODAS estão em branco, valem todas).
+  const emBranco = (l: LinhaParcela): boolean => l.vencimento.trim() === '' && l.valor.trim() === ''
+  const preenchidas = linhas.map((_, i) => i).filter((i) => !emBranco(linhas[i]))
+  const alvo = preenchidas.length > 0 ? preenchidas : linhas.map((_, i) => i)
+  const ultimaDoAlvo = alvo.length > 0 ? alvo[alvo.length - 1] : -1
   const completar = () => {
-    if (resultado.falta == null || resultado.falta <= 0 || linhas.length === 0) return
-    const ult = linhas.length - 1
-    const atual = parseValorBr(linhas[ult].valor) ?? 0 // o que a última já tem (0 se vazia ou ilegível: aí não entrou na soma)
-    onChange(linhas.map((l, j) => (j === ult ? { ...l, valor: formatarValorBr(Math.round((atual + (resultado.falta ?? 0)) * 100) / 100) } : l)))
+    if (resultado.falta == null || resultado.falta <= 0 || ultimaDoAlvo < 0) return
+    const atual = parseValorBr(linhas[ultimaDoAlvo].valor) ?? 0 // o que a última já tem (0 se vazia ou ilegível: aí não entrou na soma)
+    onChange(linhas.map((l, j) => (j === ultimaDoAlvo ? { ...l, valor: formatarValorBr(Math.round((atual + (resultado.falta ?? 0)) * 100) / 100) } : l)))
   }
   // Passou do valor da nota: tira o que passou da última (só se ela continua positiva).
-  const ultimaAtual = linhas.length > 0 ? parseValorBr(linhas[linhas.length - 1].valor) : null
+  const ultimaAtual = ultimaDoAlvo >= 0 ? parseValorBr(linhas[ultimaDoAlvo].valor) : null
   const podeAjustar = resultado.falta != null && resultado.falta < 0 && ultimaAtual != null && Math.round((ultimaAtual + resultado.falta) * 100) > 0
   const ajustarUltima = () => {
     if (!podeAjustar || ultimaAtual == null || resultado.falta == null) return
-    const ult = linhas.length - 1
-    onChange(linhas.map((l, j) => (j === ult ? { ...l, valor: formatarValorBr(Math.round((ultimaAtual + resultado.falta!) * 100) / 100) } : l)))
+    onChange(linhas.map((l, j) => (j === ultimaDoAlvo ? { ...l, valor: formatarValorBr(Math.round((ultimaAtual + resultado.falta!) * 100) / 100) } : l)))
   }
-  // Divide o valor da nota igualmente nas linhas que já existem (as datas ficam como estão); o centavo que sobra vai para a última.
-  const dividido = dividirEmParcelas(nota.valor_nf, linhas.length)
-  const dividir = () => { if (dividido) onChange(linhas.map((l, i) => ({ ...l, valor: dividido[i] }))) }
+  // Divide o valor da nota igualmente nas linhas em uso (as datas ficam como estão); o centavo que sobra vai para a última. Só age quando o Ivan toca: nada é preenchido sozinho.
+  const dividido = dividirEmParcelas(nota.valor_nf, alvo.length)
+  const dividir = () => {
+    if (!dividido) return
+    let k = 0
+    onChange(linhas.map((l, i) => (alvo.includes(i) ? { ...l, valor: dividido[k++] } : l)))
+  }
+  // Recomeça: uma linha só, sem data e sem valor (apaga também o rascunho guardado neste aparelho).
+  const limpar = () => onChange([{ vencimento: '', valor: '' }])
   // "Valores iguais" que não fecham por 1 ou 2 centavos (R$ 1.794,49 / 3): explica e aponta a saída, em vez de só dizer "faltam 0,01".
-  const iguaisMasNaoFecham = resultado.falta != null && resultado.falta !== 0 && Math.abs(resultado.falta) <= 0.05 && linhas.length >= 2 &&
-    resultado.parcelas.length === linhas.length && resultado.parcelas.every((p) => p.valor === resultado.parcelas[0].valor)
+  const iguaisMasNaoFecham = resultado.falta != null && resultado.falta !== 0 && Math.abs(resultado.falta) <= 0.05 && alvo.length >= 2 &&
+    resultado.parcelas.length === alvo.length && resultado.parcelas.every((p) => p.valor === resultado.parcelas[0].valor)
   return (
     <div className="editor-parcelas" data-testid="editor-parcelas">
       <div className="amarelo">
@@ -210,14 +219,16 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
         {podeAjustar && (
           <button type="button" className="botao secundario" disabled={desabilitado} onClick={ajustarUltima}>Ajustar a última parcela</button>
         )}
+        <button type="button" className="link" disabled={desabilitado} onClick={limpar}>Limpar parcelas</button>
       </div>
-      <p className={resultado.ok ? 'ok' : 'sub'} data-testid="resumo-parcelas">
+      {/* o que falta para o Lançar acender, em vermelho e logo acima do botão; bateu = verde. Linha em branco não conta; linha pela metade (só data ou só valor) trava com o número dela. */}
+      <p className={resultado.ok ? 'ok' : resultado.motivo ? 'erro' : 'sub'} data-testid="resumo-parcelas">
         Soma {formatarReais(resultado.soma)} · nota {nota.valor_nf == null ? '?' : formatarReais(nota.valor_nf)}
         {resultado.ok ? ' · bate' : resultado.motivo ? ` · ${resultado.motivo}` : ''}
       </p>
       {iguaisMasNaoFecham && nota.valor_nf != null && (
         <p className="amarelo" data-testid="dica-centavo">
-          {formatarValorBr(nota.valor_nf)} não divide em {linhas.length} partes iguais ao centavo. Toque em “Dividir em parcelas iguais”: a última leva o centavo que sobra e o Lançar acende.
+          {formatarValorBr(nota.valor_nf)} não divide em {alvo.length} partes iguais ao centavo. Toque em “Dividir em parcelas iguais”: a última leva o centavo que sobra e o Lançar acende.
         </p>
       )}
     </div>

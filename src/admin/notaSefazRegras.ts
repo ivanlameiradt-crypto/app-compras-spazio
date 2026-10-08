@@ -451,11 +451,16 @@ const dataValida = (iso: string): boolean => {
  * Confere o que o Ivan digitou: cada linha com vencimento e valor, vencimento não anterior à emissão e soma IGUAL ao valor da nota, ao centavo
  * (regra 4 do Ivan). Os valores das parcelas podem ser iguais ou diferentes: só a soma importa.
  */
-export function validarParcelasDigitadas(linhas: LinhaParcela[], valorNota: number | null, emissao: string): ResultadoParcelas {
+export function validarParcelasDigitadas(todasAsLinhas: LinhaParcela[], valorNota: number | null, emissao: string): ResultadoParcelas {
+  // Linha COMPLETAMENTE em branco (sem data e sem valor) é só uma linha aberta e não conta — não trava o Lançar (07/10, pedido do Ivan: o que ele digita é o que vale).
+  // Linha pela metade (só a data, ou só o valor) continua travando, com o número da linha. Se TODAS estão em branco, vale a regra de sempre (pede a parcela 1).
+  const emBranco = (l: LinhaParcela): boolean => l.vencimento.trim() === '' && l.valor.trim() === ''
+  const algumaPreenchida = todasAsLinhas.some((l) => !emBranco(l))
+  const comNumero = todasAsLinhas.map((l, i) => ({ l, n: i + 1 })).filter(({ l }) => !algumaPreenchida || !emBranco(l))
+  const linhas = comNumero.map(({ l }) => l)
   const parcelas: ParcelaDigitada[] = []
   let motivo = ''
-  linhas.forEach((l, i) => {
-    const n = i + 1
+  comNumero.forEach(({ l, n }) => {
     const valor = parseValorBr(l.valor)
     if (valor != null) parcelas.push({ vencimento: l.vencimento, valor })
     if (motivo) return
