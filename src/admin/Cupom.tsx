@@ -348,7 +348,7 @@ export default function Cupom() {
                 {/* Lançado em: dia e hora do lançamento (pedido do Ivan, 07/10, igual ao da aba fiscal). Só cupom LANCADO: o robô grava atualizado_em ao
                     terminar. O "envio repetido" é REVISAR (a compra foi lançada em outro envio) e não tem hora própria, então não mostra. */}
                 {aberto && (
-                  <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} rotuloQuando="Lançado em"
+                  <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} rotuloQuando="Lançado em" rotuloQtd={false}
                     quando={c.estado === 'LANCADO' && c.atualizado_em ? formatarDataHora(c.atualizado_em) : null} />
                 )}
               </li>
