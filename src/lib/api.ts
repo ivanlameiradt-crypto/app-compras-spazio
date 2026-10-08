@@ -834,7 +834,7 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
   // para elas (e o nome corrigido) valerem também para ele.
   for (const [id, x] of planilha) {
     const p = porId.get(id)
-    if (p) p.unidade = x.unidade
+    if (p) { p.unidade = x.unidade; if (x.descricao !== '') p.descricao_sischef = x.descricao }
     else if (x.descricao !== '') porId.set(id, { produto_id: id, nome: x.descricao, unidade: x.unidade })
   }
   if (busca.error) {
@@ -973,8 +973,9 @@ export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom, t
  * do cupom) item a item e o servidor refaz os itens, confere a soma, volta o cupom a PENDENTE, guarda o aprendizado e dispara o robô.
  * O erro da função (soma que não bate, cupom que já saiu de REVISAR…) vem no corpo JSON e vira a mensagem que a tela mostra.
  */
-export async function confirmarCupom(cupomId: string, itens: ConfirmacaoItemCupom[]): Promise<RespostaConfirmacaoCupom> {
-  const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, itens } })
+export async function confirmarCupom(cupomId: string, itens: ConfirmacaoItemCupom[], soConfirmar = false): Promise<RespostaConfirmacaoCupom> {
+  // soConfirmar: cupom em que TODOS os itens já vieram conhecidos (motivo CONFIRMAR:) — o Ivan só confere e confirma o cupom inteiro, sem itens um a um
+  const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: soConfirmar ? { cupom_id: cupomId, so_confirmar: true } : { cupom_id: cupomId, itens } })
   if (error) throw new Error(await mensagemDaFuncao(error))
   return data as RespostaConfirmacaoCupom
 }

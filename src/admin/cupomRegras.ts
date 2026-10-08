@@ -8,6 +8,9 @@ import { formatarReais } from '../lib/regras'
 import type { CupomRecente, ItemCupomRecente } from '../lib/tipos'
 
 export interface ItemComProblema { descricao: string; preco: string | null }
+/** O motivo que o envio grava quando o cupom está todo casado e só espera o Ivan confirmar (o mesmo texto das Edge Functions enviar-cupom e confirmar-cupom). */
+export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
+
 export interface DiagnosticoCupom {
   /** O que está errado, em uma frase que o Ivan entende. */
   problema: string
@@ -114,6 +117,17 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   if (/não consegui ler a foto/i.test(motivo)) {
     return sem('A foto não ficou legível (ou não mostra os itens do cupom).',
       'Tire outra foto, com o cupom inteiro, esticado e com boa luz, e envie de novo.')
+  }
+
+  // Todo casado, esperando só a confirmação do Ivan (pedido dele, 08/10): o envio deixa o cupom em REVISAR com o motivo CONFIRMAR:
+  if (motivo.startsWith(CONFIRMAR_PREFIXO)) {
+    const total = c.valor_a_pagar != null && Number(c.valor_a_pagar) > 0
+    return {
+      problema: 'Todos os itens já são conhecidos (você os confirmou em cupons anteriores deste fornecedor). Falta só você conferir e confirmar.',
+      itens: [], pedidos: [], conferencia: null,
+      solucao: 'Confira os itens abaixo (produto, quantidade e valor) e toque em “Confirmar e lançar”. Se algo estiver errado, toque em “Trocar” no item.',
+      corrigivel: total && c.pedido_sischef == null,
+    }
   }
 
   // Itens sem produto confirmado: o robô nunca chuta; só lança item que o Ivan já confirmou uma vez para o fornecedor.

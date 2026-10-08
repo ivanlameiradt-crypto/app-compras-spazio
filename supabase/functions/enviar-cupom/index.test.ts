@@ -175,6 +175,7 @@ afterAll(() => {
 beforeEach(() => {
   env = {
     SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: CHAVE_SERVICO, ANTHROPIC_API_KEY: CHAVE_IA, GITHUB_PAT: PAT,
+    CUPOM_CONFIRMAR_ANTES: 'OFF', // os testes antigos cobrem o lançamento automático; o novo (confirmar antes) liga abaixo
   }
   h.banco.usuarios = [
     { email: 'ivan@spazio.com', papel: 'admin', ativo: true },
@@ -300,6 +301,15 @@ describe('enviar-cupom/index.ts — caminho feliz e disparo', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal) // um GitHub que não responde não pode travar o envio
 
     semVazamento(JSON.stringify(corpo))
+  })
+
+  it('confirmar antes (padrão em produção): tudo casado ⇒ REVISAR "CONFIRMAR:" e o GitHub NÃO é chamado; CUPOM_CONFIRMAR_ANTES=OFF volta ao automático', async () => {
+    env.CUPOM_CONFIRMAR_ANTES = undefined
+    const r = await handler(envio('cupom/a.jpg'))
+    expect(await corpoDe(r)).toMatchObject({ estado: 'REVISAR', disparo_ok: false, resumo: 'todos os itens já conhecidos — confira e confirme no app' })
+    expect(h.banco.cupons[0]).toMatchObject({ estado: 'REVISAR' })
+    expect(String(h.banco.cupons[0].motivo)).toMatch(/^CONFIRMAR:/)
+    expect(fetchFalso).not.toHaveBeenCalled()
   })
 
   it('teste=true vai para a linha (o robô só ensaia) e o disparo acontece igual', async () => {

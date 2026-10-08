@@ -25,12 +25,19 @@ export interface Deps {
    */
   inserirCupom(linha: Record<string, unknown>): Promise<{ id: string; duplicado?: boolean }>
   dispararLancamento(cupomId: string): Promise<void>
+  /**
+   * Pedido do Ivan (08/10): cupom com TODOS os itens já conhecidos também espera o "confirmar" dele no app (estado REVISAR, motivo CONFIRMAR:…) em vez de
+   * sair sozinho. O index.ts liga por padrão; `CUPOM_CONFIRMAR_ANTES=OFF` (segredo da função) volta ao lançamento automático. Ausente = desligado.
+   */
+  exigirConfirmacao?: boolean
 }
 
 export interface Resultado { status: number; corpo: Record<string, unknown> }
 
 const PENDENTE = 'PENDENTE'
 const REVISAR = 'REVISAR'
+/** O cupom está todo casado e só espera o Ivan conferir e confirmar no app (o mesmo texto em src/admin/cupomRegras.ts e em confirmar-cupom). */
+export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
 const FORMAS_A_VISTA = new Set(['dinheiro', 'tesouraria', 'pix'])
 // O que o Ivan lê quando a linha foi gravada (PENDENTE) mas o workflow não foi disparado. Nada o relança sozinho: o reaper do
 // Plano 1 roda a cada 30 min e só marca como REVISAR ("conferir no Sischef") o PENDENTE com mais de 60 min, e então avisa o Ivan.
@@ -146,10 +153,15 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo 
   const incertos = itens.filter((i) => !i.sugestao_produto).length
   // sem o total o robô não consegue conferir a soma dos itens (e a coluna é NOT NULL): não se lança, vai a REVISAR.
   const semTotal = !(leitura.valor_total !== null && leitura.valor_total > 0)
-  const estado = incertos > 0 || semTotal ? REVISAR : PENDENTE
+  // Pedido do Ivan (08/10): mesmo com TODOS os itens já conhecidos (aprendizado confirmado), o cupom não sai sozinho: para no app, já associado, e ele só
+  // confere e confirma ("Confirmar e lançar"). Só quando não há item incerto e o total foi lido; o motivo começa com CONFIRMAR_PREFIXO (o app e o
+  // confirmar-cupom o reconhecem).
+  const aguardaConfirmacao = deps.exigirConfirmacao === true && incertos === 0 && !semTotal
+  const estado = incertos > 0 || semTotal || aguardaConfirmacao ? REVISAR : PENDENTE
   const motivos: string[] = []
   if (incertos > 0) motivos.push(`${incertos} item(ns) sem casamento confirmado — confira no Code`)
   if (semTotal) motivos.push('não consegui ler o total do cupom')
+  if (aguardaConfirmacao) motivos.push(`${CONFIRMAR_PREFIXO} ${itens.length} item(ns) já conhecido(s) — confira e confirme no app`)
 
   // 6. grava a linha (service_role; o app nunca insere direto).
   const cupom = await deps.inserirCupom(linha({
@@ -168,7 +180,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo 
     try { await deps.dispararLancamento(cupom.id); disparoOk = true } catch { /* fica PENDENTE; quem registra o motivo é o index.ts */ }
   }
   const resumo = estado === REVISAR
-    ? incertos > 0 ? `${incertos} item(ns) para você conferir` : 'não consegui ler o total do cupom — precisa de você'
+    ? incertos > 0 ? `${incertos} item(ns) para você conferir` : aguardaConfirmacao ? 'todos os itens já conhecidos — confira e confirme no app' : 'não consegui ler o total do cupom — precisa de você'
     : disparoOk ? 'enviado para lançar' : AVISO_DISPARO_FALHOU
   return { status: 200, corpo: { cupom_id: cupom.id, resumo, estado, disparo_ok: disparoOk } }
 }

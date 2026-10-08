@@ -426,6 +426,8 @@ export interface ProdutoCatalogo {
   /** Produto que o Ivan mandou esconder (a casa o PRODUZ, com receita: não é de compra; migração 20261211000002). Fica na lista só para dar nome a decisões
    *  antigas; a busca, as sugestões e o palpite do robô o ignoram. */
   oculto?: boolean
+  /** A descrição do produto na planilha do Ivan (produto_planilha.descricao = a do SisChef): cada palavra dela serve de palavra-chave para a sugestão do cupom. */
+  descricao_sischef?: string
 }
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
@@ -517,6 +519,8 @@ export interface ItemCupomRecente {
   /** A quantidade como está impressa no cupom (na unidade do cupom), também nos itens ainda sem produto — cupons enviados a partir da v2 da
    *  Edge Function enviar-cupom; os anteriores não a têm (o peso só existe na foto). */
   quantidade_cupom?: number | null
+  /** Só no item sem produto: o que ESTE fornecedor já mandou e o Ivan confirmou, parecido com a descrição nova (a descrição mudou): o app avisa "antes vinha como X". */
+  conhecidos_do_fornecedor?: { insumo_id: string; insumo_nome: string | null; descricao_norm: string }[] | null
 }
 /** Linha de "Últimos envios" (SELECT por RLS de admin — e_admin() do Plano 1). */
 export interface CupomRecente {

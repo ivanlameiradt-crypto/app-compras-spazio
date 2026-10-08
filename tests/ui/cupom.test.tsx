@@ -909,6 +909,64 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '1855909', quantidade: 10, entrada: 8.5, lembrar: true }]))
     })
 
+    it('descrição mudou: o fornecedor já mandou algo parecido e confirmado — o app avisa "antes vinha como X" e um toque confirma', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3482196, nome: 'TOMATE ITALIANO - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'TOMATE ITAL. GRAUDO KG', unidade_cupom: 'KG', quantidade_cupom: 3.2, valor_unitario: 10,
+        conhecidos_do_fornecedor: [{ insumo_id: '3482196', insumo_nome: 'TOMATE ITALIANO - INSUMOS (KG)', descricao_norm: 'tomate italiano' }] }), 32)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      const aviso = await within(item0).findByTestId('descricao-mudou')
+      expect(aviso).toHaveTextContent('A descrição mudou: este fornecedor já mandou “tomate italiano” e você confirmou como TOMATE ITALIANO - INSUMOS (KG)')
+      await userEvent.click(within(aviso).getByRole('button', { name: 'Sim, é este' }))
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3482196', quantidade: 3.2, lembrar: true }]))   // a descrição nova também fica guardada
+    })
+
+    it('cupom todo conhecido (motivo CONFIRMAR:): mostra os itens já associados e só pede "Confirmar e lançar" — sem escolher nada', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3482196, nome: 'TOMATE ITALIANO - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([recente({ id: 'p1', estado: 'REVISAR', emitente_nome: 'ATACADAO S.A.', emitente_cnpj: '12345678000199', valor_a_pagar: 20,
+        motivo: 'CONFIRMAR: 1 item(ns) já conhecido(s) — confira e confirme no app',
+        itens: [item({ descricao_cupom: 'TOMATE ITALIANO', unidade_cupom: 'KG', valor_unitario: 10, entrada_estoque: 2, sugestao_produto: { id: '3482196' }, casado_por: 'descricao' })] })])
+      render(<Cupom />)
+      const conhecido = await screen.findByTestId('item-conhecido')
+      expect(conhecido).toHaveTextContent('TOMATE ITALIANO')
+      expect(conhecido).toHaveTextContent('Já conhecido')
+      expect(conhecido).toHaveTextContent('TOMATE ITALIANO - INSUMOS (KG)')
+      expect(soma()).toHaveTextContent('bate')
+      expect(reenviar()).toHaveTextContent('Confirmar e lançar')
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [], true))
+    })
+
+    it('palavra-chave: o app sugere pela descrição do SisChef e um toque em "Confirmar" já confirma o item (mesma unidade, quantidade lida)', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO,
+        { produto_id: 3482196, nome: 'TOMATE ITALIANO - INSUMOS (KG)', descricao_sischef: 'TOMATE ITALIANO - INSUMOS (KG)', unidade: 'kg' },
+        { produto_id: 3476543, nome: 'TOMATE LONGA VIDA - INSUMOS (KG)', descricao_sischef: 'TOMATE LONGA VIDA - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'TOMATE ITALIANO', unidade_cupom: 'KG', quantidade_cupom: 2, valor_unitario: 10 }), 20)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      const sugestao = await within(item0).findByTestId('sugestao-palavras')
+      expect(sugestao).toHaveTextContent('O app acha que é este (as palavras batem com o SisChef)')
+      expect(sugestao).toHaveTextContent('TOMATE ITALIANO - INSUMOS (KG)')
+      await userEvent.click(within(sugestao).getByRole('button', { name: 'Confirmar' }))
+      expect(within(item0).getByText(/✓ TOMATE ITALIANO - INSUMOS \(KG\)/)).toBeInTheDocument()   // já confirmado: sem passo a mais
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3482196', quantidade: 2, lembrar: true }]))
+    })
+
+    it('palavra-chave: descrição que cabe em vários produtos (ALHO) só mostra opções, não escolhe sozinha', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO,
+        { produto_id: 3469574, nome: 'ALHO COMUM DESCASCADO - INSUMOS (KG)', unidade: 'kg' },
+        { produto_id: 3531993, nome: 'MOLHO DE ALHO - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'ALHO Kg A GRANEL', unidade_cupom: 'KG', quantidade_cupom: 1, valor_unitario: 10 }), 10)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      const sugestao = await within(item0).findByTestId('sugestao-palavras')
+      expect(sugestao).toHaveTextContent('Nenhum produto tem todas as palavras')
+      expect(within(sugestao).getByRole('button', { name: 'Usar este' })).toBeInTheDocument()
+      expect(within(item0).queryByText(/✓/)).not.toBeInTheDocument()
+    })
+
     it('trava: 850 kg por unidade parece errado — "Usar 0,85" corrige; "Não, é isso mesmo" libera', async () => {
       m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 1855909, nome: 'IOGURTE NATURAL - INSUMOS (KG)', unidade: 'kg' }])
       m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'IOGURTE SEM PESO NO NOME', quantidade_cupom: 10, valor_unitario: 18.88 }), 188.8)])
