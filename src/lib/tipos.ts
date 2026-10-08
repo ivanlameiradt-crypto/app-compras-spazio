@@ -406,6 +406,8 @@ export interface AssociacaoApp {
   /** Quanto vale 1 unidade da NOTA em unidades do PRODUTO (lata de 395 g: NF em UN, produto em KG → 0.395). Só faz sentido quando as unidades
    *  diferem; null/ausente = sem conversão (decisão antiga ou unidades iguais). O banco exige > 0, ≤ 10000 e até 4 casas. */
   conversao?: number | null
+  /** De onde veio a decisão: app/lista/sugestao = produto escolhido no app; "sischef" = SÓ a conversão de um item que já vem associado do SisChef. */
+  origem?: string | null
   por?: string | null
   em?: string | null
 }

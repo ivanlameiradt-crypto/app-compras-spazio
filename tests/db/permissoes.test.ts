@@ -107,6 +107,8 @@ const DO_APP = [
   // Fase 3: escolher (ou desfazer) o produto de um item sem produto no SisChef, pelo app (admin). Etapa 2 (20261212000001): ganhou o 4º parâmetro
   // p_conversao (quanto vale 1 unidade da nota em unidades do produto) e a assinatura antiga de 3 foi removida: só esta existe.
   'cot_nfe_associar(text,integer,bigint,numeric)',
+  // Fase 3: conversão de unidade de item que JÁ vem associado no SisChef com UN DIFERE (admin; 20261213000001)
+  'cot_nfe_converter_item(text,integer,numeric)',
   // Fase 3: deixar a descrição da nota/cupom como palavra-chave do produto (admin)
   'cot_produto_lembrar(bigint,text)',
 ]
