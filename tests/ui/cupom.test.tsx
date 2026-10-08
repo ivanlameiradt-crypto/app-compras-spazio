@@ -411,8 +411,9 @@ describe('Cupom — "Últimos envios"', () => {
     expect(screen.getByText('LIMAO TAITI TROPICAL')).toBeInTheDocument()
     expect(screen.getByText('ALFACE CRESPA HID.')).toBeInTheDocument()
     // a unidade vem do cupom, colada na quantidade — sem ela o número não diz nada (3,86 é kg? unidade?)
-    expect(screen.getByText(/qtd 3,86 kg/)).toBeInTheDocument()
-    expect(screen.getByText(/qtd 8 und/)).toBeInTheDocument()
+    expect(screen.getByText(/3,86 kg/)).toBeInTheDocument()
+    expect(screen.getByText(/8 und/)).toBeInTheDocument()
+    expect(linha).not.toHaveTextContent(/qtd/)   // pedido do Ivan (08/10): sem a palavra "qtd" na frente — só o número, a unidade e o preço
   })
 
   it('o motivo aparece só na linha REVISAR (nas outras seria resto de um estado antigo)', async () => {
