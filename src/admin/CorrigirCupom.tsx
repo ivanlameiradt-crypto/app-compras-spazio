@@ -206,7 +206,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
                 <input type="text" inputMode="decimal" placeholder={destinoKg ? 'ex.: 0,600' : 'ex.: 12'} value={estado.peso} disabled={travado}
                   onChange={(e) => mudar({ peso: e.target.value, forcar: false })} />
               </label>
-              {destinoKg && estado.peso !== '' && estado.lembrar && qCupom != null && entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom)?.regra === 1 && (
+              {destinoKg && estado.peso !== '' && qCupom != null && entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom)?.regra === 1 && (
                 <p className="sub" data-testid="peso-do-nome">Peso tirado do nome do cupom. Confira na embalagem e corrija se precisar.</p>
               )}
               {absurdo && !estado.forcar && pesoDigitado != null && totalPorPeso != null && (
@@ -242,13 +242,11 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             </p>
           )}
           {lembravel ? (
-            <label className="marcar lembrar">
-              <input type="checkbox" checked={estado.lembrar} disabled={travado} onChange={(e) => mudar({ lembrar: e.target.checked })} />
-              {converte
-                ? <>Lembrar também a conversão{conf?.entrada != null && <> (1 {unid(it.unidade_cupom)} = {qtd(linhaConfirmada(it, conf).entrada / conf.quantidade)} {unid(estado.produto.unidade)})</>}:
-                  só marque se “{descricao}” vem sempre com o mesmo peso ou embalagem</>
-                : <>Lembrar: da próxima vez, “{descricao}” deste fornecedor já passa direto</>}
-            </label>
+            <p className="sub" data-testid="vai-lembrar">
+              {converte && conf?.entrada != null
+                ? <>Vou lembrar: da próxima vez, “{descricao}” deste fornecedor entra com 1 {unid(it.unidade_cupom)} = {qtd(linhaConfirmada(it, conf).entrada / conf.quantidade)} {unid(estado.produto.unidade)}, sem perguntar.</>
+                : <>Vou lembrar: da próxima vez, “{descricao}” deste fornecedor já passa direto, sem perguntar.</>}
+            </p>
           ) : itemSempreManual(it) ? (
             <p className="sub" data-testid="sempre-manual">Este item é sempre manual (regra sua): o app não guarda a escolha, você informa o produto a cada compra.</p>
           ) : (
@@ -299,7 +297,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
       if (!e.produto || !c) return // não acontece com o botão habilitado; defesa contra um estado velho
       // sem chave para guardar (CNPJ do emitente ou código de barras válido) o servidor não teria como lembrar: manda false, para que o
       // `nao_lembrados` da resposta só conte falha de verdade (e a tela de cima possa avisar dela)
-      const lembrar = e.lembrar && podeLembrar(cupom, cupom.itens[i])
+      const lembrar = podeLembrar(cupom, cupom.itens[i])
       const item: ConfirmacaoItemCupom = { indice: i, insumo_id: String(e.produto.produto_id), quantidade: c.quantidade, lembrar }
       if (c.entrada != null) item.entrada = c.entrada // só com conversão: ausente = fator 1 (contrato do servidor)
       itens.push(item)

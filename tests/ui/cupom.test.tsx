@@ -793,20 +793,19 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(screen.queryByTestId('reenviado')).not.toBeInTheDocument()                        // um "reenviado" verde em cima do problema novo seria contradição
   })
 
-  it('desmarcar "Lembrar" num item manda lembrar:false só nele', async () => {
+  it('o app lembra sozinho (sem caixinha): o item manda lembrar:true e a tela diz que vai lembrar', async () => {
     naFila()
     render(<Cupom />)
     const itens = await itensDaCaixa()
     await userEvent.click(await within(itens[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
-    const lembrar = within(itens[0]).getByRole('checkbox', { name: 'Lembrar: da próxima vez, “LIMAO SICILIANO” deste fornecedor já passa direto' })
-    expect(lembrar).toBeChecked()                                                             // marcado de início: lembrar é o normal
-    await userEvent.click(lembrar)
+    expect(within(itens[0]).queryByRole('checkbox')).not.toBeInTheDocument()                  // regra do Ivan (08/10): associou uma vez, o app guarda
+    expect(within(itens[0]).getByTestId('vai-lembrar')).toHaveTextContent('Vou lembrar: da próxima vez, “LIMAO SICILIANO” deste fornecedor já passa direto, sem perguntar.')
     await userEvent.type(within(itens[0]).getByLabelText('Peso (kg) que está no cupom'), '0,5')
     await userEvent.click(within(itens[0]).getByRole('button', { name: 'Confirmar este item' }))
     await confirmarPelaProposta(itens[1], 'PEPINO JAPONÊS - INSUMOS', '0,912')
     await userEvent.click(reenviar())
     await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('aaf54e6f', [
-      { indice: 0, insumo_id: '3484974', quantidade: 0.5, lembrar: false },
+      { indice: 0, insumo_id: '3484974', quantidade: 0.5, lembrar: true },
       { indice: 1, insumo_id: '3484991', quantidade: 0.912, lembrar: true },
     ]))
   })
@@ -829,15 +828,15 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     ]))
   })
 
-  it('sem CNPJ, o "Lembrar" só é oferecido no item cujo código de barras é um GTIN válido (código cortado ou interno não serve de chave)', async () => {
+  it('sem CNPJ, só o item cujo código de barras é um GTIN válido pode ser lembrado (código cortado ou interno não serve de chave)', async () => {
     const itens = [{ ...ITENS_ATACADAO[0], codigo_barras: '7891234567895' }, { ...ITENS_ATACADAO[1], codigo_barras: '7891234' }, ITENS_ATACADAO[2]]
     m.cuponsRecentes.mockResolvedValue([{ ...ATACADAO, emitente_cnpj: null, itens }])
     render(<Cupom />)
     const caixas = await itensDaCaixa()
     await userEvent.click(await within(caixas[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
-    expect(within(caixas[0]).getByRole('checkbox')).toBeChecked()
+    expect(within(caixas[0]).getByTestId('vai-lembrar')).toBeInTheDocument()
     await userEvent.click(await within(caixas[1]).findByRole('button', { name: 'PEPINO JAPONÊS - INSUMOS' }))
-    expect(within(caixas[1]).queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(within(caixas[1]).queryByTestId('vai-lembrar')).not.toBeInTheDocument()
     expect(caixas[1]).toHaveTextContent('Não dá para lembrar este item')
   })
 
@@ -860,13 +859,12 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(item).toHaveTextContent(/Linha: 1 un × R\$\s25,00 = R\$\s25,00 · entra 0,8 kg no estoque/)   // a conversão preserva o valor da linha
     // com conversão o "Lembrar" começa DESMARCADO e diz que o fator também fica guardado: numa peça de peso variável o fator desta compra lançaria a
     // próxima com o peso errado sem ninguém ver; só pacote de peso fixo merece a marca
-    const lembrar = within(item).getByRole('checkbox', { name: /Lembrar também a conversão \(1 UN = 0,8 KG\): só marque se “QUEIJO MINAS PC” vem sempre com o mesmo peso ou embalagem/ })
-    expect(lembrar).not.toBeChecked()
+    expect(within(item).getByTestId('vai-lembrar')).toHaveTextContent('Vou lembrar: da próxima vez, “QUEIJO MINAS PC” deste fornecedor entra com 1 UN = 0,8 KG, sem perguntar.')
     await userEvent.click(confirmar)
     expect(item).toHaveTextContent(/✓ QUEIJO MINAS - INSUMOS · 1 un → R\$\s25,00/)
     expect(soma()).toHaveClass('ok')
     await userEvent.click(reenviar())
-    await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('q1', [{ indice: 0, insumo_id: '3500001', quantidade: 1, entrada: 0.8, lembrar: false }]))
+    await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('q1', [{ indice: 0, insumo_id: '3500001', quantidade: 1, entrada: 0.8, lembrar: true }]))
   })
 
   describe('caixa do peso de 1 unidade (regras do Ivan, 08/10)', () => {
@@ -890,9 +888,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(within(item0).getByRole('button', { name: 'Confirmar este item' })).toBeDisabled()
       await userEvent.type(within(item0).getByLabelText('Peso de 1 UN (kg)'), '0,600')
       expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('Vai entrar no estoque: 3 un × 0,6 kg = 1,8 kg')
-      const lembrar = within(item0).getByRole('checkbox', { name: /\(1 UN = 0,6 KG\)/ })
-      expect(lembrar).not.toBeChecked()
-      await userEvent.click(lembrar)
+      expect(within(item0).getByTestId('vai-lembrar')).toHaveTextContent('entra com 1 UN = 0,6 KG, sem perguntar')
       await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476411', quantidade: 3, entrada: 1.8, lembrar: true }]))
@@ -907,7 +903,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(within(item0).getByLabelText('Peso de 1 GF (kg)')).toHaveValue('0,85')
       expect(within(item0).getByTestId('peso-do-nome')).toBeInTheDocument()
       expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('10 gf × 0,85 kg = 8,5 kg')
-      expect(within(item0).getByRole('checkbox', { name: /Lembrar/ })).toBeChecked()           // a conta saiu do próprio nome do cupom
+      expect(within(item0).getByTestId('vai-lembrar')).toBeInTheDocument()                     // a conta saiu do próprio nome do cupom
       await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '1855909', quantidade: 10, entrada: 8.5, lembrar: true }]))
@@ -946,6 +942,20 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3469827', quantidade: 500, entrada: 0.5, lembrar: true }]))
+    })
+
+    it('molho cheddar e Coca em pacote: sempre manuais — nada de "Vou lembrar" e o envio manda lembrar:false', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3469720, nome: 'MOLHO AMERICAN CHEESE - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'MOLHO QJO CHEDDAR', quantidade_cupom: 2, valor_unitario: 58.9 }), 117.8)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'american', /MOLHO AMERICAN CHEESE/)
+      await userEvent.type(within(item0).getByLabelText('Peso de 1 UN (kg)'), '1,5')
+      expect(within(item0).getByTestId('sempre-manual')).toHaveTextContent('Este item é sempre manual (regra sua)')
+      expect(within(item0).queryByTestId('vai-lembrar')).not.toBeInTheDocument()
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3469720', quantidade: 2, entrada: 3, lembrar: false }]))
     })
 
     it('pacote com produto em UN: pergunta quantas unidades vêm em 1 pacote', async () => {
