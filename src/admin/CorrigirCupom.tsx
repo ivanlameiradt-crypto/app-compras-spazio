@@ -8,7 +8,7 @@ import * as api from '../lib/api'
 import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
 import { buscarProdutos } from './associacaoRegras'
-import { ehPeso, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
+import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 
 interface Props {
@@ -125,7 +125,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
     const m = modoDaEntrada(it, p)
     const regra = qCupom != null && minusc(p.unidade) === 'kg' ? entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom) : null
     const sugerido = m === 'por_unidade' && regra?.regra === 1 && qCupom ? qtd(regra.kg / qCupom) : ''
-    mudar({ produto: p, entrada: '', peso: sugerido, forcar: false, lembrar: !precisaConversao(it.unidade_cupom, p.unidade) || m === 'auto' || sugerido !== '' })
+    mudar({ produto: p, entrada: '', peso: sugerido, forcar: false, lembrar: !itemSempreManual(it) && (!precisaConversao(it.unidade_cupom, p.unidade) || m === 'auto' || sugerido !== '') })
     setTexto('')
   }
 
@@ -249,6 +249,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
                   só marque se “{descricao}” vem sempre com o mesmo peso ou embalagem</>
                 : <>Lembrar: da próxima vez, “{descricao}” deste fornecedor já passa direto</>}
             </label>
+          ) : itemSempreManual(it) ? (
+            <p className="sub" data-testid="sempre-manual">Este item é sempre manual (regra sua): o app não guarda a escolha, você informa o produto a cada compra.</p>
           ) : (
             <p className="sub">Não dá para lembrar este item (o cupom não trouxe o CNPJ do emitente nem um código de barras válido).</p>
           )}

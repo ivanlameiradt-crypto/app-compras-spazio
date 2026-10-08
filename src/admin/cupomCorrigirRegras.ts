@@ -138,12 +138,29 @@ export function ehGtin(v: unknown): v is string {
   return soma % 10 === 0
 }
 
+/** Texto comparável: sem acento, minúsculo, só letras e dígitos separados por espaço. */
+const comparavel = (t: unknown): string => String(t ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+/**
+ * Itens que o Ivan quer informar SEMPRE à mão, a cada compra (08/10/2026): o mesmo nome muda de produto ou de embalagem conforme o fornecedor, então o
+ * app não guarda a escolha ("Lembrar" desligado) e nunca casa sozinho. 1) Molho de queijo cheddar ("MOLHO QJO CHEDDAR"). 2) Coca-Cola em pacote/pack
+ * (unidade PCT/PACK/FD/CX, ou "6X350ML", "PACK" no nome; "1X2L" é uma unidade só). Coca-Cola avulsa (UN, 1 L, 2 L) segue o fluxo normal.
+ */
+export function itemSempreManual(it: Pick<ItemCupomRecente, 'descricao_cupom' | 'unidade_cupom'>): boolean {
+  const d = comparavel(it.descricao_cupom)
+  const u = comparavel(it.unidade_cupom)
+  if (/\bmolho\b/.test(d) && /\bcheddar\b/.test(d)) return true
+  if (/\bcoca\b/.test(d) && (/^(pct|pack|fd|cx)$/.test(u) || /\b([2-9]|\d{2,}) ?x ?\d+/.test(d) || /\b(pack|pct|fardo)\b/.test(d))) return true
+  return false
+}
+
 /**
  * Se o servidor tem como guardar o aprendizado deste item (`linhaDeAprendizado` em logica.ts): por um código de barras VÁLIDO do cupom (GTIN,
  * vale para qualquer fornecedor) ou pela descrição + CNPJ do emitente (só dígitos, 14). Sem nenhuma das duas chaves, a tela nem oferece o "lembrar".
  * "Descrição não vazia" é a do servidor: depois de normalizada (só letras e dígitos) ainda sobra alguma coisa.
  */
 export function podeLembrar(c: CupomRecente, it: ItemCupomRecente): boolean {
+  if (itemSempreManual(it)) return false // regra do Ivan (08/10): estes itens ele informa à mão a cada compra
   if (ehGtin(it.codigo_barras)) return true
   const cnpjOk = typeof c.emitente_cnpj === 'string' && /^\d{14}$/.test(c.emitente_cnpj)
   const descricao = String(it.descricao_cupom ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
