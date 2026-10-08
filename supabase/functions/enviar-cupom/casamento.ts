@@ -5,6 +5,7 @@
 import { normalizar } from './normalizar.ts'
 import { CATALOGO } from './catalogo.ts'
 import type { ItemLidoIA } from './esquema.ts'
+import { entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos.ts'
 
 /** Uma linha de cupom_aprendizado (Plano 1). */
 export interface Aprendizado {
@@ -68,17 +69,24 @@ function propor(descricao: string): { insumo_id: string; insumo_nome: string } |
 }
 
 function aplicar(a: Aprendizado, item: ItemLidoIA, por: 'ean' | 'descricao'): ItemCasado {
+  // Produto "(KG)": vale a regra do Ivan (08/10) — peso da embalagem no nome × unidades, ou a quantidade do cupom (kg; g ÷ 1.000) — e ela manda
+  // sobre um fator guardado de antes (o do iogurte estava em 850, grama por pote, num produto em kg). Sem regra que se aplique, vale o fator confirmado.
+  const destinoKg = String(a.unidade_destino ?? '').trim().toLowerCase() === 'kg'
+  const regra = destinoKg ? entradaEmKg(item.descricao, item.unidade, item.quantidade) : null
   // Fator que não é número positivo (0, negativo, NaN, nulo) NÃO é um fator confirmado: não vira 1 em silêncio (isso
   // seria chutar a conversão). Vai a REVISAR. Number() porque o PostgREST pode entregar numeric como texto.
-  const fator = Number(a.fator_conversao)
-  if (!Number.isFinite(fator) || fator <= 0) return incerto(item)
-  const entrada = Number((item.quantidade * fator).toFixed(3))
+  const fatorGuardado = Number(a.fator_conversao)
+  if (!regra && (!Number.isFinite(fatorGuardado) || fatorGuardado <= 0)) return incerto(item)
+  const entrada = regra ? regra.kg : Number((item.quantidade * fatorGuardado).toFixed(3))
+  const fator = regra ? entrada / item.quantidade : fatorGuardado
+  // Trava: mais de 50 kg por unidade num produto "(KG)" é número absurdo (850 em vez de 0,85): vai a REVISAR para o Ivan olhar, não ao estoque.
+  if (destinoKg && kgPorUnidadeAbsurdo(entrada, item.quantidade)) return incerto(item)
   // Com conversão (fator ≠ 1) o preço acompanha a unidade nova: o robô calcula a linha como entrada_estoque × valor_unitario
   // − desconto_item e a confere contra o valor_a_pagar. Preço do estoque = valor da linha (qtd × preço do cupom) ÷ a entrada
   // JÁ arredondada, assim entrada × preço devolve o valor da linha (5 un × R$ 3, fator 0,08 → 0,4 kg a R$ 37,50/kg, não a
   // R$ 3). NÃO arredonda o preço: o robô arredonda ao digitar. Entrada ≤ 0 não tem preço (dividiria por zero) → incerto.
   let valorUnitario = item.valor_unitario
-  if (fator !== 1) {
+  if (Math.abs(fator - 1) > 1e-9) {
     if (!(entrada > 0)) return incerto(item)
     valorUnitario = (item.quantidade * item.valor_unitario) / entrada
   }

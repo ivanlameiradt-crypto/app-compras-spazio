@@ -9,6 +9,7 @@ import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
 import { buscarProdutos } from './associacaoRegras'
 import { ehPeso, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
+import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 
 interface Props {
   cupom: CupomRecente
@@ -26,23 +27,53 @@ interface EstadoItem {
   quantidade: string
   /** Quanto entra no estoque, na unidade do produto — só quando a unidade do cupom é outra (cupom em UN, produto em KG). */
   entrada: string
+  /** Quanto vale 1 unidade do cupom na unidade do produto (peso em kg de 1 un, ou unidades em 1 pacote) — o jeito do Ivan pensar; a entrada é quantidade × isto. */
+  peso: string
+  /** O Ivan viu o aviso de número absurdo (mais de 50 kg por unidade) e disse que é isso mesmo. */
+  forcar: boolean
   lembrar: boolean
   confirmado: boolean
 }
+
+/** Como a caixa pede o que entra no estoque quando a unidade do cupom é outra (regras do Ivan, 08/10):
+ *  'auto' = cupom em gramas e produto em kg: o app divide por 1.000 e não pergunta; 'por_unidade' = cupom em unidade/pacote/maço: pergunta quanto vale
+ *  1 unidade (peso em kg, ou unidades por pacote) e o app multiplica; 'total' = qualquer outro par de unidades: o Ivan diz o total (como sempre foi). */
+type ModoEntrada = 'nenhum' | 'auto' | 'por_unidade' | 'total'
+function modoDaEntrada(it: ItemCupomRecente, produto: ProdutoCatalogo | null): ModoEntrada {
+  if (!produto || !precisaConversao(it.unidade_cupom, produto.unidade)) return 'nenhum'
+  const destino = minusc(produto.unidade)
+  if (destino === 'kg' && /^(g|gr|grs)$/i.test(unid(it.unidade_cupom))) return 'auto'
+  if ((destino === 'kg' || destino === 'un') && !ehPeso(it.unidade_cupom)) return 'por_unidade'
+  return 'total'
+}
+const arred3 = (v: number): number => Math.round(v * 1000) / 1000
 
 const unid = (u: string | null | undefined): string => (u ?? '').trim().toUpperCase()
 const minusc = (u: string | null | undefined): string => (u ?? '').trim().toLowerCase()
 const qtd = (v: number): string => v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
 /** A quantidade que o robô leu no cupom, pronta para o campo (com vírgula): o Ivan só confere, em vez de digitar de novo. */
 const quantidadeLida = (it: ItemCupomRecente): string => (it.quantidade_cupom != null && Number(it.quantidade_cupom) > 0 ? qtd(Number(it.quantidade_cupom)) : '')
-const estadoInicial = (it: ItemCupomRecente): EstadoItem => ({ produto: null, quantidade: quantidadeLida(it), entrada: '', lembrar: true, confirmado: false })
+const estadoInicial = (it: ItemCupomRecente): EstadoItem => ({ produto: null, quantidade: quantidadeLida(it), entrada: '', peso: '', forcar: false, lembrar: true, confirmado: false })
 
 /** A confirmação válida deste item (quantidades lidas e, com conversão, a entrada também), ou null enquanto falta algo. */
 function confirmacaoDe(it: ItemCupomRecente, e: EstadoItem): Confirmada | null {
   if (!e.produto) return null
   const quantidade = lerQuantidade(e.quantidade)
   if (quantidade == null) return null
-  if (!precisaConversao(it.unidade_cupom, e.produto.unidade)) return { quantidade, entrada: null }
+  const modo = modoDaEntrada(it, e.produto)
+  if (modo === 'nenhum') return { quantidade, entrada: null }
+  if (modo === 'auto') {
+    const r = entradaEmKg(it.descricao_cupom, it.unidade_cupom, quantidade)
+    return r == null ? null : { quantidade, entrada: r.kg }
+  }
+  if (modo === 'por_unidade') {
+    const peso = lerQuantidade(e.peso)
+    if (peso == null) return null
+    const entrada = arred3(quantidade * peso)
+    if (!(entrada > 0)) return null
+    if (minusc(e.produto.unidade) === 'kg' && kgPorUnidadeAbsurdo(entrada, quantidade) && !e.forcar) return null // número absurdo: só com o "é isso mesmo"
+    return { quantidade, entrada }
+  }
   const entrada = lerQuantidade(e.entrada)
   return entrada == null ? null : { quantidade, entrada }
 }
@@ -69,6 +100,12 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const conf = confirmacaoDe(it, estado)
   const linha = conf ? linhaConfirmada(it, conf) : null
   const converte = estado.produto != null && precisaConversao(it.unidade_cupom, estado.produto.unidade)
+  const modo = modoDaEntrada(it, estado.produto)
+  const destinoKg = minusc(estado.produto?.unidade) === 'kg'
+  const qCupom = lerQuantidade(estado.quantidade)
+  const pesoDigitado = lerQuantidade(estado.peso)
+  const totalPorPeso = qCupom != null && pesoDigitado != null ? arred3(qCupom * pesoDigitado) : null
+  const absurdo = modo === 'por_unidade' && destinoKg && qCupom != null && totalPorPeso != null && kgPorUnidadeAbsurdo(totalPorPeso, qCupom)
   const lembravel = podeLembrar(cupom, it)
 
   if (estado.confirmado && estado.produto && conf && linha) {
@@ -82,7 +119,15 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
 
   // Com conversão de unidade o "Lembrar" começa DESMARCADO: o que fica guardado é também o fator (1 UN = x KG), e num produto de peso variável
   // (uma peça de queijo) o fator desta compra lançaria a próxima com o peso errado sem ninguém ver. Pacote de peso fixo (lata de 395 g): ele marca.
-  const escolher = (p: ProdutoCatalogo) => { mudar({ produto: p, entrada: '', lembrar: !precisaConversao(it.unidade_cupom, p.unidade) }); setTexto('') }
+  // Regras do Ivan (08/10): o peso da embalagem no NOME do cupom ("850g") já vem como sugestão do peso de 1 unidade; cupom em gramas e produto em kg o app
+  // converte sozinho. Com a conta vinda do próprio cupom o "Lembrar" já começa marcado (o servidor refaz a conta a cada compra).
+  const escolher = (p: ProdutoCatalogo) => {
+    const m = modoDaEntrada(it, p)
+    const regra = qCupom != null && minusc(p.unidade) === 'kg' ? entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom) : null
+    const sugerido = m === 'por_unidade' && regra?.regra === 1 && qCupom ? qtd(regra.kg / qCupom) : ''
+    mudar({ produto: p, entrada: '', peso: sugerido, forcar: false, lembrar: !precisaConversao(it.unidade_cupom, p.unidade) || m === 'auto' || sugerido !== '' })
+    setTexto('')
+  }
 
   return (
     <div className="associar">
@@ -136,17 +181,53 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             <span className="sub">
               <span className="sem-quebra">cód. {estado.produto.produto_id}{estado.produto.unidade ? ` · ${unid(estado.produto.unidade)}` : ''}</span>
               {' · '}
-              <button type="button" className="link" disabled={travado} onClick={() => mudar({ produto: null, entrada: '' })}>Escolher outro</button>
+              <button type="button" className="link" disabled={travado} onClick={() => mudar({ produto: null, entrada: '', peso: '', forcar: false })}>Escolher outro</button>
             </span>
           </div>
           <label>{ehPeso(it.unidade_cupom) ? 'Peso' : 'Quantidade'}{unCupom !== '' ? ` (${unCupom})` : ''} que está no cupom
             <input type="text" inputMode="decimal" placeholder={ehPeso(it.unidade_cupom) ? '0,000' : '0'} value={estado.quantidade} disabled={travado}
               onChange={(e) => mudar({ quantidade: e.target.value })} />
           </label>
-          {converte && (
+          {converte && modo === 'auto' && (
+            <div className="ok" data-testid="entrada-automatica">
+              {conf?.entrada != null
+                ? <>O cupom está em {unid(it.unidade_cupom)} e o produto é em KG: entram <b>{qtd(conf.entrada)} kg</b> ({qtd(conf.quantidade)} g ÷ 1.000). Você não precisa digitar nada.</>
+                : <>O cupom está em {unid(it.unidade_cupom)} e o produto é em KG: digite a quantidade acima que eu converto para kg.</>}
+            </div>
+          )}
+          {converte && modo === 'por_unidade' && (
+            <>
+              <div className="amarelo" data-testid="duvida-unidade">
+                {destinoKg
+                  ? <>O produto é controlado em KG no SisChef e o cupom está em {unid(it.unidade_cupom) || 'unidade'}. <b>Quanto pesa 1 {unid(it.unidade_cupom) || 'unidade'}, em kg?</b></>
+                  : <>O cupom está em {unid(it.unidade_cupom)} e o produto é em UN. <b>Quantas unidades vêm em 1 {unid(it.unidade_cupom)}?</b></>}
+              </div>
+              <label>{destinoKg ? `Peso de 1 ${unid(it.unidade_cupom) || 'unidade'} (kg)` : `Unidades em 1 ${unid(it.unidade_cupom)}`}
+                <input type="text" inputMode="decimal" placeholder={destinoKg ? 'ex.: 0,600' : 'ex.: 12'} value={estado.peso} disabled={travado}
+                  onChange={(e) => mudar({ peso: e.target.value, forcar: false })} />
+              </label>
+              {destinoKg && estado.peso !== '' && estado.lembrar && qCupom != null && entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom)?.regra === 1 && (
+                <p className="sub" data-testid="peso-do-nome">Peso tirado do nome do cupom. Confira na embalagem e corrija se precisar.</p>
+              )}
+              {absurdo && !estado.forcar && pesoDigitado != null && totalPorPeso != null && (
+                <div className="erro" role="alert" data-testid="numero-absurdo">
+                  {qtd(pesoDigitado)} kg por {unid(it.unidade_cupom) || 'unidade'} parece errado (mais de {MAX_KG_POR_UNIDADE} kg): entrariam {qtd(totalPorPeso)} kg no estoque.
+                  Você quis dizer {qtd(pesoDigitado / 1000)} kg?{' '}
+                  <button type="button" className="link" disabled={travado} onClick={() => mudar({ peso: qtd(pesoDigitado / 1000), forcar: false })}>Usar {qtd(pesoDigitado / 1000)}</button>{' '}
+                  <button type="button" className="link" disabled={travado} onClick={() => mudar({ forcar: true })}>Não, é isso mesmo</button>
+                </div>
+              )}
+              {qCupom != null && pesoDigitado != null && totalPorPeso != null && !(absurdo && !estado.forcar) && (
+                <p className="sub" data-testid="vai-entrar">
+                  Vai entrar no estoque: {qtd(qCupom)} {unCupom} × {qtd(pesoDigitado)} {minusc(estado.produto.unidade)} = <b>{qtd(totalPorPeso)} {minusc(estado.produto.unidade)}</b>
+                </p>
+              )}
+            </>
+          )}
+          {converte && modo === 'total' && (
             <>
               <div className="amarelo">
-                O cupom está em {unid(it.unidade_cupom)} e este produto é em {unid(estado.produto.unidade)}: diga quanto entra no estoque
+                O cupom está em {unid(it.unidade_cupom)} e este produto é em {unid(estado.produto.unidade)}: diga quanto entra no estoque (o TOTAL, não o de 1 unidade)
               </div>
               <label>Quanto entra no estoque ({unid(estado.produto.unidade)})
                 <input type="text" inputMode="decimal" placeholder="0,000" value={estado.entrada} disabled={travado}
