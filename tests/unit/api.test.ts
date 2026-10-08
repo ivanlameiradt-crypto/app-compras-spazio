@@ -868,6 +868,18 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
       expect(r.map((p) => [p.produto_id, p.unidade])).toEqual([[3882028, 'kg'], [3469626, 'kg'], [3476511, 'un']])
     })
 
+    it('produto que o Ivan acrescentou pela planilha (com descrição) entra na lista mesmo fora de itens_semana, com as palavras-chave dele', async () => {
+      const busca = cadeia({ data: [{ produto_id: 3476366, palavras: 'LACTA LAKA OREO', nome_corrigido: null }], error: null, status: 200 })
+      const planilha = cadeia({ data: [
+        { produto_id: 3476366, unidade: 'KG', descricao: '  CHOCOLATE BARRA LACTA   LAKA OREO - INSUMOS ' },
+        { produto_id: 999, unidade: 'UN', descricao: '' },                       // sem descrição e fora de itens_semana: só unidade, não vira produto
+      ], error: null, status: 200 })
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(busca).mockReturnValueOnce(planilha)
+      const r = await catalogoProdutos()
+      expect(r.find((p) => p.produto_id === 3476366)).toEqual({ produto_id: 3476366, nome: 'CHOCOLATE BARRA LACTA LAKA OREO - INSUMOS', unidade: 'kg', palavras: 'LACTA LAKA OREO' })
+      expect(r.some((p) => p.produto_id === 999)).toBe(false)
+    })
+
     it('planilha que não carrega (tabela inexistente ou erro) não derruba o catálogo: segue com a unidade de itens_semana', async () => {
       const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {})
       from.mockReturnValueOnce(lista()).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))

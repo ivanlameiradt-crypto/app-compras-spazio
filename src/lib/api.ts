@@ -784,18 +784,22 @@ async function lerBuscaDosProdutos() {
   return com
 }
 /**
- * A unidade de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → 'kg' | 'un'. Falha de leitura (tabela ainda não criada, rede)
+ * A unidade (e, para o produto que ele acrescentou, o nome do SisChef) de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → { unidade 'kg' | 'un', descricao }. Falha de leitura (tabela ainda não criada, rede)
  * devolve vazio: o catálogo segue com a unidade de itens_semana, como antes da planilha — melhor que derrubar a caixa de associação inteira.
  */
-async function lerPlanilhaDeUnidades(): Promise<Map<number, string>> {
-  const mapa = new Map<number, string>()
+async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; descricao: string }>> {
+  const mapa = new Map<number, { unidade: string; descricao: string }>()
   try {
-    const r = await supabase.from('produto_planilha').select('produto_id, unidade').limit(1000)
+    const com = await supabase.from('produto_planilha').select('produto_id, unidade, descricao').limit(1000)
+    // banco ainda sem a coluna `descricao` (42703): lê só a unidade
+    const r: { data: unknown[] | null; error: { code?: string } | null } = com.error?.code === '42703'
+      ? await supabase.from('produto_planilha').select('produto_id, unidade').limit(1000)
+      : com
     if (r.error) { console.warn('catalogoProdutos: não li a planilha de unidades', r.error.code); return mapa }
-    for (const x of (r.data ?? []) as { produto_id: number | string; unidade: string | null }[]) {
+    for (const x of (r.data ?? []) as { produto_id: number | string; unidade: string | null; descricao?: string | null }[]) {
       const id = Number(x.produto_id)
       const u = String(x.unidade ?? '').trim().toLowerCase()
-      if (Number.isFinite(id) && (u === 'kg' || u === 'un')) mapa.set(id, u)
+      if (Number.isFinite(id) && (u === 'kg' || u === 'un')) mapa.set(id, { unidade: u, descricao: String(x.descricao ?? '').replace(/\s+/g, ' ').trim() })
     }
   } catch (e) {
     console.warn('catalogoProdutos: não li a planilha de unidades', e instanceof Error ? e.name : '')
@@ -825,6 +829,14 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
     if (!Number.isFinite(id) || nome === '' || porId.has(id)) continue // a 1ª de cada produto é a da semana mais nova
     porId.set(id, { produto_id: id, nome, unidade: r.unidade ?? null })
   }
+  // A planilha "Produtos - como eu lanço no SisChef" do Ivan (08/10): a unidade dela MANDA sobre a de itens_semana (que o app só adivinhava pelo nome) e o produto
+  // que ele acrescentou com o nome do SisChef (ex.: CHOCOLATE BARRA LACTA LAKA OREO) entra na lista mesmo fora da lista semanal de compra. Entra ANTES das palavras-chave,
+  // para elas (e o nome corrigido) valerem também para ele.
+  for (const [id, x] of planilha) {
+    const p = porId.get(id)
+    if (p) p.unidade = x.unidade
+    else if (x.descricao !== '') porId.set(id, { produto_id: id, nome: x.descricao, unidade: x.unidade })
+  }
   if (busca.error) {
     if (!tabelaInexistente(busca.error.code)) throw new ErroApi(busca.error.message, busca.status, busca.error.code)
   } else {
@@ -837,11 +849,6 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
       if (r.ocultar === true) p.oculto = true
       if (corrigido !== '' && corrigido !== p.nome) { p.nome_sischef = p.nome; p.nome = corrigido }
     }
-  }
-  // A unidade que o Ivan escreveu na planilha "Produtos - como eu lanço no SisChef" (08/10) MANDA sobre a de itens_semana, que o app só adivinhava pelo nome.
-  for (const [id, unidade] of planilha) {
-    const p = porId.get(id)
-    if (p) p.unidade = unidade
   }
   return [...porId.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }

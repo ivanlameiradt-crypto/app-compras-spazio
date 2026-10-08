@@ -866,6 +866,19 @@ describe('Fase 3 — associar o produto de um item pelo app (cot_nfe_associar)',
     expect((await decisoes(db)).associacoes_app['2']).toMatchObject({ unidade: 'kg', conversao: 0.395 })
   })
 
+  it('produto acrescentado pela planilha (descrição + unidade), fora de itens_semana, pode ser escolhido: o nome e a unidade vêm da planilha; sem descrição segue "fora da lista"', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)
+    await sync(db, [dois()])
+    const NOVO = 3476366
+    expect(await erroDe(associar(db, ADMIN, 1, NOVO))).toBe('produto fora da lista de insumos')
+    await db.exec(`insert into produto_planilha (produto_id, unidade) values (${NOVO}, 'KG')`)                 // só a unidade: ainda não é produto da lista
+    expect(await erroDe(associar(db, ADMIN, 1, NOVO))).toBe('produto fora da lista de insumos')
+    await db.exec(`update produto_planilha set descricao = 'CHOCOLATE BARRA LACTA LAKA OREO - INSUMOS' where produto_id = ${NOVO}`)
+    await associarConv(db, 1, NOVO, 0.08)
+    expect((await decisoes(db)).associacoes_app['1']).toMatchObject({ produto_id: NOVO, produto_nome: 'CHOCOLATE BARRA LACTA LAKA OREO - INSUMOS', unidade: 'kg', origem: 'planilha', conversao: 0.08 })
+  })
+
   it('etapa 2: desfazer continua funcionando com a conversão gravada (com 3 e com 4 argumentos)', async () => {
     const db = await bancoF3F()
     await catalogo(db)
