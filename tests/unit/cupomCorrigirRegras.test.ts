@@ -1,5 +1,5 @@
 import {
-  TOLERANCIA, ehGtin, ehPeso, itensPendentes, lerQuantidade, linhaConfirmada, linhaJaConfirmada, podeLembrar, precisaConversao, somaDoCupom, unidadeNorm,
+  TOLERANCIA, ehGtin, ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, linhaJaConfirmada, podeLembrar, precisaConversao, somaDoCupom, unidadeNorm,
   type Confirmada,
 } from '../../src/admin/cupomCorrigirRegras'
 // A conta da tela tem de ser a do servidor: importa a lógica da Edge Function (pura, sem Deno) e compara. O vitest resolve a extensão .ts.
@@ -227,5 +227,30 @@ describe('a conta da tela é a conta do servidor (confirmar-cupom/logica.ts)', (
     expect(tela.soma).toBe(servidor.soma)
     expect(tela.diferenca).toBe(servidor.diferenca)
     expect(tela.bate).toBe(servidor.bate)
+  })
+})
+
+describe('itens sempre manuais (regra do Ivan, 08/10/2026): molho de queijo cheddar e Coca-Cola em pacote', () => {
+  it.each([
+    ['MOLHO QJO CHEDDAR', 'UN', true],
+    ['MOLHO CHEDDAR 1X1,5Kg', 'UN', true],
+    ['MOLHO DE QUEIJO CHEDDAR', 'UN', true],
+    ['COCA COLA BARCODE', 'PCT', true],
+    ['COCA COLA 6X350ML', 'UN', true],
+    ['COCA COLA PACK 6', 'UN', true],
+    ['REF.COCA-COLA PET 1X2L', 'UND', false],   // avulsa: fluxo normal
+    ['REF.COCA COLA ORIG.', 'UN', false],
+    ['REQ.CHEDDAR CATUPIRY 1X1,010K', 'UN', false], // requeijão, não é molho
+    ['CHEDDAR FATIADO', 'KG', false],
+    ['MOLHO SHOYU', 'UN', false],
+  ])('%s (%s) → sempre manual: %s', (descricao, un, esperado) => {
+    expect(itemSempreManual({ descricao_cupom: descricao, unidade_cupom: un })).toBe(esperado)
+  })
+  it('item sempre manual nunca pode ser lembrado, mesmo com CNPJ e código de barras válidos', () => {
+    const cupom = { emitente_cnpj: '75315333032655' } as CupomRecente
+    const molho = { descricao_cupom: 'MOLHO QJO CHEDDAR', unidade_cupom: 'UN', codigo_barras: '7896629640559' } as ItemCupomRecente
+    const alface = { descricao_cupom: 'ALFACE CRESPA HID.', unidade_cupom: 'UN', codigo_barras: null } as ItemCupomRecente
+    expect(podeLembrar(cupom, molho)).toBe(false)
+    expect(podeLembrar(cupom, alface)).toBe(true)
   })
 })
