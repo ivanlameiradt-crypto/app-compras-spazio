@@ -852,6 +852,20 @@ describe('Fase 3 — associar o produto de um item pelo app (cot_nfe_associar)',
     expect((await decisoes(db)).associacoes_app['1'].produto_id).toBe(OLEO)    // o desfazer recusado não desfez
   })
 
+  it('planilha do Ivan: a unidade da decisão vem de produto_planilha (manda sobre itens_semana); produto fora da planilha segue com a de itens_semana', async () => {
+    const db = await bancoF3F()
+    await catalogo(db)                                                          // LEITE: itens_semana 'kg'; OLEO: 'un'
+    await sync(db, [dois()])
+    await db.exec(`insert into produto_planilha (produto_id, unidade) values (${LEITE}, 'UN')`)   // o Ivan diz que o leite é UN no SisChef
+    await associarConv(db, 2, LEITE, null)
+    expect((await decisoes(db)).associacoes_app['2']).toMatchObject({ produto_id: LEITE, unidade: 'un' })
+    await associar(db, ADMIN, 1, OLEO)                                         // fora da planilha: continua a de itens_semana
+    expect((await decisoes(db)).associacoes_app['1']).toMatchObject({ produto_id: OLEO, unidade: 'un' })
+    await db.exec(`update produto_planilha set unidade = 'KG' where produto_id = ${LEITE}`)
+    await associarConv(db, 2, LEITE, 0.395)
+    expect((await decisoes(db)).associacoes_app['2']).toMatchObject({ unidade: 'kg', conversao: 0.395 })
+  })
+
   it('etapa 2: desfazer continua funcionando com a conversão gravada (com 3 e com 4 argumentos)', async () => {
     const db = await bancoF3F()
     await catalogo(db)

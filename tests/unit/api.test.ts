@@ -851,6 +851,34 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     ])
   })
 
+  describe('catalogoProdutos: a unidade da planilha do Ivan (produto_planilha) manda sobre a de itens_semana', () => {
+    const lista = () => cadeia({ data: [
+      { produto_id: 3476511, produto: 'MANJERICÃO - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+      { produto_id: 3882028, produto: 'CARNE FILÉ - INSUMOS', unidade: 'un', semana_id: 3 },
+      { produto_id: 3469626, produto: 'LEITE CONDENSADO - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
+    ], error: null, status: 200 })
+
+    it('manjericão (nome diz KG, planilha diz UN) vira un; carne filé (sem sufixo, palpite UN) vira kg; o que não está na planilha fica como estava', async () => {
+      const planilha = cadeia({ data: [
+        { produto_id: 3476511, unidade: 'UN' }, { produto_id: '3882028', unidade: 'KG' }, { produto_id: 999, unidade: 'KG' }, { produto_id: 1, unidade: 'XX' },
+      ], error: null, status: 200 })
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 })).mockReturnValueOnce(planilha)
+      const r = await catalogoProdutos()
+      expect(from).toHaveBeenNthCalledWith(3, 'produto_planilha')
+      expect(r.map((p) => [p.produto_id, p.unidade])).toEqual([[3882028, 'kg'], [3469626, 'kg'], [3476511, 'un']])
+    })
+
+    it('planilha que não carrega (tabela inexistente ou erro) não derruba o catálogo: segue com a unidade de itens_semana', async () => {
+      const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))
+        .mockReturnValueOnce(cadeia({ data: null, error: { code: '42P01', message: 'relation "produto_planilha" does not exist' }, status: 404 }))
+      const r = await catalogoProdutos()
+      expect(r.find((p) => p.produto_id === 3476511)?.unidade).toBe('kg')
+      expect(aviso).toHaveBeenCalled()
+      aviso.mockRestore()
+    })
+  })
+
   it('catalogoProdutos: falha de leitura vira ErroApi (a caixa mostra "não consegui carregar")', async () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42501', message: 'permission denied' }, status: 403 }))
       .mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))
