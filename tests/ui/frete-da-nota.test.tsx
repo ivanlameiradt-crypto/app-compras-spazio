@@ -41,6 +41,7 @@ describe('FreteDaNota', () => {
     await userEvent.type(screen.getByTestId('valor-frete'), '300,00')
     expect(screen.getByTestId('percentual-frete')).toHaveTextContent('19,79%')
     expect(screen.getByTestId('rateio-frete')).toHaveTextContent('R$ 37,90 + R$ 7,50 = R$ 45,40 por pct')
+    expect(screen.getByTestId('preco-por-unidade')).toHaveTextContent('R$ 1,816')
     expect(screen.getByTestId('frete-fora-do-financeiro')).toHaveTextContent('boletos continuam com o valor da nota (R$ 1.516,00)')
   })
 
@@ -51,6 +52,11 @@ describe('FreteDaNota', () => {
     await userEvent.type(screen.getByTestId('valor-frete'), '300')
     await userEvent.click(screen.getByTestId('confirmar-frete'))
     expect(screen.getByTestId('frete-confirmado')).toHaveTextContent('Frete confirmado: R$ 300,00 (19,79% da nota)')
+    // depois de confirmar, o preço unitário final continua à vista (junto do "Lançar"): R$ 37,90 da nota + R$ 7,50 de frete = R$ 45,40 por pct
+    expect(screen.getByTestId('preco-final-frete')).toHaveTextContent('Preço unitário final: R$ 45,40 por pct')
+    expect(screen.getByTestId('preco-final-frete')).toHaveTextContent('R$ 37,90 da nota + R$ 7,50 de frete')
+    // o nome diz "PCT 25 UND": o preço de cada unidade solta = R$ 45,40 ÷ 25
+    expect(screen.getByTestId('preco-por-unidade')).toHaveTextContent('Preço de cada unidade (pacote de 25): R$ 1,816')
     await userEvent.click(screen.getByTestId('mudar-frete'))
     expect(screen.getByTestId('valor-frete')).toHaveValue('300')
   })

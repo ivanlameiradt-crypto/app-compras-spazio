@@ -47,6 +47,16 @@ export function lerFrete(texto: string): number | null {
   return Number.isFinite(n) && n > 0 ? round2(n) : null
 }
 
+/**
+ * Quantas unidades vêm dentro do pacote/caixa, lido do NOME do produto ("... PCT 25 UND" → 25; "CX 12 UN", "FARDO C/ 10 UNID"). null quando o nome não diz
+ * (não chuto): sem isso o app só mostra o preço por pacote. Só vale 2 ou mais (1 unidade no pacote não muda nada).
+ */
+export function unidadesDoPacote(descricao: string | null | undefined): number | null {
+  const m = /\b(?:PCT|PC|PACOTE|CX|CAIXA|FD|FARDO|SC|SACO)\s*(?:C\/|COM)?\s*(\d{1,4})\s*(?:UND|UNDS|UN|UNID|UNIDS|UNIDADES)\b/i.exec(String(descricao ?? ''))
+  const n = m ? Number(m[1]) : NaN
+  return Number.isInteger(n) && n >= 2 ? n : null
+}
+
 /** Um item da nota para o rateio: quanto custa (valor total do item na nota), quantas unidades (na unidade do produto) e o nome. */
 export interface ItemParaRateio { descricao: string; valor: number; quantidade: number; unidade: string }
 export interface ItemRateado extends ItemParaRateio {
