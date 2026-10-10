@@ -275,9 +275,18 @@ export function lancandoPresa(n: NotaSefazLista, agoraMs: number = Date.now()): 
   return Number.isFinite(desde) && agoraMs - desde > MINUTOS_PRESA * 60_000
 }
 
+/**
+ * Nota COM FRETE que o robô deixou de propósito com o pedido aberto no SisChef (desfecho FRETE_ABERTO, 10/10/2026): o estado vem como 'erro' (a aba não deixa lançar de
+ * novo), mas NÃO é falha — falta o funcionário lançar o boleto do frete e finalizar a compra no SisChef. O motivo do robô traz "aberto na tela de pagamento com o frete".
+ */
+export const freteAberto = (estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined): boolean =>
+  estado === 'erro' && /aberto na tela de pagamento com o frete/i.test(motivo ?? '')
+export const TEXTO_FRETE_ABERTO = 'Pedido aberto no SisChef com o frete: falta lançar o boleto do frete e finalizar a compra lá (não lance de novo aqui)'
+
 /** Texto do estado da nota (null = nunca disparada). */
 export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined): string | null {
   const m = traduzirMotivo(motivo)
+  if (freteAberto(estado, motivo)) return TEXTO_FRETE_ABERTO
   switch (estado) {
     case 'lancando': return 'Lançando… (o robô está trabalhando)'
     case 'revisar': return m ? `Precisa de você: ${m}` : 'Precisa de você: confira a nota'
@@ -355,7 +364,8 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   else if (!f.bate) financeiro = 'Os boletos não fecham com o valor da nota'
   if (financeiro) motivos.push(financeiro)
   if (contaEspecial(n.emitente)) motivos.push(AVISO_CONTA_ESPECIAL)
-  if (n.lancamento_estado === 'erro') motivos.push('Ficou pela metade: não lance de novo')
+  if (freteAberto(n.lancamento_estado, n.lancamento_motivo)) motivos.push('Pedido aberto no SisChef com o frete: falta o boleto do frete e finalizar a compra lá')
+  else if (n.lancamento_estado === 'erro') motivos.push('Ficou pela metade: não lance de novo')
   if (n.lancamento_estado === 'revisar' && n.lancamento_motivo) motivos.push(`Precisa de você: ${traduzirMotivo(n.lancamento_motivo)}`)
   return { pronta: motivos.length === 0, motivos, financeiro }
 }
