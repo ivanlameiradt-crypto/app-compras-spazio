@@ -17,7 +17,7 @@ const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
 const WORKFLOW = 'lancar-nfe.yml'
 // associacoes_app (etapa 2): a decisão que o Ivan confirmou no app para item sem produto no SisChef vai junto ao robô, que a
 // aplica na tela ao lançar (montarNotaJson, em logica.ts). Sem ela aqui, a nota chegaria ao robô como se nada tivesse sido decidido.
-const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens, parcelas_manuais, associacoes_app'
+const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens, parcelas_manuais, associacoes_app, frete_valor, frete_tipo'
 
 function cabecalhosCors(origem: string | null): Record<string, string> {
   return {
@@ -63,10 +63,10 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(error.message)
         return (data as NotaParaParcelas | null) ?? null
       },
-      async reservar(chave, forma, agoraIso, limiteIso, parcelasManuais) {
+      async reservar(chave, forma, agoraIso, limiteIso, parcelasManuais, frete) {
         // compara-e-troca num UPDATE só (o PostgREST aplica tudo no mesmo comando): quem perde a corrida recebe [].
         const { data, error } = await admin.from('cot_nfe')
-          .update({ forma_pagamento: forma, parcelas_manuais: parcelasManuais, lancamento_em: agoraIso, lancamento_estado: 'lancando',
+          .update({ forma_pagamento: forma, parcelas_manuais: parcelasManuais, frete_valor: frete?.valor ?? null, frete_tipo: frete?.tipo ?? null, lancamento_em: agoraIso, lancamento_estado: 'lancando',
                     lancamento_motivo: null, lancamento_estado_em: agoraIso, atualizado_em: agoraIso })
           .eq('chave', chave).eq('situacao', 'na_fila')
           .is('descartada_em', null) // nota que o Ivan descartou (migração 20261209000001) não é lançada, nem por uma tela velha

@@ -435,6 +435,8 @@ export interface ParcelaNota { numero: string | null; vencimento: string | null;
 export interface ParcelaDigitada { vencimento: string; valor: number }
 /** Situação do último "Lançar" de uma nota (cot_nfe.lancamento_estado, migração 20261206000001). null = nunca disparada. */
 export type EstadoLancamentoNfe = 'lancando' | 'revisar' | 'erro' | 'ensaio_ok'
+/** O frete que o Ivan confirmou numa nota (pedido de 09/10/2026): o valor em reais e o tipo do SisChef ("Tipo do frete"); só forma o preço do produto, nunca entra no financeiro. */
+export interface FreteDaNotaConfirmado { valor: number; tipo: string }
 /** Linha da aba Lançamento de nota SEFAZ (lê cot_nfe por RLS de admin). */
 export interface NotaSefazLista {
   chave: string

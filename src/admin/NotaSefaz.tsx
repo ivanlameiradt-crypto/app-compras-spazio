@@ -12,6 +12,8 @@ import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipo
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import { cnpjDaChave, formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { unidadeDoProduto } from './unidadeEstoque'
+import FreteDaNota, { type FreteConfirmado } from './FreteDaNota'
+import type { ItemParaRateio } from './freteRegras'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
@@ -38,6 +40,17 @@ const ddmm = (iso: string): string => { const p = iso.split('-'); return p.lengt
 const dataBr = (iso: string | null): string => { const p = (iso ?? '').split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—' }
 /** Tira o prefixo "CÓD. FOR: 123456 " que o SisChef põe na descrição, para o painel de conferir ficar legível. */
 const semCodFor = (d: string): string => d.replace(/^CÓD\. FOR:\s*\S+\s*/i, '').trim() || d
+/**
+ * Os itens da nota para a conta do frete. A leitura do robô ainda não traz o VALOR de cada item; com UM item só, o valor dele é o da nota (menos o desconto, se houver). Com vários
+ * itens devolve null: a tela mostra só o percentual e o SisChef reparte o frete (proporcional ao valor) ao lançar.
+ */
+const itensParaFrete = (nota: NotaSefazLista): ItemParaRateio[] | null => {
+  if (nota.itens.length !== 1 || !(Number(nota.valor_nf) > 0)) return null
+  const it = nota.itens[0]
+  if (!(Number(it.qtd) > 0)) return null
+  return [{ descricao: it.produto_nome?.trim() || semCodFor(it.descricao ?? 'item'), valor: Number(nota.valor_nf), quantidade: Number(it.qtd), unidade: (it.unidade_sischef ?? 'un').toLowerCase() }]
+}
+
 /** Item de uma nota JÁ LANÇADA para o detalhe de "Últimos lançamentos": na frente da descrição vai o número do produto associado no SisChef
  *  (Cód. Interno, o `produto_id`), no lugar do "CÓD. FOR" do fornecedor (pedido do Ivan, 06/10); depois a quantidade e a unidade. */
 const linhaDoItem = (it: ItemNotaSefaz, catalogo: ProdutoCatalogo[] | null = null): LinhaDetalhe => {
@@ -383,6 +396,10 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   // MAUES (pagamento semanal na quarta): datas que o Ivan editou, por parcela (vazio = a quarta da regra), e se a caixa de data está aberta
   const [datasSemanais, setDatasSemanais] = useState<string[]>([])
   const [editandoData, setEditandoData] = useState(false)
+  // Frete (pedido do Ivan, 09/10): "Com frete" escolhido e o frete já confirmado; vai junto com o Lançar. Com frete escolhido e ainda não confirmado, o Lançar fica travado.
+  const [comFrete, setComFrete] = useState(false)
+  const [frete, setFrete] = useState<FreteConfirmado | null>(null)
+  const fretePendente = comFrete && frete === null
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
   const forma = escolha ?? formaInicial(nota, padroes)
@@ -410,7 +427,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const resultadoParcelas = validarParcelasDigitadas(linhas, nota.valor_nf, nota.emissao)
   // MAUES com boletos no XML e Boleto marcado: a tela mostra a quarta (ou a data que o Ivan editou) e é ELA que vai ao robô, sempre explícita.
   const plano = forma === 'boleto' ? planoSemanal(nota, datasSemanais) : null
-  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
+  const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && !fretePendente && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
   // Etapa 2: o que AINDA trava o Lançar por item sem produto (decisão do app incompleta) e o que o robô vai associar no SisChef ao lançar (decisão completa).
   const pendencias = pendenciasParaLancar(nota)
   const peloRobo = associacoesPeloRobo(nota)
@@ -446,8 +463,9 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     trancado.current = true
     setEnviando(true); setErro('')
     try {
-      if (exigeParcelas) await api.lancarNota(nota.chave, forma, resultadoParcelas.parcelas)
-      else if (plano) await api.lancarNota(nota.chave, forma, plano.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })))
+      const parcelas = exigeParcelas ? resultadoParcelas.parcelas : plano ? plano.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })) : undefined
+      if (frete) await api.lancarNota(nota.chave, forma, parcelas, frete)
+      else if (parcelas) await api.lancarNota(nota.chave, forma, parcelas)
       else await api.lancarNota(nota.chave, forma)
       lembrarForma(nota.emitente, forma)
       limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
@@ -506,6 +524,9 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}
       {bloqueios.map((b) => <div key={b} className={b === AVISO_FALTA_CONVERSAO ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
 
+      <FreteDaNota chave={nota.chave} valorNota={nota.valor_nf} itens={itensParaFrete(nota)} comFrete={comFrete} aoTrocarModo={(v) => { setComFrete(v); if (!v) setFrete(null) }} confirmado={frete} aoMudar={setFrete} desabilitado={enviando || confirmando} />
+      {fretePendente && <div className="amarelo" data-testid="frete-pendente">Confirme o frete (ou marque “Sem frete”) para poder lançar.</div>}
+
       {soLancar ? (
         <div className="sub" data-testid="pagamento-fixo">
           Pagamento: Boleto ({financeiro.parcelas.length} {financeiro.parcelas.length === 1 ? 'parcela' : 'parcelas'}){' '}
@@ -541,7 +562,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
 
       {confirmando ? (
         <div className="bloco-envio">
-          <p>Vai lançar a NF {nota.numero} de {nota.emitente} — pagamento: {rotuloForma(forma)}. Confirmar?</p>
+          <p>Vai lançar a NF {nota.numero} de {nota.emitente} — pagamento: {rotuloForma(forma)}{frete && <>, com frete de {formatarReais(frete.valor)} (só entra no preço do produto, não no financeiro)</>}. Confirmar?</p>
           {(exigeParcelas || plano) && (
             <ul className="conferir-itens" data-testid="parcelas-confirmar">
               {(exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? []).map((p, i) => (

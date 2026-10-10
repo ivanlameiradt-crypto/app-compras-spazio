@@ -261,3 +261,13 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .cadastrar-fornecedor label { font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .cupom .cadastrar-fornecedor .duas-colunas { display: grid; grid-template-columns: 110px 1fr; gap: 8px; }
 .cupom .cadastrar-fornecedor .sub { margin: 0; }
+
+/* Frete da nota fiscal (09/10): "Sem frete / Com frete", o valor, o tipo e a conta do rateio */
+.nota-lancar .frete-nota { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; padding: 10px; border: 1px dashed var(--linha); border-radius: 10px; }
+.nota-lancar .frete-nota label { font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.nota-lancar .frete-nota .escolha-frete { display: flex; gap: 8px; }
+.nota-lancar .frete-nota .escolha-frete button { flex: 1; padding: 9px 10px; border: 1px solid var(--linha); border-radius: 10px; background: var(--cartao); color: var(--texto); font: inherit; cursor: pointer; }
+.nota-lancar .frete-nota .escolha-frete button.ativo { border-color: var(--marca); background: var(--marca); color: var(--marca-texto); font-weight: 600; }
+.nota-lancar .frete-nota .conta-frete { display: flex; flex-direction: column; gap: 6px; }
+.nota-lancar .frete-nota .conta-frete li { display: flex; flex-direction: column; gap: 2px; }
+.nota-lancar .frete-nota .sub { margin: 0; }

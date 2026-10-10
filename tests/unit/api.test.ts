@@ -670,6 +670,16 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     expect(invoke).toHaveBeenLastCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'boleto' } })
   })
 
+  it('lancarNota com frete confirmado manda {frete: {valor, tipo}} junto; sem frete o corpo não muda', async () => {
+    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    await lancarNota('d'.repeat(44), 'boleto', undefined, { valor: 300, tipo: '1' })
+    expect(invoke).toHaveBeenLastCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'boleto', frete: { valor: 300, tipo: '1' } } })
+    await lancarNota('d'.repeat(44), 'boleto', [{ vencimento: '2026-11-05', valor: 100 }], { valor: 12.5, tipo: '2' })
+    expect(invoke).toHaveBeenLastCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'boleto', parcelas: [{ vencimento: '2026-11-05', valor: 100 }], frete: { valor: 12.5, tipo: '2' } } })
+    await lancarNota('d'.repeat(44), 'boleto', undefined, null)
+    expect(invoke).toHaveBeenLastCalledWith('lancar-nfe', { body: { chave: 'd'.repeat(44), forma: 'boleto' } })
+  })
+
   it('lê as parcelas digitadas (parcelas_manuais) normalizadas; ausente = null', async () => {
     const c = cadeia({ data: [
       { ...linha, parcelas_manuais: [{ vencimento: '2026-11-05', valor: '60.5' }] },
