@@ -280,8 +280,8 @@ export function lancandoPresa(n: NotaSefazLista, agoraMs: number = Date.now()): 
  * novo), mas NÃO é falha — falta o funcionário lançar o boleto do frete e finalizar a compra no SisChef. O motivo do robô traz "aberto na tela de pagamento com o frete".
  */
 export const freteAberto = (estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined): boolean =>
-  estado === 'erro' && /aberto na tela de pagamento com o frete/i.test(motivo ?? '')
-export const TEXTO_FRETE_ABERTO = 'Pedido aberto no SisChef com o frete: falta lançar o boleto do frete e finalizar a compra lá (não lance de novo aqui)'
+  estado === 'erro' && /aberto na tela de pagamento com o frete|parou de propósito \(frete\)/i.test(motivo ?? '')
+export const TEXTO_FRETE_ABERTO = 'Nota com frete parada de propósito no SisChef (compra finalizada, nota fiscal ainda não finalizada): falta conferir os boletos e finalizar a nota lá (não lance de novo aqui)'
 
 /** Texto do estado da nota (null = nunca disparada). */
 export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined): string | null {
