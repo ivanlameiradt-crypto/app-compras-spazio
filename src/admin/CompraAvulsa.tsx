@@ -110,7 +110,7 @@ export default function CompraAvulsa() {
         envio_id: envioId,
         fornecedor: { cnpj: fornecedor.cnpj, nome: fornecedor.razao || nomeDoConhecido(fornecedor) },
         pagamento,
-        itens: linhas.map((l) => ({ produto_id: l.produtoId as number, quantidade: lerQuantidade(l.quantidade) as number, preco: lerPreco(l.preco) as number })),
+        itens: linhas.map((l) => ({ produto_id: l.produtoId as number, quantidade: lerQuantidade(l.quantidade) as number, preco: lerPreco(l.preco) as number, descricao: produtoDe(l.produtoId)?.nome })),
       })
       setResultado({
         classe: r.disparo_ok === false ? 'amarelo' : 'ok',
@@ -291,7 +291,7 @@ export default function CompraAvulsa() {
                       const preco = it.valor_unitario
                       return {
                         codigo: id,
-                        descricao: catalogo?.find((p) => String(p.produto_id) === id)?.nome ?? `Produto ${id}`,
+                        descricao: catalogo?.find((p) => String(p.produto_id) === id)?.nome ?? it.descricao_cupom ?? `Produto ${id}`,
                         quantidade: q, unidade: unidadeDoProduto(catalogo, id),
                         valor: q != null && preco != null ? Math.round(q * preco * 100) / 100 : null,
                       }

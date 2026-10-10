@@ -3,7 +3,7 @@ import { tratar, validarItens, validarPagamento, totalDosItens, itemDoCupom, typ
 const ENVIO = '3f2b8c1e-5d4a-4e7b-9a10-6c2d8f0b1a23'
 const IVAN = 'ivan@spazio.com'
 const FORNECEDOR = { cnpj: '75.315.333/0326-55', nome: 'ATACADAO S.A.' }
-const ITENS = [{ produto_id: 1001, quantidade: 12.5, preco: 8.9 }, { produto_id: '3862312', quantidade: 1000, preco: 1.516 }]
+const ITENS = [{ produto_id: 1001, quantidade: 12.5, preco: 8.9, descricao: 'TOMATE ITALIANO' }, { produto_id: '3862312', quantidade: 1000, preco: 1.516 }]
 const CORPO = { envio_id: ENVIO, fornecedor: FORNECEDOR, pagamento: { forma: 'dinheiro', conta: 'DINHEIRO - À Vista' }, itens: ITENS }
 
 function fakeDeps(over: Partial<Deps> = {}): Deps & { gravou: Record<string, unknown>[]; disparou: string[] } {
@@ -35,7 +35,7 @@ describe('validarPagamento', () => {
 describe('validarItens', () => {
   it('aceita os itens e arredonda quantidade (3 casas) e preço (4 casas)', () => {
     const r = validarItens([{ produto_id: 7, quantidade: 1.23456, preco: 2.123456 }])
-    expect(r).toEqual({ ok: true, itens: [{ produto_id: '7', quantidade: 1.235, preco: 2.1235 }] })
+    expect(r).toEqual({ ok: true, itens: [{ produto_id: '7', quantidade: 1.235, preco: 2.1235, descricao: '' }] })
   })
   it.each([
     ['lista vazia', []],
@@ -50,7 +50,8 @@ describe('validarItens', () => {
     const r = validarItens(ITENS)
     if (!r.ok) throw new Error('esperava ok')
     expect(totalDosItens(r.itens)).toBe(1627.25)
-    expect(itemDoCupom(r.itens[0])).toEqual({ sugestao_produto: { id: '1001' }, entrada_estoque: 12.5, quantidade_cupom: 12.5, valor_unitario: 8.9, desconto_item: 0 })
+    expect(itemDoCupom(r.itens[0])).toEqual({ descricao_cupom: 'TOMATE ITALIANO', sugestao_produto: { id: '1001' }, entrada_estoque: 12.5, quantidade_cupom: 12.5, valor_unitario: 8.9, desconto_item: 0 })
+    expect(itemDoCupom(r.itens[1]).descricao_cupom).toBeNull()                       // sem nome enviado: null (a tela cai no nome da lista)
   })
 })
 

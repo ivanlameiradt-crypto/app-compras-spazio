@@ -59,7 +59,7 @@ export function validarPagamento(pg: unknown): { ok: true; pagamento: Pagamento 
   return { ok: false, erro: 'forma de pagamento inválida' }
 }
 
-export interface ItemValido { produto_id: string; quantidade: number; preco: number }
+export interface ItemValido { produto_id: string; quantidade: number; preco: number; /** O nome do produto na lista do app (só para mostrar; o robô acha o produto pelo código). */ descricao: string }
 
 export function validarItens(v: unknown): { ok: true; itens: ItemValido[] } | { ok: false; erro: string } {
   if (!Array.isArray(v) || v.length === 0) return { ok: false, erro: 'nenhum item' }
@@ -76,14 +76,15 @@ export function validarItens(v: unknown): { ok: true; itens: ItemValido[] } | { 
     vistos.add(produtoId)
     if (!ehNumPositivo(c.quantidade) || c.quantidade > QUANTIDADE_MAXIMA || round3(c.quantidade) <= 0) return { ok: false, erro: `item ${i + 1}: quantidade inválida` }
     if (!ehNumPositivo(c.preco) || c.preco > PRECO_MAXIMO || round4(c.preco) <= 0) return { ok: false, erro: `item ${i + 1}: preço inválido` }
-    itens.push({ produto_id: produtoId, quantidade: round3(c.quantidade), preco: round4(c.preco) })
+    const descricao = typeof c.descricao === 'string' ? c.descricao.replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+    itens.push({ produto_id: produtoId, quantidade: round3(c.quantidade), preco: round4(c.preco), descricao })
   }
   return { ok: true, itens }
 }
 
 /** O item como o robô do cupom lê (cupom_contrato.validar_cupom): produto, `entrada_estoque` na unidade do produto, preço por essa unidade, sem desconto. */
 export const itemDoCupom = (i: ItemValido): Record<string, unknown> => ({
-  sugestao_produto: { id: i.produto_id }, entrada_estoque: i.quantidade, quantidade_cupom: i.quantidade, valor_unitario: i.preco, desconto_item: 0,
+  descricao_cupom: i.descricao || null, sugestao_produto: { id: i.produto_id }, entrada_estoque: i.quantidade, quantidade_cupom: i.quantidade, valor_unitario: i.preco, desconto_item: 0,
 })
 
 /** O total a pagar = a soma de quantidade × preço (já arredondados como o SisChef guarda), em centavos. */

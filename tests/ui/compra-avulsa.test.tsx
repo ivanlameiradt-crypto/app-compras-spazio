@@ -80,7 +80,7 @@ describe('CompraAvulsa', () => {
     const corpo = m.enviarCompraAvulsa.mock.calls[0][0]
     expect(corpo.fornecedor).toEqual({ cnpj: '75315333032655', nome: 'ATACADAO S.A.' })
     expect(corpo.pagamento).toEqual({ forma: 'dinheiro', conta: 'DINHEIRO - À Vista' })
-    expect(corpo.itens).toEqual([{ produto_id: 1001, quantidade: 12.5, preco: 8.9 }])
+    expect(corpo.itens).toEqual([{ produto_id: 1001, quantidade: 12.5, preco: 8.9, descricao: 'TOMATE ITALIANO OU SALADETE - INSUMOS' }])   // o nome vai junto: a compra o guarda
     expect(corpo.envio_id).toMatch(/^[0-9a-f-]{36}$/i)
     expect(await screen.findByTestId('resultado-avulsa')).toHaveTextContent('Compra enviada')
     expect(screen.queryByTestId('fornecedor-escolhido')).not.toBeInTheDocument()   // fornecedor e itens limpos
@@ -146,5 +146,14 @@ describe('CompraAvulsa', () => {
     expect(linhas[0]).toHaveTextContent('164200001')
     expect(linhas[0]).toHaveTextContent('12,5 kg')
     expect(linhas[0]).toHaveTextContent('R$ 111,25')
+  })
+
+  it('o detalhe mostra o nome guardado na compra quando o produto não está na lista do app (nunca só o código)', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ itens: [{ descricao_cupom: 'EMBALAGEM P/ PIZZA N. 35 - INSUMOS', entrada_estoque: 1, unidade_cupom: null, valor_unitario: 2, desconto_item: 0, sugestao_produto: { id: '3862312' }, casado_por: null }] })])
+    render(<CompraAvulsa />)
+    const linha = (await screen.findAllByTestId('compra-recente'))[0]
+    await userEvent.click(within(linha).getByRole('button', { name: /lançada/ }))
+    expect(linha).toHaveTextContent('EMBALAGEM P/ PIZZA N. 35 - INSUMOS')
+    expect(linha).not.toHaveTextContent('Produto 3862312')
   })
 })

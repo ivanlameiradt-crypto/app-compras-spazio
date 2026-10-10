@@ -1060,7 +1060,7 @@ export interface EnvioCompraAvulsa {
   envio_id: string
   fornecedor: { cnpj: string; nome: string }
   pagamento: PagamentoCupom
-  itens: { produto_id: number; quantidade: number; preco: number }[]
+  itens: { produto_id: number; quantidade: number; preco: number; /** O nome do produto na lista do app, para a compra guardar e mostrar. */ descricao?: string }[]
 }
 /** Chama a Edge Function enviar-compra-avulsa (grava a linha cupom 'avulsa' e dispara o mesmo robô do cupom). */
 export async function enviarCompraAvulsa(envio: EnvioCompraAvulsa): Promise<ResumoEnvioCupom> {
