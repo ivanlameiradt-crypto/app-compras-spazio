@@ -11,6 +11,7 @@ import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import { cnpjDaChave, formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
+import { unidadeDoProduto } from './unidadeEstoque'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
@@ -39,9 +40,10 @@ const dataBr = (iso: string | null): string => { const p = (iso ?? '').split('-'
 const semCodFor = (d: string): string => d.replace(/^CÓD\. FOR:\s*\S+\s*/i, '').trim() || d
 /** Item de uma nota JÁ LANÇADA para o detalhe de "Últimos lançamentos": na frente da descrição vai o número do produto associado no SisChef
  *  (Cód. Interno, o `produto_id`), no lugar do "CÓD. FOR" do fornecedor (pedido do Ivan, 06/10); depois a quantidade e a unidade. */
-const linhaDoItem = (it: ItemNotaSefaz): LinhaDetalhe => {
+const linhaDoItem = (it: ItemNotaSefaz, catalogo: ProdutoCatalogo[] | null = null): LinhaDetalhe => {
   const codigo = it.produto_id != null && String(it.produto_id).trim() !== '' ? String(it.produto_id).trim() : null
-  return { codigo, descricao: semCodFor(it.descricao ?? 'item'), quantidade: it.qtd, unidade: it.unidade_sischef, valor: null }
+  // a unidade é a do produto no banco (planilha do Ivan, a mesma do SisChef); sem o produto na lista, a que o robô leu na tela
+  return { codigo, descricao: semCodFor(it.descricao ?? 'item'), quantidade: it.qtd, unidade: unidadeDoProduto(catalogo, it.produto_id) ?? it.unidade_sischef, valor: null }
 }
 /** Quantidade no jeito brasileiro: 19,918 (e não 19.918, que no Brasil lê-se como dezenove mil) e 1.000,5; sem quantidade, "?". */
 const qtdBr = (q: number | null | undefined): string =>
@@ -679,7 +681,8 @@ export default function NotaSefaz() {
   }
   useEffect(() => { void carregar() }, [])
 
-  const precisaCatalogo = aLancar.some((n) => n.itens.some((it) => !itemAssociado(it)))
+  // a lista de insumos também dá a unidade do estoque no detalhe de uma nota lançada aberta (regra do Ivan, 09/10)
+  const precisaCatalogo = aLancar.some((n) => n.itens.some((it) => !itemAssociado(it))) || expandido !== null
   useEffect(() => {
     if (!precisaCatalogo || catalogo !== null) return
     let vivo = true
@@ -821,7 +824,7 @@ export default function NotaSefaz() {
                     <span><b>lançada ✓</b> · {nomeDe(n)} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
                     <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                   </button>
-                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map(linhaDoItem)}
+                  {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map((it) => linhaDoItem(it, catalogo))}
                     fornecedor={`${n.emitente}${cnpjDe(n) ? ` · CNPJ ${formatarCnpj(cnpjDe(n))}` : ''}`} />}
                 </li>
               )

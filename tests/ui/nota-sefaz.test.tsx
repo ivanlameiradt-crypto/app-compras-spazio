@@ -68,6 +68,15 @@ describe('NotaSefaz', () => {
     expect(await screen.findByTestId('detalhe-fornecedor')).toHaveTextContent('Fornecedor: MATEUS SUPERMERCADOS SA · CNPJ 03.995.515/0113-63')
   })
 
+  it('regra do Ivan (09/10): o detalhe da nota lançada mostra a unidade do produto no banco (planilha), não a que a tela do SisChef trouxe na linha', async () => {
+    m.catalogoProdutos.mockResolvedValue([{ produto_id: 3469726, nome: 'BATATA CRINKLE - INSUMOS (KG)', unidade: 'kg' }])
+    m.notasLancadas.mockResolvedValue([nota({ chave: '3'.repeat(44), emitente: 'MATEUS', numero: '77', valor_nf: 10, situacao: 'lancada', lancada_em: '2026-10-09T12:00:00Z', nf_sischef: '99',
+      itens: [item({ descricao: 'BATATA CRINKLE', qtd: 24, unidade_sischef: 'UN', produto_id: 3469726 })] })])
+    render(<NotaSefaz />)
+    await userEvent.click(within(await screen.findByTestId('nota-lancada')).getByRole('button'))
+    await waitFor(() => expect(screen.getByText(/BATATA CRINKLE/).closest('li')).toHaveTextContent('24 kg'))
+  })
+
   it('lista as notas a lançar (emitente, NF, valor)', async () => {
     aLancar(nota({ chave: '1'.repeat(44), emitente: 'MATEUS', numero: '555', valor_nf: 1291.3 }))
     render(<NotaSefaz />)

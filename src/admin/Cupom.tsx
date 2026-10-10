@@ -12,6 +12,7 @@ import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLanca
 import { diagnosticoDoCupom, envioRepetido } from './cupomRegras'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
+import { unidadeDoProduto } from './unidadeEstoque'
 import { formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor } from './fornecedorRegras'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
@@ -44,9 +45,14 @@ function valorDaLinha(c: CupomRecente): string | null {
 /** Envio que não está "tudo certo": foi para REVISAR, ou ficou PENDENTE porque o disparo automático falhou. */
 const pedeAtencao = (r: ResumoEnvioCupom): boolean => r.estado === 'REVISAR' || r.disparo_ok === false
 
-/** Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade + unidade que entrou · valor). */
-const linhaDoItem = (it: ItemCupomRecente): LinhaDetalhe =>
-  ({ descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, unidade: it.unidade_cupom, valor: it.valor_unitario })
+/**
+ * Converte um item do cupom para a linha genérica do detalhe (descrição · quantidade + unidade que entrou · valor). A quantidade (`entrada_estoque`) e o valor
+ * (`valor_unitario` já por unidade do estoque) estão na unidade do PRODUTO no SisChef (pedido do Ivan, 09/10: batata, sal e Ovomaltine são em KG, e a linha
+ * dizia "un" — a unidade impressa no cupom). A unidade vem da lista de insumos (que já segue a planilha dele); sem ela, a do cupom, como antes.
+ */
+const linhaDoItem = (it: ItemCupomRecente, catalogo: ProdutoCatalogo[] | null = null): LinhaDetalhe => {
+  return { descricao: it.descricao_cupom ?? 'item', quantidade: it.entrada_estoque, unidade: unidadeDoProduto(catalogo, it.sugestao_produto?.id) ?? it.unidade_cupom, valor: it.valor_unitario }
+}
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api). */
 const ACOES_FORNECEDOR = {
@@ -229,7 +235,8 @@ export default function Cupom() {
     return () => clearInterval(id)
   }, [naFila])
 
-  const precisaCatalogo = recentes.some(corrigivel)
+  // a lista de insumos também dá a unidade do estoque no detalhe de um envio aberto (kg × un); só é lida quando há algo a mostrar com ela
+  const precisaCatalogo = recentes.some(corrigivel) || expandido !== null
   useEffect(() => {
     if (!precisaCatalogo || catalogo !== null) return
     let vivo = true
@@ -368,7 +375,7 @@ export default function Cupom() {
                 {/* Lançado em: dia e hora do lançamento (pedido do Ivan, 07/10, igual ao da aba fiscal). Só cupom LANCADO: o robô grava atualizado_em ao
                     terminar. O "envio repetido" é REVISAR (a compra foi lançada em outro envio) e não tem hora própria, então não mostra. */}
                 {aberto && (
-                  <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map(linhaDoItem)} rotuloQuando="Lançado em" rotuloQtd={false}
+                  <DetalheLancamento pedido={c.pedido_sischef} itens={c.itens.map((it) => linhaDoItem(it, catalogo))} rotuloQuando="Lançado em" rotuloQtd={false}
                     fornecedor={c.emitente_nome ? `${c.emitente_nome}${c.emitente_cnpj ? ` · CNPJ ${formatarCnpj(c.emitente_cnpj)}` : ''}` : null}
                     quando={c.estado === 'LANCADO' && c.atualizado_em ? formatarDataHora(c.atualizado_em) : null} />
                 )}
