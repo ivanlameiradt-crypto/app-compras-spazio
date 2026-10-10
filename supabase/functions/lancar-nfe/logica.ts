@@ -19,7 +19,11 @@
 // Só recusa quando o XML JÁ traz boletos (lista não vazia): aí os boletos do XML prevalecem. A soma das digitadas tem de fechar
 // com o valor da nota ao centavo, sempre.
 
-export interface Corpo { chave?: unknown; forma?: unknown; parcelas?: unknown; acao?: unknown }
+export interface Corpo { chave?: unknown; forma?: unknown; parcelas?: unknown; frete?: unknown; acao?: unknown }
+/** Frete confirmado no app (pedido do Ivan, 09/10): valor em reais e o tipo do SisChef ("Tipo do frete": 0 CIF, 1 FOB, 2 terceiros, 3/4 transporte próprio, 9 sem transporte). Só forma o preço do produto; nunca entra no financeiro. */
+export interface FreteNota { valor: number; tipo: string }
+export const TIPOS_DE_FRETE = ['0', '1', '2', '3', '4', '9']
+export const MAX_FRETE = 1_000_000
 /** Parcela digitada pelo Ivan quando o XML não traz as duplicatas (falha do fornecedor, ex.: MATEUS) ou ainda não foi lido. */
 export interface ParcelaManual { vencimento: string; valor: number }
 export interface UsuarioLinha { papel: string; ativo: boolean }
@@ -42,6 +46,9 @@ export interface NotaReservada {
   itens: ItemNota[] | null
   /** O que o Ivan digitou (gravado na reserva); null = nada digitado. */
   parcelas_manuais?: ParcelaManual[] | null
+  /** O frete que o Ivan confirmou no app (gravado na reserva); null = sem frete. */
+  frete_valor?: number | string | null
+  frete_tipo?: string | null
   /** Decisões do Ivan no app para itens sem produto no SisChef, por nº do item ("1", "2"…): { produto_id, produto_nome, unidade,
    *  conversao, origem, por, em } (migração 20261210000001; a conversão é da etapa 2). Vai inteira ao robô, como veio do banco;
    *  null/ausente = nenhuma decisão. */
@@ -59,7 +66,7 @@ export const CNPJS_PAGAMENTO_SEMANAL_QUARTA = ['37638932000174'] // MAUES FOOD B
 export interface Deps {
   buscarUsuario(email: string): Promise<UsuarioLinha | null>
   /** Reserva atômica (um UPDATE só, com as condições de `filtroReservavel`): a nota reservada, ou null se indisponível. */
-  reservar(chave: string, forma: string, agoraIso: string, limiteIso: string, parcelasManuais: ParcelaManual[] | null): Promise<NotaReservada | null>
+  reservar(chave: string, forma: string, agoraIso: string, limiteIso: string, parcelasManuais: ParcelaManual[] | null, frete: FreteNota | null): Promise<NotaReservada | null>
   /** Valor da nota e boletos do XML (cot_nfe.parcelas), ou null se a nota não existe. */
   notaParaParcelas(chave: string): Promise<NotaParaParcelas | null>
   /** Há OUTRA nota (chave diferente) 'lancando' desde `limiteIso` ou depois? O GitHub guarda só UM run pendente por grupo
@@ -104,6 +111,18 @@ export function normalizarParcelas(x: unknown): ParcelaManual[] | null {
 /** Soma em centavos (sem erro de ponto flutuante), em reais. */
 export const somaParcelas = (ps: ParcelaManual[]): number => ps.reduce((t, p) => t + Math.round(p.valor * 100), 0) / 100
 
+/** O frete do corpo -> {valor (2 casas), tipo}, null = sem frete (ausente ou null), ou 'invalido'. */
+export function normalizarFrete(x: unknown): FreteNota | null | 'invalido' {
+  if (x === undefined || x === null) return null
+  if (typeof x !== 'object') return 'invalido'
+  const { valor, tipo } = x as Record<string, unknown>
+  if (typeof valor !== 'number' || !Number.isFinite(valor) || valor <= 0 || valor > MAX_FRETE) return 'invalido'
+  const centavos = Math.round(valor * 100)
+  if (Math.abs(valor * 100 - centavos) > 1e-6) return 'invalido' // no máximo 2 casas
+  if (typeof tipo !== 'string' || !TIPOS_DE_FRETE.includes(tipo)) return 'invalido'
+  return { valor: centavos / 100, tipo }
+}
+
 /** "Como pagar" do app -> a forma no formato do robô (formas_pagamento.py), ou null se inválida. */
 export function normalizarForma(forma: unknown): string | null {
   if (typeof forma !== 'string') return null
@@ -136,6 +155,8 @@ export function montarNotaJson(n: NotaReservada): string {
     chave: n.chave, emitente: n.emitente, numero: n.numero, emissao: n.emissao, valor_nf: n.valor_nf,
     forma_pagamento: n.forma_pagamento,
     ...(n.parcelas_manuais && n.parcelas_manuais.length > 0 ? { parcelas_manuais: n.parcelas_manuais } : {}),
+    // frete confirmado no app (só forma o preço do produto; o robô o põe no Complemento do pedido e distribui entre os itens)
+    ...(n.frete_valor != null && n.frete_tipo ? { frete: { valor: Number(n.frete_valor), tipo: n.frete_tipo } } : {}),
     associacoes_app: n.associacoes_app ?? null,
     itens: (n.itens ?? []).map((it) => ({
       n: it.n ?? null, descricao: it.descricao ?? null, produto_id: it.produto_id ?? null, associacao: it.associacao ?? null,
@@ -155,6 +176,9 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!RE_CHAVE.test(chave)) return { status: 400, corpo: { erro: 'chave da nota inválida' } }
   const forma = normalizarForma(c.forma)
   if (!forma) return { status: 400, corpo: { erro: 'escolha como pagar (forma de pagamento inválida)' } }
+  // Frete (pedido do Ivan, 09/10): opcional; só valor > 0 (2 casas) e um dos tipos do SisChef
+  const frete = normalizarFrete(c.frete)
+  if (frete === 'invalido') return { status: 400, corpo: { erro: 'frete inválido: confira o valor e o tipo do frete' } }
   // Parcelas digitadas (regra do Ivan de 07/10: "quando não vier informando nada na nota, prevalece o que eu determinar no app"):
   // só para boleto, no formato certo, e só se a soma fecha com o valor da nota. São aceitas quando o XML NÃO traz boletos
   // (cot_nfe.parcelas = []) E também quando o XML ainda não foi lido (parcelas = null): nos dois casos a nota "não veio informando
@@ -197,7 +221,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (await deps.outraLancando(chave, limite.toISOString())) {
     return { status: 409, corpo: { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' } }
   }
-  const nota = await deps.reservar(chave, forma, agora.toISOString(), limite.toISOString(), manuais)
+  const nota = await deps.reservar(chave, forma, agora.toISOString(), limite.toISOString(), manuais, frete)
   if (!nota) {
     return { status: 409, corpo: { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' } }
   }

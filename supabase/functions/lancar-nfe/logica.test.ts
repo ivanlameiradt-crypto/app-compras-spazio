@@ -1,5 +1,5 @@
 import {
-  CONTAS_PIX, PASSO_QUE_LANCA, filtroReservavel, montarNotaJson, normalizarForma, normalizarParcelas, somaParcelas, tratar, verificar,
+  CONTAS_PIX, PASSO_QUE_LANCA, filtroReservavel, montarNotaJson, normalizarForma, normalizarFrete, normalizarParcelas, somaParcelas, tratar, verificar,
   type Deps, type DepsVerificar, type Execucao, type NotaEstado, type NotaReservada, type PassoExecucao,
 } from './logica'
 
@@ -96,7 +96,7 @@ describe('tratar (o "Lançar" de uma nota)', () => {
     const d = fakeDeps()
     const r = await tratar({ chave: CHAVE, forma: 'PIX:Bradesco|IJ' }, 'Ivan@Spazio.com ', d)
     expect(r).toEqual({ status: 202, corpo: { ok: true, chave: CHAVE, forma: 'pix:bradesco|ij' } })
-    expect(d.reservas).toEqual([[CHAVE, 'pix:bradesco|ij', '2026-10-06T12:00:00.000Z', '2026-10-06T11:30:00.000Z', null]])
+    expect(d.reservas).toEqual([[CHAVE, 'pix:bradesco|ij', '2026-10-06T12:00:00.000Z', '2026-10-06T11:30:00.000Z', null, null]])
     expect(JSON.parse(d.disparos[0]).forma_pagamento).toBe('pix:bradesco|ij')
   })
 
@@ -475,5 +475,41 @@ describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
     const c = r.corpo as { situacao: string; mudou: boolean; mensagem: string }
     expect([c.situacao, c.mudou]).toEqual(['liberada', false])
     expect(c.mensagem).toContain('já mudou de estado')
+  })
+})
+
+describe('frete da nota (pedido do Ivan, 09/10): só forma o preço do produto, nunca o financeiro', () => {
+  it('normalizarFrete: ausente/null = sem frete; valor > 0 com 2 casas e tipo do SisChef; o resto é inválido', () => {
+    expect(normalizarFrete(undefined)).toBeNull()
+    expect(normalizarFrete(null)).toBeNull()
+    expect(normalizarFrete({ valor: 300, tipo: '1' })).toEqual({ valor: 300, tipo: '1' })
+    expect(normalizarFrete({ valor: 12.5, tipo: '2' })).toEqual({ valor: 12.5, tipo: '2' })
+    for (const ruim of [{ valor: 0, tipo: '1' }, { valor: -5, tipo: '1' }, { valor: 10.123, tipo: '1' }, { valor: '300', tipo: '1' }, { valor: 300, tipo: '7' }, { valor: 300 }, { valor: 2_000_000, tipo: '1' }, 'frete', 5]) {
+      expect(normalizarFrete(ruim)).toBe('invalido')
+    }
+  })
+  it('o frete confirmado vai ao 6º argumento da reserva e ao nota_json do robô; sem frete = null e o json não tem a chave', async () => {
+    const d = fakeDeps({ async reservar(...a) { d.reservas.push(a); return { ...NOTA, forma_pagamento: a[1] as string, frete_valor: (a[5] as { valor: number } | null)?.valor ?? null, frete_tipo: (a[5] as { tipo: string } | null)?.tipo ?? null } } })
+    const r = await tratar({ chave: CHAVE, forma: 'boleto', frete: { valor: 300, tipo: '1' } }, 'a@b', d)
+    expect(r.status).toBe(202)
+    expect(d.reservas[0][5]).toEqual({ valor: 300, tipo: '1' })
+    expect(JSON.parse(d.disparos[0]).frete).toEqual({ valor: 300, tipo: '1' })
+    const d2 = fakeDeps()
+    await tratar({ chave: CHAVE, forma: 'boleto' }, 'a@b', d2)
+    expect(d2.reservas[0][5]).toBeNull()
+    expect(JSON.parse(d2.disparos[0])).not.toHaveProperty('frete')
+  })
+  it('frete inválido: 400 sem reservar nem disparar', async () => {
+    const d = fakeDeps()
+    const r = await tratar({ chave: CHAVE, forma: 'boleto', frete: { valor: 0, tipo: '1' } }, 'a@b', d)
+    expect(r.status).toBe(400)
+    expect(String(r.corpo.erro)).toMatch(/frete/)
+    expect(d.reservas).toEqual([])
+    expect(d.disparos).toEqual([])
+  })
+  it('o frete não muda o valor da nota nem as parcelas que o robô recebe (financeiro intacto)', () => {
+    const json = JSON.parse(montarNotaJson({ ...NOTA, frete_valor: 300, frete_tipo: '1' }))
+    expect(json.valor_nf).toBe(NOTA.valor_nf)
+    expect(json.frete).toEqual({ valor: 300, tipo: '1' })
   })
 })

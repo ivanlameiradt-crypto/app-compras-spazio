@@ -6,7 +6,7 @@ import { emailDoLogin, SENHA_PADRAO } from './login'
 import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
   HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
-  LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
+  FreteDaNotaConfirmado, LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
   Preparo, ProdutoCatalogo, Recebimento, RespostaConfirmacaoCupom, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
@@ -700,6 +700,7 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
     if (t.includes('não fecham')) return 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'
     if (t.includes('já tem boletos')) return 'Esta nota já tem boletos no XML. Atualize a tela e confira.'
     if (t.includes('só valem para boleto')) return 'Parcelas digitadas só valem para a forma Boleto.'
+    if (t.includes('frete')) return 'O frete não está certo: confira o valor e o tipo do frete.'
     return 'Confira o vencimento e o valor de cada parcela.'
   }
   if (status === 400 || t.includes('inválid')) {
@@ -712,9 +713,10 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
  * Manda lançar UMA nota (Edge Function lancar-nfe: admin, reserva a nota e dispara o robô). A função só responde 202 quando o robô
  * foi chamado; o resultado de verdade aparece depois, no estado da nota (lancamento_estado). Erros viram texto em português.
  */
-export async function lancarNota(chave: string, forma: string, parcelas?: ParcelaDigitada[]): Promise<void> {
-  // `parcelas` só vai quando o Ivan digitou (boleto cujo XML não traz as duplicatas); sem ela o corpo é o de sempre
-  const body = parcelas && parcelas.length > 0 ? { chave, forma, parcelas } : { chave, forma }
+export async function lancarNota(chave: string, forma: string, parcelas?: ParcelaDigitada[], frete?: FreteDaNotaConfirmado | null): Promise<void> {
+  // `parcelas` só vai quando o Ivan digitou (boleto cujo XML não traz as duplicatas); `frete` só quando ele confirmou "Com frete" (pedido de 09/10); sem eles o corpo é o de sempre
+  const body: Record<string, unknown> = parcelas && parcelas.length > 0 ? { chave, forma, parcelas } : { chave, forma }
+  if (frete) body.frete = { valor: frete.valor, tipo: frete.tipo }
   const { error } = await supabase.functions.invoke('lancar-nfe', { body })
   if (!error) return
   const contexto = (error as { context?: Response }).context
