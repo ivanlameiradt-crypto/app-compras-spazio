@@ -38,9 +38,10 @@ export function faltaNaLinha(l: LinhaAvulsa): string {
   return ''
 }
 
-/** Soma dos itens completos (centavos arredondados). */
+/** O total da compra = soma de quantidade × preço das linhas completas (quantidade a 3 casas e preço a 4, como o servidor e o SisChef), arredondada ao centavo UMA vez. */
 export function totalGeral(linhas: LinhaAvulsa[]): number {
-  return arredondar(linhas.reduce((s, l) => s + (faltaNaLinha(l) === '' ? totalDaLinha(l) ?? 0 : 0), 0), 2)
+  const soma = linhas.reduce((s, l) => (faltaNaLinha(l) === '' ? s + (lerQuantidade(l.quantidade) as number) * (lerPreco(l.preco) as number) : s), 0)
+  return arredondar(soma, 2)
 }
 
 /** A compra pode ser lançada? Todas as linhas completas, sem produto repetido (o SisChef soma e o Ivan se confunde) e pelo menos 1 item. */
