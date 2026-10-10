@@ -311,6 +311,17 @@ describe('NotaSefaz', () => {
   })
 
   describe('estado do robô', () => {
+    it("frete aberto de propósito: texto próprio (não 'pela metade'), em aviso amarelo, e o Lançar continua bloqueado", async () => {
+      aLancar(nota({ lancamento_estado: 'erro', lancamento_motivo: 'pedido 164117311 aberto na tela de pagamento com o frete de R$ 475,00 distribuído entre os itens; falta lançar o boleto do frete' }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      const aviso = screen.getByTestId('status-nota')
+      expect(aviso).toHaveTextContent('Pedido aberto no SisChef com o frete: falta lançar o boleto do frete e finalizar a compra lá')
+      expect(aviso).not.toHaveTextContent('pela metade')
+      expect(aviso).toHaveClass('amarelo')
+      expect(botaoLancar()).toBeDisabled()
+    })
+
     it("'erro' (pela metade): avisa para NÃO lançar de novo e bloqueia o Lançar", async () => {
       aLancar(nota({ lancamento_estado: 'erro', lancamento_motivo: 'faltou gerar a NF' }))
       render(<NotaSefaz />)
