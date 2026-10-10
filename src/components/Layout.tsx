@@ -6,17 +6,19 @@ import AvisoFila from './AvisoFila'
 import AvisoNovaVersao from './AvisoNovaVersao'
 import { conferirVersao, recarregarPagina } from '../lib/atualizacao'
 
-// As 3 abas do topo (admin). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
+// As 4 abas do topo (admin; "Compras avulsas" desde 10/10/2026). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
 // Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Fiscal (a nota da SEFAZ) são cada um sua tela.
 const ABAS = [
   { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: '🛒' },
   { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: '🧾' },
   { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', ic: '📄' },
+  { chave: 'avulsa', to: '/compra-avulsa', rotulo: 'Compras avulsas', ic: '🛍️' },
 ] as const
 
 /** Qual aba fica acesa para a rota atual: Cupom e Nota SEFAZ só nas suas; todo o resto é Compra. */
-function abaAtual(pathname: string): 'compra' | 'cupom' | 'sefaz' {
+function abaAtual(pathname: string): 'compra' | 'cupom' | 'sefaz' | 'avulsa' {
   if (pathname.startsWith('/cupom')) return 'cupom'
+  if (pathname.startsWith('/compra-avulsa')) return 'avulsa'
   if (pathname.startsWith('/nota-sefaz')) return 'sefaz'
   return 'compra'
 }

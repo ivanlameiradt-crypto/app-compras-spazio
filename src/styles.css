@@ -271,3 +271,18 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .nota-lancar .frete-nota .conta-frete { display: flex; flex-direction: column; gap: 6px; }
 .nota-lancar .frete-nota .conta-frete li { display: flex; flex-direction: column; gap: 2px; }
 .nota-lancar .frete-nota .sub { margin: 0; }
+
+/* Aba "Compras avulsas" (10/10/2026): compra sem cupom e sem nota; reaproveita .cupom (chips, botões) */
+.compra-avulsa .etapa { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.compra-avulsa .itens-avulsa { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.compra-avulsa .itens-avulsa > li { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--linha); border-radius: 12px; background: var(--cartao); }
+.compra-avulsa .linha-topo { display: flex; justify-content: space-between; align-items: center; }
+.compra-avulsa .achados { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.compra-avulsa .achados button { width: 100%; text-align: left; font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--linha); background: var(--fundo, var(--cartao)); color: var(--texto); cursor: pointer; }
+.compra-avulsa .par { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.compra-avulsa .escolhido { margin: 0; }
+.compra-avulsa .escolhido .un { color: var(--suave); }
+.compra-avulsa .resumo-avulsa { border-top: 1px solid var(--linha); padding-top: 12px; }
+.compra-avulsa, .compra-avulsa .etapa, .compra-avulsa .itens-avulsa, .compra-avulsa .itens-avulsa > li, .compra-avulsa .par, .compra-avulsa label { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.compra-avulsa input { min-width: 0; width: 100%; box-sizing: border-box; }
+.compra-avulsa .escolhido { overflow-wrap: anywhere; }
