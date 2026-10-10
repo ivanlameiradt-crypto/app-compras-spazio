@@ -1,4 +1,4 @@
-import { codigoUfDaChave, lerFrete, notaDeForaDoPara, ratearFrete, siglaDaChave } from '../../src/admin/freteRegras'
+import { codigoUfDaChave, lerFrete, notaDeForaDoPara, ratearFrete, siglaDaChave, unidadesDoPacote } from '../../src/admin/freteRegras'
 
 const CHAVE_SP = '35261008637193000106550010001207101371230333' // Tamarozzi (SP)
 const CHAVE_PA = '15261003995515011363550020000892841000892852' // Mateus (PA)
@@ -59,5 +59,20 @@ describe('ratearFrete — proporcional ao valor, como o "Distribuir entre os ite
     expect(ratearFrete([], 10)).toBeNull()
     expect(ratearFrete([{ descricao: 'A', valor: 0, quantidade: 1, unidade: 'un' }], 10)).toBeNull()
     expect(ratearFrete([{ descricao: 'A', valor: 10, quantidade: 0, unidade: 'un' }], 10)).toBeNull()
+  })
+})
+
+describe('unidadesDoPacote — quantas unidades vêm no pacote, lido do nome do produto', () => {
+  it('"PCT 25 UND" → 25; caixa, fardo e "C/" também', () => {
+    expect(unidadesDoPacote('EMBALAGEM P/ PIZZA N. 35 - PCT 25 UND')).toBe(25)
+    expect(unidadesDoPacote('CÓD. FOR: 2350LG EMBALAGEM P/ PIZZA N. 35 - PCT 25 UND')).toBe(25)
+    expect(unidadesDoPacote('COPO 200ML CX 12 UN')).toBe(12)
+    expect(unidadesDoPacote('GUARDANAPO FARDO C/ 10 UNID')).toBe(10)
+  })
+  it('nome sem a quantidade, 1 unidade ou vazio: null (não chuto)', () => {
+    expect(unidadesDoPacote('REQUEIJAO CREMOSO 1KG')).toBeNull()
+    expect(unidadesDoPacote('SACOLA PCT 1 UND')).toBeNull()
+    expect(unidadesDoPacote('')).toBeNull()
+    expect(unidadesDoPacote(null)).toBeNull()
   })
 })

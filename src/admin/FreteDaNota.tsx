@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react'
 import { formatarReais } from '../lib/regras'
 import type { FreteDaNotaConfirmado } from '../lib/tipos'
-import { TIPOS_DE_FRETE, TIPO_DE_FRETE_PADRAO, lerFrete, ratearFrete, siglaDaChave, notaDeForaDoPara, type ItemParaRateio } from './freteRegras'
+import { TIPOS_DE_FRETE, TIPO_DE_FRETE_PADRAO, lerFrete, ratearFrete, siglaDaChave, notaDeForaDoPara, unidadesDoPacote, type ItemParaRateio } from './freteRegras'
 
 export type FreteConfirmado = FreteDaNotaConfirmado
 
@@ -26,6 +26,13 @@ interface Props {
 const pct = (v: number): string => `${v.toFixed(2).replace('.', ',')}%`
 const unitario = (v: number): string => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
+/** Quando o nome do produto diz quantas unidades vêm no pacote ("PCT 25 UND"): o preço final do pacote (já com o frete) ÷ as unidades = o preço de cada unidade solta. */
+function PrecoPorUnidadeSolta({ item }: { item: { descricao: string; precoFinal: number } }) {
+  const n = unidadesDoPacote(item.descricao)
+  if (n === null) return null
+  return <b data-testid="preco-por-unidade">Preço de cada unidade (pacote de {n}): {unitario(item.precoFinal / n)} <span className="sub">= {unitario(item.precoFinal)} ÷ {n}</span></b>
+}
+
 export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTrocarModo, confirmado, aoMudar, desabilitado = false }: Props) {
   const [texto, setTexto] = useState(confirmado ? confirmado.valor.toFixed(2).replace('.', ',') : '')
   const [tipo, setTipo] = useState(confirmado?.tipo ?? TIPO_DE_FRETE_PADRAO)
@@ -33,8 +40,10 @@ export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTroca
   const valor = lerFrete(texto)
   const sigla = siglaDaChave(chave)
   const foraDoPara = notaDeForaDoPara(chave)
-  const rateio = useMemo(() => (valor !== null && itens ? ratearFrete(itens, valor) : null), [valor, itens])
-  const percentual = valor !== null && valorNota ? (valor / valorNota) * 100 : null
+  // Com o frete já confirmado, a conta é a do valor confirmado (o campo de digitação some): o preço unitário final fica à vista junto do botão "Lançar".
+  const valorDaConta = confirmado ? confirmado.valor : valor
+  const rateio = useMemo(() => (valorDaConta !== null && itens ? ratearFrete(itens, valorDaConta) : null), [valorDaConta, itens])
+  const percentual = valorDaConta !== null && valorNota ? (valorDaConta / valorNota) * 100 : null
 
   function escolherSem() {
     aoTrocarModo(false); setErro('')
@@ -61,6 +70,19 @@ export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTroca
         <div className="ok" role="status" data-testid="frete-confirmado">
           ✓ Frete confirmado: <b>{formatarReais(confirmado.valor)}</b>{percentual !== null && <> ({pct(percentual)} da nota)</>}. A nota está pronta para lançar com o frete: o robô põe o valor no pedido e distribui entre os itens.{' '}
           <button type="button" className="link" disabled={desabilitado} onClick={() => aoMudar(null)} data-testid="mudar-frete">Mudar</button>
+          {rateio && (
+            <ul className="conferir-itens" data-testid="preco-final-frete">
+              {rateio.itens.map((i, k) => (
+                <li key={k}>
+                  <span>{i.descricao}</span>
+                  <span className="sub">{i.quantidade.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {i.unidade} · frete deste item {formatarReais(i.frete)}</span>
+                  <b>Preço unitário final: {unitario(i.precoFinal)} por {i.unidade}</b>
+                  <span className="sub">{unitario(i.precoNota)} da nota + {unitario(i.frete / i.quantidade)} de frete</span>
+                  <PrecoPorUnidadeSolta item={i} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -86,6 +108,7 @@ export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTroca
                       <span>{i.descricao}</span>
                       <span className="sub">{i.quantidade.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {i.unidade} · frete deste item {formatarReais(i.frete)}</span>
                       <b>{unitario(i.precoNota)} + {unitario(i.frete / i.quantidade)} = {unitario(i.precoFinal)} por {i.unidade}</b>
+                      <PrecoPorUnidadeSolta item={i} />
                     </li>
                   ))}
                 </ul>
