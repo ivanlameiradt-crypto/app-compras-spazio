@@ -935,6 +935,27 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(await screen.findByTestId('detalhe-fornecedor')).toHaveTextContent('Fornecedor: ATACADAO S.A. · CNPJ 75.315.333/0326-55')
     })
 
+    it('regra do Ivan (09/10): o detalhe do lançamento mostra a unidade do PRODUTO no banco (kg), não a que o cupom imprimiu (un) — batata, sal e Ovomaltine', async () => {
+      m.catalogoProdutos.mockResolvedValue([
+        { produto_id: 3469726, nome: 'BATATA CRINKLE - INSUMOS (KG)', unidade: 'kg' }, { produto_id: 3138591, nome: 'SAL COMUM - INSUMO (KG)', unidade: 'kg' },
+        { produto_id: 3836915, nome: 'OVOMALTINE EM FLOCOS - INSUMOS (KG)', unidade: 'kg' }, { produto_id: 999, nome: 'COISA EM UNIDADE', unidade: 'un' }])
+      m.cuponsRecentes.mockResolvedValue([recente({ id: 'm1', estado: 'LANCADO', emitente_nome: 'MATEUS SUPERMERCADOS SA', emitente_cnpj: '03995515011363', valor_a_pagar: 412.92, pedido_sischef: '164040801', atualizado_em: '2026-10-09T20:10:30Z',
+        itens: [
+          item({ descricao_cupom: 'BATATA FRITA BEM BRASIL CRINKLE CON', unidade_cupom: 'UN', sugestao_produto: { id: '3469726' }, entrada_estoque: 24, quantidade_cupom: 12, valor_unitario: 17.205 }),
+          item({ descricao_cupom: 'SAL MOIDO BOM DE MESA 1KG', unidade_cupom: 'UN', sugestao_produto: { id: '3138591' }, entrada_estoque: 1, quantidade_cupom: 1, valor_unitario: 1.19 }),
+          item({ descricao_cupom: 'ACHOC PO OVOMALTINE SH 600G', unidade_cupom: 'UN', sugestao_produto: { id: '3836915' }, entrada_estoque: 0.6, quantidade_cupom: 1, valor_unitario: 66.41 }),
+          item({ descricao_cupom: 'PRODUTO SEM LISTA', unidade_cupom: 'CX', sugestao_produto: { id: '123456' }, entrada_estoque: 2, valor_unitario: 5 }),
+        ] })])
+      render(<Cupom />)
+      await userEvent.click(within(await screen.findByTestId('cupom-recente')).getAllByRole('button')[0])
+      const detalhe = within(screen.getByTestId('cupom-recente'))
+      await waitFor(() => expect(detalhe.getByText(/BATATA FRITA/).closest('li')).toHaveTextContent('24 kg'))
+      expect(detalhe.getByText(/SAL MOIDO/).closest('li')).toHaveTextContent('1 kg')
+      expect(detalhe.getByText(/OVOMALTINE/).closest('li')).toHaveTextContent('0,6 kg')
+      expect(detalhe.getByText(/BATATA FRITA/).closest('li')).not.toHaveTextContent('24 un')
+      expect(detalhe.getByText(/PRODUTO SEM LISTA/).closest('li')).toHaveTextContent('2 cx')       // produto fora da lista: a unidade da linha, como antes
+    })
+
     it('descrição mudou: o fornecedor já mandou algo parecido e confirmado — o app avisa "antes vinha como X" e um toque confirma', async () => {
       m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3482196, nome: 'TOMATE ITALIANO - INSUMOS (KG)', unidade: 'kg' }])
       m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'TOMATE ITAL. GRAUDO KG', unidade_cupom: 'KG', quantidade_cupom: 3.2, valor_unitario: 10,
