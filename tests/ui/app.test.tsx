@@ -54,13 +54,14 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: /lançamentos/i })).toBeInTheDocument()
   })
 
-  it('Fase 1 app unificado: topo tem 3 abas e a Compra abre o menu em grade com as telas de compra', async () => {
+  it('Fase 1 app unificado: topo tem 4 abas e a Compra abre o menu em grade com as telas de compra', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     render(<App />)
-    // 3 abas no topo: Compra · Lançamento de cupom · Lançamento fiscal (a nota da SEFAZ; renomeada em 06/10)
+    // 4 abas no topo: Compra · Lançamento de cupom · Lançamento fiscal (a nota da SEFAZ; renomeada em 06/10) · Compras avulsas (10/10)
     const topo = (await screen.findByRole('link', { name: 'Lançamento de cupom' })).closest('nav') as HTMLElement
-    expect([...topo.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/compra', '#/cupom', '#/nota-sefaz'])
+    expect([...topo.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/compra', '#/cupom', '#/nota-sefaz', '#/compra-avulsa'])
     expect(within(topo).getByRole('link', { name: /Lançamento fiscal/ })).toHaveAttribute('href', '#/nota-sefaz')   // o nome da 3ª aba
+    expect(within(topo).getByRole('link', { name: /Compras avulsas/ })).toHaveAttribute('href', '#/compra-avulsa')   // a 4ª: compra sem cupom e sem nota
     expect(within(topo).queryByText(/nota SEFAZ/)).not.toBeInTheDocument()                                          // e o nome antigo sumiu
     expect(within(topo).queryByText(/Lançamento de fiscal/)).not.toBeInTheDocument()                                // nem o de algumas horas atrás (com o "de")
     // a aba Compra (rota padrão do admin) abre o menu em grade com as telas de compra (findBy: espera o redirect p/ /compra)

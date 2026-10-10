@@ -1,4 +1,5 @@
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
+import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
@@ -1014,14 +1015,56 @@ export async function fantasiasDosFornecedores(): Promise<Record<string, string>
   return mapa
 }
 
-/** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
+/**
+ * Os fornecedores que o app já conhece (pedido do Ivan, 10/10/2026): os emitentes das notas da SEFAZ (cot_nfe), os dos cupons e os cadastrados pelo app (com a fantasia),
+ * juntados por CNPJ. Só leitura (RLS de admin). Cada fonte é independente: uma que falha só deixa de contribuir.
+ */
+export async function fornecedoresConhecidos(): Promise<FornecedorConhecido[]> {
+  const [notas, cupons, cadastrados] = await Promise.all([
+    supabase.from('cot_nfe').select('cnpj_emitente, emitente').limit(3000),
+    supabase.from('cupom').select('emitente_cnpj, emitente_nome').limit(3000),
+    supabase.from('fornecedor_app').select('cnpj, razao_social, nome_fantasia').limit(2000),
+  ])
+  const lin = (r: { error: unknown; data: unknown }): Record<string, string | null>[] => (r.error ? [] : ((r.data ?? []) as Record<string, string | null>[]))
+  return juntarFornecedores(
+    lin(cadastrados).map((x) => ({ cnpj: x.cnpj, razao: x.razao_social, fantasia: x.nome_fantasia })),
+    lin(notas).map((x) => ({ cnpj: x.cnpj_emitente, razao: x.emitente })),
+    lin(cupons).map((x) => ({ cnpj: x.emitente_cnpj, razao: x.emitente_nome })),
+  )
+}
+
+const COLUNAS_CUPOM = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path'
+const lerCupom = (c: CupomRecente): CupomRecente => ({
+  ...c,
+  valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar),
+  itens: Array.isArray(c.itens) ? c.itens : [], // JSONB pode vir null; a UI espera lista
+})
+
+/** "Últimos envios" do cupom: só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. As compras AVULSAS (origem 'avulsa') têm a lista própria. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
-  const r = checar(await supabase.from('cupom')
-    .select('id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path')
+  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).neq('origem', 'avulsa')
     .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
-  return r.map((c) => ({
-    ...c,
-    valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar),
-    itens: Array.isArray(c.itens) ? c.itens : [], // JSONB pode vir null; a UI espera lista
-  }))
+  return r.map(lerCupom)
+}
+
+/** "Últimas compras avulsas" (10/10/2026): as linhas `cupom` de origem 'avulsa' (compra sem cupom e sem nota), mais novas primeiro. */
+export async function comprasAvulsasRecentes(limite = 10): Promise<CupomRecente[]> {
+  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).eq('origem', 'avulsa')
+    .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
+  return r.map(lerCupom)
+}
+
+/** O que a tela manda ao enviar uma compra avulsa (a quantidade é na unidade do produto no banco; o preço, por essa unidade). */
+export interface EnvioCompraAvulsa {
+  /** Gerado UMA vez por compra: o servidor deduplica por ele (duplo toque ou retry não duplicam). */
+  envio_id: string
+  fornecedor: { cnpj: string; nome: string }
+  pagamento: PagamentoCupom
+  itens: { produto_id: number; quantidade: number; preco: number }[]
+}
+/** Chama a Edge Function enviar-compra-avulsa (grava a linha cupom 'avulsa' e dispara o mesmo robô do cupom). */
+export async function enviarCompraAvulsa(envio: EnvioCompraAvulsa): Promise<ResumoEnvioCupom> {
+  const { data, error } = await supabase.functions.invoke('enviar-compra-avulsa', { body: envio })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+  return data as ResumoEnvioCupom
 }

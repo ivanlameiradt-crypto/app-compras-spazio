@@ -28,8 +28,8 @@ vi.mock('../../src/lib/supabase', () => ({
 }))
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
-  confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
+  comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
+  associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
@@ -532,6 +532,33 @@ describe('Sub-fase 3: cupom', () => {
     expect(q.order).toHaveBeenCalledWith('criado_em', { ascending: false })
     expect(q.limit).toHaveBeenCalledWith(5)
     expect(r[0]).toMatchObject({ id: 'c1', estado: 'REVISAR', valor_a_pagar: 123.45 })
+  })
+
+  it('cuponsRecentes deixa de fora as compras avulsas (origem avulsa tem lista própria)', async () => {
+    const q = consulta({ data: [], error: null })
+    from.mockReturnValue(q)
+    await cuponsRecentes()
+    expect(q.neq).toHaveBeenCalledWith('origem', 'avulsa')
+  })
+
+  it('comprasAvulsasRecentes lê só origem avulsa, mais novas primeiro, e converte valor_a_pagar', async () => {
+    const q = consulta({ data: [{ id: 'a1', estado: 'LANCADO', emitente_nome: 'ATACADAO', valor_a_pagar: '1627.25', criado_em: '2026-10-10T14:00:00Z', motivo: null, teste: false, itens: null }], error: null })
+    from.mockReturnValue(q)
+    const r = await comprasAvulsasRecentes(5)
+    expect(from).toHaveBeenCalledWith('cupom')
+    expect(q.eq).toHaveBeenCalledWith('origem', 'avulsa')
+    expect(q.order).toHaveBeenCalledWith('criado_em', { ascending: false })
+    expect(q.limit).toHaveBeenCalledWith(5)
+    expect(r[0]).toMatchObject({ id: 'a1', valor_a_pagar: 1627.25, itens: [] })
+  })
+
+  it('enviarCompraAvulsa chama a função enviar-compra-avulsa com o corpo todo; erro da função vira Error com a mensagem', async () => {
+    const envio = { envio_id: '3f2b8c1e-5d4a-4e7b-9a10-6c2d8f0b1a23', fornecedor: { cnpj: '75315333032655', nome: 'ATACADAO S.A.' }, pagamento: { forma: 'sem_cartao' as const }, itens: [{ produto_id: 1001, quantidade: 2, preco: 3 }] }
+    invoke.mockResolvedValue({ data: { cupom_id: 'c1', resumo: 'enviado para lançar', estado: 'PENDENTE', disparo_ok: true }, error: null })
+    expect(await enviarCompraAvulsa(envio)).toMatchObject({ cupom_id: 'c1', disparo_ok: true })
+    expect(invoke).toHaveBeenCalledWith('enviar-compra-avulsa', { body: envio })
+    invoke.mockResolvedValue({ data: null, error: { message: 'falhou', context: { json: async () => ({ erro: 'item 1: preço inválido' }) } } })
+    await expect(enviarCompraAvulsa(envio)).rejects.toThrow(/preço inválido|falhou/)
   })
 
   it('cuponsRecentes pede TODAS as colunas que a tela lê (o PostgREST devolve só as pedidas: coluna esquecida = campo undefined)', async () => {
