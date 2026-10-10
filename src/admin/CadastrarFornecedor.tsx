@@ -23,12 +23,14 @@ interface Props {
   aoReenviar: () => void
   /** Intervalo entre as conferências do cadastro (ms); os testes usam um bem curto. */
   intervaloMs?: number
+  /** Aba "Compras avulsas" (10/10/2026): não há cupom para reenviar. Pronto o cadastro, o botão vira "Usar este fornecedor" e entrega os dados a quem chamou. */
+  aoUsar?: (f: { cnpj: string; razao: string; fantasia: string }) => void
 }
 
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 const mensagem = (e: unknown, padrao: string): string => (e instanceof Error && e.message ? e.message : padrao)
 
-export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000 }: Props) {
+export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000, aoUsar }: Props) {
   const lido = fornecedorNaoEncontrado(cupom.motivo)
   const [cnpj, setCnpj] = useState(formatarCnpj(lido?.cnpj || cupom.emitente_cnpj || ''))
   const [razao, setRazao] = useState(lido?.nome ?? '')    // a razão social: é ela (e o CNPJ) que vai ao SisChef
@@ -107,6 +109,7 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   }
 
   async function reenviar() {
+    if (aoUsar) { aoUsar({ cnpj: soDigitos(cnpj), razao: razao.trim(), fantasia: fantasia.trim() }); return }
     setErro(''); setReenviando(true)
     try {
       await acoes.reenviarCupom(cupom.id)
@@ -122,10 +125,14 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   return (
     <div className="associar cadastrar-fornecedor" data-testid="cadastrar-fornecedor">
       <div className="grupo">Fornecedor não cadastrado no SisChef</div>
-      <p className="sub">
-        O robô não achou{lido?.nome ? <> <b>{lido.nome}</b></> : ' o fornecedor do cupom'}{lido?.cnpj ? <> (CNPJ {formatarCnpj(lido.cnpj)})</> : ''} no SisChef.
-        Cadastre aqui e depois reenvie o cupom. O robô só cadastra quando você tocar em “Cadastrar no SisChef”.
-      </p>
+      {aoUsar ? (
+        <p className="sub">Esse fornecedor ainda não está no app nem no SisChef. Digite o CNPJ: o app busca os dados e você confere. O robô só cadastra quando você tocar em “Cadastrar no SisChef”.</p>
+      ) : (
+        <p className="sub">
+          O robô não achou{lido?.nome ? <> <b>{lido.nome}</b></> : ' o fornecedor do cupom'}{lido?.cnpj ? <> (CNPJ {formatarCnpj(lido.cnpj)})</> : ''} no SisChef.
+          Cadastre aqui e depois reenvie o cupom. O robô só cadastra quando você tocar em “Cadastrar no SisChef”.
+        </p>
+      )}
 
       <label>CNPJ
         <input type="text" inputMode="numeric" autoComplete="off" placeholder="00.000.000/0000-00" value={cnpj} disabled={travado}
@@ -179,11 +186,11 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
       {pronto && (
         <>
           <p className="ok" role="status" data-testid="cadastro-pronto">
-            {estado === 'JA_EXISTIA' ? '✓ Esse CNPJ já estava cadastrado no SisChef.' : '✓ Fornecedor cadastrado no SisChef.'} Agora é só reenviar o cupom.
+            {estado === 'JA_EXISTIA' ? '✓ Esse CNPJ já estava cadastrado no SisChef.' : '✓ Fornecedor cadastrado no SisChef.'} {aoUsar ? 'Agora é só usar este fornecedor na compra.' : 'Agora é só reenviar o cupom.'}
           </p>
           <div className="acoes">
             <button type="button" className="botao" disabled={reenviando} onClick={() => void reenviar()} data-testid="reenviar-cupom">
-              {reenviando ? 'Reenviando…' : 'Reenviar este cupom'}
+              {aoUsar ? 'Usar este fornecedor' : reenviando ? 'Reenviando…' : 'Reenviar este cupom'}
             </button>
           </div>
         </>

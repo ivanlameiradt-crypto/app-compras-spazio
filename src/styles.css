@@ -286,3 +286,5 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .compra-avulsa, .compra-avulsa .etapa, .compra-avulsa .itens-avulsa, .compra-avulsa .itens-avulsa > li, .compra-avulsa .par, .compra-avulsa label { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .compra-avulsa input { min-width: 0; width: 100%; box-sizing: border-box; }
 .compra-avulsa .escolhido { overflow-wrap: anywhere; }
+.compra-avulsa .associar, .compra-avulsa .associar label, .compra-avulsa .associar .duas-colunas { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.compra-avulsa .associar input, .compra-avulsa .associar select { min-width: 0; width: 100%; box-sizing: border-box; }

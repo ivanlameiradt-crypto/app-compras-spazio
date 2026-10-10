@@ -6,7 +6,20 @@ import { formatarReais } from '../lib/regras'
 import { CONTAS_PIX, FORMAS } from '../cupom/formasPagamento'
 import type { FormaCupom, ProdutoCatalogo } from '../lib/tipos'
 import { buscarProdutos, rotuloUnidade } from './associacaoRegras'
+import CadastrarFornecedor from './CadastrarFornecedor'
+import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from './fornecedorBusca'
+import { formatarCnpj } from './fornecedorRegras'
 import { faltaNaLinha, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
+
+/** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
+const ACOES_FORNECEDOR = {
+  consultarCnpj: (cnpj: string) => api.consultarCnpj(cnpj),
+  cadastrar: (p: Parameters<typeof api.pedirCadastroFornecedor>[0]) => api.pedirCadastroFornecedor(p),
+  statusDoCadastro: (cnpj: string) => api.statusDoCadastroFornecedor(cnpj),
+  reenviarCupom: async () => undefined,
+}
+/** Identificador desta compra no pedido de cadastro do fornecedor (o servidor pede um id; a compra avulsa não tem cupom). */
+const novoId = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 interface Linha extends LinhaAvulsa { chave: number; busca: string }
 
@@ -16,7 +29,11 @@ export default function CompraAvulsa() {
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
   const [forma, setForma] = useState<FormaCupom | null>(null)
   const [contaPix, setContaPix] = useState<string | null>(null)
-  const [fornecedor, setFornecedor] = useState('')
+  const [conhecidos, setConhecidos] = useState<FornecedorConhecido[] | null>(null)
+  const [buscaForn, setBuscaForn] = useState('')
+  const [fornecedor, setFornecedor] = useState<FornecedorConhecido | null>(null)
+  const [cadastrando, setCadastrando] = useState(false)
+  const [idCompra] = useState(novoId)
   const [linhas, setLinhas] = useState<Linha[]>([linhaVazia(1)])
   const [proxima, setProxima] = useState(2)
   const [previa, setPrevia] = useState(false)
@@ -24,6 +41,7 @@ export default function CompraAvulsa() {
   useEffect(() => {
     let vivo = true
     api.catalogoProdutos().then((c) => { if (vivo) setCatalogo(c) }).catch(() => { if (vivo) setCatalogo([]) })
+    api.fornecedoresConhecidos().then((f) => { if (vivo) setConhecidos(f) }).catch(() => { if (vivo) setConhecidos([]) })
     return () => { vivo = false }
   }, [])
 
@@ -68,11 +86,39 @@ export default function CompraAvulsa() {
       </div>
 
       <div className="etapa">
-        <div className="grupo">2 · Fornecedor no SisChef</div>
-        <label>De quem foi comprado
-          <input type="text" value={fornecedor} placeholder="ex.: COMPRA AVULSA" autoComplete="off" onChange={(e) => { setFornecedor(e.target.value); setPrevia(false) }} data-testid="fornecedor-avulsa" />
-        </label>
-        <p className="sub">O SisChef exige um fornecedor em todo pedido de compra.</p>
+        <div className="grupo">2 · Fornecedor</div>
+        {fornecedor ? (
+          <p className="escolhido" data-testid="fornecedor-escolhido"><b>{nomeDoConhecido(fornecedor)}</b>
+            <span className="un"> · CNPJ {formatarCnpj(fornecedor.cnpj)}</span>{' '}
+            <button type="button" className="link" onClick={() => { setFornecedor(null); setBuscaForn(''); setPrevia(false) }}>Trocar</button>
+          </p>
+        ) : cadastrando ? (
+          <CadastrarFornecedor cupom={{ id: idCompra, motivo: null }} acoes={ACOES_FORNECEDOR} aoReenviar={() => undefined}
+            aoUsar={(f) => { setFornecedor({ cnpj: f.cnpj, razao: f.razao, fantasia: f.fantasia }); setCadastrando(false); setPrevia(false) }} />
+        ) : (
+          <>
+            <label>Digite o nome ou o CNPJ do fornecedor
+              <input type="text" value={buscaForn} placeholder="ex.: atacadão" autoComplete="off" onChange={(e) => { setBuscaForn(e.target.value); setPrevia(false) }} data-testid="busca-fornecedor" />
+            </label>
+            {(() => {
+              const achados = conhecidos ? buscarFornecedores(conhecidos, buscaForn) : []
+              if (buscaForn.trim() === '') return null
+              if (conhecidos === null) return <p className="sub">Carregando os fornecedores…</p>
+              return achados.length > 0 ? (
+                <ul className="achados" data-testid="achados-fornecedor">
+                  {achados.map((f) => (
+                    <li key={f.cnpj}>
+                      <button type="button" onClick={() => { setFornecedor(f); setBuscaForn(''); setPrevia(false) }}>
+                        {nomeDoConhecido(f)}{f.fantasia && f.razao ? ` — ${f.razao}` : ''} · CNPJ {formatarCnpj(f.cnpj)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="amarelo" data-testid="fornecedor-nao-achado">Não achei esse fornecedor entre os que o app conhece.</p>
+            })()}
+            <button type="button" className="botao secundario" onClick={() => setCadastrando(true)} data-testid="cadastrar-fornecedor-novo">Fornecedor novo: cadastrar</button>
+          </>
+        )}
       </div>
 
       <div className="etapa">
@@ -133,9 +179,9 @@ export default function CompraAvulsa() {
       <div className="etapa resumo-avulsa">
         <p data-testid="total-geral"><b>Total da compra: {formatarReais(total)}</b></p>
         {!formaCompleta && <p className="amarelo" data-testid="falta-forma">Escolha como foi pago{forma === 'pix' ? ' (banco e empresa do PIX)' : ''}.</p>}
-        {fornecedor.trim() === '' && <p className="amarelo" data-testid="falta-fornecedor">Informe o fornecedor.</p>}
+        {fornecedor === null && <p className="amarelo" data-testid="falta-fornecedor">Informe o fornecedor.</p>}
         {problema !== '' && <p className="amarelo" data-testid="problema-avulsa">{problema}</p>}
-        <button type="button" className="botao" disabled={!formaCompleta || fornecedor.trim() === '' || problema !== ''} onClick={() => setPrevia(true)} data-testid="lancar-avulsa">Lançar compra</button>
+        <button type="button" className="botao" disabled={!formaCompleta || fornecedor === null || problema !== ''} onClick={() => setPrevia(true)} data-testid="lancar-avulsa">Lançar compra</button>
         {previa && <p className="ok" role="status" data-testid="aviso-previa">Prévia: a tela está pronta, mas o envio ao robô ainda não foi ligado. Nada foi lançado no SisChef.</p>}
       </div>
     </section>

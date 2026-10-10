@@ -1,4 +1,5 @@
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
+import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
@@ -1012,6 +1013,24 @@ export async function fantasiasDosFornecedores(): Promise<Record<string, string>
   const mapa: Record<string, string> = {}
   for (const x of (r.data ?? []) as { cnpj: string; nome_fantasia: string | null }[]) if ((x.nome_fantasia ?? '').trim() !== '') mapa[x.cnpj] = x.nome_fantasia as string
   return mapa
+}
+
+/**
+ * Os fornecedores que o app já conhece (pedido do Ivan, 10/10/2026): os emitentes das notas da SEFAZ (cot_nfe), os dos cupons e os cadastrados pelo app (com a fantasia),
+ * juntados por CNPJ. Só leitura (RLS de admin). Cada fonte é independente: uma que falha só deixa de contribuir.
+ */
+export async function fornecedoresConhecidos(): Promise<FornecedorConhecido[]> {
+  const [notas, cupons, cadastrados] = await Promise.all([
+    supabase.from('cot_nfe').select('cnpj_emitente, emitente').limit(3000),
+    supabase.from('cupom').select('emitente_cnpj, emitente_nome').limit(3000),
+    supabase.from('fornecedor_app').select('cnpj, razao_social, nome_fantasia').limit(2000),
+  ])
+  const lin = (r: { error: unknown; data: unknown }): Record<string, string | null>[] => (r.error ? [] : ((r.data ?? []) as Record<string, string | null>[]))
+  return juntarFornecedores(
+    lin(cadastrados).map((x) => ({ cnpj: x.cnpj, razao: x.razao_social, fantasia: x.nome_fantasia })),
+    lin(notas).map((x) => ({ cnpj: x.cnpj_emitente, razao: x.emitente })),
+    lin(cupons).map((x) => ({ cnpj: x.emitente_cnpj, razao: x.emitente_nome })),
+  )
 }
 
 /** "Últimos envios": só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. */
