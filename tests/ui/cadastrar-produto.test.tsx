@@ -148,11 +148,19 @@ describe('CadastrarProduto', () => {
 describe('ProdutoNaoCadastrado', () => {
   const caixa = (a: AcoesProduto) => render(<ProdutoNaoCadastrado descricaoDoItem={ITEM} acoes={a} origem={ORIGEM} aoUsar={vi.fn()} />)
 
-  it('avisa que o produto não está na lista do app, diz que o robô confere o SisChef, e só abre o formulário no toque', async () => {
+  it('avisa que NÃO IDENTIFICOU o item na lista (sem afirmar que não existe), diz que o robô confere o SisChef, e só abre o formulário no toque', async () => {
     caixa(acoes({ status: vi.fn().mockResolvedValue(null) }))
-    expect(screen.getByTestId('aviso-nao-cadastrado')).toHaveTextContent('precisa ser cadastrado')
+    expect(screen.getByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não identifiquei este item')
     expect(screen.getByTestId('aviso-nao-cadastrado')).toHaveTextContent('confere no SisChef')
     expect(screen.queryByTestId('cadastrar-produto')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('abrir-cadastro-produto'))
+    expect(screen.getByTestId('cadastrar-produto')).toBeInTheDocument()
+  })
+
+  it('com o app já sugerindo algo (discreto): sem aviso amarelo, só o botão "Não é nenhum destes?", que abre o formulário', async () => {
+    render(<ProdutoNaoCadastrado descricaoDoItem={ITEM} acoes={acoes({ status: vi.fn().mockResolvedValue(null) })} origem={ORIGEM} aoUsar={vi.fn()} discreto />)
+    expect(screen.queryByTestId('aviso-nao-cadastrado')).not.toBeInTheDocument()
+    expect(screen.getByTestId('abrir-cadastro-produto')).toHaveTextContent('Não é nenhum destes? Cadastrar produto novo')
     await userEvent.click(screen.getByTestId('abrir-cadastro-produto'))
     expect(screen.getByTestId('cadastrar-produto')).toBeInTheDocument()
   })

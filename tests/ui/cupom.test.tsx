@@ -1083,7 +1083,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await within(itens[0]).findByLabelText('Produto do SisChef')
     expect(itens[0]).toHaveTextContent('Proposta do sistema: LIMÃO SICILIANO - INSUMOS (cód. 3484974) — não está na sua lista: procure abaixo')
     expect(within(itens[0]).queryByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' })).not.toBeInTheDocument()
-    expect(within(itens[0]).queryByTestId('produto-nao-cadastrado')).not.toBeInTheDocument()   // o robô viu o produto no SisChef: não é "produto novo"
+    expect(within(itens[0]).queryByTestId('aviso-nao-cadastrado')).not.toBeInTheDocument()   // o robô viu o produto no SisChef: sem o aviso amarelo...
+    expect(within(itens[0]).getByTestId('abrir-cadastro-produto')).toHaveTextContent('Não é nenhum destes?')   // ...mas o botão discreto está à mão
     await userEvent.type(within(itens[0]).getByLabelText('Produto do SisChef'), 'xyzxyz')
     expect(itens[0]).toHaveTextContent('Nada na sua lista de insumos com isso.')
     expect(within(itens[0]).queryByTestId('achados')).not.toBeInTheDocument()
@@ -1099,10 +1100,21 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       cupomMaionese()
       render(<Cupom />)
       const [item0] = await itensDaCaixa()
-      expect(await within(item0).findByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não achei este produto na sua lista do app')
+      expect(await within(item0).findByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não identifiquei este item')
       await userEvent.click(within(item0).getByTestId('abrir-cadastro-produto'))
       expect(within(item0).getByTestId('nome-produto')).toHaveValue('MAION.HELLMANNS 1X3KG - INSUMOS')
       expect(m.pedirCadastroProduto).not.toHaveBeenCalled()
+    })
+
+    it('o app sugeriu o "mais parecido" (palavra fraca, como a MOSTARDA da maionese): o botão do sugerido fica secundário e o de cadastrar continua à mão', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3500001, nome: 'MOSTARDA - INSUMO (KG)', unidade: 'kg', palavras: 'maion mostarda' }])
+      m.cuponsRecentes.mockResolvedValue([{ ...ATACADAO, itens: [MAIONESE] }])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      const sugestao = await within(item0).findByTestId('sugestao-palavras')
+      expect(sugestao).toHaveTextContent('MOSTARDA')
+      expect(within(sugestao).getByRole('button', { name: 'Usar este' })).toHaveClass('secundario')
+      expect(within(item0).getByTestId('abrir-cadastro-produto')).toHaveTextContent('Não é nenhum destes?')
     })
 
     it('cadastrado: "Usar este produto" escolhe o produto no item (e ele entra na busca desta caixa)', async () => {

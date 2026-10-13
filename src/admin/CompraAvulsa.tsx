@@ -215,19 +215,23 @@ export default function CompraAvulsa() {
                       <input type="text" value={l.busca} placeholder="Digite o nome do produto" autoComplete="off" onChange={(e) => mudar(l.chave, { busca: e.target.value })} data-testid="busca-produto" />
                     </label>
                     {l.busca.trim() !== '' && (
-                      achados.length > 0 ? (
-                        <ul className="achados" data-testid="achados">
-                          {achados.map((a) => (
-                            <li key={a.produto_id}>
-                              <button type="button" onClick={() => mudar(l.chave, { produtoId: a.produto_id, busca: '' })}>{a.nome}{a.unidade ? ` · ${rotuloUnidade(a.unidade)}` : ''}</button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : catalogo === null ? (
+                      catalogo === null ? (
                         catalogoFalhou ? <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p> : <p className="sub">Carregando a lista de produtos…</p>
                       ) : (
-                        <ProdutoNaoCadastrado descricaoDoItem={l.busca} acoes={ACOES_PRODUTO} origem={{ tipo: 'avulsa', item: i }}
-                          aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '' }) }} />
+                        <>
+                          {achados.length > 0 && (
+                            <ul className="achados" data-testid="achados">
+                              {achados.map((a) => (
+                                <li key={a.produto_id}>
+                                  <button type="button" onClick={() => mudar(l.chave, { produtoId: a.produto_id, busca: '' })}>{a.nome}{a.unidade ? ` · ${rotuloUnidade(a.unidade)}` : ''}</button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {/* sem resultado: aviso + botão; com resultados: só o botão discreto, sempre à mão (pedido do Ivan, 13/10) */}
+                          <ProdutoNaoCadastrado descricaoDoItem={l.busca} acoes={ACOES_PRODUTO} origem={{ tipo: 'avulsa', item: i }} discreto={achados.length > 0}
+                            aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '' }) }} />
+                        </>
                       )
                     )}
                   </>

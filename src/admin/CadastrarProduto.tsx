@@ -51,7 +51,10 @@ const EM_ANDAMENTO = (e: EstadoProduto | null | undefined): boolean => e === 'PE
 const SEM_CODIGO = 'O cadastro terminou sem o código do produto: confira no SisChef antes de tentar de novo.'
 
 /** O aviso "Produto não cadastrado" + o botão que abre o formulário. Fica fechado até o toque (ou abre sozinho se já há um cadastro deste nome em andamento/feito). */
-export function ProdutoNaoCadastrado({ descricaoDoItem, acoes, origem, aoUsar }: Omit<Props, 'intervaloMs' | 'inicial' | 'demoraMs'>) {
+export function ProdutoNaoCadastrado({ descricaoDoItem, acoes, origem, aoUsar, discreto = false }: Omit<Props, 'intervaloMs' | 'inicial' | 'demoraMs'> & {
+  /** O app já sugeriu algo (ou há resultados na busca): sem o aviso amarelo, só o botão discreto, para o Ivan cadastrar quando a sugestão não é o produto certo. */
+  discreto?: boolean
+}) {
   const [aberto, setAberto] = useState(false)
   const [inicial, setInicial] = useState<StatusProduto | null>(null)
   const chave = chaveDoNome(nomeNoSischef(descricaoDoItem))
@@ -71,12 +74,16 @@ export function ProdutoNaoCadastrado({ descricaoDoItem, acoes, origem, aoUsar }:
   return (
     <div className="produto-nao-cadastrado" data-testid="produto-nao-cadastrado">
       {!aberto ? (
-        <>
-          <p className="amarelo" data-testid="aviso-nao-cadastrado">
-            Não achei este produto na sua lista do app. Se ele é novo, precisa ser cadastrado: o robô confere no SisChef antes de criar (se já existir lá, ele só traz para a sua lista).
-          </p>
-          <button type="button" className="botao secundario" onClick={() => setAberto(true)} data-testid="abrir-cadastro-produto">Cadastrar produto novo</button>
-        </>
+        discreto ? (
+          <button type="button" className="link" onClick={() => setAberto(true)} data-testid="abrir-cadastro-produto">Não é nenhum destes? Cadastrar produto novo</button>
+        ) : (
+          <>
+            <p className="amarelo" data-testid="aviso-nao-cadastrado">
+              Não identifiquei este item na sua lista pelo nome. Procure acima (pode estar com outro nome, por exemplo o nome do produto em vez da marca). Se ele não existe, cadastre: o robô confere no SisChef antes de criar (se já existir lá, ele só traz para a sua lista).
+            </p>
+            <button type="button" className="botao secundario" onClick={() => setAberto(true)} data-testid="abrir-cadastro-produto">Cadastrar produto novo</button>
+          </>
+        )
       ) : (
         <CadastrarProduto descricaoDoItem={descricaoDoItem} acoes={acoes} origem={origem} aoUsar={aoUsar} inicial={inicial} />
       )}

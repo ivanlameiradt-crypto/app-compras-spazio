@@ -162,8 +162,16 @@ describe('CompraAvulsa', () => {
     it('nada na lista com o que ele digitou: avisa "não cadastrado" com o botão', async () => {
       render(<CompraAvulsa />)
       await userEvent.type(screen.getByTestId('busca-produto'), 'maionese hellmanns 3kg')
-      expect(await screen.findByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não achei este produto na sua lista do app')
+      expect(await screen.findByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não identifiquei este item')
       expect(screen.getByTestId('abrir-cadastro-produto')).toBeInTheDocument()
+    })
+
+    it('com resultados na busca: sem aviso amarelo, mas o botão "Não é nenhum destes?" continua à mão', async () => {
+      render(<CompraAvulsa />)
+      await userEvent.type(screen.getByTestId('busca-produto'), 'tomate')
+      expect(await screen.findByTestId('achados')).toBeInTheDocument()
+      expect(screen.queryByTestId('aviso-nao-cadastrado')).not.toBeInTheDocument()
+      expect(screen.getByTestId('abrir-cadastro-produto')).toHaveTextContent('Não é nenhum destes?')
     })
 
     it('a lista de produtos não carregou: avisa o erro e NÃO oferece cadastrar (não dá para saber se o produto existe)', async () => {
