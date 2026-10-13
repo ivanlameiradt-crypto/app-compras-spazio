@@ -10,6 +10,8 @@ import type { CupomRecente, EstadoCupom, FormaCupom, PagamentoCupom, ProdutoCata
 import DetalheLancamento from '../components/DetalheLancamento'
 import { buscarProdutos, rotuloUnidade } from './associacaoRegras'
 import CadastrarFornecedor from './CadastrarFornecedor'
+import { ProdutoNaoCadastrado } from './CadastrarProduto'
+import { ACOES_PRODUTO } from './acoesProduto'
 import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from './fornecedorBusca'
 import { formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { faltaNaLinha, lerPreco, lerQuantidade, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
@@ -48,6 +50,7 @@ const mensagem = (e: unknown): string => (e instanceof Error && e.message ? e.me
 
 export default function CompraAvulsa() {
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
+  const [catalogoFalhou, setCatalogoFalhou] = useState(false) // sem a lista não dá para dizer "produto não cadastrado": nada de oferecer cadastro
   const [forma, setForma] = useState<FormaCupom | null>(null)
   const [contaPix, setContaPix] = useState<string | null>(null)
   const [conhecidos, setConhecidos] = useState<FornecedorConhecido[] | null>(null)
@@ -71,7 +74,7 @@ export default function CompraAvulsa() {
 
   useEffect(() => {
     let vivo = true
-    api.catalogoProdutos().then((c) => { if (vivo) setCatalogo(c) }).catch(() => { if (vivo) setCatalogo([]) })
+    api.catalogoProdutos().then((c) => { if (vivo) setCatalogo(c) }).catch(() => { if (vivo) setCatalogoFalhou(true) })
     api.fornecedoresConhecidos().then((f) => { if (vivo) setConhecidos(f) }).catch(() => { if (vivo) setConhecidos([]) })
     carregarRecentes()
     return () => { vivo = false }
@@ -220,7 +223,12 @@ export default function CompraAvulsa() {
                             </li>
                           ))}
                         </ul>
-                      ) : <p className="sub">{catalogo === null ? 'Carregando a lista de produtos…' : 'Nenhum produto com esse nome na lista.'}</p>
+                      ) : catalogo === null ? (
+                        catalogoFalhou ? <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p> : <p className="sub">Carregando a lista de produtos…</p>
+                      ) : (
+                        <ProdutoNaoCadastrado descricaoDoItem={l.busca} acoes={ACOES_PRODUTO} origem={{ tipo: 'avulsa', item: i }}
+                          aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '' }) }} />
+                      )
                     )}
                   </>
                 ) : (

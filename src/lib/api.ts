@@ -1,5 +1,6 @@
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
+import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/CadastrarProduto'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
@@ -993,6 +994,43 @@ export async function consultarCnpj(cnpj: string): Promise<{ cnpj: string; razao
 export async function pedirCadastroFornecedor(pedido: { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id: string }): Promise<void> {
   const { error } = await supabase.functions.invoke('cadastrar-fornecedor', { body: pedido })
   if (error) throw new Error(await mensagemDaFuncao(error))
+}
+/** Pede o cadastro de um PRODUTO novo (Edge Function cadastrar-produto): o robô confere no SisChef, cria se não existe e o app o guarda na planilha de produtos. Devolve o código do pedido. */
+export async function pedirCadastroProduto(pedido: PedidoProduto): Promise<RespostaPedido> {
+  const { data, error } = await supabase.functions.invoke('cadastrar-produto', { body: pedido })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+  const id = (data as { cadastro_id?: unknown } | null)?.cadastro_id
+  if (typeof id !== 'string' || id === '') throw new Error('O servidor não devolveu o código do pedido. Tente de novo.')
+  return { cadastro_id: id }
+}
+type LinhaProdutoCadastro = { id: string; estado: StatusProduto['estado']; produto_id: number | string | null; motivo: string | null; candidatos: unknown; descricao: string; grupo: string; unidade: string }
+/** Candidatos que o robô achou no SisChef: aceita só os com código e nome (o resto do JSON é ignorado). */
+function lerCandidatos(v: unknown): StatusProduto['candidatos'] {
+  if (!Array.isArray(v)) return []
+  return v.flatMap((c) => {
+    const o = c as { produto_id?: unknown; descricao?: unknown; unidade?: unknown } | null
+    const id = Number(o?.produto_id)
+    return Number.isInteger(id) && id > 0 && typeof o?.descricao === 'string' && o.descricao !== '' ? [{ produto_id: id, descricao: o.descricao, unidade: typeof o.unidade === 'string' ? o.unidade : null }] : []
+  })
+}
+/** Um pedido de cadastro de produto (RLS de admin), pelo código ou o mais recente do nome (`chave`); null se nunca pedido ou se a tabela ainda não existe.
+ *  Pronto o cadastro, o nome e a unidade vêm da planilha de produtos (a lista do app), que é a que vale. */
+export async function statusDoCadastroProduto(q: { id: string } | { chave: string }): Promise<StatusProduto | null> {
+  const base = supabase.from('produto_cadastro').select('id, estado, produto_id, motivo, candidatos, descricao, grupo, unidade')
+  const r = 'id' in q ? await base.eq('id', q.id).limit(1) : await base.eq('chave_nome', q.chave).order('criado_em', { ascending: false }).limit(1)
+  if (r.error) { if (tabelaInexistente(r.error.code)) return null; throw new ErroApi(r.error.message, r.status, r.error.code) }
+  const l = ((r.data ?? []) as LinhaProdutoCadastro[])[0]
+  if (!l) return null
+  const produtoId = l.produto_id == null ? null : Number(l.produto_id)
+  let descricao = l.descricao
+  let unidade = l.unidade
+  if (produtoId !== null && (l.estado === 'CADASTRADO' || l.estado === 'JA_EXISTIA')) {
+    const p = await supabase.from('produto_planilha').select('descricao, unidade').eq('produto_id', produtoId).limit(1)
+    const linha = ((p.data ?? []) as { descricao: string | null; unidade: string | null }[])[0]
+    if (linha?.descricao) descricao = linha.descricao
+    if (linha?.unidade) unidade = linha.unidade
+  }
+  return { id: l.id, estado: l.estado, produto_id: produtoId, motivo: l.motivo, candidatos: lerCandidatos(l.candidatos), descricao, grupo: l.grupo, unidade }
 }
 /** O pedido de cadastro mais recente deste CNPJ (RLS de admin); null se nunca pedido ou se a tabela ainda não existe. */
 export async function statusDoCadastroFornecedor(cnpj: string): Promise<{ estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null } | null> {

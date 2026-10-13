@@ -156,4 +156,39 @@ describe('CompraAvulsa', () => {
     expect(linha).toHaveTextContent('EMBALAGEM P/ PIZZA N. 35 - INSUMOS')
     expect(linha).not.toHaveTextContent('Produto 3862312')
   })
+  describe('produto novo (cadastrar pelo app, pedido do Ivan de 13/10)', () => {
+    beforeEach(() => { m.statusDoCadastroProduto.mockResolvedValue(null) })
+
+    it('nada na lista com o que ele digitou: avisa "não cadastrado" com o botão', async () => {
+      render(<CompraAvulsa />)
+      await userEvent.type(screen.getByTestId('busca-produto'), 'maionese hellmanns 3kg')
+      expect(await screen.findByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não achei este produto na sua lista do app')
+      expect(screen.getByTestId('abrir-cadastro-produto')).toBeInTheDocument()
+    })
+
+    it('a lista de produtos não carregou: avisa o erro e NÃO oferece cadastrar (não dá para saber se o produto existe)', async () => {
+      m.catalogoProdutos.mockRejectedValue(new Error('rede'))
+      render(<CompraAvulsa />)
+      await userEvent.type(screen.getByTestId('busca-produto'), 'maionese')
+      expect(await screen.findByText('Não consegui carregar a lista de produtos. Atualize a página.')).toBeInTheDocument()
+      expect(screen.queryByTestId('abrir-cadastro-produto')).not.toBeInTheDocument()
+    })
+
+    it('cadastrado: "Usar este produto" põe o produto na linha, na unidade da lista, pedindo quantidade e preço', async () => {
+      m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1' })
+      m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? { id: 'ped-1', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [],
+        descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG' } : null))
+      render(<CompraAvulsa />)
+      await userEvent.type(screen.getByTestId('busca-produto'), 'maionese hellmanns 3kg')
+      await userEvent.click(await screen.findByTestId('abrir-cadastro-produto'))
+      await userEvent.selectOptions(screen.getByTestId('grupo-produto'), 'ESTOQUE CONTROLADO')
+      await userEvent.selectOptions(screen.getByTestId('unidade-produto'), 'KG')
+      await userEvent.click(screen.getByTestId('cadastrar-produto-botao'))
+      expect(m.pedirCadastroProduto).toHaveBeenCalledWith(expect.objectContaining({ origem: 'avulsa', unidade: 'KG' }))
+      await userEvent.click(await screen.findByTestId('usar-produto-novo'))
+      expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('MAIONESE HELLMANNS 3KG - INSUMOS')
+      expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('entra em KG')
+      expect(screen.getByTestId('quantidade-avulsa')).toBeInTheDocument()
+    })
+  })
 })

@@ -9,6 +9,8 @@ import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
 import { buscarProdutos } from './associacaoRegras'
 import { sugerirPorPalavras } from './palavraChave'
+import { ProdutoNaoCadastrado } from './CadastrarProduto'
+import { ACOES_PRODUTO } from './acoesProduto'
 import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 
@@ -87,7 +89,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   travado: boolean
 }) {
   const [texto, setTexto] = useState('')
-  const lista = useMemo(() => catalogo ?? [], [catalogo])
+  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos que o Ivan acabou de cadastrar pelo app: entram na busca desta caixa na hora
+  const lista = useMemo(() => [...(catalogo ?? []), ...novos.filter((n) => !(catalogo ?? []).some((p) => p.produto_id === n.produto_id))], [catalogo, novos])
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
   // a proposta do sistema só vira botão se o produto está na lista de insumos (e não é escondido): fora dela o servidor a recusaria
   const proposta = useMemo(() => {
@@ -218,6 +221,11 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           {busca.total > busca.itens.length && <p className="sub">Mostrando {busca.itens.length} de {busca.total}: digite mais letras para afinar.</p>}
           {texto.trim() !== '' && busca.total === 0 && (
             <p className="sub">Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.</p>
+          )}
+          {/* Produto que não existe: sem proposta, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
+          {!travado && busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)) && (
+            <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
+              aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
           )}
         </>
       )}

@@ -1083,9 +1083,45 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await within(itens[0]).findByLabelText('Produto do SisChef')
     expect(itens[0]).toHaveTextContent('Proposta do sistema: LIMÃO SICILIANO - INSUMOS (cód. 3484974) — não está na sua lista: procure abaixo')
     expect(within(itens[0]).queryByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' })).not.toBeInTheDocument()
+    expect(within(itens[0]).queryByTestId('produto-nao-cadastrado')).not.toBeInTheDocument()   // o robô viu o produto no SisChef: não é "produto novo"
     await userEvent.type(within(itens[0]).getByLabelText('Produto do SisChef'), 'xyzxyz')
     expect(itens[0]).toHaveTextContent('Nada na sua lista de insumos com isso.')
     expect(within(itens[0]).queryByTestId('achados')).not.toBeInTheDocument()
+  })
+
+  describe('produto novo (cadastrar pelo app, pedido do Ivan de 13/10)', () => {
+    const MAIONESE: ItemCupomRecente = { descricao_cupom: 'MAION.HELLMANNS 1X3Kg', unidade_cupom: 'KG', valor_unitario: 42.9, desconto_item: 0, entrada_estoque: null,
+      sugestao_produto: null, casado_por: null, proposta: null, quantidade_cupom: 3 }
+    const cupomMaionese = () => m.cuponsRecentes.mockResolvedValue([{ ...ATACADAO, itens: [MAIONESE] }])
+    beforeEach(() => { m.statusDoCadastroProduto.mockResolvedValue(null) })
+
+    it('item sem proposta e que nada na lista casa: avisa "não cadastrado" com o botão; sem pedir nada ao robô antes do toque', async () => {
+      cupomMaionese()
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      expect(await within(item0).findByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não achei este produto na sua lista do app')
+      await userEvent.click(within(item0).getByTestId('abrir-cadastro-produto'))
+      expect(within(item0).getByTestId('nome-produto')).toHaveValue('MAION.HELLMANNS 1X3KG - INSUMOS')
+      expect(m.pedirCadastroProduto).not.toHaveBeenCalled()
+    })
+
+    it('cadastrado: "Usar este produto" escolhe o produto no item (e ele entra na busca desta caixa)', async () => {
+      cupomMaionese()
+      m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1' })
+      m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? { id: 'ped-1', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [],
+        descricao: 'MAION.HELLMANNS 1X3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG' } : null))
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await userEvent.click(await within(item0).findByTestId('abrir-cadastro-produto'))
+      await userEvent.selectOptions(within(item0).getByTestId('grupo-produto'), 'ESTOQUE CONTROLADO')
+      await userEvent.selectOptions(within(item0).getByTestId('unidade-produto'), 'KG')
+      await userEvent.click(within(item0).getByTestId('cadastrar-produto-botao'))
+      expect(m.pedirCadastroProduto).toHaveBeenCalledWith(expect.objectContaining({ descricao: 'MAION.HELLMANNS 1X3KG - INSUMOS', unidade: 'KG', origem: 'cupom', origem_id: ATACADAO.id }))
+      await userEvent.click(await within(item0).findByTestId('usar-produto-novo'))
+      expect(item0).toHaveTextContent('MAION.HELLMANNS 1X3KG - INSUMOS')
+      expect(item0).toHaveTextContent('cód. 3924999')
+      expect(within(item0).queryByTestId('cadastrar-produto')).not.toBeInTheDocument()
+    })
   })
 
   it('a lista de produtos não carregou: a caixa avisa e não tem como escolher produto', async () => {
