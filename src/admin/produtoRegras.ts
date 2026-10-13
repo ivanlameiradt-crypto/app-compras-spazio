@@ -12,11 +12,9 @@ export const GRUPOS_DE_INSUMO: string[] = [
   'PRODUÇÃO INSUMO - ESTOQ. CAMARA', 'PRODUÇÃO INSUMO - ESTOQ. SECO',
 ]
 
-/** As unidades que um insumo usa (o texto é o da lista "Unidade de medida" do SisChef; o robô escolhe pela sigla). */
-export const UNIDADES: { sigla: string; rotulo: string }[] = [
-  { sigla: 'UN', rotulo: 'UN — unidade' }, { sigla: 'KG', rotulo: 'KG — quilograma' }, { sigla: 'L', rotulo: 'L — litro' }, { sigla: 'ML', rotulo: 'ML — mililitro' },
-  { sigla: 'G', rotulo: 'G — grama' }, { sigla: 'PCT', rotulo: 'PCT — pacote' }, { sigla: 'CX', rotulo: 'CX — caixa' }, { sigla: 'FD', rotulo: 'FD — fardo' },
-  { sigla: 'SC', rotulo: 'SC — saco' }, { sigla: 'PC', rotulo: 'PC — peça' }, { sigla: 'LT', rotulo: 'LT — lata' }, { sigla: 'GR', rotulo: 'GR — garrafa' },
+/** As unidades que a lista de produtos do app aceita (planilha: KG ou UN; a regra do Ivan é que a unidade do banco manda). O robô escolhe a unidade no SisChef pela sigla. */
+export const UNIDADES: { sigla: 'KG' | 'UN'; rotulo: string }[] = [
+  { sigla: 'UN', rotulo: 'UN — unidade' }, { sigla: 'KG', rotulo: 'KG — quilograma' },
 ]
 
 const SUFIXO = ' - INSUMOS'
@@ -29,14 +27,16 @@ export function nomeNoSischef(texto: string | null | undefined): string {
 }
 
 /**
- * A unidade que o nome sugere (o Ivan confirma; a regra de nunca chutar vale: é só o ponto de partida): peso na embalagem ("1X3Kg", "(KG)", "500 g" de produto a granel) → KG;
- * volume em litros ("1,5 L", "LITRO") → L; qualquer outro caso (inclusive bebida em ML) → UN.
+ * A unidade que o nome sugere (o Ivan escolhe; a regra de nunca chutar vale: é só uma dica ao lado do campo, o campo começa vazio): peso na embalagem ("1X3Kg", "(KG)") → KG;
+ * qualquer outro caso (volume, gramas, bebida) → UN. A lista do app só aceita KG ou UN.
  */
-export function sugerirUnidade(texto: string | null | undefined): string {
-  const t = String(texto ?? '').toLowerCase()
-  if (/(\d|\))\s*kg\b|\(kg\)|\bkg\b|quilo/.test(t)) return 'KG'
-  if (/\d\s*(l|lt|litros?)\b(?!\w)/.test(t) && !/\d\s*ml\b/.test(t)) return 'L'
-  return 'UN'
+export function sugerirUnidade(texto: string | null | undefined): 'KG' | 'UN' {
+  return /(\d|\))\s*kg\b|\(kg\)|\bkg\b|quilo/.test(String(texto ?? '').toLowerCase()) ? 'KG' : 'UN'
+}
+
+/** A "chave" do nome: sem acento, minúsculo, só letras e números, espaços colapsados. Identifica o pedido de cadastro (a mesma conta da função cadastrar-produto). */
+export function chaveDoNome(nome: string | null | undefined): string {
+  return String(nome ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
 /** As palavras do nome que viram palavra-chave de busca (sem o "- INSUMOS", sem medidas soltas, até 6). O Ivan pode editar. */

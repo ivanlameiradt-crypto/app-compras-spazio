@@ -1,4 +1,4 @@
-import { GRUPOS_DE_INSUMO, UNIDADES, nomeNoSischef, palavrasSugeridas, problemaDoProduto, sugerirUnidade } from '../../src/admin/produtoRegras'
+import { GRUPOS_DE_INSUMO, UNIDADES, nomeNoSischef, chaveDoNome, palavrasSugeridas, problemaDoProduto, sugerirUnidade } from '../../src/admin/produtoRegras'
 
 describe('nomeNoSischef', () => {
   it('maiúsculas, sem o "CÓD. FOR", espaços colapsados e terminado em " - INSUMOS" (o padrão do Ivan)', () => {
@@ -14,11 +14,11 @@ describe('nomeNoSischef', () => {
 })
 
 describe('sugerirUnidade', () => {
-  it('peso na embalagem ou "(KG)" → KG; litro → L; bebida em ML e o resto → UN', () => {
+  it('peso na embalagem ou "(KG)" → KG; o resto (litro, ML, gramas) → UN: a lista do app só aceita KG ou UN', () => {
     expect(sugerirUnidade('MAION.HELLMANNS 1X3Kg')).toBe('KG')
     expect(sugerirUnidade('REPOLHO BCO (KG)')).toBe('KG')
     expect(sugerirUnidade('ÓLEO DE SOJA 900 ML')).toBe('UN')
-    expect(sugerirUnidade('SUCO INTEGRAL 1,5 L')).toBe('L')
+    expect(sugerirUnidade('SUCO INTEGRAL 1,5 L')).toBe('UN')
     expect(sugerirUnidade('AGUA M.CRYSTAL C/GAS 1X500ML')).toBe('UN')
     expect(sugerirUnidade('FERM.FERMIPAN 1X500G')).toBe('UN')
     expect(sugerirUnidade('')).toBe('UN')
@@ -45,6 +45,15 @@ describe('problemaDoProduto', () => {
   it('a lista de grupos tem os 28 insumos lidos do SisChef e as unidades têm as siglas do SisChef', () => {
     expect(GRUPOS_DE_INSUMO).toContain('ESTOQUE CONTROLADO')
     expect(new Set(GRUPOS_DE_INSUMO).size).toBe(GRUPOS_DE_INSUMO.length)
-    expect(UNIDADES.map((u) => u.sigla)).toEqual(expect.arrayContaining(['UN', 'KG', 'L']))
+    expect(GRUPOS_DE_INSUMO).toHaveLength(28)
+    expect(UNIDADES.map((u) => u.sigla)).toEqual(['UN', 'KG'])   // a planilha de produtos do app só aceita KG ou UN
+  })
+})
+
+describe('chaveDoNome', () => {
+  it('sem acento, minúscula, só letras e números', () => {
+    expect(chaveDoNome('MAIONESE HELLMANNS 3KG - INSUMOS')).toBe('maionese hellmanns 3kg insumos')
+    expect(chaveDoNome('  Açúcar   (União) ')).toBe('acucar uniao')
+    expect(chaveDoNome(null)).toBe('')
   })
 })

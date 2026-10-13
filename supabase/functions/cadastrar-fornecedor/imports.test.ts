@@ -1,11 +1,11 @@
-// O bundler do Supabase (Deno) exige a extensão nos imports relativos e cada função é publicada só com os seus arquivos. Vale para consultar-cnpj e cadastrar-fornecedor.
+// O bundler do Supabase (Deno) exige a extensão nos imports relativos e cada função é publicada só com os seus arquivos. Vale para consultar-cnpj, cadastrar-fornecedor e cadastrar-produto.
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const FUNCOES = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-describe.each(['consultar-cnpj', 'cadastrar-fornecedor'])('Edge Function %s: imports relativos com extensão (exigência do Deno)', (funcao) => {
+describe.each(['consultar-cnpj', 'cadastrar-fornecedor', 'cadastrar-produto'])('Edge Function %s: imports relativos com extensão (exigência do Deno)', (funcao) => {
   const pasta = join(FUNCOES, funcao)
   const codigo = readdirSync(pasta).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
   it('acha os arquivos da função', () => {
