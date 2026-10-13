@@ -196,7 +196,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             </p>
           )}
           {/* Produto que não existe: sem produto do robô, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
-          {!enviando && !sugestao && !porPalavras && busca.total === 0 && (
+          {!enviando && busca.total === 0 && (texto.trim() !== '' || (!sugestao && !porPalavras)) && (
             <ProdutoNaoCadastrado descricaoDoItem={descricaoCurta(item.descricao)} acoes={ACOES_PRODUTO} aoUsar={escolher} />
           )}
         </>

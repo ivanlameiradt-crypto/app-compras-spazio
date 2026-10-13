@@ -43,7 +43,7 @@ export function sugerirUnidade(texto: string | null | undefined): string {
 export function palavrasSugeridas(texto: string | null | undefined): string {
   const t = nomeNoSischef(texto).replace(SUFIXO, '').toLowerCase()
   const ruins = new Set(['de', 'da', 'do', 'com', 'para', 'p', 'c', 'insumo', 'insumos'])
-  return [...new Set(t.split(/[^a-z0-9áàâãéêíóôõúç]+/i).filter((w) => w.length >= 3 && !/^\d+(x|g|kg|ml|l)?$/.test(w) && !ruins.has(w)))].slice(0, 6).join(' ')
+  return [...new Set(t.split(/[^a-z0-9áàâãéêíóôõúç]+/i).filter((w) => w.length >= 3 && !/^\d/.test(w) && !ruins.has(w)))].slice(0, 6).join(' ')
 }
 
 export interface DadosProduto { nome: string; grupo: string; unidade: string; palavras: string }

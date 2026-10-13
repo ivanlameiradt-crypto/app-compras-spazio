@@ -222,7 +222,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             <p className="sub">Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.</p>
           )}
           {/* Produto que não existe: sem proposta, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
-          {!travado && !proposta && !porPalavras && !antes && busca.total === 0 && (
+          {!travado && busca.total === 0 && (texto.trim() !== '' || (!proposta && !porPalavras && !antes)) && (
             <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} aoUsar={escolher} />
           )}
         </>
