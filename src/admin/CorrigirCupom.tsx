@@ -89,7 +89,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   travado: boolean
 }) {
   const [texto, setTexto] = useState('')
-  const lista = useMemo(() => catalogo ?? [], [catalogo])
+  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos que o Ivan acabou de cadastrar pelo app: entram na busca desta caixa na hora
+  const lista = useMemo(() => [...(catalogo ?? []), ...novos.filter((n) => !(catalogo ?? []).some((p) => p.produto_id === n.produto_id))], [catalogo, novos])
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
   // a proposta do sistema só vira botão se o produto está na lista de insumos (e não é escondido): fora dela o servidor a recusaria
   const proposta = useMemo(() => {
@@ -222,8 +223,9 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             <p className="sub">Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.</p>
           )}
           {/* Produto que não existe: sem proposta, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
-          {!travado && busca.total === 0 && (texto.trim() !== '' || (!proposta && !porPalavras && !antes)) && (
-            <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} aoUsar={escolher} />
+          {!travado && busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)) && (
+            <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
+              aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
           )}
         </>
       )}

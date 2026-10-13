@@ -4,5 +4,5 @@ import type { AcoesProduto } from './CadastrarProduto'
 
 export const ACOES_PRODUTO: AcoesProduto = {
   cadastrar: (p) => api.pedirCadastroProduto(p),
-  status: (descricao) => api.statusDoCadastroProduto(descricao),
+  status: (q) => api.statusDoCadastroProduto(q),
 }

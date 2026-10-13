@@ -62,7 +62,8 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
 
-  const lista = useMemo(() => catalogo ?? [], [catalogo])
+  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos que o Ivan acabou de cadastrar pelo app: entram na busca desta caixa na hora
+  const lista = useMemo(() => [...(catalogo ?? []), ...novos.filter((n) => !(catalogo ?? []).some((p) => p.produto_id === n.produto_id))], [catalogo, novos])
   const sugestao = useMemo(() => sugestaoNoCatalogo(item, lista), [item, lista])
   const porPalavras = useMemo(() => sugestaoPorPalavras(item, lista), [item, lista])
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
@@ -197,7 +198,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
           )}
           {/* Produto que não existe: sem produto do robô, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
           {!enviando && busca.total === 0 && (texto.trim() !== '' || (!sugestao && !porPalavras)) && (
-            <ProdutoNaoCadastrado descricaoDoItem={descricaoCurta(item.descricao)} acoes={ACOES_PRODUTO} aoUsar={escolher} />
+            <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={{ tipo: 'nota', item: n }} aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
           )}
         </>
       )}
