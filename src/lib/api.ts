@@ -994,6 +994,18 @@ export async function pedirCadastroFornecedor(pedido: { cnpj: string; razao_soci
   const { error } = await supabase.functions.invoke('cadastrar-fornecedor', { body: pedido })
   if (error) throw new Error(await mensagemDaFuncao(error))
 }
+/** Pede o cadastro de um PRODUTO novo (Edge Function cadastrar-produto): o robô o cria no SisChef e o app o guarda na planilha de produtos. */
+export async function pedirCadastroProduto(pedido: { descricao: string; grupo: string; unidade: string; palavras: string }): Promise<void> {
+  const { error } = await supabase.functions.invoke('cadastrar-produto', { body: pedido })
+  if (error) throw new Error(await mensagemDaFuncao(error))
+}
+/** O pedido de cadastro de produto mais recente com este nome (RLS de admin); null se nunca pedido ou se a tabela ainda não existe. */
+export async function statusDoCadastroProduto(descricao: string): Promise<{ estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; produto_id: number | null; motivo: string | null } | null> {
+  const r = await supabase.from('produto_cadastro').select('estado, produto_id, motivo').eq('descricao', descricao).order('criado_em', { ascending: false }).limit(1)
+  if (r.error) { if (tabelaInexistente(r.error.code)) return null; throw new ErroApi(r.error.message, r.status, r.error.code) }
+  const l = (r.data ?? [])[0] as { estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; produto_id: number | string | null; motivo: string | null } | undefined
+  return l ? { estado: l.estado, produto_id: l.produto_id == null ? null : Number(l.produto_id), motivo: l.motivo } : null
+}
 /** O pedido de cadastro mais recente deste CNPJ (RLS de admin); null se nunca pedido ou se a tabela ainda não existe. */
 export async function statusDoCadastroFornecedor(cnpj: string): Promise<{ estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null } | null> {
   const r = await supabase.from('fornecedor_cadastro').select('estado, motivo').eq('cnpj', cnpj).order('criado_em', { ascending: false }).limit(1)

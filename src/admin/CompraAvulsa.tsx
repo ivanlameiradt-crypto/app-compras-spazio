@@ -10,6 +10,8 @@ import type { CupomRecente, EstadoCupom, FormaCupom, PagamentoCupom, ProdutoCata
 import DetalheLancamento from '../components/DetalheLancamento'
 import { buscarProdutos, rotuloUnidade } from './associacaoRegras'
 import CadastrarFornecedor from './CadastrarFornecedor'
+import { ProdutoNaoCadastrado } from './CadastrarProduto'
+import { ACOES_PRODUTO } from './acoesProduto'
 import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from './fornecedorBusca'
 import { formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { faltaNaLinha, lerPreco, lerQuantidade, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
@@ -220,7 +222,10 @@ export default function CompraAvulsa() {
                             </li>
                           ))}
                         </ul>
-                      ) : <p className="sub">{catalogo === null ? 'Carregando a lista de produtos…' : 'Nenhum produto com esse nome na lista.'}</p>
+                      ) : catalogo === null ? <p className="sub">Carregando a lista de produtos…</p> : (
+                        <ProdutoNaoCadastrado descricaoDoItem={l.busca} acoes={ACOES_PRODUTO}
+                          aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '' }) }} />
+                      )
                     )}
                   </>
                 ) : (

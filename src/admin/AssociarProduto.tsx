@@ -23,6 +23,8 @@ import {
   CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, formatarConversao, parseConversao, pesoPeloNome, rotuloUnidade,
   situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
+import { ProdutoNaoCadastrado } from './CadastrarProduto'
+import { ACOES_PRODUTO } from './acoesProduto'
 
 interface Props {
   item: ItemNotaSefaz
@@ -190,9 +192,12 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
           {busca.total > busca.itens.length && <p className="sub">Mostrando {busca.itens.length} de {busca.total}: digite mais letras para afinar.</p>}
           {texto.trim() !== '' && busca.total === 0 && (
             <p className="sub" data-testid="sem-resultado">
-              Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef. Se o produto é novo e ainda não está
-              na lista, associe-o direto no SisChef.
+              Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.
             </p>
+          )}
+          {/* Produto que não existe: sem produto do robô, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
+          {!enviando && !sugestao && !porPalavras && busca.total === 0 && (
+            <ProdutoNaoCadastrado descricaoDoItem={descricaoCurta(item.descricao)} acoes={ACOES_PRODUTO} aoUsar={escolher} />
           )}
         </>
       )}

@@ -9,6 +9,8 @@ import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
 import { buscarProdutos } from './associacaoRegras'
 import { sugerirPorPalavras } from './palavraChave'
+import { ProdutoNaoCadastrado } from './CadastrarProduto'
+import { ACOES_PRODUTO } from './acoesProduto'
 import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 
@@ -218,6 +220,10 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           {busca.total > busca.itens.length && <p className="sub">Mostrando {busca.itens.length} de {busca.total}: digite mais letras para afinar.</p>}
           {texto.trim() !== '' && busca.total === 0 && (
             <p className="sub">Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.</p>
+          )}
+          {/* Produto que não existe: sem proposta, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
+          {!travado && !proposta && !porPalavras && !antes && busca.total === 0 && (
+            <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} aoUsar={escolher} />
           )}
         </>
       )}
