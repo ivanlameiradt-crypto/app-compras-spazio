@@ -30,8 +30,8 @@ import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
   comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
   associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
-  novaVersao, painelEconomia, pedidosRecentes, prepararCotacoes,
-  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, subirFotoCupom, trocarMinhaSenha,
+  novaVersao, painelEconomia, pedidosRecentes, pedirCadastroProduto, prepararCotacoes,
+  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
@@ -1041,5 +1041,121 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   ])('associarItem: erro do banco "%s" vira texto claro', async (msg, esperado) => {
     rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })
     await expect(associarItem('d'.repeat(44), 1, 5)).rejects.toThrow(esperado)
+  })
+})
+
+// Revisão 2 (14/10): as duas funções do "Cadastrar produto novo" só apareciam simuladas nos testes de tela; aqui com o cliente supabase simulado.
+describe('cadastro de produto novo: pedirCadastroProduto e statusDoCadastroProduto', () => {
+  const PEDIDO = { descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG' as const, palavras: 'maionese hellmanns', origem: 'nota' as const, origem_id: 'd'.repeat(44), origem_item: 2 }
+  const LINHA = {
+    id: 'ped-1', estado: 'PROCESSANDO', produto_id: null, motivo: null, candidatos: null, descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG',
+    palavras: 'maionese hellmanns', forcar: false, existente_id: null, criado_em: '2026-10-14T12:00:00+00:00', atualizado_em: '2026-10-14T12:01:30+00:00',
+  }
+  const falhaDaFuncao = (corpo: unknown) => invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context: { status: 400, json: async () => corpo } } })
+
+  it('pedirCadastroProduto chama a função cadastrar-produto com o pedido e devolve o código do pedido', async () => {
+    invoke.mockResolvedValue({ data: { cadastro_id: 'ped-1', chave_nome: 'maionese hellmanns 3kg insumos', resumo: 'cadastro pedido' }, error: null })
+    expect(await pedirCadastroProduto(PEDIDO)).toEqual({ cadastro_id: 'ped-1' })
+    expect(invoke).toHaveBeenCalledWith('cadastrar-produto', { body: PEDIDO })
+  })
+
+  it('pedirCadastroProduto repassa se o servidor chamou o robô de novo (pedido PENDENTE parado, C3)', async () => {
+    invoke.mockResolvedValue({ data: { cadastro_id: 'ped-1', em_andamento: true, reenviado: true }, error: null })
+    expect(await pedirCadastroProduto(PEDIDO)).toEqual({ cadastro_id: 'ped-1', reenviado: true })
+    invoke.mockResolvedValue({ data: { cadastro_id: 'ped-1', em_andamento: true, reenviado: false }, error: null })
+    expect(await pedirCadastroProduto(PEDIDO)).toEqual({ cadastro_id: 'ped-1', reenviado: false })
+    invoke.mockResolvedValue({ data: { cadastro_id: 'ped-1', reenviado: 'sim' }, error: null })   // lixo: ignorado
+    expect(await pedirCadastroProduto(PEDIDO)).toEqual({ cadastro_id: 'ped-1' })
+  })
+
+  it('pedirCadastroProduto: o erro da função (já em português) vira a mensagem, com maiúscula e ponto', async () => {
+    falhaDaFuncao({ erro: 'escolha o grupo do SisChef' })
+    await expect(pedirCadastroProduto(PEDIDO)).rejects.toThrow('Escolha o grupo do SisChef.')
+    falhaDaFuncao({ erro: 'o pedido foi gravado, mas não consegui chamar o robô agora: tente de novo em instantes', cadastro_id: 'ped-1' })
+    await expect(pedirCadastroProduto(PEDIDO)).rejects.toThrow('O pedido foi gravado, mas não consegui chamar o robô agora: tente de novo em instantes.')
+  })
+
+  it('pedirCadastroProduto: sem resposta da função (rede) a mensagem é em português, nunca o texto em inglês do supabase-js', async () => {
+    const semRede = { message: 'Não consegui pedir o cadastro agora. Confira a internet e tente de novo.' }
+    invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
+    await expect(pedirCadastroProduto(PEDIDO)).rejects.toMatchObject(semRede)
+    falhaDaFuncao('<html>500</html>')                                                         // corpo que não é o JSON da função
+    await expect(pedirCadastroProduto(PEDIDO)).rejects.toMatchObject(semRede)
+  })
+
+  it.each([[{}], [{ cadastro_id: '' }], [{ cadastro_id: 7 }], [null]])('pedirCadastroProduto: resposta sem o código do pedido (%j) vira erro (a tela não acompanha um pedido sem código)', async (data) => {
+    invoke.mockResolvedValue({ data, error: null })
+    await expect(pedirCadastroProduto(PEDIDO)).rejects.toThrow('O servidor não devolveu o código do pedido. Tente de novo.')
+  })
+
+  it('statusDoCadastroProduto pelo código: lê produto_cadastro com a hora do pedido (criado_em, atualizado_em) e o que foi pedido (palavras, forcar, existente_id)', async () => {
+    const q = consulta({ data: [LINHA], error: null })
+    from.mockReturnValue(q)
+    const s = await statusDoCadastroProduto({ id: 'ped-1' })
+    expect(from).toHaveBeenCalledWith('produto_cadastro')
+    const colunas = String(q.select.mock.calls[0][0]).split(',').map((c) => c.trim())
+    expect(colunas).toEqual(expect.arrayContaining(['id', 'estado', 'produto_id', 'motivo', 'candidatos', 'descricao', 'grupo', 'unidade', 'palavras', 'forcar', 'existente_id', 'criado_em', 'atualizado_em']))
+    expect(q.eq).toHaveBeenCalledWith('id', 'ped-1')
+    expect(q.limit).toHaveBeenCalledWith(1)
+    expect(s).toEqual({
+      id: 'ped-1', estado: 'PROCESSANDO', produto_id: null, motivo: null, candidatos: [], descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG',
+      palavras: 'maionese hellmanns', forcar: false, existente_id: null, criado_em: '2026-10-14T12:00:00+00:00', atualizado_em: '2026-10-14T12:01:30+00:00',
+    })
+    expect(from).toHaveBeenCalledTimes(1)                                                     // em andamento: não lê a planilha
+  })
+
+  it('statusDoCadastroProduto pelo nome: o pedido mais recente da chave', async () => {
+    const q = consulta({ data: [LINHA], error: null })
+    from.mockReturnValue(q)
+    await statusDoCadastroProduto({ chave: 'maionese hellmanns 3kg insumos' })
+    expect(q.eq).toHaveBeenCalledWith('chave_nome', 'maionese hellmanns 3kg insumos')
+    expect(q.order).toHaveBeenCalledWith('criado_em', { ascending: false })
+    expect(q.limit).toHaveBeenCalledWith(1)
+  })
+
+  it('statusDoCadastroProduto: candidatos malformados são ignorados (só os com código e nome); unidade que não é texto vira null', async () => {
+    from.mockReturnValue(consulta({ data: [{ ...LINHA, estado: 'REVISAR', candidatos: [
+      { produto_id: 3469720, descricao: 'MAIONESE HELLMANNS 7,5KG - INSUMOS', unidade: 'KG' },
+      { produto_id: '3469721', descricao: 'MAIONESE HEINZ 3KG - INSUMOS', unidade: 3 },
+      { produto_id: 'x', descricao: 'sem código' }, { produto_id: 0, descricao: 'zero' }, { produto_id: 5, descricao: '' }, { produto_id: 6 }, null, 'lixo',
+    ] }], error: null }))
+    expect((await statusDoCadastroProduto({ id: 'ped-1' }))?.candidatos).toEqual([
+      { produto_id: 3469720, descricao: 'MAIONESE HELLMANNS 7,5KG - INSUMOS', unidade: 'KG' },
+      { produto_id: 3469721, descricao: 'MAIONESE HEINZ 3KG - INSUMOS', unidade: null },
+    ])
+    from.mockReturnValue(consulta({ data: [{ ...LINHA, estado: 'REVISAR', candidatos: { produto_id: 1 } }], error: null }))   // não é lista
+    expect((await statusDoCadastroProduto({ id: 'ped-1' }))?.candidatos).toEqual([])
+  })
+
+  it('statusDoCadastroProduto: pronto (CADASTRADO/JA_EXISTIA), o nome e a unidade vêm da planilha de produtos (a lista do app); o código vira número', async () => {
+    const planilha = consulta({ data: [{ descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS (KG)', unidade: 'kg' }], error: null })
+    from.mockReturnValueOnce(consulta({ data: [{ ...LINHA, estado: 'JA_EXISTIA', produto_id: '3924284' }], error: null })).mockReturnValueOnce(planilha)
+    const s = await statusDoCadastroProduto({ id: 'ped-1' })
+    expect(from).toHaveBeenNthCalledWith(2, 'produto_planilha')
+    expect(planilha.eq).toHaveBeenCalledWith('produto_id', 3924284)
+    expect(s).toMatchObject({ estado: 'JA_EXISTIA', produto_id: 3924284, descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS (KG)', unidade: 'kg' })
+  })
+
+  it('statusDoCadastroProduto: pronto mas a planilha sem a linha (ou com campos vazios): fica o que foi pedido', async () => {
+    from.mockReturnValueOnce(consulta({ data: [{ ...LINHA, estado: 'CADASTRADO', produto_id: 3924284 }], error: null }))
+      .mockReturnValueOnce(consulta({ data: [{ descricao: '', unidade: null }], error: null }))
+    expect(await statusDoCadastroProduto({ id: 'ped-1' })).toMatchObject({ produto_id: 3924284, descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', unidade: 'KG' })
+  })
+
+  it('statusDoCadastroProduto: REVISAR com o código do produto (C2) devolve o código, sem ler a planilha', async () => {
+    from.mockReturnValue(consulta({ data: [{ ...LINHA, estado: 'REVISAR', produto_id: 3924284, motivo: 'confira os campos' }], error: null }))
+    expect(await statusDoCadastroProduto({ id: 'ped-1' })).toMatchObject({ estado: 'REVISAR', produto_id: 3924284, motivo: 'confira os campos', descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS' })
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('statusDoCadastroProduto: nunca pedido → null; tabela ainda inexistente (PGRST205 / 42P01) → null; outro erro → ErroApi', async () => {
+    from.mockReturnValue(consulta({ data: [], error: null }))
+    expect(await statusDoCadastroProduto({ chave: 'x' })).toBeNull()
+    for (const code of ['PGRST205', '42P01']) {
+      from.mockReturnValue(consulta({ data: null, error: { message: 'relation "produto_cadastro" does not exist', code } as never }))
+      expect(await statusDoCadastroProduto({ id: 'ped-1' })).toBeNull()
+    }
+    from.mockReturnValue(consulta({ data: null, error: { message: 'permission denied', code: '42501' } as never }))
+    await expect(statusDoCadastroProduto({ id: 'ped-1' })).rejects.toBeInstanceOf(ErroApi)
   })
 })

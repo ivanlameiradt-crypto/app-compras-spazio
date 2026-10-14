@@ -1247,6 +1247,65 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(screen.queryByTestId('sugestao-robo')).not.toBeInTheDocument()
     })
 
+    describe('produto novo também no cartão "Produto que eu indiquei" (revisão 2: I4 e M10)', () => {
+      beforeEach(() => { m.statusDoCadastroProduto.mockResolvedValue(null) })
+
+      it('U3 convertido: sugestão pelas palavras-chave: o cartão já tem o botão discreto "Não é nenhum destes? Cadastrar produto novo", sem "Escolher outro" antes, e o Confirmar continua o principal', async () => {
+        m.catalogoProdutos.mockResolvedValue([{ produto_id: 3500001, nome: 'MAIONESE TRADICIONAL BALDE - INSUMOS', unidade: 'kg', palavras: 'maionese balde' }])
+        aLancar(nota({ itens: [sem(1, { descricao: 'MAIONESE HELLMANNS BALDE 3KG', qtd: 2 })] }))
+        render(<NotaSefaz />)
+        const escolhido = await screen.findByTestId('produto-escolhido')
+        expect(escolhido).toHaveTextContent('Produto que eu indiquei no SisChef')
+        expect(escolhido).toHaveTextContent('MAIONESE TRADICIONAL BALDE')
+        expect(screen.getByTestId('abrir-cadastro-produto')).toHaveTextContent('Não é nenhum destes? Cadastrar produto novo')
+        expect(screen.queryByTestId('aviso-nao-cadastrado')).not.toBeInTheDocument()       // discreto: o app indicou um produto
+        expect(screen.getByRole('button', { name: 'Confirmar' })).toHaveClass('botao')
+        expect(screen.getByRole('button', { name: 'Confirmar' })).not.toHaveClass('secundario')
+      })
+
+      it('sugestão do robô: o botão discreto não atrapalha o Confirmar (ele continua guardando o indicado)', async () => {
+        aLancar(nota({ itens: [sem(1, { sugestao: { id: String(OLEO), nome: 'ÓLEO DE SOJA - INSUMOS' } })] }))
+        render(<NotaSefaz />)
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('Produto que eu indiquei no SisChef')
+        expect(screen.getByTestId('abrir-cadastro-produto')).toBeInTheDocument()
+        await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, OLEO, null))
+        expect(m.pedirCadastroProduto).not.toHaveBeenCalled()
+      })
+
+      it('cadastrado pelo cartão: o pedido leva a nota e o item (origem_id = chave da nota, M10) e "Usar este produto" escolhe o novo', async () => {
+        m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-9' })
+        m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? {
+          id: 'ped-9', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [], descricao: 'OLEO SOJA VITALIV PET 900ML - INSUMOS', grupo: 'ESTOQUE CONTROLADO',
+          unidade: 'UN', criado_em: '2026-10-14T12:00:00Z', atualizado_em: '2026-10-14T12:02:00Z',
+        } : null))
+        aLancar(nota({ itens: [sem(1, { sugestao: { id: String(OLEO), nome: 'ÓLEO DE SOJA - INSUMOS' } })] }))
+        render(<NotaSefaz />)
+        await userEvent.click(await screen.findByTestId('abrir-cadastro-produto'))
+        await userEvent.selectOptions(screen.getByTestId('grupo-produto'), 'ESTOQUE CONTROLADO')
+        await userEvent.selectOptions(screen.getByTestId('unidade-produto'), 'UN')
+        await userEvent.click(screen.getByTestId('cadastrar-produto-botao'))
+        expect(m.pedirCadastroProduto).toHaveBeenCalledWith(expect.objectContaining({ descricao: 'OLEO SOJA VITALIV PET 900ML - INSUMOS', origem: 'nota', origem_id: CHAVE, origem_item: 1 }))
+        await userEvent.click(await screen.findByTestId('usar-produto-novo'))
+        const escolhido = await screen.findByTestId('produto-escolhido')
+        expect(escolhido).toHaveTextContent('Produto escolhido')
+        expect(escolhido).toHaveTextContent('cód. 3924999')
+        expect(m.associarItem).not.toHaveBeenCalled()                                     // escolher não guarda: só o Confirmar
+      })
+
+      it('item sem nada indicado: o cadastro pela busca também leva a chave da nota (M10)', async () => {
+        m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-9' })
+        aLancar(nota({ itens: [sem(1)] }))
+        render(<NotaSefaz />)
+        await userEvent.type(await campo(), 'chocolate bis')
+        await userEvent.click(await screen.findByTestId('abrir-cadastro-produto'))
+        await userEvent.selectOptions(screen.getByTestId('grupo-produto'), 'ESTOQUE CONTROLADO')
+        await userEvent.selectOptions(screen.getByTestId('unidade-produto'), 'UN')
+        await userEvent.click(screen.getByTestId('cadastrar-produto-botao'))
+        expect(m.pedirCadastroProduto).toHaveBeenCalledWith(expect.objectContaining({ origem: 'nota', origem_id: CHAVE, origem_item: 1 }))
+      })
+    })
+
     describe('conversão de unidade (etapa 2: o robô digita no modal "UN DIFERE" do SisChef o que o Ivan informar aqui)', () => {
       it('nota em UN, produto em KG: pede "Quanto vale 1 UN em KG?" (obrigatório); Confirmar só libera com um número válido e manda a conversão', async () => {
         aLancar(nota({ itens: [sem(1)] }))

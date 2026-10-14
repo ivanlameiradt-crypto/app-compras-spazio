@@ -109,7 +109,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
     }
     return null
   }, [it.conhecidos_do_fornecedor, lista])
-  const descricao = (it.descricao_cupom ?? '').replace(/\s+/g, ' ').trim() || 'item'
+  const descricaoLida = (it.descricao_cupom ?? '').replace(/\s+/g, ' ').trim()
+  const descricao = descricaoLida || 'item'
   const unCupom = minusc(it.unidade_cupom)
   const conf = confirmacaoDe(it, estado)
   const linha = conf ? linhaConfirmada(it, conf) : null
@@ -224,8 +225,9 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           )}
           {/* Produto que o app não identificou (sem proposta, sem sugestão pelas palavras e nada na busca): aviso + botão. Com sugestão ou resultados na tela: só o botão discreto,
               sempre à mão (a sugestão pode estar errada: o Ivan sabe quando o produto é novo). Pedido do Ivan, 13/10. */}
+          {/* Item sem descrição no cupom: o nome do produto novo começa VAZIO (o "item" das frases acima viraria "ITEM - INSUMOS"; revisão 2, M13) */}
           {!travado && (
-            <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
+            <ProdutoNaoCadastrado descricaoDoItem={descricaoLida} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
               discreto={!(busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)))}
               aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
           )}
