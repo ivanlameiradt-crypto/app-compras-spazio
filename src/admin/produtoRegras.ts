@@ -18,6 +18,12 @@ export const UNIDADES: { sigla: 'KG' | 'UN'; rotulo: string }[] = [
 ]
 
 const SUFIXO = ' - INSUMOS'
+/** O nome FINAL (com o " - INSUMOS") mais comprido que o app aceita. HIPOTESE: o limite real do campo Descrição do SisChef ainda não foi medido
+ *  (virá de SELETORES-REAIS-DO-SISCHEF.md); a função cadastrar-produto aceita até 200. */
+export const MAX_LETRAS_NOME = 120
+/** Pedido em andamento sem resposta por este tempo é dado por perdido: a tela troca o aviso por "Tentar de novo". O MESMO prazo da função
+ *  cadastrar-produto (que só aceita um pedido novo para o nome depois dele), contado também pela hora do pedido (`atualizado_em`). */
+export const MINUTOS_SEM_RESPOSTA = 20
 
 /** O nome como o SisChef vai guardar: sem o "CÓD. FOR: 123" da nota, em MAIÚSCULAS, espaços colapsados, terminado em " - INSUMOS" (o padrão dos insumos do Ivan). */
 export function nomeNoSischef(texto: string | null | undefined): string {
@@ -50,8 +56,10 @@ export interface DadosProduto { nome: string; grupo: string; unidade: string; pa
 
 /** O que falta no formulário, em português (null = pronto). Grupo e unidade são escolhas do Ivan: nunca assumidas. */
 export function problemaDoProduto(d: DadosProduto): string | null {
-  if (nomeNoSischef(d.nome) === '') return 'Digite o nome do produto.'
-  if (d.nome.trim().length > 120) return 'O nome está grande demais (máximo 120 letras).'
+  const final = nomeNoSischef(d.nome)
+  if (final === '') return 'Digite o nome do produto.'
+  // conta o nome que vai ao SisChef (com o " - INSUMOS"), não o digitado: 115 letras + o sufixo passariam do limite
+  if (final.length > MAX_LETRAS_NOME) return `O nome está grande demais (máximo ${MAX_LETRAS_NOME} letras, contando o “ - INSUMOS”).`
   if (!GRUPOS_DE_INSUMO.includes(d.grupo)) return 'Escolha o grupo do SisChef.'
   if (!UNIDADES.some((u) => u.sigla === d.unidade)) return 'Escolha a unidade.'
   return null
@@ -59,3 +67,35 @@ export function problemaDoProduto(d: DadosProduto): string | null {
 
 export type EstadoProduto = 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'
 export const PRODUTO_PRONTO = (e: EstadoProduto | null | undefined): boolean => e === 'CADASTRADO' || e === 'JA_EXISTIA'
+
+/**
+ * Há quanto tempo (ms) o pedido está parado: pela hora do pedido no servidor (`atualizado_em`, que muda quando o robô o pega), não pela hora em que a
+ * tela abriu (um pedido retomado parado há 30 min já mostra a saída). Nunca menos que o tempo que a tela já o viu assim (`vistoEm`): com o relógio do
+ * aparelho atrasado a hora do pedido parece "no futuro", e mesmo assim os botões aparecem.
+ */
+export function idadeDoPedido(hora: string | null | undefined, vistoEm: number, agora: number): number {
+  const h = hora ? Date.parse(hora) : NaN
+  return Math.max(0, agora - vistoEm, Number.isFinite(h) ? agora - h : 0)
+}
+
+// O motivo do robô e do servidor costuma terminar com o conselho deles ("— confira no SisChef…"); a tela dá o dela, com as palavras dela, e o
+// "confira" não pode sair duas vezes (revisão 2, M2). Corta do "confira" até o fim, com o separador que vem antes.
+const RE_CONSELHO = /\s*(?:[—–:;,.]\s*|\s-\s*)?\bconfira\b[\s\S]*$/i
+
+/** O motivo sem o conselho final: só o FATO ("a unidade do produto no SisChef é PCT…"); '' quando o motivo é só conselho. */
+export function motivoSemConselho(motivo: string | null | undefined): string {
+  return String(motivo ?? '').replace(RE_CONSELHO, '').replace(/[\s—–:;,.-]+$/, '').trim()
+}
+
+/**
+ * O aviso do REVISAR sem candidatos (os candidatos têm o aviso deles): o fato que o robô contou e UM conselho. Com o código do produto (o robô pode
+ * ter criado o produto no SisChef), a saída é "Tentar de novo", que só traz ESTE produto para a lista; sem ele, conferir no SisChef antes de pedir de novo.
+ * Nunca afirma que o produto não existe nem que nada foi criado.
+ */
+export function mensagemDoRevisar(motivo: string | null | undefined, produtoId: number | null): string {
+  const fato = motivoSemConselho(motivo)
+  const inicio = fato === '' ? 'O robô parou sem terminar.' : `O robô parou sem terminar: ${fato}${/[.!?]$/.test(fato) ? '' : '.'}`
+  if (produtoId === null) return `${inicio} Confira no SisChef se o produto já existe antes de tentar de novo.`
+  const conselho = `O produto pode ter sido criado no SisChef com o código ${produtoId}: confira os campos lá; se estiverem certos, toque em “Tentar de novo” — o robô só vai trazê-lo para a sua lista (não cria outro).`
+  return fato === '' ? conselho : `${inicio} ${conselho}`
+}

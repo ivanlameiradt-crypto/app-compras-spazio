@@ -185,7 +185,7 @@ describe('CompraAvulsa', () => {
     it('cadastrado: "Usar este produto" põe o produto na linha, na unidade da lista, pedindo quantidade e preço', async () => {
       m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1' })
       m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? { id: 'ped-1', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [],
-        descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG' } : null))
+        descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG', criado_em: '2026-10-14T12:00:00Z', atualizado_em: '2026-10-14T12:02:00Z' } : null))
       render(<CompraAvulsa />)
       await userEvent.type(screen.getByTestId('busca-produto'), 'maionese hellmanns 3kg')
       await userEvent.click(await screen.findByTestId('abrir-cadastro-produto'))

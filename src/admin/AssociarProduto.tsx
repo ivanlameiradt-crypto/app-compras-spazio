@@ -23,7 +23,7 @@ import {
   CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, formatarConversao, parseConversao, pesoPeloNome, rotuloUnidade,
   situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
-import { ProdutoNaoCadastrado } from './CadastrarProduto'
+import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
 
 interface Props {
@@ -39,6 +39,8 @@ interface Props {
    *  `conversao` = quanto vale 1 unidade da nota em unidades do produto no SisChef (null = o Ivan não informou: ou as unidades batem, ou ele deixou
    *  para o robô conferir no cadastro vivo). Lança Error com texto claro se falhar. */
   salvar: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
+  /** A chave da nota: vai como origem do pedido de "Cadastrar produto novo" (com o número do item), para o pedido dizer de onde veio. */
+  notaChave?: string
 }
 
 // As regras puras da conversão (parseConversao, formatarConversao, textoConversao, conversaoDaDecisao, pesoPeloNome) moram em associacaoRegras.ts, com
@@ -50,7 +52,7 @@ const descricaoCurta = (d: string | undefined): string => {
   return t.length > 60 ? `${t.slice(0, 59)}…` : t
 }
 
-export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, decisao, salvar }: Props) {
+export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, decisao, salvar, notaChave }: Props) {
   const [texto, setTexto] = useState('')
   const [escolhido, setEscolhido] = useState<ProdutoCatalogo | null>(null) // produto que o Ivan PROCUROU na lista (o indicado vem em `proposta`)
   const [dispensou, setDispensou] = useState(false) // "Não é este produto? Escolher outro": para de propor o produto indicado
@@ -143,6 +145,9 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   const escolherOutro = () => { setEscolhido(null); setDispensou(true); setConversaoTexto(null); setConversaoAberta(false) }
   const detalhe = (p: ProdutoCatalogo): string =>
     `cód. ${p.produto_id}${p.unidade ? ` · ${rotuloUnidade(p.unidade)}` : ''}${p.nome_sischef ? ` · no SisChef: ${p.nome_sischef}` : ''}`
+  // "Cadastrar produto novo": o pedido leva a nota e o item; o produto cadastrado entra na busca desta caixa na hora e fica escolhido (falta só o Confirmar)
+  const origemDoCadastro: OrigemProduto = { tipo: 'nota', ...(notaChave ? { id: notaChave } : {}), item: n }
+  const usarNovo = (p: ProdutoCatalogo) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }
 
   return (
     <div className="associar" data-testid="associar-produto">
@@ -198,9 +203,8 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
           )}
           {/* Produto que o app não identificou: aviso + botão; com sugestão ou resultados na tela: só o botão discreto, sempre à mão (pedido do Ivan, 13/10) */}
           {!enviando && (
-            <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={{ tipo: 'nota', item: n }}
-              discreto={!(busca.total === 0 && (texto.trim() !== '' || (!sugestao && !porPalavras)))}
-              aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
+            <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={origemDoCadastro}
+              discreto={!(busca.total === 0 && (texto.trim() !== '' || (!sugestao && !porPalavras)))} aoUsar={usarNovo} />
           )}
         </>
       )}
@@ -292,6 +296,11 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             </button>
             <button type="button" className="link" disabled={enviando} onClick={escolherOutro}>Não é este produto? Escolher outro</button>
           </div>
+          {/* O app INDICOU o produto (robô, palavras-chave ou decisão sem a conversão) e ele pode estar errado: o botão discreto de cadastrar fica à mão
+              também aqui, embaixo do Confirmar (R2; revisão 2, I4). Antes ele só aparecia depois de "Escolher outro". */}
+          {eProposta && !enviando && (
+            <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={origemDoCadastro} discreto aoUsar={usarNovo} />
+          )}
         </>
       )}
 

@@ -1117,11 +1117,20 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(within(item0).getByTestId('abrir-cadastro-produto')).toHaveTextContent('Não é nenhum destes?')
     })
 
+    it('item sem descrição no cupom: o formulário abre com o nome VAZIO (nunca "ITEM - INSUMOS") e pede o nome (revisão 2, M13)', async () => {
+      m.cuponsRecentes.mockResolvedValue([{ ...ATACADAO, itens: [{ ...MAIONESE, descricao_cupom: null }] }])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await userEvent.click(await within(item0).findByTestId('abrir-cadastro-produto'))
+      expect(within(item0).getByTestId('nome-produto')).toHaveValue('')
+      expect(within(item0).getByTestId('falta-produto')).toHaveTextContent('Digite o nome do produto.')
+    })
+
     it('cadastrado: "Usar este produto" escolhe o produto no item (e ele entra na busca desta caixa)', async () => {
       cupomMaionese()
       m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1' })
       m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? { id: 'ped-1', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [],
-        descricao: 'MAION.HELLMANNS 1X3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG' } : null))
+        descricao: 'MAION.HELLMANNS 1X3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'KG', criado_em: '2026-10-14T12:00:00Z', atualizado_em: '2026-10-14T12:02:00Z' } : null))
       render(<Cupom />)
       const [item0] = await itensDaCaixa()
       await userEvent.click(await within(item0).findByTestId('abrir-cadastro-produto'))
