@@ -5,6 +5,7 @@
 // "Usar este produto": o app NUNCA escolhe sozinho. As ações (rede) entram por `acoes`, para a tela ser testada e mostrada sem servidor.
 // Revisão 2 (14/10): nenhum estado deixa a tela sem saída. A demora conta pela hora do PEDIDO (atualizado_em); passados 5 min, "Chamar o robô de novo"
 // (o servidor só chama de novo o pedido que ainda não começou); passados 20 min, "Tentar de novo" (o servidor dá o pedido preso por perdido e abre outro).
+// Depois de um toque nesses botões, eles travam 3 min ("Aguarde alguns minutos…"): cada disparo entra na fila que os robôs do SisChef dividem.
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ProdutoCatalogo } from '../lib/tipos'
 import {
@@ -65,8 +66,12 @@ const EM_ANDAMENTO = (e: EstadoProduto | null | undefined): boolean => e === 'PE
 const SEM_CODIGO = 'o cadastro terminou sem o código do produto'
 const CHAMEI = 'Chamei o robô de novo. Ele leva uns 2 minutos.'
 const JA_ESTA_COM_ELE = 'O robô já está com este pedido. Espere mais um pouco.'
-const AINDA_EM_ANDAMENTO = 'O pedido ainda está em andamento. Espere 1 minuto e toque de novo.'
-const ESPERA_TENTAR_MS = 60_000   // o "espere 1 minuto" do aviso acima: o botão espera junto (cada toque pode chamar o robô de novo na fila)
+const AINDA_EM_ANDAMENTO = 'O pedido ainda está em andamento. Espere alguns minutos e toque de novo.'
+const AGUARDE = 'Aguarde alguns minutos…'
+// Cada disparo do robô entra na fila compartilhada do GitHub (sischef-session: só 1 run espera por grupo) e pode cancelar o run de OUTRO robô que
+// esperava. Depois de um toque em "Chamar o robô de novo" ou "Tentar de novo", os dois botões travam por este tempo (relógio do aparelho, não a hora
+// do servidor) e reabilitam sozinhos; um pedido retomado já atrasado abre destravado (nenhum toque foi dado nesta tela).
+const ESPERA_ENTRE_CHAMADAS_MS = 3 * 60_000
 /** O que o pedido teve além do formulário ("Criar mesmo assim" ou "Usar este"): repetir o pedido é repetir isto também. */
 const extraDe = (s: StatusProduto | null): Extra => (s?.forcar ? { forcar: true } : s?.existente_id ? { existente_id: s.existente_id } : {})
 
@@ -133,8 +138,7 @@ export default function CadastrarProduto({
   // A hora do pedido no servidor e quando a tela a viu pela 1ª vez (ver idadeDoPedido); `agora` anda a cada conferência.
   const [hora, setHora] = useState<{ pedido: string | null; visto: number }>(() => ({ pedido: inicial?.atualizado_em ?? null, visto: Date.now() }))
   const [agora, setAgora] = useState(() => Date.now())
-  const [chamadoEm, setChamadoEm] = useState<number | null>(null)   // o último "Chamar o robô de novo": o botão só volta depois de outra demora
-  const [tentadoEm, setTentadoEm] = useState<number | null>(null)   // o último "Tentar de novo" que voltou com o MESMO pedido: o botão espera 1 minuto
+  const [aguardarAte, setAguardarAte] = useState<number | null>(null)   // até quando "Chamar o robô de novo" / "Tentar de novo" ficam travados
   const [aviso, setAviso] = useState<{ acao: 'chamar' | 'tentar'; texto: string } | null>(null)
   const ultimoExtra = useRef<Extra>(extraDe(inicial))
   const montado = useRef(true)
@@ -155,9 +159,15 @@ export default function CadastrarProduto({
   const idade = cadastrando ? idadeDoPedido(hora.pedido, hora.visto, agora) : 0
   const semResposta = cadastrando && idade >= limiteMs
   const demorando = cadastrando && idade >= demoraMs && !semResposta
-  const podeChamar = demorando && (chamadoEm === null || agora - chamadoEm >= demoraMs)
-  const esperandoTentar = tentadoEm !== null && agora - tentadoEm < ESPERA_TENTAR_MS
+  const aguardando = aguardarAte !== null && agora < aguardarAte
   const descreveFalta = problema !== null ? idFalta : undefined
+
+  // a trava dos 3 minutos acaba sozinha, sem depender da conferência (que só roda com o pedido em andamento)
+  useEffect(() => {
+    if (aguardarAte === null) return
+    const t = setTimeout(() => setAgora(Date.now()), Math.max(0, aguardarAte - Date.now()) + 50)
+    return () => clearTimeout(t)
+  }, [aguardarAte])
 
   function aplicar(s: StatusProduto) {
     if (!montado.current) return
@@ -182,10 +192,11 @@ export default function CadastrarProduto({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cadastrando, cadastroId, acoes, intervaloMs])
 
-  /** Pede o cadastro. `chamar`/`tentar` repetem o pedido em andamento com os MESMOS dados (o servidor decide: chama o robô de novo, devolve o mesmo
-   *  pedido ou, passado o prazo, abre outro). */
+  /** Pede o cadastro. `chamar`/`tentar` repetem o pedido com os MESMOS dados (o servidor decide: chama o robô de novo, devolve o mesmo pedido ou,
+   *  passado o prazo, abre outro) e travam os dois botões por 3 minutos desde o toque, dê certo ou não (o disparo pode ter saído). */
   async function pedir(extra: Extra = {}, acao: 'pedir' | 'chamar' | 'tentar' = 'pedir') {
     if (problema) { setErro(problema); return }
+    if (acao !== 'pedir') { if (aguardando) return; setAguardarAte(Date.now() + ESPERA_ENTRE_CHAMADAS_MS); setAgora(Date.now()) }
     setErro(''); setEnviando(true)
     try {
       const r = await acoes.cadastrar({
@@ -195,11 +206,9 @@ export default function CadastrarProduto({
       ultimoExtra.current = extra
       if (acao !== 'pedir' && r.cadastro_id === cadastroId) {
         // o MESMO pedido, ainda em andamento: a contagem continua; o Ivan fica sabendo o que o servidor fez
-        if (acao === 'chamar') { setChamadoEm(Date.now()); setAviso({ acao, texto: r.reenviado ? CHAMEI : JA_ESTA_COM_ELE }) }
-        else { setTentadoEm(Date.now()); setAviso({ acao, texto: AINDA_EM_ANDAMENTO }) }
-        setAgora(Date.now())
+        setAviso({ acao, texto: acao === 'chamar' ? (r.reenviado ? CHAMEI : JA_ESTA_COM_ELE) : AINDA_EM_ANDAMENTO })
       } else {
-        setHora({ pedido: null, visto: Date.now() }); setAgora(Date.now()); setChamadoEm(null); setTentadoEm(null); setAviso(null)
+        setHora({ pedido: null, visto: Date.now() }); setAgora(Date.now()); setAviso(null)
         setCadastroId(r.cadastro_id); setEstado('PENDENTE'); setMotivoRobo(null); setProdutoId(null); setCandidatos([])
       }
       // já pode estar pronto (o nome já tinha sido cadastrado antes): lê o pedido agora em vez de esperar a próxima conferência
@@ -260,18 +269,17 @@ export default function CadastrarProduto({
       {demorando && (
         <div className="amarelo" role="status" data-testid="produto-demorando">
           <p>Está demorando mais que o normal. Você pode chamar o robô de novo: isso não cria outro pedido.</p>
-          {podeChamar ? (
-            <button type="button" className="botao secundario" disabled={enviando} onClick={() => void pedir(ultimoExtra.current, 'chamar')} data-testid="chamar-robo">
-              {enviando ? 'Chamando…' : 'Chamar o robô de novo'}
-            </button>
-          ) : aviso?.acao === 'chamar' && <p data-testid="aviso-robo">{aviso.texto}</p>}
+          <button type="button" className="botao secundario" disabled={enviando || aguardando} onClick={() => void pedir(ultimoExtra.current, 'chamar')} data-testid="chamar-robo">
+            {enviando ? 'Chamando…' : aguardando ? AGUARDE : 'Chamar o robô de novo'}
+          </button>
+          {aviso?.acao === 'chamar' && <p data-testid="aviso-robo">{aviso.texto}</p>}
         </div>
       )}
       {semResposta && (
         <div className="amarelo" role="status" data-testid="produto-sem-resposta">
           <p>O robô não respondeu em {MINUTOS_SEM_RESPOSTA} minutos. Confira no SisChef (Produtos) se o produto já foi criado; se não foi, toque em “Tentar de novo”.</p>
-          <button type="button" className="botao" disabled={enviando || esperandoTentar} onClick={() => void pedir(ultimoExtra.current, 'tentar')} data-testid="tentar-de-novo">
-            {enviando ? 'Enviando…' : 'Tentar de novo'}
+          <button type="button" className="botao" disabled={enviando || aguardando} onClick={() => void pedir(ultimoExtra.current, 'tentar')} data-testid="tentar-de-novo">
+            {enviando ? 'Enviando…' : aguardando ? AGUARDE : 'Tentar de novo'}
           </button>
           {aviso?.acao === 'tentar' && <p data-testid="aviso-robo">{aviso.texto}</p>}
         </div>
@@ -281,8 +289,8 @@ export default function CadastrarProduto({
       )}
       {comCodigo && produtoId !== null && (
         <div className="acoes">
-          <button type="button" className="botao" disabled={enviando} onClick={() => void pedir({ existente_id: produtoId })} data-testid="tentar-de-novo">
-            {enviando ? 'Enviando…' : 'Tentar de novo'}
+          <button type="button" className="botao" disabled={enviando || aguardando} onClick={() => void pedir({ existente_id: produtoId }, 'tentar')} data-testid="tentar-de-novo">
+            {enviando ? 'Enviando…' : aguardando ? AGUARDE : 'Tentar de novo'}
           </button>
         </div>
       )}

@@ -1,8 +1,15 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import * as api from '../../src/lib/api'
+import { ACOES_PRODUTO } from '../../src/admin/acoesProduto'
 import CadastrarProduto, { ProdutoNaoCadastrado, type AcoesProduto, type StatusProduto } from '../../src/admin/CadastrarProduto'
 
 // Cadastrar produto novo dentro do app (pedido do Ivan, 13/10/2026): nome + grupo + unidade -> cadastrar -> andamento -> "Usar este produto" (só com o toque).
+// Quase todos os testes passam as ações pela prop `acoes`; os da trava de 3 minutos usam as ações de verdade (ACOES_PRODUTO) com o api simulado,
+// para provar que pedirCadastroProduto não é chamado de novo.
+vi.mock('../../src/lib/api')
+const m = vi.mocked(api)
+beforeEach(() => { vi.clearAllMocks() })   // as chamadas de um teste não contam no outro
 const ITEM = 'MAION.HELLMANNS 1X3Kg'
 const NOME = 'MAION.HELLMANNS 1X3KG - INSUMOS'
 const ORIGEM = { tipo: 'cupom' as const, id: 'cupom-1' }
@@ -212,7 +219,8 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     const p = emAndamento({ estado: 'PENDENTE', atualizado_em: haMin(6) })
     abrir(acoes({ status: vi.fn().mockResolvedValue(p) }), vi.fn(), { inicial: p, intervaloMs: 5000 })   // prazos de verdade (5 e 20 min)
     expect(screen.getByTestId('produto-demorando')).toHaveTextContent('Está demorando mais que o normal')
-    expect(screen.getByTestId('chamar-robo')).toBeEnabled()
+    expect(screen.getByTestId('chamar-robo')).toBeEnabled()                                // nenhum toque nesta tela: destravado
+    expect(screen.getByTestId('chamar-robo')).toHaveTextContent('Chamar o robô de novo')
     expect(screen.getByTestId('cadastrando-produto')).toBeInTheDocument()
   })
 
@@ -236,14 +244,15 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     expect(screen.queryByTestId('produto-demorando')).not.toBeInTheDocument()
   })
 
-  it('"Chamar o robô de novo" repete o MESMO pedido (mesmos dados) e diz o que o servidor fez; o botão some (não fica chamando a cada toque)', async () => {
+  it('"Chamar o robô de novo" repete o MESMO pedido (mesmos dados) e diz o que o servidor fez; o botão fica travado ("Aguarde alguns minutos…")', async () => {
     const p = emAndamento({ estado: 'PENDENTE', atualizado_em: haMin(6), palavras: 'maion hellmanns' })
     const a = acoes({ status: vi.fn().mockResolvedValue(p), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-1', reenviado: true }) })
     abrir(a, vi.fn(), { inicial: p })
     await userEvent.click(screen.getByTestId('chamar-robo'))
     await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith(MESMO_PEDIDO))
     expect(await screen.findByTestId('aviso-robo')).toHaveTextContent('Chamei o robô de novo')
-    expect(screen.queryByTestId('chamar-robo')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chamar-robo')).toBeDisabled()
+    expect(screen.getByTestId('chamar-robo')).toHaveTextContent('Aguarde alguns minutos…')
     await waitFor(() => expect(a.status).toHaveBeenCalledWith({ id: 'ped-1' }))      // continua acompanhando o mesmo pedido
     expect(screen.getByTestId('cadastrando-produto')).toBeInTheDocument()
   })
@@ -256,15 +265,36 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     expect(await screen.findByTestId('aviso-robo')).toHaveTextContent('O robô já está com este pedido. Espere mais um pouco.')
   })
 
-  it('depois de chamar, o botão só volta depois de mais uma demora', async () => {
-    const p = emAndamento({ atualizado_em: haMin(1) })
-    const a = acoes({ status: vi.fn().mockResolvedValue(p), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-1', reenviado: true }) })
-    abrir(a, vi.fn(), { inicial: p, demoraMs: 300, limiteMs: 60 * 60_000 })
-    await userEvent.click(screen.getByTestId('chamar-robo'))
-    expect(await screen.findByTestId('aviso-robo')).toBeInTheDocument()
-    expect(screen.queryByTestId('chamar-robo')).not.toBeInTheDocument()
-    expect(await screen.findByTestId('chamar-robo', {}, { timeout: 3000 })).toBeEnabled()
-    expect(a.cadastrar).toHaveBeenCalledTimes(1)
+  // Cada disparo do robô entra na fila compartilhada do GitHub (sischef-session: só 1 run espera por grupo) e pode cancelar o run de OUTRO robô
+  // que esperava: depois do toque, o botão trava 3 minutos (relógio do aparelho, não a hora do servidor) e reabilita sozinho.
+  it('"Chamar o robô de novo": retomado depois dos 5 min aparece destravado; depois do toque trava 3 minutos e toques repetidos NÃO chamam pedirCadastroProduto de novo; depois reabilita sozinho', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const p = emAndamento({ estado: 'PENDENTE', atualizado_em: haMin(6) })
+      m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1', reenviado: true })
+      m.statusDoCadastroProduto.mockResolvedValue(p)
+      render(<CadastrarProduto descricaoDoItem={ITEM} acoes={ACOES_PRODUTO} origem={ORIGEM} aoUsar={vi.fn()} inicial={p} />)
+      const botao = () => screen.getByTestId('chamar-robo')
+      expect(botao()).toBeEnabled()                                                   // nenhum toque nesta tela ainda
+      expect(botao()).toHaveTextContent('Chamar o robô de novo')
+      await user.click(botao())
+      await waitFor(() => expect(botao()).toHaveTextContent('Aguarde alguns minutos…'))
+      expect(botao()).toBeDisabled()
+      await user.click(botao())
+      await user.click(botao())
+      await act(async () => { await vi.advanceTimersByTimeAsync(2 * 60_000 + 50_000) })   // 2 min 50 s depois: ainda travado
+      expect(botao()).toBeDisabled()
+      await user.click(botao())
+      expect(m.pedirCadastroProduto).toHaveBeenCalledTimes(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })                // passou dos 3 min
+      await waitFor(() => expect(botao()).toBeEnabled())
+      expect(botao()).toHaveTextContent('Chamar o robô de novo')
+      await user.click(botao())
+      await waitFor(() => expect(m.pedirCadastroProduto).toHaveBeenCalledTimes(2))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('U1 convertido: preso há 30 min em PROCESSANDO (run morto): "o robô não respondeu em 20 minutos" + "Tentar de novo"; o toque repete o pedido e a tela segue o NOVO', async () => {
@@ -284,18 +314,47 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     expect(screen.queryByTestId('produto-sem-resposta')).not.toBeInTheDocument()
   })
 
-  it('"Tentar de novo" cedo demais para o servidor (ele devolve o MESMO pedido): avisa para esperar 1 minuto, o botão espera junto e depois volta (a saída continua)', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })   // só o relógio: os intervalos da tela continuam de verdade
+  it('"Tentar de novo" cedo demais para o servidor (ele devolve o MESMO pedido): avisa para esperar; o botão trava 3 minutos, toques repetidos NÃO chamam pedirCadastroProduto e depois ele volta', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
       const preso = emAndamento({ atualizado_em: haMin(30) })
-      const a = acoes({ status: vi.fn().mockResolvedValue(preso), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-1' }) })
-      abrir(a, vi.fn(), { inicial: preso })
-      await userEvent.click(screen.getByTestId('tentar-de-novo'))
-      expect(await screen.findByTestId('aviso-robo')).toHaveTextContent('O pedido ainda está em andamento. Espere 1 minuto e toque de novo.')
-      expect(screen.getByTestId('tentar-de-novo')).toBeDisabled()                  // não fica pedindo (e chamando o robô) a cada toque
-      vi.setSystemTime(Date.now() + 61_000)
-      await waitFor(() => expect(screen.getByTestId('tentar-de-novo')).toBeEnabled())
+      m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1', reenviado: false })
+      m.statusDoCadastroProduto.mockResolvedValue(preso)
+      render(<CadastrarProduto descricaoDoItem={ITEM} acoes={ACOES_PRODUTO} origem={ORIGEM} aoUsar={vi.fn()} inicial={preso} />)
+      const botao = () => screen.getByTestId('tentar-de-novo')
+      await user.click(botao())
+      expect(await screen.findByTestId('aviso-robo')).toHaveTextContent('O pedido ainda está em andamento. Espere alguns minutos e toque de novo.')
+      expect(botao()).toBeDisabled()
+      expect(botao()).toHaveTextContent('Aguarde alguns minutos…')
+      await user.click(botao())
+      await act(async () => { await vi.advanceTimersByTimeAsync(2 * 60_000 + 50_000) })
+      await user.click(botao())
+      expect(m.pedirCadastroProduto).toHaveBeenCalledTimes(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+      await waitFor(() => expect(botao()).toBeEnabled())
+      expect(botao()).toHaveTextContent('Tentar de novo')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('"Tentar de novo" do REVISAR com o código também trava 3 minutos depois do toque (mesmo se o pedido falhar) e reabilita sozinho', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const rev = status({ estado: 'REVISAR', produto_id: 3924999, motivo: null })
+      const a = acoes({ cadastrar: vi.fn().mockRejectedValue(new Error('Não consegui pedir o cadastro agora. Confira a internet e tente de novo.')) })
+      abrir(a, vi.fn(), { inicial: rev })
+      const botao = () => screen.getByTestId('tentar-de-novo')
+      await user.click(botao())
+      expect(await screen.findByTestId('erro-produto')).toHaveTextContent('Não consegui pedir o cadastro agora')
+      expect(botao()).toBeDisabled()
+      expect(botao()).toHaveTextContent('Aguarde alguns minutos…')
+      await user.click(botao())
       expect(a.cadastrar).toHaveBeenCalledTimes(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(3 * 60_000 + 10_000) })
+      await waitFor(() => expect(botao()).toBeEnabled())
     } finally {
       vi.useRealTimers()
     }
