@@ -439,6 +439,23 @@ describe('REVISAR (revisão 2: I5, M1, M2)', () => {
     expect(await screen.findByTestId('produto-pronto')).toHaveTextContent('já existia no SisChef (cód. 3924999)')
   })
 
+  it('REVISAR com produto_id (C2): o único botão é "Tentar de novo" e ele manda existente_id = esse código; REVISAR sem código: o botão de sempre NÃO manda existente_id', async () => {
+    const comCodigo = status({ estado: 'REVISAR', produto_id: 3925001, motivo: 'a releitura não bateu' })
+    const a = acoes({ status: vi.fn().mockResolvedValue(status({ id: 'ped-2', estado: 'PENDENTE', produto_id: null })), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-2' }) })
+    const v = abrir(a, vi.fn(), { inicial: comCodigo })
+    expect(screen.queryByTestId('cadastrar-produto-botao')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('tentar-de-novo'))
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith(expect.objectContaining({ existente_id: 3925001 })))
+    v.unmount()
+    const semCodigo = status({ estado: 'REVISAR', produto_id: null, motivo: 'grupo não encontrado: nada foi criado' })
+    const b = acoes({ status: vi.fn().mockResolvedValue(status({ id: 'ped-3', estado: 'PENDENTE', produto_id: null })), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-3' }) })
+    abrir(b, vi.fn(), { inicial: semCodigo })
+    expect(screen.queryByTestId('tentar-de-novo')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('cadastrar-produto-botao'))
+    await waitFor(() => expect(b.cadastrar).toHaveBeenCalledTimes(1))
+    expect(b.cadastrar).toHaveBeenCalledWith(expect.not.objectContaining({ existente_id: expect.anything() }))
+  })
+
   it('I5: REVISAR com o código e o motivo do banco (unidade fora de KG/UN): mostra o motivo e o conselho, "confira" uma vez', () => {
     const rev = status({ estado: 'REVISAR', produto_id: 3924999, motivo: 'a unidade do produto no SisChef é PCT; a lista do app só aceita KG ou UN — confira o produto 3924999 no SisChef' })
     abrir(acoes({ status: vi.fn().mockResolvedValue(rev) }), vi.fn(), { inicial: rev })
