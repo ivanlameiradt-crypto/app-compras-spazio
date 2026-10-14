@@ -1,7 +1,8 @@
 // supabase/functions/cadastrar-produto/logica.ts
 // Lógica pura da Edge Function cadastrar-produto (pedido do Ivan, 13/10/2026): o Ivan toca em "Cadastrar no SisChef e no app" para um produto de cupom, nota fiscal ou compra
 // avulsa que não está na lista do app. Aqui: autoriza o admin, valida o pedido (grupo da lista fechada, unidade KG/UN), evita pedido repetido, grava em produto_cadastro (PENDENTE)
-// e dispara o robô (cadastrar-produto.yml). O cadastro em si é do robô, que confere de novo no SisChef se o produto já existe. Sem globais do Deno nem rede: tudo entra por `deps`.
+// e dispara o robô (cadastrar-produto.yml); o pedido repetido que está parado na fila (PENDENTE há mais de 3 min) faz o robô ser chamado de novo (revisão nº 2, 14/10).
+// O cadastro em si é do robô, que confere de novo no SisChef se o produto já existe. Sem globais do Deno nem rede: tudo entra por `deps`.
 
 export interface Corpo {
   descricao?: unknown; grupo?: unknown; unidade?: unknown; palavras?: unknown
@@ -19,10 +20,13 @@ export interface Deps {
   ultimoConcluido(chave: string): Promise<Concluido | null>
   /** Pedido preso em PENDENTE/PROCESSANDO há mais de `minutos` vira REVISAR (para não travar o índice de "um por vez" para sempre). */
   expirarPresos(chave: string, minutos: number): Promise<void>
-  /** Insere o pedido PENDENTE; `duplicado` = já há um em andamento para este nome (devolve o existente; nada é disparado). */
-  criarPedido(p: PedidoNovo): Promise<{ id: string; duplicado?: boolean }>
+  /** Insere o pedido PENDENTE; `duplicado` = já há um em andamento para este nome (devolve o existente); `corrida` = o índice de "um por vez" recusou,
+   *  mas o pedido em andamento terminou antes de ser lido (nada foi gravado). */
+  criarPedido(p: PedidoNovo): Promise<{ id: string; duplicado?: boolean } | { corrida: true }>
+  /** O estado do pedido e a hora da última mudança (ISO); null se não existe. */
+  situacaoDoPedido(cadastroId: string): Promise<{ estado: string; atualizado_em: string } | null>
   dispararCadastro(cadastroId: string): Promise<void>
-  /** O disparo falhou: o pedido não pode ficar PENDENTE para sempre. */
+  /** O disparo do pedido NOVO falhou: o pedido não pode ficar PENDENTE para sempre (só vale para o que o robô ainda não pegou). */
   marcarRevisar(cadastroId: string, motivo: string): Promise<void>
 }
 export interface Resultado { status: number; corpo: Record<string, unknown> }
@@ -39,6 +43,11 @@ export const GRUPOS_DE_INSUMO: string[] = [
 export const ORIGENS = ['cupom', 'nota', 'avulsa'] as const
 /** Pedido que fica PENDENTE/PROCESSANDO além disto é dado como perdido (o workflow leva ~2 min). */
 export const MINUTOS_PRESO = 20
+/** Pedido em andamento que segue PENDENTE (o robô nem o pegou) há mais disto: o disparo pode ter se perdido na fila do SisChef (outro robô do mesmo grupo
+ *  cancela o run que esperava). Um novo toque chama o robô de novo; é seguro: a reivindicação do robô é atômica e o run a mais só "pula". */
+export const MINUTOS_REENVIO = 3
+/** O maior número que a coluna origem_item (integer do Postgres) guarda: acima disso o banco recusaria com uma mensagem crua. */
+const MAIOR_INTEGER = 2147483647
 
 const texto = (v: unknown): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -49,6 +58,22 @@ export function chaveDoNome(nome: string): string {
 
 const AVISO_DISPARO = 'o pedido foi gravado, mas não consegui chamar o robô agora: tente de novo em instantes'
 const MOTIVO_PRESO = 'o robô não respondeu a tempo: confira no SisChef se o produto foi criado antes de tentar de novo'
+const AVISO_CORRIDA = 'outro pedido deste mesmo produto acabou de terminar: toque de novo para ver o resultado'
+
+/** O pedido em andamento parado na fila (PENDENTE há mais de MINUTOS_REENVIO): chama o robô de novo e devolve se chamou. Nunca derruba a resposta: o
+ *  pedido já existia e fica como está (nada de REVISAR aqui: o robô pode estar pegando-o agora). */
+async function reenviarSeParado(cadastroId: string, deps: Deps): Promise<boolean> {
+  try {
+    const s = await deps.situacaoDoPedido(cadastroId)
+    if (!s || s.estado !== 'PENDENTE') return false   // PROCESSANDO: o robô já está nele
+    const parado = Date.now() - Date.parse(s.atualizado_em)
+    if (!(parado > MINUTOS_REENVIO * 60_000)) return false   // recente (o run ainda pode estar na fila) ou hora ilegível
+    await deps.dispararCadastro(cadastroId)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promise<Resultado> {
   const email = chamador.trim().toLowerCase()
@@ -70,10 +95,11 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!(ORIGENS as readonly string[]).includes(origem)) return { status: 400, corpo: { erro: 'falta de onde veio o produto (cupom, nota ou compra avulsa)' } }
   const origemId = c.origem_id === undefined || c.origem_id === null ? '' : texto(c.origem_id)
   if (origemId.length > 80) return { status: 400, corpo: { erro: 'a origem está grande demais' } }
+  // número que o JavaScript não guarda exato (acima de 2^53) ou que a coluna não cabe vira 400 aqui, não um 500 com a mensagem crua do banco
   const item = c.origem_item
-  if (item !== undefined && item !== null && !(Number.isInteger(item) && (item as number) >= 0)) return { status: 400, corpo: { erro: 'o número do item não está certo' } }
+  if (item !== undefined && item !== null && !(Number.isSafeInteger(item) && (item as number) >= 0 && (item as number) <= MAIOR_INTEGER)) return { status: 400, corpo: { erro: 'o número do item não está certo' } }
   const exist = c.existente_id
-  if (exist !== undefined && exist !== null && !(Number.isInteger(exist) && (exist as number) > 0)) return { status: 400, corpo: { erro: 'o código do produto existente não está certo' } }
+  if (exist !== undefined && exist !== null && !(Number.isSafeInteger(exist) && (exist as number) > 0)) return { status: 400, corpo: { erro: 'o código do produto existente não está certo' } }
   if (c.forcar !== undefined && typeof c.forcar !== 'boolean') return { status: 400, corpo: { erro: 'pedido inválido' } }
   const forcar = c.forcar === true
   const existenteId = typeof exist === 'number' ? exist : null
@@ -89,7 +115,13 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     descricao, chave_nome: chave, grupo, unidade, palavras: palavras === '' ? null : palavras, origem: origem as PedidoNovo['origem'],
     origem_id: origemId === '' ? null : origemId, origem_item: typeof item === 'number' ? item : null, forcar, existente_id: existenteId, criado_por: email,
   })
-  if (pedido.duplicado) return { status: 200, corpo: { cadastro_id: pedido.id, chave_nome: chave, em_andamento: true, resumo: 'já existe um cadastro em andamento para este produto' } }
+  if ('corrida' in pedido) return { status: 409, corpo: { erro: AVISO_CORRIDA, chave_nome: chave } }
+  if (pedido.duplicado) {
+    // o mesmo nome já está em andamento: nada novo é gravado; se ele está parado na fila há mais de MINUTOS_REENVIO, o robô é chamado de novo
+    const reenviado = await reenviarSeParado(pedido.id, deps)
+    const resumo = reenviado ? 'o pedido estava parado na fila: chamei o robô de novo (ele leva uns 2 minutos)' : 'já existe um cadastro em andamento para este produto'
+    return { status: 200, corpo: { cadastro_id: pedido.id, chave_nome: chave, em_andamento: true, reenviado, resumo } }
+  }
   try {
     await deps.dispararCadastro(pedido.id)
   } catch {

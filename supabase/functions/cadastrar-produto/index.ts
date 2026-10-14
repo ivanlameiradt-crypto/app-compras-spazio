@@ -62,8 +62,14 @@ Deno.serve(async (req: Request) => {
           const { data: ex } = await admin.from('produto_cadastro').select('id').eq('chave_nome', p.chave_nome).in('estado', ['PENDENTE', 'PROCESSANDO']).order('criado_em', { ascending: false }).limit(1)
           const id = ((ex ?? [])[0] as { id: string } | undefined)?.id
           if (id) return { id, duplicado: true }
+          return { corrida: true }   // ele terminou entre o insert e a leitura: a lógica responde em português (não a mensagem crua do índice)
         }
         throw new Error(error?.message ?? 'não consegui gravar o pedido')
+      },
+      async situacaoDoPedido(cadastroId) {
+        const { data, error } = await admin.from('produto_cadastro').select('estado, atualizado_em').eq('id', cadastroId).maybeSingle()
+        if (error) throw new Error(error.message)
+        return (data as { estado: string; atualizado_em: string } | null) ?? null
       },
       async dispararCadastro(cadastroId) {
         if (!pat) {
@@ -88,7 +94,9 @@ Deno.serve(async (req: Request) => {
         }
       },
       async marcarRevisar(cadastroId, motivo) {
-        await admin.from('produto_cadastro').update({ estado: 'REVISAR', motivo, atualizado_em: agora() }).eq('id', cadastroId)
+        // só o pedido que o robô ainda não pegou: se o disparo "falhou" por tempo mas chegou ao GitHub, o robô pode já estar nele (PROCESSANDO) ou ter
+        // terminado; escrever REVISAR por cima faria a função do banco recusar o desfecho dele (o produto criado não entraria na lista do app)
+        await admin.from('produto_cadastro').update({ estado: 'REVISAR', motivo, atualizado_em: agora() }).eq('id', cadastroId).eq('estado', 'PENDENTE')
       },
     }
     const r = await tratar(corpo, chamador, deps)
