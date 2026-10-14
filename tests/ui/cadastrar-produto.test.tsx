@@ -466,6 +466,99 @@ describe('REVISAR (revisão 2: I5, M1, M2)', () => {
   })
 })
 
+// 1º uso real (14/10, maionese Hellmann's): o robô devolveu 8 candidatos (4 ativos, 4 inativos); o botão que DECIDE ("criar mesmo assim") ficava no fim
+// da lista, fora da tela, e o Ivan tocou 3 vezes no botão principal. Agora: decidir no topo, 4 ativos de início, o resto atrás de "Ver os outros N".
+describe('candidatos do robô (1º uso real, 14/10)', () => {
+  // a ordem é a do robô (o mais parecido primeiro); os inativos vêm com "(inativo)" no fim da descrição
+  const OITO = [
+    { produto_id: 3469801, descricao: 'MAIONESE ALHO NEGRO - INSUMOS', unidade: 'KG' },
+    { produto_id: 3469802, descricao: 'MAIONESE HEINZ 3KG - INSUMOS (inativo)', unidade: 'KG' },
+    { produto_id: 3469803, descricao: 'MAIONESE DA CASA', unidade: 'KG' },
+    { produto_id: 3469804, descricao: 'MAIONESE QUERO 3KG - INSUMOS (inativo)', unidade: 'KG' },
+    { produto_id: 3469805, descricao: 'MAIONESE DA CASA - 30G', unidade: 'UN' },
+    { produto_id: 3469806, descricao: 'MAIONESE SACHE - INSUMOS (inativo)', unidade: 'UN' },
+    { produto_id: 3469807, descricao: 'MAIONESE MARIANA - INSUMOS', unidade: 'KG' },
+    { produto_id: 3469808, descricao: 'MAIONESE TEMPERADA - INSUMOS (inativo)', unidade: 'KG' },
+  ]
+  const revisar = (candidatos = OITO) => status({ estado: 'REVISAR', produto_id: null, motivo: 'Achei no SisChef produto(s) parecido(s): … — confira antes de criar outro', candidatos })
+  const nomes = (testid: string) => screen.queryAllByTestId(testid).map((b) => b.querySelector('span')?.textContent)
+
+  it('o botão que decide ("Não é nenhum destes: criar mesmo assim") vem logo abaixo do aviso, ANTES da lista, com a frase de ajuda; o botão principal continua escondido', () => {
+    abrir(acoes({ status: vi.fn().mockResolvedValue(revisar()) }), vi.fn(), { inicial: revisar() })
+    expect(screen.getByTestId('produto-revisar')).toHaveTextContent('Achei no SisChef 8 produtos parecidos. É algum destes?')
+    expect(screen.getByTestId('criar-novo-dica')).toHaveTextContent('Se nenhum é o seu produto, toque aqui para criar um novo.')
+    const decidir = screen.getByTestId('criar-mesmo-assim')
+    expect(decidir).toHaveTextContent('Não é nenhum destes: criar mesmo assim')
+    const [primeiro] = screen.getAllByTestId('usar-candidato')
+    expect(screen.getByTestId('produto-revisar').compareDocumentPosition(decidir) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(decidir.compareDocumentPosition(primeiro) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()   // decidir vem antes da lista no DOM
+    expect(screen.queryByTestId('cadastrar-produto-botao')).not.toBeInTheDocument()
+  })
+
+  it('com 8 candidatos, de início só os 4 ATIVOS mais parecidos (na ordem do robô); "Ver os outros 4" mostra os restantes, com os inativos marcados', async () => {
+    abrir(acoes({ status: vi.fn().mockResolvedValue(revisar()) }), vi.fn(), { inicial: revisar() })
+    expect(nomes('usar-candidato')).toEqual(['MAIONESE ALHO NEGRO - INSUMOS', 'MAIONESE DA CASA', 'MAIONESE DA CASA - 30G', 'MAIONESE MARIANA - INSUMOS'])
+    expect(screen.queryAllByTestId('reativar-candidato')).toHaveLength(0)
+    await userEvent.click(screen.getByTestId('ver-outros-candidatos'))
+    expect(screen.queryByTestId('ver-outros-candidatos')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('usar-candidato')).toHaveLength(4)
+    const inativos = screen.getAllByTestId('reativar-candidato')
+    expect(inativos).toHaveLength(4)
+    for (const b of inativos) {
+      expect(b).toHaveTextContent('(inativo)')
+      expect(b).toHaveTextContent('É este (inativo): reativar no SisChef')
+    }
+  })
+
+  it('o texto do botão diz quantos estão escondidos ("Ver os outros N"): 6 ativos mostram 4 e escondem 2', async () => {
+    const seis = OITO.filter((c) => !c.descricao.endsWith('(inativo)')).concat([
+      { produto_id: 3469809, descricao: 'MAIONESE LIGHT - INSUMOS', unidade: 'KG' }, { produto_id: 3469810, descricao: 'MAIONESE VERDE - INSUMOS', unidade: 'KG' },
+    ])
+    abrir(acoes({ status: vi.fn().mockResolvedValue(revisar(seis)) }), vi.fn(), { inicial: revisar(seis) })
+    expect(screen.getAllByTestId('usar-candidato')).toHaveLength(4)
+    expect(screen.getByTestId('ver-outros-candidatos')).toHaveTextContent('Ver os outros 2')
+    await userEvent.click(screen.getByTestId('ver-outros-candidatos'))
+    expect(nomes('usar-candidato')).toHaveLength(6)
+  })
+
+  it('inativo: o toque NÃO chama o robô, só orienta a reativar à mão no SisChef; só depois de "Já reativei" o pedido vai, para ESTE produto (existente_id)', async () => {
+    const a = acoes({ status: vi.fn().mockResolvedValue(revisar()), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-2' }) })
+    abrir(a, vi.fn(), { inicial: revisar() })
+    await userEvent.click(screen.getByTestId('ver-outros-candidatos'))
+    const [heinz] = screen.getAllByTestId('reativar-candidato')
+    await userEvent.click(heinz)
+    expect(a.cadastrar).not.toHaveBeenCalled()
+    const aviso = screen.getByTestId('aviso-inativo')
+    expect(aviso).toHaveTextContent('Este produto está inativo no SisChef, e o robô não reativa produto.')
+    expect(aviso).toHaveTextContent('3469802')
+    await userEvent.click(screen.getByTestId('ja-reativei-candidato'))
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledTimes(1))
+    expect(a.cadastrar).toHaveBeenCalledWith(expect.objectContaining({ existente_id: 3469802 }))
+    expect(a.cadastrar).toHaveBeenCalledWith(expect.not.objectContaining({ forcar: true }))
+  })
+
+  it('ativo: "usar este" continua pedindo ESTE produto (existente_id) e "criar mesmo assim" continua pedindo forçado', async () => {
+    const a = acoes({ status: vi.fn().mockResolvedValue(revisar()), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-2' }) })
+    const v = abrir(a, vi.fn(), { inicial: revisar() })
+    await userEvent.click(screen.getAllByTestId('usar-candidato')[1])
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith(expect.objectContaining({ existente_id: 3469803 })))
+    v.unmount()
+    const b = acoes({ status: vi.fn().mockResolvedValue(revisar()), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-3' }) })
+    abrir(b, vi.fn(), { inicial: revisar() })
+    await userEvent.click(screen.getByTestId('criar-mesmo-assim'))
+    await waitFor(() => expect(b.cadastrar).toHaveBeenCalledWith(expect.objectContaining({ forcar: true })))
+    expect(b.cadastrar).toHaveBeenCalledWith(expect.not.objectContaining({ existente_id: expect.anything() }))
+  })
+
+  it('um candidato só: a frase de ajuda fala de um ("Se não é o seu produto…") e não há "Ver os outros"', () => {
+    const um = [OITO[0]]
+    abrir(acoes({ status: vi.fn().mockResolvedValue(revisar(um)) }), vi.fn(), { inicial: revisar(um) })
+    expect(screen.getByTestId('produto-revisar')).toHaveTextContent('Achei no SisChef um produto parecido. É este?')
+    expect(screen.getByTestId('criar-novo-dica')).toHaveTextContent('Se não é o seu produto, toque aqui para criar um novo.')
+    expect(screen.queryByTestId('ver-outros-candidatos')).not.toBeInTheDocument()
+  })
+})
+
 describe('formulário: acessibilidade e textos simples (revisão 2: M13)', () => {
   it('o motivo do botão apagado fica ligado a ele (aria-describedby)', () => {
     abrir(acoes())

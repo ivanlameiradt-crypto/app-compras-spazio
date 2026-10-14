@@ -68,6 +68,16 @@ export function problemaDoProduto(d: DadosProduto): string | null {
 export type EstadoProduto = 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'
 export const PRODUTO_PRONTO = (e: EstadoProduto | null | undefined): boolean => e === 'CADASTRADO' || e === 'JA_EXISTIA'
 
+/** O produto INATIVO no SisChef: o robô põe "(inativo)" no fim da descrição do candidato (montar_candidatos). O robô nunca o reativa. */
+export const candidatoInativo = (c: { descricao: string }): boolean => /\(inativo\)\s*$/i.test(c.descricao)
+/** Quantos candidatos a tela mostra de início (1º uso real, 14/10: com 8 na tela, o botão que decide ficava fora dela). */
+export const CANDIDATOS_DE_INICIO = 4
+/** Os que aparecem de início (os mais parecidos ATIVOS, na ordem do robô) e os outros (os inativos e os que passam do limite), atrás de "Ver os outros". */
+export function separarCandidatos<T extends { descricao: string }>(candidatos: T[], limite = CANDIDATOS_DE_INICIO): { primeiros: T[]; outros: T[] } {
+  const primeiros = candidatos.filter((c) => !candidatoInativo(c)).slice(0, limite)
+  return { primeiros, outros: candidatos.filter((c) => !primeiros.includes(c)) }
+}
+
 /**
  * Há quanto tempo (ms) o pedido está parado: pela hora do pedido no servidor (`atualizado_em`, que muda quando o robô o pega), não pela hora em que a
  * tela abriu (um pedido retomado parado há 30 min já mostra a saída). Nunca menos que o tempo que a tela já o viu assim (`vistoEm`): com o relógio do
