@@ -285,4 +285,22 @@ describe('produto_cadastro_concluir — correções da revisão nº 2 (14/10/202
     expect(await como(db, ADMIN, `select depois->>'via' as via, depois->>'palavras' as palavras from historico_alteracoes where tabela = 'cot_produto_busca' and registro = '5050' order by id`))
       .toEqual([{ via: 'robô: cadastro de produto', palavras: 'maion hellmanns' }, { via: 'robô: cadastro de produto', palavras: 'maion hellmanns OU balde' }])
   })
+
+  it('continua atômica: se a última etapa (a auditoria) falhar, nada fica — nem a linha da planilha, nem as palavras, nem o estado do pedido', async () => {
+    const db = await banco()
+    const id = await pedir(db, { palavras: `'maion hellmanns'` })
+    // a auditoria quebrada só dentro desta transação: o rollback desfaz também a troca da função
+    await expect(db.transaction(async (tx) => {
+      await tx.exec(`create or replace function public.cot_registrar_mudanca(p_tabela text, p_registro text, p_antes jsonb, p_depois jsonb) returns void
+        language plpgsql security definer set search_path = public as $f$ begin raise exception 'auditoria fora do ar'; end $f$`)
+      await tx.exec('set local role service_role')
+      await tx.query(`select produto_cadastro_concluir('${id}'::uuid, 'CADASTRADO', 5060, null, 'KG', '${NOME}')`)
+    })).rejects.toThrow(/auditoria fora do ar/)
+    expect(await como(db, ADMIN, 'select 1 from produto_planilha')).toEqual([])
+    expect(await como(db, ADMIN, 'select 1 from cot_produto_busca where produto_id = 5060')).toEqual([])
+    expect(await como(db, ADMIN, `select estado, produto_id from produto_cadastro where id = '${id}'`)).toEqual([{ estado: 'PENDENTE', produto_id: null }])
+    // de volta com a auditoria de verdade, o mesmo pedido conclui normalmente
+    expect(await concluir(db, id, 'CADASTRADO', `, 5060, null, 'KG', '${NOME}'`)).toBe('CADASTRADO')
+    expect(await como(db, ADMIN, 'select palavras from cot_produto_busca where produto_id = 5060')).toEqual([{ palavras: 'maion hellmanns' }])
+  })
 })
