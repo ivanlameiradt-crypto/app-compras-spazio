@@ -583,10 +583,10 @@ describe('Sub-fase 3: cupom', () => {
 
 describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   type Resp = { data: unknown; error: { message: string; code?: string } | null; status: number }
-  /** Cadeia do PostgREST (select/eq/order/limit) que, ao ser aguardada, devolve `resp`. */
+  /** Cadeia do PostgREST (select/eq/order/limit/range) que, ao ser aguardada, devolve `resp`. */
   const cadeia = (resp: Resp) => {
     const c: Record<string, unknown> = {}
-    for (const metodo of ['select', 'eq', 'is', 'not', 'order', 'limit']) c[metodo] = vi.fn(() => c)
+    for (const metodo of ['select', 'eq', 'is', 'not', 'order', 'limit', 'range']) c[metodo] = vi.fn(() => c)
     c.then = (ok: (r: Resp) => unknown, ko: (e: unknown) => unknown) => Promise.resolve(resp).then(ok, ko)
     return c as { select: ReturnType<typeof vi.fn> } & Record<string, unknown>
   }
@@ -951,7 +951,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
       from.mockReturnValueOnce(lista()).mockReturnValueOnce(busca)
       const r = await catalogoProdutos()
       expect(from).toHaveBeenNthCalledWith(2, 'cot_produto_busca')
-      expect(busca.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido, ocultar')
+      expect(busca.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido, ocultar', { count: 'exact' })
       expect(r).toEqual([
         { produto_id: 3469626, nome: 'LEITE CONDENSADO - INSUMOS (KG)', unidade: 'kg', nome_sischef: 'LEITE CONDESSADO - INSUMOS (KG)', palavras: 'leite semi condensado' },
         { produto_id: 3138573, nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' },
@@ -983,7 +983,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
       const semOcultar = cadeia({ data: [{ produto_id: 1854713, palavras: 'queijo mussarela', nome_corrigido: null }], error: null, status: 200 })
       from.mockReturnValueOnce(lista()).mockReturnValueOnce(semColuna).mockReturnValueOnce(semOcultar)
       const r = await catalogoProdutos()
-      expect(semOcultar.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido')
+      expect(semOcultar.select).toHaveBeenCalledWith('produto_id, palavras, nome_corrigido', { count: 'exact' })
       expect(r.find((p) => p.produto_id === 1854713)?.palavras).toBe('queijo mussarela')
       expect(r.some((p) => p.oculto)).toBe(false)
     })
