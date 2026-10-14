@@ -1,7 +1,8 @@
 -- App de Compras Spazio — correções da gravação final do cadastro de produto pelo app (revisão independente nº 2, 14/10/2026).
 --
--- A 20261220000001_produto_cadastro.sql já está aplicada em produção e NÃO é editada: esta migração só REESCREVE a função produto_cadastro_concluir, com a
--- MESMA assinatura e as MESMAS permissões (o revoke/grant do fim é repetido de propósito). Pode ser reaplicada sem efeito (create or replace).
+-- A 20261220000001_produto_cadastro.sql já está aplicada em produção e NÃO é editada: esta migração só ACRESCENTA uma coluna a produto_cadastro (D3) e
+-- REESCREVE a função produto_cadastro_concluir, com a MESMA assinatura e as MESMAS permissões (o revoke/grant do fim é repetido de propósito). Pode ser
+-- reaplicada sem efeito (add column if not exists, create or replace).
 -- O que muda (ids da revisão em v2\REVISAO-2-RELATORIO.md):
 --   I3  A planilha já tinha o produto SÓ com a unidade (descrição vazia, o formato da carga de 08/10): o app, a confirmação do cupom e o cot_nfe_associar só
 --       aceitam produto fora de itens_semana se a linha da planilha tem descrição, e a tela dizia "entrou na sua lista" sem ser verdade. Agora a descrição
@@ -11,7 +12,16 @@
 --   M3  Palavras-chave: a mescla compara ENTRADA inteira da lista separada por " OU " (sem diferenciar maiúsculas), não pedaço de texto: "sal" entra mesmo
 --       havendo "salsicha"; entrada que já está lá não entra de novo.
 --   M4  A auditoria da mudança das palavras diz "via robô: cadastro de produto" (não "via app").
+--   D3  produto_cadastro ganha `ultimo_disparo_em` (re-revisão de 14/10): a Edge Function só chama o robô de novo para o pedido parado na fila se o último
+--       disparo tem mais de 3 min, e reserva o intervalo ANTES de disparar. Cada disparo na fila compartilhada `sischef-session` pode cancelar o run que
+--       outro robô do SisChef deixou esperando; sem esta hora, toques repetidos disparariam várias vezes. Não se usa atualizado_em para isso: ele também
+--       conta os 20 min do pedido preso, e mexer nele deixaria o pedido nunca expirar.
 -- O resto é o mesmo: unidade só KG/UN; divergência vira REVISAR sem sobrescrever nada; idempotente; atômica; security definer com search_path = public.
+
+-- D3: a hora do último disparo do robô para o pedido. O 1º disparo acontece logo depois do insert (Edge Function), então o default now() vale como a hora
+-- dele. A tabela está vazia em produção; `if not exists` deixa a migração reaplicável. As permissões da tabela (só o admin lê; só o servidor escreve) valem
+-- para a coluna nova também.
+alter table public.produto_cadastro add column if not exists ultimo_disparo_em timestamptz not null default now();
 
 -- A gravação final (só o robô, com a service_role). Devolve o estado em que o pedido ficou.
 --   p_estado 'CADASTRADO' | 'JA_EXISTIA' + p_produto_id + p_unidade_lida: grava o produto na planilha (a lista do app) e mescla as palavras-chave.

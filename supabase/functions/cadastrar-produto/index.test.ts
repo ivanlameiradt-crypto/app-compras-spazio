@@ -78,8 +78,8 @@ const h = vi.hoisted(() => {
         }
         return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "produto_cadastro_em_andamento"' } }
       }
-      const agora = new Date().toISOString()
-      const nova = { id: `cad-${banco.proximoId++}`, estado: 'PENDENTE', motivo: null, produto_id: null, criado_em: agora, atualizado_em: agora, ...l }
+      const agora = new Date().toISOString()   // os defaults now() da tabela (ultimo_disparo_em é a hora do 1º disparo, logo depois do insert)
+      const nova = { id: `cad-${banco.proximoId++}`, estado: 'PENDENTE', motivo: null, produto_id: null, criado_em: agora, atualizado_em: agora, ultimo_disparo_em: agora, ...l }
       banco.pedidos.push(nova)
       return { data: [nova], error: null }
     }
@@ -123,11 +123,16 @@ const AVISO_DISPARO = 'o pedido foi gravado, mas não consegui chamar o robô ag
 // os prazos são conferidos pelos NÚMEROS (20 e 3 minutos), nunca pelas constantes do código
 const AGORA = new Date('2026-10-14T15:00:00Z')
 const haMinutos = (min: number, seg = 0) => new Date(AGORA.getTime() - min * 60_000 - seg * 1000).toISOString()
-/** Um pedido do mesmo nome que já está no banco (por padrão PENDENTE há 1 minuto). */
-const pedidoNoBanco = (over: Record<string, unknown> = {}) => ({
-  id: 'andando-1', descricao: CORPO.descricao, chave_nome: CHAVE, grupo: CORPO.grupo, unidade: 'KG', estado: 'PENDENTE', motivo: null, produto_id: null,
-  criado_em: haMinutos(30), atualizado_em: haMinutos(1), ...over,
-})
+/** Um pedido do mesmo nome que já está no banco (por padrão PENDENTE há 1 minuto; sem `ultimo_disparo_em`, o último disparo é o da hora do pedido). */
+const pedidoNoBanco = (over: Record<string, unknown> = {}) => {
+  const p = { id: 'andando-1', descricao: CORPO.descricao, chave_nome: CHAVE, grupo: CORPO.grupo, unidade: 'KG', estado: 'PENDENTE', motivo: null, produto_id: null,
+    criado_em: haMinutos(30), atualizado_em: haMinutos(1), ...over }
+  return { ultimo_disparo_em: p.atualizado_em, ...p }
+}
+/** Os UPDATEs que marcam REVISAR um pedido pelo código (o "marcar REVISAR" do disparo que falhou). */
+const marcacoesRevisar = () => h.banco.operacoes.filter((op) => op.tipo === 'update' && op.dados?.estado === 'REVISAR' && op.filtros.some(([, c]) => c === 'id'))
+/** Os UPDATEs que reservam um novo disparo (D3). */
+const reservas = () => h.banco.operacoes.filter((op) => op.tipo === 'update' && op.dados !== undefined && 'ultimo_disparo_em' in op.dados)
 
 const CAMINHO_DO_INDEX = './index.ts'
 let handler: (req: Request) => Promise<Response>
@@ -200,8 +205,7 @@ describe('cadastrar-produto/index.ts — pedido novo', () => {
     const r = await handler(pedir(CORPO))
     expect(r.status).toBe(502)
     expect(h.banco.pedidos[0]).toMatchObject({ estado: 'REVISAR', motivo: AVISO_DISPARO })
-    const marcar = h.banco.operacoes.find((op) => op.tipo === 'update' && op.filtros.some(([, c]) => c === 'id'))
-    expect(marcar?.filtros).toEqual([['eq', 'id', 'cad-1'], ['eq', 'estado', 'PENDENTE']])
+    expect(marcacoesRevisar().map((op) => op.filtros)).toEqual([[['eq', 'id', 'cad-1'], ['eq', 'estado', 'PENDENTE']]])
     // o GitHub recebeu o disparo, mas a resposta não voltou a tempo: enquanto isso o robô pegou o pedido (ou até terminou)
     for (const doRobo of [{ estado: 'PROCESSANDO' }, { estado: 'CADASTRADO', produto_id: 3924999 }]) {
       h.banco.pedidos = []
@@ -228,17 +232,48 @@ describe('cadastrar-produto/index.ts — pedido novo', () => {
 })
 
 describe('cadastrar-produto/index.ts — já há um pedido do mesmo nome em andamento', () => {
-  it('C3: PENDENTE há mais de 3 min (o run se perdeu na fila): dispara de novo PARA O MESMO pedido, reenviado:true, nada novo gravado', async () => {
+  it('C3: PENDENTE e sem disparo há mais de 3 min (o run se perdeu na fila): reserva o intervalo e SÓ DEPOIS dispara de novo o MESMO pedido; reenviado:true', async () => {
     h.banco.pedidos = [pedidoNoBanco({ atualizado_em: haMinutos(3, 1) })]
+    let reservadoNoDisparo: unknown = null
+    fetchFalso.mockImplementation(async () => { reservadoNoDisparo = h.banco.pedidos[0].ultimo_disparo_em; return { status: 204, text: async () => '' } })
     const r = await handler(pedir(CORPO))
     expect(r.status).toBe(200)
     expect(await corpoDe(r)).toMatchObject({ cadastro_id: 'andando-1', chave_nome: CHAVE, em_andamento: true, reenviado: true })
-    expect(h.banco.pedidos).toEqual([pedidoNoBanco({ atualizado_em: haMinutos(3, 1) })])   // o pedido continua como estava
+    // só a hora do último disparo muda (e já estava reservada quando o GitHub foi chamado); a hora do pedido fica (ela conta os 20 min do preso)
+    expect(h.banco.pedidos).toEqual([pedidoNoBanco({ atualizado_em: haMinutos(3, 1), ultimo_disparo_em: AGORA.toISOString() })])
+    expect(reservadoNoDisparo).toBe(AGORA.toISOString())
     expect(fetchFalso).toHaveBeenCalledTimes(1)
     expect(corpoDoDisparo(0)).toEqual({ ref: 'master', inputs: { cadastro_id: 'andando-1' } })
-    // a situação é lida pelo código do pedido: só o estado e a hora
-    const situacao = h.banco.operacoes.filter((op) => op.tipo === 'select' && op.colunas === 'estado, atualizado_em')
+    // a situação é lida pelo código do pedido; a reserva é um UPDATE só: o pedido, ainda PENDENTE, com o último disparo antes de agora − 3 min
+    const situacao = h.banco.operacoes.filter((op) => op.tipo === 'select' && op.colunas === 'estado, atualizado_em, ultimo_disparo_em')
     expect(situacao.map((op) => op.filtros)).toEqual([[['eq', 'id', 'andando-1']]])
+    expect(reservas().map((op) => [op.filtros, Object.keys(op.dados ?? {})])).toEqual(
+      [[[['eq', 'id', 'andando-1'], ['eq', 'estado', 'PENDENTE'], ['lt', 'ultimo_disparo_em', haMinutos(3)]], ['ultimo_disparo_em']]])
+  })
+
+  it('D3: PENDENTE há 5 min, mas o último disparo foi há 1 min: nada disparado e reenviado:false; com o último disparo há 4 min, reenvia', async () => {
+    h.banco.pedidos = [pedidoNoBanco({ atualizado_em: haMinutos(5), ultimo_disparo_em: haMinutos(1) })]
+    expect(await corpoDe(await handler(pedir(CORPO)))).toMatchObject({ cadastro_id: 'andando-1', em_andamento: true, reenviado: false })
+    expect(h.banco.pedidos).toEqual([pedidoNoBanco({ atualizado_em: haMinutos(5), ultimo_disparo_em: haMinutos(1) })])
+    expect(reservas()).toEqual([])   // nem tenta reservar
+    expect(fetchFalso).not.toHaveBeenCalled()
+    h.banco.pedidos = [pedidoNoBanco({ atualizado_em: haMinutos(5), ultimo_disparo_em: haMinutos(4) })]
+    expect(await corpoDe(await handler(pedir(CORPO)))).toMatchObject({ cadastro_id: 'andando-1', em_andamento: true, reenviado: true })
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+
+  it('D3: dois toques seguidos, ou dois ao mesmo tempo, num pedido parado há 10 min: o robô é chamado UMA vez só', async () => {
+    h.banco.pedidos = [pedidoNoBanco({ atualizado_em: haMinutos(10) })]
+    const um = await corpoDe(await handler(pedir(CORPO)))
+    const dois = await corpoDe(await handler(pedir(CORPO)))
+    expect([um.reenviado, dois.reenviado]).toEqual([true, false])
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+    // ao mesmo tempo: os dois leem a mesma situação; a reserva (UPDATE condicionado) deixa só um chamar o robô
+    h.banco.pedidos = [pedidoNoBanco({ atualizado_em: haMinutos(10) })]
+    fetchFalso.mockClear()
+    const juntos = await Promise.all([handler(pedir(CORPO)), handler(pedir(CORPO))])
+    expect((await Promise.all(juntos.map(corpoDe))).map((c) => c.reenviado).sort()).toEqual([false, true])
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
   })
 
   it('C3: PENDENTE há 3 min ou menos, ou PROCESSANDO (o robô está nele): nada é disparado; reenviado:false', async () => {
@@ -252,7 +287,7 @@ describe('cadastrar-produto/index.ts — já há um pedido do mesmo nome em anda
     expect(fetchFalso).not.toHaveBeenCalled()
   })
 
-  it('C3: o novo disparo falha (GitHub recusa ou não responde): 200 com reenviado:false; o pedido que já existia NÃO vira REVISAR; nada de segredo no log', async () => {
+  it('C3: o novo disparo falha (GitHub recusa ou não responde): 200 com reenviado:false; o pedido NÃO vira REVISAR e o intervalo fica reservado; nada de segredo no log', async () => {
     for (const falha of [() => fetchFalso.mockResolvedValue({ status: 422, text: async () => '{"message":"Unprocessable Entity"}' }),
       () => fetchFalso.mockRejectedValue(Object.assign(new Error(`error sending request for url (${URL_DISPARO}) com ${PAT}`), { name: 'TypeError' }))]) {
       falha()
@@ -262,8 +297,8 @@ describe('cadastrar-produto/index.ts — já há um pedido do mesmo nome em anda
       const corpo = await corpoDe(r)
       expect(r.status).toBe(200)
       expect(corpo).toMatchObject({ cadastro_id: 'andando-1', em_andamento: true, reenviado: false })
-      expect(h.banco.pedidos).toEqual([pedidoNoBanco({ atualizado_em: haMinutos(10) })])
-      expect(h.banco.operacoes.filter((op) => op.tipo === 'update' && op.filtros.some(([, c]) => c === 'id'))).toEqual([])   // nenhum "marcar REVISAR"
+      expect(h.banco.pedidos).toEqual([pedidoNoBanco({ atualizado_em: haMinutos(10), ultimo_disparo_em: AGORA.toISOString() })])
+      expect(marcacoesRevisar()).toEqual([])
       semVazamento(JSON.stringify(corpo))
     }
   })

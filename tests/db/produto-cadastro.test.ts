@@ -303,4 +303,19 @@ describe('produto_cadastro_concluir — correções da revisão nº 2 (14/10/202
     expect(await concluir(db, id, 'CADASTRADO', `, 5060, null, 'KG', '${NOME}'`)).toBe('CADASTRADO')
     expect(await como(db, ADMIN, 'select palavras from cot_produto_busca where produto_id = 5060')).toEqual([{ palavras: 'maion hellmanns' }])
   })
+
+  it('D3: ultimo_disparo_em nasce com a hora do pedido (o 1º disparo); a reserva do novo disparo (o UPDATE da Edge Function) passa uma vez só e só no PENDENTE', async () => {
+    const db = await banco()
+    const id = await pedir(db)
+    expect(await como(db, ADMIN, `select ultimo_disparo_em = criado_em as igual from produto_cadastro where id = '${id}'`)).toEqual([{ igual: true }])
+    await expect(como(db, ADMIN, `update produto_cadastro set ultimo_disparo_em = now()`)).rejects.toThrow(/permission denied/)   // só o servidor muda
+    await db.exec(`update produto_cadastro set ultimo_disparo_em = '2026-10-14T14:50:00Z' where id = '${id}'`)   // último disparo há 10 min
+    // o que o index.ts pede ao PostgREST: ainda PENDENTE e último disparo antes de agora − 3 min (os carimbos vão como texto ISO, como no fio)
+    const reservar = () => como(db, 'service', `update produto_cadastro set ultimo_disparo_em = $2 where id = $1 and estado = 'PENDENTE' and ultimo_disparo_em < $3 returning id`,
+      [id, '2026-10-14T15:00:00.000Z', '2026-10-14T14:57:00.000Z'])
+    expect(await reservar()).toEqual([{ id }])
+    expect(await reservar()).toEqual([])   // o 2º toque não acha a linha: o intervalo já foi reservado
+    await db.exec(`update produto_cadastro set estado = 'PROCESSANDO', ultimo_disparo_em = '2026-10-14T14:50:00Z' where id = '${id}'`)
+    expect(await reservar()).toEqual([])   // o robô já pegou o pedido: nada de novo disparo
+  })
 })

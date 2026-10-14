@@ -304,19 +304,30 @@ describe('Fase 2 — base e ordem das migrations', () => {
   })
 
   // A F3P já está em produção: a F3Q só pode trocar o CORPO da produto_cadastro_concluir (mesma assinatura, mesmas permissões, security definer com
-  // search_path = public) e tem de poder ser reaplicada sem efeito.
+  // search_path = public) e acrescentar a coluna ultimo_disparo_em (D3), e tem de poder ser reaplicada sem efeito.
   const CONCLUIR = 'produto_cadastro_concluir(uuid,text,bigint,text,text,text,jsonb)'
-  it('X2 (F3Q): as correções reescrevem SÓ produto_cadastro_concluir, sem mudar assinatura nem permissões, e reaplicá-las não muda nada', async () => {
+  it('X2 (F3Q): as correções reescrevem SÓ produto_cadastro_concluir (mesma assinatura e permissões), só acrescentam ultimo_disparo_em, e reaplicá-las não muda nada', async () => {
     const db = new PGlite()
     const atributos = async () => (await db.query<{ acl: string; definer: boolean; config: string[] | null }>(
       `select proacl::text as acl, prosecdef as definer, proconfig as config from pg_proc where oid = 'public.${CONCLUIR}'::regprocedure`)).rows[0]
+    const colunas = async () => (await db.query<{ c: string; tipo: string; nulo: string; padrao: string | null }>(
+      `select column_name as c, data_type as tipo, is_nullable as nulo, column_default as padrao from information_schema.columns
+        where table_schema = 'public' and table_name = 'produto_cadastro' order by ordinal_position`)).rows
+    const permissoesDaTabela = async () => (await db.query<{ acl: string }>(`select relacl::text as acl from pg_class where oid = 'public.produto_cadastro'::regclass`)).rows[0]
     try {
       await db.exec(shim())
       for (const f of ORDEM_ESPERADA.slice(0, ORDEM_ESPERADA.indexOf(F3Q))) await db.exec(migration(f))
       const antes = await md5Funcoes(db)
       const atributosAntes = await atributos()
+      const colunasAntes = await colunas()
+      const tabelaAntes = await permissoesDaTabela()
       await db.exec(migration(F3Q))
       const depois = await md5Funcoes(db)
+      // D3: só a coluna nova, no fim; as de antes ficam iguais; as permissões da tabela também
+      const colunasDepois = await colunas()
+      expect(colunasDepois.slice(0, colunasAntes.length)).toEqual(colunasAntes)
+      expect(colunasDepois.slice(colunasAntes.length)).toEqual([{ c: 'ultimo_disparo_em', tipo: 'timestamp with time zone', nulo: 'NO', padrao: 'now()' }])
+      expect(await permissoesDaTabela()).toEqual(tabelaAntes)
       // toda função de antes, menos a concluir, continua com o corpo idêntico; nenhuma função nova nem sumida (a assinatura é a mesma)
       for (const [nome, hash] of antes) {
         if (nome === CONCLUIR) continue
@@ -335,6 +346,8 @@ describe('Fase 2 — base e ordem das migrations', () => {
       await db.exec(migration(F3Q))
       expect(await md5Funcoes(db)).toEqual(depois)
       expect(await atributos()).toEqual(atributosAntes)
+      expect(await colunas()).toEqual(colunasDepois)
+      expect(await permissoesDaTabela()).toEqual(tabelaAntes)
     } finally {
       await db.close()
     }
