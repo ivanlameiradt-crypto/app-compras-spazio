@@ -1,7 +1,8 @@
 // supabase/functions/cadastrar-produto/logica.ts
 // Lógica pura da Edge Function cadastrar-produto (pedido do Ivan, 13/10/2026): o Ivan toca em "Cadastrar no SisChef e no app" para um produto de cupom, nota fiscal ou compra
 // avulsa que não está na lista do app. Aqui: autoriza o admin, valida o pedido (grupo da lista fechada, unidade KG/UN), evita pedido repetido, grava em produto_cadastro (PENDENTE)
-// e dispara o robô (cadastrar-produto.yml). O cadastro em si é do robô, que confere de novo no SisChef se o produto já existe. Sem globais do Deno nem rede: tudo entra por `deps`.
+// e dispara o robô (cadastrar-produto.yml); o pedido repetido que está parado na fila (PENDENTE há mais de 3 min) faz o robô ser chamado de novo (revisão nº 2, 14/10).
+// O cadastro em si é do robô, que confere de novo no SisChef se o produto já existe. Sem globais do Deno nem rede: tudo entra por `deps`.
 
 export interface Corpo {
   descricao?: unknown; grupo?: unknown; unidade?: unknown; palavras?: unknown
