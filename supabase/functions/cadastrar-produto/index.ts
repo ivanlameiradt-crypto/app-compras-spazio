@@ -67,9 +67,18 @@ Deno.serve(async (req: Request) => {
         throw new Error(error?.message ?? 'não consegui gravar o pedido')
       },
       async situacaoDoPedido(cadastroId) {
-        const { data, error } = await admin.from('produto_cadastro').select('estado, atualizado_em').eq('id', cadastroId).maybeSingle()
+        const { data, error } = await admin.from('produto_cadastro').select('estado, atualizado_em, ultimo_disparo_em').eq('id', cadastroId).maybeSingle()
         if (error) throw new Error(error.message)
-        return (data as { estado: string; atualizado_em: string } | null) ?? null
+        return (data as { estado: string; atualizado_em: string; ultimo_disparo_em: string } | null) ?? null
+      },
+      async reservarReenvio(cadastroId, minutos) {
+        // compara-e-troca num UPDATE só (D3): ainda PENDENTE e último disparo há mais de `minutos`. Dois toques ao mesmo tempo: o Postgres reavalia a
+        // condição do 2º depois do 1º e ele não acha a linha. atualizado_em NÃO muda (ele conta os 20 min do pedido preso).
+        const limite = new Date(Date.now() - minutos * 60_000).toISOString()
+        const { data, error } = await admin.from('produto_cadastro').update({ ultimo_disparo_em: agora() })
+          .eq('id', cadastroId).eq('estado', 'PENDENTE').lt('ultimo_disparo_em', limite).select('id')
+        if (error) throw new Error(error.message)
+        return (data ?? []).length === 1
       },
       async dispararCadastro(cadastroId) {
         if (!pat) {

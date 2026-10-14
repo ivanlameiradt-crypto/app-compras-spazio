@@ -23,8 +23,11 @@ export interface Deps {
   /** Insere o pedido PENDENTE; `duplicado` = já há um em andamento para este nome (devolve o existente); `corrida` = o índice de "um por vez" recusou,
    *  mas o pedido em andamento terminou antes de ser lido (nada foi gravado). */
   criarPedido(p: PedidoNovo): Promise<{ id: string; duplicado?: boolean } | { corrida: true }>
-  /** O estado do pedido e a hora da última mudança (ISO); null se não existe. */
-  situacaoDoPedido(cadastroId: string): Promise<{ estado: string; atualizado_em: string } | null>
+  /** O estado do pedido, a hora da última mudança e a do último disparo do robô (ISO); null se não existe. */
+  situacaoDoPedido(cadastroId: string): Promise<{ estado: string; atualizado_em: string; ultimo_disparo_em: string } | null>
+  /** Reserva o novo disparo ANTES de disparar: marca ultimo_disparo_em = agora só se o pedido ainda está PENDENTE e o último disparo tem mais de `minutos`.
+   *  true = reservou (dois toques ao mesmo tempo: só um reserva). */
+  reservarReenvio(cadastroId: string, minutos: number): Promise<boolean>
   dispararCadastro(cadastroId: string): Promise<void>
   /** O disparo do pedido NOVO falhou: o pedido não pode ficar PENDENTE para sempre (só vale para o que o robô ainda não pegou). */
   marcarRevisar(cadastroId: string, motivo: string): Promise<void>
@@ -44,7 +47,8 @@ export const ORIGENS = ['cupom', 'nota', 'avulsa'] as const
 /** Pedido que fica PENDENTE/PROCESSANDO além disto é dado como perdido (o workflow leva ~2 min). */
 export const MINUTOS_PRESO = 20
 /** Pedido em andamento que segue PENDENTE (o robô nem o pegou) há mais disto: o disparo pode ter se perdido na fila do SisChef (outro robô do mesmo grupo
- *  cancela o run que esperava). Um novo toque chama o robô de novo; é seguro: a reivindicação do robô é atômica e o run a mais só "pula". */
+ *  cancela o run que esperava). Um novo toque chama o robô de novo; é seguro: a reivindicação do robô é atômica e o run a mais só "pula". É também o
+ *  intervalo mínimo entre dois disparos do mesmo pedido (D3): cada disparo na fila compartilhada pode cancelar o run que outro robô deixou esperando. */
 export const MINUTOS_REENVIO = 3
 /** O maior número que a coluna origem_item (integer do Postgres) guarda: acima disso o banco recusaria com uma mensagem crua. */
 const MAIOR_INTEGER = 2147483647
@@ -60,14 +64,20 @@ const AVISO_DISPARO = 'o pedido foi gravado, mas não consegui chamar o robô ag
 const MOTIVO_PRESO = 'o robô não respondeu a tempo: confira no SisChef se o produto foi criado antes de tentar de novo'
 const AVISO_CORRIDA = 'outro pedido deste mesmo produto acabou de terminar: toque de novo para ver o resultado'
 
-/** O pedido em andamento parado na fila (PENDENTE há mais de MINUTOS_REENVIO): chama o robô de novo e devolve se chamou. Nunca derruba a resposta: o
- *  pedido já existia e fica como está (nada de REVISAR aqui: o robô pode estar pegando-o agora). */
+/** O pedido em andamento parado na fila (PENDENTE há mais de MINUTOS_REENVIO): chama o robô de novo e devolve se chamou. No máximo um disparo a cada
+ *  MINUTOS_REENVIO por pedido (D3), contado pela hora do ÚLTIMO DISPARO, não pela do pedido. Nunca derruba a resposta: o pedido já existia e fica como
+ *  está (nada de REVISAR aqui: o robô pode estar pegando-o agora). */
 async function reenviarSeParado(cadastroId: string, deps: Deps): Promise<boolean> {
   try {
     const s = await deps.situacaoDoPedido(cadastroId)
     if (!s || s.estado !== 'PENDENTE') return false   // PROCESSANDO: o robô já está nele
-    const parado = Date.now() - Date.parse(s.atualizado_em)
-    if (!(parado > MINUTOS_REENVIO * 60_000)) return false   // recente (o run ainda pode estar na fila) ou hora ilegível
+    const agora = Date.now()
+    const prazo = MINUTOS_REENVIO * 60_000
+    // parado (nada mudou no pedido) E sem disparo nos últimos MINUTOS_REENVIO; hora ilegível (NaN) também não reenvia
+    if (!(agora - Date.parse(s.atualizado_em) > prazo && agora - Date.parse(s.ultimo_disparo_em) > prazo)) return false
+    // reserva o intervalo ANTES de disparar (só se ainda PENDENTE e ninguém reservou antes): se o disparo falhar, o intervalo fica reservado
+    // assim mesmo, o que é melhor do que martelar a fila compartilhada
+    if (!(await deps.reservarReenvio(cadastroId, MINUTOS_REENVIO))) return false
     await deps.dispararCadastro(cadastroId)
     return true
   } catch {
