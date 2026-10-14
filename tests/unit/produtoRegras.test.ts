@@ -96,8 +96,28 @@ describe('motivoSemConselho / mensagemDoRevisar', () => {
     ['unidade lida ausente: confira no SisChef', 'unidade lida ausente'],
     ['grupo não encontrado: nada foi criado', 'grupo não encontrado: nada foi criado'],
     [null, ''],
-  ])('tira do motivo só o conselho final ("confira…"): %s', (motivo, fato) => {
+    // um conselho com OUTRA instrução (o do produto inativo, do robô) nunca é cortado: o Ivan precisa do "reative"
+    ['existe no SisChef um produto INATIVO com esse nome (cód. 3924284): confira e reative no SisChef antes de tentar de novo', 'existe no SisChef um produto INATIVO com esse nome (cód. 3924284): confira e reative no SisChef antes de tentar de novo'],
+  ])('tira do motivo só o conselho final genérico ("confira…"): %s', (motivo, fato) => {
     expect(motivoSemConselho(motivo)).toBe(fato)
+  })
+
+  it.each([
+    ['existe no SisChef um produto INATIVO com esse nome (cód. 3924284): reative no SisChef antes de tentar de novo', 'reative no SisChef antes de tentar de novo'],
+    ['existe no SisChef um produto INATIVO com esse nome (cód. 3924284): confira e reative no SisChef antes de tentar de novo', 'confira e reative no SisChef'],
+    ['o pedido foi gravado, mas não consegui chamar o robô agora: tente de novo em instantes', 'tente de novo em instantes'],
+    ['pedido antigo demais: peça de novo', 'peça de novo'],
+  ])('motivo que já traz a instrução dele (%s): aparece inteiro e a tela não junta o conselho dela', (motivo, instrucao) => {
+    const t = mensagemDoRevisar(motivo, null)
+    expect(t).toBe(`O robô parou sem terminar: ${motivo}.`)
+    expect(t).toContain(instrucao)
+    expect(vezes(t)).toBeLessThanOrEqual(1)
+  })
+
+  it('com o código e um motivo que ficou com o "confira" dele: o conselho da tela não repete a palavra', () => {
+    const t = mensagemDoRevisar('existe no SisChef um produto INATIVO com esse nome: confira e reative no SisChef antes de tentar de novo', 3924284)
+    expect(t).toBe('O robô parou sem terminar: existe no SisChef um produto INATIVO com esse nome: confira e reative no SisChef antes de tentar de novo. O produto pode ter sido criado no SisChef com o código 3924284; se os campos lá estiverem certos, toque em “Tentar de novo” — o robô só vai trazê-lo para a sua lista (não cria outro).')
+    expect(vezes(t)).toBe(1)
   })
 
   it('sem o código do produto: o texto de sempre, com o motivo e o conselho de conferir (uma vez)', () => {

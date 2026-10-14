@@ -284,13 +284,21 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     expect(screen.queryByTestId('produto-sem-resposta')).not.toBeInTheDocument()
   })
 
-  it('"Tentar de novo" cedo demais para o servidor (ele devolve o MESMO pedido): avisa para esperar e a saída continua', async () => {
-    const preso = emAndamento({ atualizado_em: haMin(30) })
-    const a = acoes({ status: vi.fn().mockResolvedValue(preso), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-1' }) })
-    abrir(a, vi.fn(), { inicial: preso })
-    await userEvent.click(screen.getByTestId('tentar-de-novo'))
-    expect(await screen.findByTestId('aviso-robo')).toHaveTextContent('O pedido ainda está em andamento. Espere 1 minuto e toque de novo.')
-    expect(screen.getByTestId('tentar-de-novo')).toBeEnabled()
+  it('"Tentar de novo" cedo demais para o servidor (ele devolve o MESMO pedido): avisa para esperar 1 minuto, o botão espera junto e depois volta (a saída continua)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })   // só o relógio: os intervalos da tela continuam de verdade
+    try {
+      const preso = emAndamento({ atualizado_em: haMin(30) })
+      const a = acoes({ status: vi.fn().mockResolvedValue(preso), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-1' }) })
+      abrir(a, vi.fn(), { inicial: preso })
+      await userEvent.click(screen.getByTestId('tentar-de-novo'))
+      expect(await screen.findByTestId('aviso-robo')).toHaveTextContent('O pedido ainda está em andamento. Espere 1 minuto e toque de novo.')
+      expect(screen.getByTestId('tentar-de-novo')).toBeDisabled()                  // não fica pedindo (e chamando o robô) a cada toque
+      vi.setSystemTime(Date.now() + 61_000)
+      await waitFor(() => expect(screen.getByTestId('tentar-de-novo')).toBeEnabled())
+      expect(a.cadastrar).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('pedido de "Criar mesmo assim" preso: "Tentar de novo" repete com o forcar (o mesmo pedido), também quando a tela foi reaberta', async () => {
@@ -345,6 +353,16 @@ describe('REVISAR (revisão 2: I5, M1, M2)', () => {
     const aviso = screen.getByTestId('produto-revisar')
     expect(aviso).toHaveTextContent('O robô parou sem terminar: o robô não respondeu a tempo. Confira no SisChef se o produto já existe antes de tentar de novo.')
     expect(vezesConfira(aviso)).toBe(1)
+  })
+
+  it('motivo do robô de produto INATIVO no SisChef: o motivo aparece inteiro (com o "reative"), sem conselho repetido, e o botão de sempre continua', () => {
+    const motivo = 'existe no SisChef um produto INATIVO com esse nome (cód. 3924284): reative no SisChef antes de tentar de novo'
+    const rev = status({ estado: 'REVISAR', produto_id: null, motivo })
+    abrir(acoes({ status: vi.fn().mockResolvedValue(rev) }), vi.fn(), { inicial: rev })
+    const aviso = screen.getByTestId('produto-revisar')
+    expect(aviso).toHaveTextContent(`O robô parou sem terminar: ${motivo}.`)
+    expect(aviso).not.toHaveTextContent('Confira no SisChef se o produto já existe')
+    expect(screen.getByTestId('cadastrar-produto-botao')).toBeEnabled()
   })
 
   it('I5: REVISAR com o código (o robô pode ter criado o produto): diz o código; "Tentar de novo" pede ESTE produto (existente_id), com o resto igual', async () => {

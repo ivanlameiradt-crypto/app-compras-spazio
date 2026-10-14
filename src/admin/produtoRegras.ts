@@ -18,8 +18,8 @@ export const UNIDADES: { sigla: 'KG' | 'UN'; rotulo: string }[] = [
 ]
 
 const SUFIXO = ' - INSUMOS'
-/** O nome FINAL (com o " - INSUMOS") mais comprido que o app aceita. HIPOTESE: o limite real do campo Descrição do SisChef ainda não foi medido
- *  (virá de SELETORES-REAIS-DO-SISCHEF.md); a função cadastrar-produto aceita até 200. */
+/** O nome FINAL (com o " - INSUMOS") mais comprido que o app aceita. Limite do app; o SisChef não impõe limite medido (o campo Descrição não tem
+ *  maxlength e já há nomes de 158 letras lá: SELETORES-REAIS-DO-SISCHEF.md, 14/10). A função cadastrar-produto aceita até 200. */
 export const MAX_LETRAS_NOME = 120
 /** Pedido em andamento sem resposta por este tempo é dado por perdido: a tela troca o aviso por "Tentar de novo". O MESMO prazo da função
  *  cadastrar-produto (que só aceita um pedido novo para o nome depois dele), contado também pela hora do pedido (`atualizado_em`). */
@@ -79,12 +79,18 @@ export function idadeDoPedido(hora: string | null | undefined, vistoEm: number, 
 }
 
 // O motivo do robô e do servidor costuma terminar com o conselho deles ("— confira no SisChef…"); a tela dá o dela, com as palavras dela, e o
-// "confira" não pode sair duas vezes (revisão 2, M2). Corta do "confira" até o fim, com o separador que vem antes.
+// "confira" não pode sair duas vezes (revisão 2, M2). Só o conselho GENÉRICO é cortado (do "confira" até o fim, com o separador que vem antes): um
+// motivo com OUTRA instrução (o do produto inativo: "reative no SisChef…") fica inteiro, e aí a tela não junta o conselho dela.
 const RE_CONSELHO = /\s*(?:[—–:;,.]\s*|\s-\s*)?\bconfira\b[\s\S]*$/i
+const RE_OUTRA_INSTRUCAO = /(?<![\p{L}\d])(?:reative|escolha|corrija|exclua|apague|tente|peça)(?![\p{L}\d])/iu
+const RE_CONFIRA = /\bconfira\b/i
 
-/** O motivo sem o conselho final: só o FATO ("a unidade do produto no SisChef é PCT…"); '' quando o motivo é só conselho. */
+/** O motivo sem o conselho final genérico: só o FATO ("a unidade do produto no SisChef é PCT…"); '' quando o motivo é só conselho. */
 export function motivoSemConselho(motivo: string | null | undefined): string {
-  return String(motivo ?? '').replace(RE_CONSELHO, '').replace(/[\s—–:;,.-]+$/, '').trim()
+  const m = String(motivo ?? '').trim()
+  const conselho = RE_CONSELHO.exec(m)?.[0] ?? ''
+  const fato = conselho !== '' && !RE_OUTRA_INSTRUCAO.test(conselho) ? m.slice(0, m.length - conselho.length) : m
+  return fato.replace(/[\s—–:;,.-]+$/, '').trim()
 }
 
 /**
@@ -95,7 +101,9 @@ export function motivoSemConselho(motivo: string | null | undefined): string {
 export function mensagemDoRevisar(motivo: string | null | undefined, produtoId: number | null): string {
   const fato = motivoSemConselho(motivo)
   const inicio = fato === '' ? 'O robô parou sem terminar.' : `O robô parou sem terminar: ${fato}${/[.!?]$/.test(fato) ? '' : '.'}`
-  if (produtoId === null) return `${inicio} Confira no SisChef se o produto já existe antes de tentar de novo.`
-  const conselho = `O produto pode ter sido criado no SisChef com o código ${produtoId}: confira os campos lá; se estiverem certos, toque em “Tentar de novo” — o robô só vai trazê-lo para a sua lista (não cria outro).`
+  if (produtoId === null) return RE_CONFIRA.test(fato) || RE_OUTRA_INSTRUCAO.test(fato) ? inicio : `${inicio} Confira no SisChef se o produto já existe antes de tentar de novo.`
+  const conselho = RE_CONFIRA.test(fato)
+    ? `O produto pode ter sido criado no SisChef com o código ${produtoId}; se os campos lá estiverem certos, toque em “Tentar de novo” — o robô só vai trazê-lo para a sua lista (não cria outro).`
+    : `O produto pode ter sido criado no SisChef com o código ${produtoId}: confira os campos lá; se estiverem certos, toque em “Tentar de novo” — o robô só vai trazê-lo para a sua lista (não cria outro).`
   return fato === '' ? conselho : `${inicio} ${conselho}`
 }
