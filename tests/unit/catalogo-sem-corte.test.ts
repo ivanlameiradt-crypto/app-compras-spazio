@@ -29,9 +29,11 @@ interface TabelaFalsa {
   vaziaAPartirDoPedido?: number
   /** Chamado depois de cada pedido respondido: o teste mexe nas linhas "no meio da leitura". */
   depoisDoPedido?: (numero: number, linhas: Linha[]) => void
-  /** Servidor que não informa o total (Content-Range sem número): só a página curta mostra o fim. */
+  /** Servidor que não informa o total (sem Content-Range legível): só a página curta mostra o fim. */
   semTotal?: boolean
-  /** Servidor com defeito: ignora o intervalo pedido e devolve sempre as primeiras linhas. */
+  /** Content-Range com "*" no lugar do total: a biblioteca do Supabase lê com parseInt e entrega NaN no `count`. */
+  totalIlegivel?: boolean
+  /** Servidor com defeito: ignora o intervalo pedido e devolve sempre as primeiras linhas (e, por ignorar o intervalo, também não recusa página nenhuma). */
   ignorarIntervalo?: boolean
 }
 type Tabelas = Partial<Record<'itens_semana' | 'cot_produto_busca' | 'produto_planilha', TabelaFalsa>>
@@ -40,7 +42,13 @@ const LIMITE_DO_SERVIDOR = 1000
 const pedidos: Pedido[] = []
 const pedidosDe = (tabela: string) => pedidos.filter((p) => p.tabela === tabela)
 
-const sorteio = (l: Linha, semente: number) => Math.imul(Number(l.id ?? l.produto_id) | 0, 2654435761) ^ Math.imul(semente, 40503)
+// mistura de bits (estilo "lowbias32"): sementes diferentes dão ordens totalmente diferentes (um XOR simples quase não mexeria na ordem)
+function mistura(x: number): number {
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d)
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b)
+  return (x ^ (x >>> 16)) >>> 0
+}
+const sorteio = (l: Linha, semente: number) => mistura((Number(l.id ?? l.produto_id) | 0) ^ Math.imul(semente, 0x9e3779b1))
 function comparar(a: Linha, b: Linha, ordem: [string, boolean][], semente: number): number {
   for (const [coluna, crescente] of ordem) {
     const x = a[coluna] as number   // as colunas ordenadas aqui são sempre números; o `<` do JavaScript serviria igual para texto
@@ -76,7 +84,7 @@ function pedidoNovo(tabela: string, t: TabelaFalsa, proximoNumero: () => number)
       return { data: null, error: { message: 'falha simulada do servidor', code: 'XX000' }, count: null, status: 500 }
     }
     const quantas = t.linhas.length
-    if (total && de > 0 && de >= quantas) {
+    if (total && de > 0 && de >= quantas && !t.ignorarIntervalo) {
       return { data: null, error: { message: 'Requested range not satisfiable', code: 'PGRST103' }, count: null, status: 416 }
     }
     const maximo = t.maximo ?? LIMITE_DO_SERVIDOR
@@ -86,7 +94,7 @@ function pedidoNovo(tabela: string, t: TabelaFalsa, proximoNumero: () => number)
     const resposta: Resposta = {
       data: (vazia ? [] : fatia).map((l) => projetar(l, colunas)),
       error: null,
-      count: total && !t.semTotal ? quantas : null,
+      count: total && !t.semTotal ? (t.totalIlegivel ? NaN : quantas) : null,
       status: 200,
     }
     t.depoisDoPedido?.(numero, t.linhas)
@@ -189,6 +197,20 @@ describe('catalogoProdutos: itens_semana com mais linhas do que o servidor entre
     const r = await catalogoProdutos()
     expect(faltando(ids, r)).toEqual([])
     expect(pedidosDe('itens_semana').map((p) => p.de)).toEqual([0, 1000])
+  })
+
+  it('total ilegível ("*" no Content-Range: a biblioteca entrega NaN): vale como total desconhecido, e a página curta mostra o fim', async () => {
+    const { linhas, ids } = semanas(5, 220, 40)
+    servidor({ itens_semana: { linhas, totalIlegivel: true } })
+    const r = await catalogoProdutos()
+    expect(faltando(ids, r)).toEqual([])
+    expect(pedidosDe('itens_semana').map((p) => p.de)).toEqual([0, 1000])
+  })
+
+  it('tabelas vazias: lista vazia, sem erro e com um pedido só por tabela', async () => {
+    servidor({})
+    expect(await catalogoProdutos()).toEqual([])
+    expect(pedidos.map((p) => p.tabela).sort()).toEqual(['cot_produto_busca', 'itens_semana', 'produto_planilha'])
   })
 
   it('erro no 2º pedido: a lista NÃO vem pela metade, vira erro (a caixa mostra "não consegui carregar")', async () => {

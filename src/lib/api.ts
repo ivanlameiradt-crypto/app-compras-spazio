@@ -796,11 +796,7 @@ const MAXIMO_DE_PEDIDOS = 200 // trava contra laço sem fim: 200 mil linhas
  * - Com a tabela passando de dezenas de milhares de linhas (cada 1000 é um pedido), o caminho é uma visão no banco com uma linha por produto.
  */
 async function lerTabelaInteira(tabela: string, colunas: string, ordem: [coluna: string, crescente: boolean][]): Promise<Resposta<unknown[]>> {
-  const incompleta = (status?: number): Resposta<unknown[]> => ({
-    data: null,
-    error: { message: `A leitura de ${tabela} veio incompleta (a tabela mudou durante a leitura ou o banco mandou menos linhas do que informou).` },
-    status,
-  })
+  const incompleta = (motivo: string): Resposta<unknown[]> => ({ data: null, error: { message: `A leitura de ${tabela} veio incompleta: ${motivo}.` } })
   const linhas: unknown[] = []
   let total: number | null = null
   for (let pedido = 0; pedido < MAXIMO_DE_PEDIDOS; pedido++) {
@@ -808,15 +804,15 @@ async function lerTabelaInteira(tabela: string, colunas: string, ordem: [coluna:
     for (const [coluna, crescente] of ordem) consulta = consulta.order(coluna, { ascending: crescente })
     const r = await consulta.range(linhas.length, linhas.length + LINHAS_POR_PEDIDO - 1)
     if (r.error) return { data: null, error: r.error, status: r.status }
-    const contagem = typeof r.count === 'number' ? r.count : null
+    const contagem = Number.isFinite(r.count) ? (r.count as number) : null // a biblioteca lê o total com parseInt: "*" (total desconhecido) chega como NaN
     if (pedido === 0) total = contagem
-    else if (contagem !== total) return incompleta(r.status)
+    else if (contagem !== total) return incompleta('o total de linhas mudou durante a leitura')
     const lote = (r.data ?? []) as unknown[]
     linhas.push(...lote)
     if (total === null ? lote.length < LINHAS_POR_PEDIDO : linhas.length >= total) return { data: linhas, error: null, status: r.status }
-    if (lote.length === 0) return incompleta(r.status)
+    if (lote.length === 0) return incompleta('o banco parou de mandar linhas antes de chegar ao total')
   }
-  return incompleta()
+  return incompleta(`passou de ${MAXIMO_DE_PEDIDOS} pedidos`)
 }
 
 /** As palavras-chave, os nomes corrigidos e os produtos escondidos. Banco ainda sem a coluna `ocultar` (migração 20261211000002 não aplicada): lê sem ela. */
