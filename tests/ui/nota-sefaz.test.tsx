@@ -1596,7 +1596,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       await userEvent.type(await campo(), 'chocolate bis')
       expect(await screen.findByTestId('sem-resultado')).toHaveTextContent('Nada na sua lista de insumos com isso')
       // produto que não existe: o app avisa que precisa cadastrar e oferece o botão (pedido do Ivan, 13/10)
-      expect(screen.getByTestId('aviso-nao-cadastrado')).toHaveTextContent('precisa ser cadastrado')
+      expect(screen.getByTestId('aviso-nao-cadastrado')).toHaveTextContent('Não identifiquei este item')
       expect(screen.getByTestId('abrir-cadastro-produto')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument()
     })

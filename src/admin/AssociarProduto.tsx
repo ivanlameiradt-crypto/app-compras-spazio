@@ -196,9 +196,11 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
               Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.
             </p>
           )}
-          {/* Produto que não existe: sem produto do robô, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
-          {!enviando && busca.total === 0 && (texto.trim() !== '' || (!sugestao && !porPalavras)) && (
-            <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={{ tipo: 'nota', item: n }} aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
+          {/* Produto que o app não identificou: aviso + botão; com sugestão ou resultados na tela: só o botão discreto, sempre à mão (pedido do Ivan, 13/10) */}
+          {!enviando && (
+            <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={{ tipo: 'nota', item: n }}
+              discreto={!(busca.total === 0 && (texto.trim() !== '' || (!sugestao && !porPalavras)))}
+              aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
           )}
         </>
       )}

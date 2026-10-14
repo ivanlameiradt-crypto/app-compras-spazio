@@ -183,7 +183,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
                 <b>{porPalavras.produto.nome}</b>
               </p>
               <div className="acoes">
-                <button type="button" className="botao" disabled={travado} onClick={() => confirmarSugestao(porPalavras.produto)}>
+                <button type="button" className={porPalavras.forca === 'forte' ? 'botao' : 'botao secundario'} disabled={travado} onClick={() => confirmarSugestao(porPalavras.produto)}>
                   {porPalavras.forca === 'forte' ? 'Confirmar' : 'Usar este'}
                 </button>
               </div>
@@ -222,9 +222,11 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           {texto.trim() !== '' && busca.total === 0 && (
             <p className="sub">Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.</p>
           )}
-          {/* Produto que não existe: sem proposta, sem sugestão pelas palavras e sem nada na busca → avisa que precisa cadastrar (pedido do Ivan, 13/10) */}
-          {!travado && busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)) && (
+          {/* Produto que o app não identificou (sem proposta, sem sugestão pelas palavras e nada na busca): aviso + botão. Com sugestão ou resultados na tela: só o botão discreto,
+              sempre à mão (a sugestão pode estar errada: o Ivan sabe quando o produto é novo). Pedido do Ivan, 13/10. */}
+          {!travado && (
             <ProdutoNaoCadastrado descricaoDoItem={descricao} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
+              discreto={!(busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)))}
               aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
           )}
         </>
