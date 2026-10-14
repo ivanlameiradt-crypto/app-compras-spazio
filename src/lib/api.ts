@@ -781,10 +781,44 @@ export async function restaurarNota(chave: string): Promise<void> {
   catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'voltar a nota para a fila'), e instanceof ErroApi ? e.status : undefined) }
 }
 
+const LINHAS_POR_PEDIDO = 1000
+const MAXIMO_DE_PEDIDOS = 200 // trava contra laço sem fim: 200 mil linhas
+/**
+ * O Supabase (PostgREST) devolve no MÁXIMO 1000 linhas por pedido (o "Max rows" da API), peça o app o que pedir: ler uma tabela que cresce com um
+ * `.limit(1000)` perde as linhas do fim SEM avisar (itens_semana ganha ~300 linhas por semana; em 14/10/2026 tinha 927). Esta função lê a tabela inteira
+ * em pedidos de 1000 linhas (`.range`) e devolve a forma de uma leitura só ({ data, error, status }): TODAS as linhas ou o erro — nunca uma lista pela
+ * metade, que é pior do que uma lista que não carrega.
+ * - `ordem` tem de ser TOTAL (acabar numa coluna que não repete, como a chave primária): com empates o Postgres pode pôr as linhas iguais em outra ordem
+ *   a cada pedido, e a página 2 repetiria ou pularia linhas da página 1.
+ * - Pede o total ao servidor (`count: 'exact'`): para ao chegar nele, sem pedir uma página além do fim (com o total pedido, o PostgREST pode recusá-la
+ *   com 416); continua de onde parou se o servidor entregar menos do que o app pediu; e devolve erro se a leitura ficou incompleta (o total mudou entre
+ *   um pedido e outro, ou o servidor parou de mandar linhas antes do total). Servidor que não informa o total: a página curta (menos de 1000) marca o fim.
+ * - Com a tabela passando de dezenas de milhares de linhas (cada 1000 é um pedido), o caminho é uma visão no banco com uma linha por produto.
+ */
+async function lerTabelaInteira(tabela: string, colunas: string, ordem: [coluna: string, crescente: boolean][]): Promise<Resposta<unknown[]>> {
+  const incompleta = (motivo: string): Resposta<unknown[]> => ({ data: null, error: { message: `A leitura de ${tabela} veio incompleta: ${motivo}.` } })
+  const linhas: unknown[] = []
+  let total: number | null = null
+  for (let pedido = 0; pedido < MAXIMO_DE_PEDIDOS; pedido++) {
+    let consulta = supabase.from(tabela).select(colunas, { count: 'exact' })
+    for (const [coluna, crescente] of ordem) consulta = consulta.order(coluna, { ascending: crescente })
+    const r = await consulta.range(linhas.length, linhas.length + LINHAS_POR_PEDIDO - 1)
+    if (r.error) return { data: null, error: r.error, status: r.status }
+    const contagem = Number.isFinite(r.count) ? (r.count as number) : null // a biblioteca lê o total com parseInt: "*" (total desconhecido) chega como NaN
+    if (pedido === 0) total = contagem
+    else if (contagem !== total) return incompleta('o total de linhas mudou durante a leitura')
+    const lote = (r.data ?? []) as unknown[]
+    linhas.push(...lote)
+    if (total === null ? lote.length < LINHAS_POR_PEDIDO : linhas.length >= total) return { data: linhas, error: null, status: r.status }
+    if (lote.length === 0) return incompleta('o banco parou de mandar linhas antes de chegar ao total')
+  }
+  return incompleta(`passou de ${MAXIMO_DE_PEDIDOS} pedidos`)
+}
+
 /** As palavras-chave, os nomes corrigidos e os produtos escondidos. Banco ainda sem a coluna `ocultar` (migração 20261211000002 não aplicada): lê sem ela. */
 async function lerBuscaDosProdutos() {
-  const com = await supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido, ocultar').limit(1000)
-  if (com.error?.code === '42703') return supabase.from('cot_produto_busca').select('produto_id, palavras, nome_corrigido').limit(1000)
+  const com = await lerTabelaInteira('cot_produto_busca', 'produto_id, palavras, nome_corrigido, ocultar', [['produto_id', true]])
+  if (com.error?.code === '42703') return lerTabelaInteira('cot_produto_busca', 'produto_id, palavras, nome_corrigido', [['produto_id', true]])
   return com
 }
 /**
@@ -794,10 +828,10 @@ async function lerBuscaDosProdutos() {
 async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; descricao: string }>> {
   const mapa = new Map<number, { unidade: string; descricao: string }>()
   try {
-    const com = await supabase.from('produto_planilha').select('produto_id, unidade, descricao').limit(1000)
+    const com = await lerTabelaInteira('produto_planilha', 'produto_id, unidade, descricao', [['produto_id', true]])
     // banco ainda sem a coluna `descricao` (42703): lê só a unidade
     const r: { data: unknown[] | null; error: { code?: string } | null } = com.error?.code === '42703'
-      ? await supabase.from('produto_planilha').select('produto_id, unidade').limit(1000)
+      ? await lerTabelaInteira('produto_planilha', 'produto_id, unidade', [['produto_id', true]])
       : com
     if (r.error) { console.warn('catalogoProdutos: não li a planilha de unidades', r.error.code); return mapa }
     for (const x of (r.data ?? []) as { produto_id: number | string; unidade: string | null; descricao?: string | null }[]) {
@@ -813,6 +847,7 @@ async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; d
 /**
  * Os produtos que o Ivan pode escolher ao associar um item da nota: os insumos e bebidas que já estão no app (itens_semana; o código é o do
  * SisChef), UMA linha por produto, com o nome e a unidade da semana mais nova. Em ordem alfabética. Só o admin lê tudo (RLS).
+ * As três tabelas são lidas INTEIRAS (lerTabelaInteira): o servidor corta em 1000 linhas por pedido, e um produto que só aparece numa semana antiga sumiria da lista.
  *
  * Junta o que o Ivan escreveu na planilha de 06/10 (cot_produto_busca): as palavras-chave de cada produto e, quando o nome do SisChef tem erro,
  * o nome corrigido — que passa a ser o `nome` mostrado (o do SisChef fica em `nome_sischef`, e a busca acha por ele também). App publicado antes
@@ -821,7 +856,8 @@ async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; d
  */
 export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
   const [lista, busca] = await Promise.all([
-    supabase.from('itens_semana').select('produto_id, produto, unidade, semana_id').order('semana_id', { ascending: false }).limit(1000),
+    // a semana mais nova primeiro; `id` (chave primária) desempata, para a leitura em várias páginas não repetir nem pular linhas
+    lerTabelaInteira('itens_semana', 'produto_id, produto, unidade, semana_id', [['semana_id', false], ['id', false]]),
     lerBuscaDosProdutos(),
   ])
   const planilha = await lerPlanilhaDeUnidades()
