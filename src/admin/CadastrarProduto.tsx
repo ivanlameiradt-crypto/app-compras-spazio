@@ -6,11 +6,13 @@
 // Revisão 2 (14/10): nenhum estado deixa a tela sem saída. A demora conta pela hora do PEDIDO (atualizado_em); passados 5 min, "Chamar o robô de novo"
 // (o servidor só chama de novo o pedido que ainda não começou); passados 20 min, "Tentar de novo" (o servidor dá o pedido preso por perdido e abre outro).
 // Depois de um toque nesses botões, eles travam 3 min ("Aguarde alguns minutos…"): cada disparo entra na fila que os robôs do SisChef dividem.
+// 1º uso real (14/10): com 8 candidatos o botão que decide ficava fora da tela. Agora ele vem no topo, a lista mostra só os 4 ativos mais parecidos
+// (o resto atrás de "Ver os outros N") e o candidato INATIVO só orienta a reativar à mão no SisChef (o robô nunca reativa).
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ProdutoCatalogo } from '../lib/tipos'
 import {
-  GRUPOS_DE_INSUMO, MINUTOS_SEM_RESPOSTA, PRODUTO_PRONTO, UNIDADES, chaveDoNome, idadeDoPedido, mensagemDoRevisar, nomeNoSischef, palavrasSugeridas, problemaDoProduto,
-  sugerirUnidade, type EstadoProduto,
+  GRUPOS_DE_INSUMO, MINUTOS_SEM_RESPOSTA, PRODUTO_PRONTO, UNIDADES, candidatoInativo, chaveDoNome, idadeDoPedido, mensagemDoRevisar, nomeNoSischef, palavrasSugeridas,
+  problemaDoProduto, separarCandidatos, sugerirUnidade, type EstadoProduto,
 } from './produtoRegras'
 
 export interface OrigemProduto { tipo: 'cupom' | 'nota' | 'avulsa'; id?: string; item?: number }
@@ -140,6 +142,8 @@ export default function CadastrarProduto({
   const [agora, setAgora] = useState(() => Date.now())
   const [aguardarAte, setAguardarAte] = useState<number | null>(null)   // até quando "Chamar o robô de novo" / "Tentar de novo" ficam travados
   const [aviso, setAviso] = useState<{ acao: 'chamar' | 'tentar'; texto: string } | null>(null)
+  const [verTodos, setVerTodos] = useState(false)                      // "Ver os outros N": os candidatos inativos e os que passam de 4
+  const [reativando, setReativando] = useState<number | null>(null)   // o candidato inativo cujo "reativar no SisChef" o Ivan tocou
   const ultimoExtra = useRef<Extra>(extraDe(inicial))
   const montado = useRef(true)
   const campoNome = useRef<HTMLInputElement>(null)
@@ -150,6 +154,7 @@ export default function CadastrarProduto({
   const cadastrando = EM_ANDAMENTO(estado)
   const pronto = PRODUTO_PRONTO(estado)
   const comCandidatos = estado === 'REVISAR' && candidatos.length > 0
+  const { primeiros, outros } = separarCandidatos(candidatos)   // de início, os 4 ativos mais parecidos; o resto atrás de "Ver os outros N"
   // REVISAR com o código: o robô pode ter criado o produto. O formulário fica como foi pedido e a saída é "Tentar de novo", que pede ESTE produto (existente_id): não cria outro.
   const comCodigo = estado === 'REVISAR' && produtoId !== null && !comCandidatos
   const travado = enviando || cadastrando || pronto || comCodigo
@@ -208,7 +213,7 @@ export default function CadastrarProduto({
         // o MESMO pedido, ainda em andamento: a contagem continua; o Ivan fica sabendo o que o servidor fez
         setAviso({ acao, texto: acao === 'chamar' ? (r.reenviado ? CHAMEI : JA_ESTA_COM_ELE) : AINDA_EM_ANDAMENTO })
       } else {
-        setHora({ pedido: null, visto: Date.now() }); setAgora(Date.now()); setAviso(null)
+        setHora({ pedido: null, visto: Date.now() }); setAgora(Date.now()); setAviso(null); setVerTodos(false); setReativando(null)
         setCadastroId(r.cadastro_id); setEstado('PENDENTE'); setMotivoRobo(null); setProdutoId(null); setCandidatos([])
       }
       // já pode estar pronto (o nome já tinha sido cadastrado antes): lê o pedido agora em vez de esperar a próxima conferência
@@ -297,23 +302,46 @@ export default function CadastrarProduto({
       {comCandidatos && (
         <div className="sugestao" data-testid="candidatos-produto">
           <p className="sub" role="alert" data-testid="produto-revisar">
-            Achei no SisChef {candidatos.length === 1 ? 'um produto parecido' : 'produtos parecidos'}. É {candidatos.length === 1 ? 'este' : 'algum destes'}?
+            Achei no SisChef {candidatos.length === 1 ? 'um produto parecido' : `${candidatos.length} produtos parecidos`}. É {candidatos.length === 1 ? 'este' : 'algum destes'}?
           </p>
-          <ul className="achados">
-            {candidatos.map((c) => (
-              <li key={c.produto_id}>
-                <button type="button" disabled={enviando || problema !== null} aria-describedby={descreveFalta} onClick={() => void pedir({ existente_id: c.produto_id })} data-testid="usar-candidato">
-                  <span>{c.descricao}</span>
-                  <span className="sub">cód. {c.produto_id}{c.unidade ? ` · ${c.unidade}` : ''} — usar este</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {/* O botão que DECIDE vem antes da lista: no 1º uso real (14/10) ele ficava no fim de 8 cartões, fora da tela */}
+          <p className="sub" data-testid="criar-novo-dica">{candidatos.length === 1 ? 'Se não é o seu produto' : 'Se nenhum é o seu produto'}, toque aqui para criar um novo.</p>
           <div className="acoes">
             <button type="button" className="botao secundario" disabled={enviando || problema !== null} aria-describedby={descreveFalta} onClick={() => void pedir({ forcar: true })} data-testid="criar-mesmo-assim">
               Não é nenhum destes: criar mesmo assim
             </button>
           </div>
+          <ul className="achados">
+            {(verTodos ? [...primeiros, ...outros] : primeiros).map((c) => (
+              <li key={c.produto_id}>
+                {candidatoInativo(c) ? (
+                  // Inativo no SisChef: o robô nunca reativa (e recusa trazê-lo assim). O toque só orienta; depois de reativar à mão, "Já reativei" pede ESTE produto.
+                  <>
+                    <button type="button" disabled={enviando} onClick={() => setReativando(c.produto_id)} data-testid="reativar-candidato">
+                      <span>{c.descricao}</span>
+                      <span className="sub">cód. {c.produto_id}{c.unidade ? ` · ${c.unidade}` : ''} — É este (inativo): reativar no SisChef</span>
+                    </button>
+                    {reativando === c.produto_id && (
+                      <div className="amarelo" role="status" data-testid="aviso-inativo">
+                        <p>Este produto está inativo no SisChef, e o robô não reativa produto. Reative-o lá (abra o produto {c.produto_id} e marque “Ativo”) e depois toque em “Já reativei: usar este”.</p>
+                        <button type="button" className="botao secundario" disabled={enviando || problema !== null} aria-describedby={descreveFalta} onClick={() => void pedir({ existente_id: c.produto_id })} data-testid="ja-reativei-candidato">
+                          Já reativei: usar este
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <button type="button" disabled={enviando || problema !== null} aria-describedby={descreveFalta} onClick={() => void pedir({ existente_id: c.produto_id })} data-testid="usar-candidato">
+                    <span>{c.descricao}</span>
+                    <span className="sub">cód. {c.produto_id}{c.unidade ? ` · ${c.unidade}` : ''} — usar este</span>
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {outros.length > 0 && !verTodos && (
+            <button type="button" className="link" onClick={() => setVerTodos(true)} data-testid="ver-outros-candidatos">Ver os outros {outros.length}</button>
+          )}
         </div>
       )}
       {pronto && produtoId !== null && (

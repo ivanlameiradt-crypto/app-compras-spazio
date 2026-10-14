@@ -1,6 +1,6 @@
 import {
-  GRUPOS_DE_INSUMO, MAX_LETRAS_NOME, MINUTOS_SEM_RESPOSTA, UNIDADES, chaveDoNome, idadeDoPedido, mensagemDoRevisar, motivoSemConselho, nomeNoSischef, palavrasSugeridas,
-  problemaDoProduto, sugerirUnidade,
+  CANDIDATOS_DE_INICIO, GRUPOS_DE_INSUMO, MAX_LETRAS_NOME, MINUTOS_SEM_RESPOSTA, UNIDADES, candidatoInativo, chaveDoNome, idadeDoPedido, mensagemDoRevisar, motivoSemConselho,
+  nomeNoSischef, palavrasSugeridas, problemaDoProduto, separarCandidatos, sugerirUnidade,
 } from '../../src/admin/produtoRegras'
 
 describe('nomeNoSischef', () => {
@@ -64,6 +64,25 @@ describe('chaveDoNome', () => {
     expect(chaveDoNome('MAIONESE HELLMANNS 3KG - INSUMOS')).toBe('maionese hellmanns 3kg insumos')
     expect(chaveDoNome('  Açúcar   (União) ')).toBe('acucar uniao')
     expect(chaveDoNome(null)).toBe('')
+  })
+})
+
+// 1º uso real (14/10): o robô devolveu 8 candidatos (4 ativos, 4 inativos) e o botão que decide ficou fora da tela.
+describe('candidatoInativo / separarCandidatos', () => {
+  const c = (produto_id: number, descricao: string) => ({ produto_id, descricao, unidade: 'KG' })
+  it('inativo = o "(inativo)" que o robô põe no fim da descrição', () => {
+    expect(candidatoInativo(c(1, 'MAIONESE HEINZ 3KG - INSUMOS (inativo)'))).toBe(true)
+    expect(candidatoInativo(c(2, 'MAIONESE DA CASA'))).toBe(false)
+    expect(candidatoInativo(c(3, 'MAIONESE (INATIVO) DA CASA'))).toBe(false)   // só no fim, como o robô escreve
+  })
+  it('de início, só os 4 mais parecidos ATIVOS, na ordem do robô; os inativos e os que passam de 4 ficam para "Ver os outros"', () => {
+    expect(CANDIDATOS_DE_INICIO).toBe(4)
+    const lista = [c(1, 'A'), c(2, 'B (inativo)'), c(3, 'C'), c(4, 'D'), c(5, 'E (inativo)'), c(6, 'F'), c(7, 'G'), c(8, 'H (inativo)')]
+    const { primeiros, outros } = separarCandidatos(lista)
+    expect(primeiros.map((x) => x.produto_id)).toEqual([1, 3, 4, 6])
+    expect(outros.map((x) => x.produto_id)).toEqual([2, 5, 7, 8])
+    expect(separarCandidatos([c(1, 'A (inativo)')])).toEqual({ primeiros: [], outros: [c(1, 'A (inativo)')] })
+    expect(separarCandidatos([c(1, 'A')])).toEqual({ primeiros: [c(1, 'A')], outros: [] })
   })
 })
 
