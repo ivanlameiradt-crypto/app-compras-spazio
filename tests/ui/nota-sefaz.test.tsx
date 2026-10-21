@@ -1206,10 +1206,10 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(item).toHaveTextContent(`confirmado no app · cód. ${OLEO}`)
       expect(item).not.toHaveTextContent('sem produto')
       expect(within(item).queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
-      expect(within(item).getByRole('button', { name: 'Trocar' })).toBeInTheDocument()
+      expect(within(item).getByRole('button', { name: 'Editar' })).toBeInTheDocument()
     })
 
-    it('a sugestão do robô já abre no cartão "Produto que eu indiquei": quem guarda é o Confirmar (sem Trocar nem busca)', async () => {
+    it('a sugestão do robô já abre no cartão "Produto que eu indiquei": quem guarda é o Confirmar (sem Editar nem busca)', async () => {
       aLancar(nota({ itens: [sem(1, { sugestao: { id: '3469626', nome: 'LEITE CONDENSADO - INSUMOS' } })] }))
       render(<NotaSefaz />)
       const escolhido = await screen.findByTestId('produto-escolhido')
@@ -1234,7 +1234,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(pedido).not.toHaveClass('amarelo')
       expect(campoOpcional('UN')).toBeInTheDocument()
       expect(pedido).toHaveTextContent('Produto fora da lista semanal: o app não conhece a unidade dele no SisChef. Se lá ele também for em UN, deixe vazio.')
-      expect(pedido).toHaveTextContent('Se o robô parar pedindo a conversão, volte aqui (Trocar) e informe.')
+      expect(pedido).toHaveTextContent('Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
       expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 3476455, null))
@@ -1410,10 +1410,10 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         expect(within(item).getByTestId('item-confirmado')).toHaveAccessibleName('produto confirmado no app')
       })
 
-      it('"Trocar" para corrigir só a conversão: escolhendo o mesmo produto, o valor antigo já vem preenchido', async () => {
+      it('"Editar" para corrigir só a conversão: escolhendo o mesmo produto, o valor antigo já vem preenchido', async () => {
         aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(3469626, 'LEITE CONDESSADO - INSUMOS (KG)', 'kg', 0.395) } }))
         render(<NotaSefaz />)
-        await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+        await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
         await userEvent.type(await campo(), 'leite cond')
         await userEvent.click(await achado(/LEITE CONDESSADO/))
         expect((campoConversao('UN', 'KG') as HTMLInputElement).value).toBe('0,395')
@@ -1423,11 +1423,11 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, 3469626, 0.4))
       })
 
-      it('"Trocar" com conversão 1000 gravada: pré-preenche "1000" (sem ponto de milhar) e, confirmando sem mexer, reenvia 1000 — nunca 1', async () => {
+      it('"Editar" com conversão 1000 gravada: pré-preenche "1000" (sem ponto de milhar) e, confirmando sem mexer, reenvia 1000 — nunca 1', async () => {
         // Achado 2 da revisão: "1.000" no campo era lido como 1 e gravado em silêncio — um de-para 1000 vezes errado e permanente no SisChef
         aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(3469626, 'LEITE CONDESSADO - INSUMOS (KG)', 'kg', 1000) } }))
         render(<NotaSefaz />)
-        await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+        await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
         await userEvent.type(await campo(), 'leite cond')
         await userEvent.click(await achado(/LEITE CONDESSADO/))
         expect((campoConversao('UN', 'KG') as HTMLInputElement).value).toBe('1000')
@@ -1451,7 +1451,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           expect(pedido).not.toHaveClass('amarelo')
           expect(campoOpcional('KG')).toHaveAttribute('inputmode', 'decimal')
           expect(screen.queryByLabelText(/Quanto vale 1 KG em UN\?/)).not.toBeInTheDocument()    // não é a pergunta obrigatória
-          expect(pedido).toHaveTextContent('A lista do app não sabe ao certo a unidade deste produto no SisChef. Se lá ele também for em KG, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Trocar) e informe.')
+          expect(pedido).toHaveTextContent('A lista do app não sabe ao certo a unidade deste produto no SisChef. Se lá ele também for em KG, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
           expect(screen.queryByTestId('abrir-conversao')).not.toBeInTheDocument()                 // o campo já está aberto: não precisa de link
           expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()                // vazio NÃO bloqueia
           await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
@@ -1508,7 +1508,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           await screen.findByTestId('nota-a-lancar')
           expect(botaoLancar()).toBeDisabled()
           expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('falta a conversão de unidade')
-          // decisão sem a conversão: o cartão abre já com o produto indicado (sem Trocar nem busca) e o campo obrigatório vazio
+          // decisão sem a conversão: o cartão abre já com o produto indicado (sem Editar nem busca) e o campo obrigatório vazio
           expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent('LEITE CONDESSADO - INSUMOS (KG)')
           expect(campoConversao('UN', 'KG')).toBeInTheDocument()
           expect(screen.queryByText(/\(opcional\)/)).not.toBeInTheDocument()
@@ -1555,12 +1555,12 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, OLEO, null))
         })
 
-        it('"Trocar" no mesmo produto com conversão gravada e unidades iguais: o campo (escondido por padrão) abre já preenchido, para o Ivan ver o que vai regravar', async () => {
+        it('"Editar" no mesmo produto com conversão gravada e unidades iguais: o campo (escondido por padrão) abre já preenchido, para o Ivan ver o que vai regravar', async () => {
           aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un', 3) } }))
           render(<NotaSefaz />)
           // antes "1 UN = 3 UN" (absurdo: se o Ivan informou 3 é porque no SisChef a unidade é outra); agora a frase do eco
           expect((await painel()).getByTestId('associacao-confirmada')).toHaveTextContent('1 UN = 3 na unidade do produto no SisChef')
-          await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+          await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
           await userEvent.type(await campo(), 'oleo')
           await userEvent.click(await achado(/ÓLEO DE SOJA/))
           expect((campoOpcional('UN') as HTMLInputElement).value).toBe('3')
@@ -1571,13 +1571,13 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, OLEO, null))
         })
 
-        it('"Trocar" no mesmo produto SEM conversão gravada e unidades iguais: o campo abre (opcional, sem link) — é o caminho de volta que o robô manda', async () => {
-          // Revisão adversarial: o robô para a nota dizendo "toque em Trocar, escolha o mesmo produto, preencha a conversão" justamente quando a
+        it('"Editar" no mesmo produto SEM conversão gravada e unidades iguais: o campo abre (opcional, sem link) — é o caminho de volta que o robô manda', async () => {
+          // Revisão adversarial: o robô para a nota dizendo "toque em Editar, escolha o mesmo produto, preencha a conversão" justamente quando a
           // conversão está VAZIA (nota UN × produto "un" na lista, mas PCT no SisChef). Antes, nesse caso, o campo só aparecia com conversão já gravada:
           // o Ivan seguia a instrução e não achava campo nenhum, só o link. Agora escolher o mesmo produto sempre abre o campo.
           aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)', 'un') } }))
           render(<NotaSefaz />)
-          await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+          await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
           await userEvent.type(await campo(), 'oleo')
           await userEvent.click(await achado(/ÓLEO DE SOJA/))
           const pedido = await screen.findByTestId('pedir-conversao')
@@ -1592,10 +1592,10 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, OLEO, 2))
         })
 
-        it('"Trocar" para OUTRO produto não herda nada: campo fechado (unidades iguais) e sem valor pré-preenchido', async () => {
+        it('"Editar" para OUTRO produto não herda nada: campo fechado (unidades iguais) e sem valor pré-preenchido', async () => {
           aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(3469626, 'LEITE CONDESSADO - INSUMOS (KG)', 'kg', 0.395) } }))
           render(<NotaSefaz />)
-          await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+          await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
           await userEvent.type(await campo(), 'oleo')
           await userEvent.click(await achado(/ÓLEO DE SOJA/))
           expect(await screen.findByTestId('produto-escolhido')).toBeInTheDocument()
@@ -1778,14 +1778,14 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef: escolha o produto na caixa de associação (ou associe no SisChef) antes de lançar')
     })
 
-    it('Trocar: reabre o campo (com Cancelar e Desfazer a escolha); trocar de produto e confirmar guarda o novo', async () => {
+    it('Editar: reabre o campo (com Cancelar e Desfazer a escolha); trocar de produto e confirmar guarda o novo', async () => {
       aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
       render(<NotaSefaz />)
-      await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+      await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
       expect(await campo()).toBeInTheDocument()
       await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
       expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()   // voltou ao confirmado
-      await userEvent.click(screen.getByRole('button', { name: 'Trocar' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Editar' }))
       await userEvent.type(await campo(), 'muçarela')
       await userEvent.click(await achado(/Q\. MUÇARELA/))
       expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()            // muçarela é em KG e a nota em UN: falta a conversão
@@ -1797,7 +1797,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     it('Desfazer a escolha: manda produto nulo (a decisão some no banco) e conversão nula', async () => {
       aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
       render(<NotaSefaz />)
-      await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+      await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
       await userEvent.click(await screen.findByRole('button', { name: 'Desfazer a escolha' }))
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, null, null))
     })
@@ -1913,7 +1913,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         const escolhido = await screen.findByTestId('produto-escolhido')
         expect(escolhido).toHaveTextContent('Produto que eu indiquei no SisChef')
         expect(escolhido).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')
-        expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()     // sem busca, sem Trocar: é só conferir e confirmar
+        expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()     // sem busca, sem Editar: é só conferir e confirmar
         expect(screen.getByTestId('pedir-conversao')).toHaveTextContent('Quanto vale 1 CX em KG?')  // a nota vem em CX e o produto é em KG: pede a conversão
         expect(screen.queryByTestId('conversao-sugerida')).not.toBeInTheDocument()        // "2,5KG" é o pacote, não a caixa (nota em CX): nada de sugerir o peso
         expect(screen.getByLabelText('Quanto vale 1 CX em KG?')).toHaveValue('')
@@ -1992,7 +1992,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         it('Desfazer a escolha nunca guarda descrição nenhuma', async () => {
           aLancar(nota({ itens: [sem(1)], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
           render(<NotaSefaz />)
-          await userEvent.click((await painel()).getByRole('button', { name: 'Trocar' }))
+          await userEvent.click((await painel()).getByRole('button', { name: 'Editar' }))
           await userEvent.click(await screen.findByRole('button', { name: 'Desfazer a escolha' }))
           await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, null, null))
           expect(m.lembrarDescricao).not.toHaveBeenCalled()

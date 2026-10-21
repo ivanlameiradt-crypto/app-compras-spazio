@@ -216,9 +216,20 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .associar .achados button:disabled { opacity: .5; cursor: default; }
 .cupom .associar .escolhido { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .cupom .associar .sem-quebra { white-space: nowrap; }
-.cupom .associar-feito { font-size: 13px; }
+.cupom .associar-feito { font-size: 13px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .cupom .confirmado { color: var(--ok-texto); font-weight: 600; }
 .cupom .conferir-itens li button.link { align-self: flex-start; }
+/* "Editar" em todo item (pedido do Ivan, 21/10/2026): o botão pequeno e a caixa de edição que abre embaixo do item */
+.cupom .editar-linha { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 2px; }
+.cupom .editar-item { font: inherit; font-size: 13px; font-weight: 700; min-height: 36px; padding: 6px 14px; border-radius: 10px; border: 1px solid var(--marca);
+  background: transparent; color: var(--marca); cursor: pointer; }
+.cupom .editar-item:disabled { opacity: .5; cursor: default; }
+.cupom .conferir-itens li .editar-item { align-self: flex-start; }
+.cupom .editar-caixa { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding: 10px; border: 1px solid var(--linha); border-radius: 10px; font-size: 14px; }
+.cupom .editar-caixa.amarelo { border-color: transparent; }
+.cupom .editar-caixa label { font-size: 13px; color: inherit; }
+.cupom .editar-caixa input[inputmode='decimal'] { max-width: 180px; }
+.cupom .editar-caixa p { margin: 0; }
 /* "Lembrar esta descrição" na caixa de associação; e os blocos que dizem o que está errado e como resolver (cupom parado, Lançar travado) */
 .cupom .associar .marcar.lembrar { font-size: 13px; align-items: flex-start; }
 .cupom .associar .marcar.lembrar input { flex: none; width: 18px; height: 18px; margin-top: 1px; }

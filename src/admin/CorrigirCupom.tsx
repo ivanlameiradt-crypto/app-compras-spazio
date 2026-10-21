@@ -81,7 +81,7 @@ function confirmacaoDe(it: ItemCupomRecente, e: EstadoItem): Confirmada | null {
   return entrada == null ? null : { quantidade, entrada }
 }
 
-/** A caixa de UM item pendente: escolher o produto → quantidade(s) → "Confirmar este item"; confirmado vira uma linha com ✓ e "Trocar". */
+/** A caixa de UM item pendente: escolher o produto → quantidade(s) → "Confirmar este item"; confirmado vira uma linha com ✓ e "Editar" (era "Trocar" até 21/10). */
 function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado }: {
   cupom: CupomRecente; it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null; catalogoFalhou: boolean
   estado: EstadoItem; mudar: (e: Partial<EstadoItem>) => void
@@ -126,8 +126,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   if (estado.confirmado && estado.produto && conf && linha) {
     return (
       <div className="associar-feito">
-        <span className="confirmado">✓ {estado.produto.nome} · {qtd(conf.quantidade)} {unCupom} → {formatarReais(linha.valor)}</span>{' '}
-        <button type="button" className="link" disabled={travado} onClick={() => mudar({ confirmado: false })}>Trocar</button>
+        <span className="confirmado">✓ {estado.produto.nome} · {qtd(conf.quantidade)} {unCupom} → {formatarReais(linha.valor)}</span>
+        <button type="button" className="editar-item" disabled={travado} onClick={() => mudar({ confirmado: false })}><span aria-hidden="true">✎</span> Editar</button>
       </div>
     )
   }

@@ -662,7 +662,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(itens[0]).toHaveTextContent(/Linha: 0,5 kg × R\$\s13,90 = R\$\s6,95/)
     await userEvent.click(within(itens[0]).getByRole('button', { name: 'Confirmar este item' }))
     expect(itens[0]).toHaveTextContent(/✓ LIMÃO SICILIANO - INSUMOS · 0,5 kg → R\$\s6,95/)
-    expect(within(itens[0]).getByRole('button', { name: 'Trocar' })).toBeInTheDocument()
+    expect(within(itens[0]).getByRole('button', { name: 'Editar' })).toBeInTheDocument()
     expect(reenviar()).toBeDisabled()                                                        // ainda falta o pepino
 
     // 2º item: pela busca na lista de insumos
@@ -697,7 +697,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(m.catalogoProdutos).toHaveBeenCalledTimes(1)                                       // a lista de produtos é lida uma vez só
   })
 
-  it('peso errado: a soma não bate, o botão fica apagado e a tela diz a diferença; "Trocar" deixa corrigir o peso', async () => {
+  it('peso errado: a soma não bate, o botão fica apagado e a tela diz a diferença; "Editar" deixa corrigir o peso', async () => {
     naFila()
     render(<Cupom />)
     const itens = await itensDaCaixa()
@@ -708,7 +708,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(reenviar()).toBeDisabled()
     expect(m.confirmarCupom).not.toHaveBeenCalled()
 
-    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Trocar' }))
+    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Editar' }))
     const peso = within(itens[1]).getByLabelText('Peso (kg) que está no cupom')
     expect(peso).toHaveValue('2')                                                             // volta com o que ele tinha digitado
     await userEvent.clear(peso)
@@ -743,7 +743,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await userEvent.click(reenviar())
     const botao = await screen.findByRole('button', { name: 'Reenviando…' })
     expect(botao).toBeDisabled()
-    expect(within(itens[0]).getByRole('button', { name: 'Trocar' })).toBeDisabled()          // trocar no meio do envio mandaria uma coisa e mostraria outra
+    expect(within(itens[0]).getByRole('button', { name: 'Editar' })).toBeDisabled()          // trocar no meio do envio mandaria uma coisa e mostraria outra
     await userEvent.click(botao)
     expect(m.confirmarCupom).toHaveBeenCalledTimes(1)
     concluir(ACEITO)

@@ -227,3 +227,39 @@ export function pesoPeloNome(descricao: string | null | undefined, unidadeNota: 
 /** A conversão da decisão foi informada (número > 0)? Decisão gravada antes da etapa 2 não tem o campo: conta como não informada (null). */
 export const conversaoDaDecisao = (d: AssociacaoApp | null | undefined): number | null =>
   d != null && typeof d.conversao === 'number' && Number.isFinite(d.conversao) && d.conversao > 0 ? d.conversao : null
+
+// ---------- "Editar" em todo item (pedido do Ivan, 21/10/2026): a prévia do que entra no estoque e a sugestão tirada do nome
+
+/**
+ * Quanto entra no estoque: a quantidade que a tela mostra para o item × a conversão. Arredonda em 4 casas (as do SisChef) e tira o ruído do ponto flutuante
+ * (3,18 × 0,395 = 1,2561, não 1,2560999…). Sem quantidade legível (> 0) ou sem conversão válida, null: a tela não mostra conta que não sabe fazer.
+ */
+export function quantidadeNoEstoque(qtd: number | null | undefined, conversao: number | null | undefined): number | null {
+  const q = Number(qtd)
+  if (qtd == null || !Number.isFinite(q) || !(q > 0) || conversao == null || !Number.isFinite(conversao) || !(conversao > 0)) return null
+  return Math.round(q * conversao * 10 ** CONVERSAO_CASAS) / 10 ** CONVERSAO_CASAS
+}
+/** Quantidade no jeito brasileiro, com milhar: 1680 → "1.680"; 3,95 → "3,95" (é quantidade de estoque, não o número digitado da conversão — esse não leva ponto). */
+export const formatarQuantidade = (v: number): string => v.toLocaleString('pt-BR', { maximumFractionDigits: CONVERSAO_CASAS })
+
+/** Unidades de peso e volume: um número no nome ("12UN") de uma nota nesses pesos não diz quantas unidades vêm em cada unidade da nota. */
+const UNIDADES_DE_PESO_OU_VOLUME = ['KG', 'G', 'GR', 'GRS', 'L', 'LT', 'ML', 'M', 'MT']
+/**
+ * Sugestão de conversão tirada do NOME da nota para embalagem de várias unidades: "KETCHUP SACHE 168UN" ou "PCT 500 UND" (168 e 500 por unidade da nota) e
+ * "PCT/15" ou "C/12". Só sugere quando o nome tem UM número só (dois números diferentes não dizem qual é a conta) e a nota não está em peso ou volume.
+ * O Ivan só confere e corrige: a caixa mostra o botão "usar", nunca preenche nem grava sozinha (o mesmo cuidado do peso pelo nome, pesoPeloNome).
+ * Devolve o fator e o trecho que o gerou ("168UN"), para a tela explicar de onde veio.
+ */
+export function embalagemPeloNome(descricao: string | null | undefined, unidadeNota: string | null | undefined): { fator: number; trecho: string } | null {
+  if (UNIDADES_DE_PESO_OU_VOLUME.includes(rotuloUnidade(unidadeNota))) return null
+  const t = (descricao ?? '').replace(/^CÓD\. FOR:\s*\S+\s*/i, '')
+  const achados = new Map<number, string>() // número → o trecho que o gerou (o primeiro que apareceu, se o nome diz o mesmo número duas vezes)
+  const anotar = (n: number, trecho: string) => { if (!achados.has(n)) achados.set(n, trecho) }
+  // 168UN, 168 UN, 500 UND, 500 UNID: o número não pode estar colado em outra coisa (12X395G, 2,5UN, 1/2UN) nem em letras
+  for (const m of t.matchAll(/(?:^|[^\dA-Za-z.,/])(\d{2,5})\s*(UNIDS?|UNDS?|UN)(?![A-Za-z])/gi)) anotar(Number(m[1]), `${m[1]}${m[2].toUpperCase()}`)
+  // PCT/15 e C/12 ("com 12"); "PCT/15X4" é outra conta (15 vezes 4): fora
+  for (const m of t.matchAll(/(?:^|[^A-Za-z])(PCT|C)\s*\/\s*(\d{1,5})(?![\d,.]|\s*[xX]\s*\d)/gi)) anotar(Number(m[2]), `${m[1].toUpperCase()}/${m[2]}`)
+  if (achados.size !== 1) return null
+  const [fator, trecho] = [...achados.entries()][0]
+  return fator >= 2 && fator <= CONVERSAO_MAXIMA ? { fator, trecho } : null
+}

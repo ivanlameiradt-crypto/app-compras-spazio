@@ -1,12 +1,18 @@
 import { useState } from 'react'
-import { CONVERSAO_CASAS, CONVERSAO_MAXIMA, formatarConversao, parseConversao, rotuloUnidade } from './associacaoRegras'
+import {
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, embalagemPeloNome, formatarConversao, formatarQuantidade, parseConversao, quantidadeNoEstoque, rotuloUnidade,
+} from './associacaoRegras'
 import type { ItemNotaSefaz } from '../lib/tipos'
 
 /**
- * Conversão de unidade de um item que JÁ vem associado no SisChef mas com "UN DIFERE" (a nota em UN, o cadastro em KG, sem conversão registrada).
- * Só aparece quando há o que informar: o robô parou pedindo (`pede`) ou o Ivan já informou uma (`atual`). O número fica na nota (cot_nfe_converter_item)
- * e o robô o registra no modal do SisChef ao lançar — mesma régua da caixa de associação: maior que zero, até 10000, 4 casas, vírgula ou ponto.
- * Item sem produto no SisChef não passa por aqui: lá é a caixa de associação (AssociarProduto) que pede a conversão junto com o produto.
+ * "Editar" de um item que JÁ vem associado no SisChef (pedido do Ivan, 21/10/2026: todo item tem o botão, mesmo o que está certo). O que se edita aqui é a
+ * CONVERSÃO: quanto vale 1 unidade da nota em unidades do estoque. Dois jeitos de precisar dela:
+ *  - "UN DIFERE" (a nota em UN, o cadastro em KG, lata de 395 g → 0,395): o robô parou pedindo (`pede`) e a caixa já abre vazia;
+ *  - a MESMA unidade, mas a "unidade" da nota é uma embalagem (KETCHUP SACHE 168UN: a nota traz 10 UN = 10 caixas de 168 → digite 168 e entram 1.680).
+ * O número fica na nota (cot_nfe_converter_item) e o robô o aplica ao lançar: registra no modal do SisChef, ou — quando a unidade é a mesma — troca a
+ * quantidade e o unitário da linha do pedido (regras_embalagem). Mesma régua da caixa de associação: maior que zero, até 10000, 4 casas, vírgula ou ponto.
+ * A prévia "entram no estoque" é quantidade × conversão, com a quantidade que o SisChef mostra hoje para o item (a da linha de cima).
+ * Item sem produto no SisChef não passa por aqui: lá é a caixa de associação (AssociarProduto) que pede a conversão junto com o produto e tem o seu "Editar".
  */
 export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar }: {
   item: ItemNotaSefaz & { n: number }
@@ -27,9 +33,8 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const unidade = rotuloUnidade(item.unidade_sischef)
   const conversao = texto.trim() !== '' ? parseConversao(texto) : null
   const invalida = texto.trim() !== '' && conversao == null
-  const mostrarCampo = (pede && valorAtual == null) || editando
-
-  if (!pede && valorAtual == null) return null
+  const pendente = pede && valorAtual == null // o robô pediu e ainda ninguém informou: a caixa abre sozinha
+  const sugestao = embalagemPeloNome(item.descricao, item.unidade_sischef)
 
   async function guardar(valor: number | null) {
     if (enviando) return
@@ -43,38 +48,82 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
       setEnviando(false)
     }
   }
+  function abrir() {
+    setErro('')
+    setTexto(valorAtual != null ? formatarConversao(valorAtual) : '')
+    setEditando(true)
+  }
+  /** "10 × 168 = 1.680 UN": a conta que o Ivan confere antes de confirmar (e que fica na linha depois). Nada quando falta a quantidade da leitura. */
+  const conta = (c: number | null): string | null => {
+    const entra = quantidadeNoEstoque(item.qtd, c)
+    return c == null || entra == null ? null : `${formatarQuantidade(Number(item.qtd))} × ${formatarConversao(c)} = ${formatarQuantidade(entra)}${unidade ? ` ${unidade}` : ''}`
+  }
 
-  if (!mostrarCampo) {
+  if (!pendente && !editando) {
+    const feita = valorAtual != null ? conta(valorAtual) : null
     return (
-      <p className="sub" data-testid="conversao-item-informada">
-        Conversão informada: 1 unidade da nota = {formatarConversao(valorAtual as number)}{unidade ? ` ${unidade}` : ''}. O robô registra no SisChef ao lançar.{' '}
-        <button type="button" className="link" disabled={desabilitado || enviando}
-          onClick={() => { setTexto(formatarConversao(valorAtual as number)); setEditando(true) }}>Trocar</button>
-      </p>
+      <div className="editar-linha" data-testid="editar-item-linha">
+        {valorAtual != null && (
+          <p className="sub" data-testid="conversao-item-informada">
+            Conversão informada: 1 unidade da nota = {formatarConversao(valorAtual)}{unidade ? ` ${unidade}` : ''}.
+            {feita && <> Entram no estoque: <b>{feita}</b>.</>} O robô aplica ao lançar.
+          </p>
+        )}
+        <button type="button" className="editar-item" disabled={desabilitado || enviando} onClick={abrir}>
+          <span aria-hidden="true">✎</span> Editar
+        </button>
+      </div>
     )
   }
+  const previa = conta(conversao)
   return (
-    <div className="amarelo pedir-conversao" data-testid="conversao-item-pendente">
-      <p className="sub">
-        O SisChef marcou <b>UN DIFERE</b> neste item: a unidade da nota é diferente da do cadastro{unidade ? ` (${unidade})` : ''} e a conversão não está registrada.
-      </p>
+    <div className={`${pendente ? 'amarelo ' : ''}pedir-conversao editar-caixa`} data-testid={pendente ? 'conversao-item-pendente' : 'editar-item-caixa'} role="group" aria-label="Editar este item">
+      {pendente ? (
+        <p className="sub">
+          O SisChef marcou <b>UN DIFERE</b> neste item: a unidade da nota é diferente da do cadastro{unidade ? ` (${unidade})` : ''} e a conversão não está registrada.
+        </p>
+      ) : (
+        <p className="sub">Se a nota não vem do jeito que entra no estoque (lata de 395 g, caixa com 168 sachês), diga quanto vale 1 da nota.</p>
+      )}
       <label>Quanto vale 1 unidade da nota{unidade ? ` em ${unidade}` : ' na unidade do produto no SisChef'}?
         <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={texto} disabled={desabilitado || enviando}
           onChange={(e) => { setTexto(e.target.value); setErro('') }} />
       </label>
-      <p className="sub">Ex.: 1 UN = 1 KG → digite 1. O robô digita esse número no SisChef ao lançar e confere a quantidade depois.</p>
+      <p className="sub">
+        Ex.: a nota traz 10 UN e cada UN é uma caixa com 168 sachês → <b>168</b> (entram 1.680). Lata de 395 g e estoque em KG → <b>0,395</b>.
+        Se já está certo, digite 1.
+      </p>
+      {sugestao && texto.trim() === '' && (
+        <p className="sub" data-testid="conversao-item-sugestao">
+          Sugestão tirada do nome da nota ({sugestao.trecho}):{' '}
+          <button type="button" className="link" disabled={desabilitado || enviando} onClick={() => setTexto(formatarConversao(sugestao.fator))}>usar {formatarConversao(sugestao.fator)}</button>.
+          Confira antes de confirmar.
+        </p>
+      )}
       {invalida && (
         <p className="erro" data-testid="conversao-item-invalida">
           Número maior que zero, até {formatarConversao(CONVERSAO_MAXIMA)}, com até {CONVERSAO_CASAS} casas (vírgula ou ponto).
         </p>
       )}
-      {conversao != null && <p className="sub" data-testid="conversao-item-eco">Vai gravar: 1 unidade da nota = {formatarConversao(conversao)}{unidade ? ` ${unidade}` : ''}</p>}
+      {conversao != null && (
+        <p className="sub" data-testid="conversao-item-eco">
+          Vai gravar: 1 unidade da nota = {formatarConversao(conversao)}{unidade ? ` ${unidade}` : ''}.
+          {previa && <> Entram no estoque: <b data-testid="conversao-item-previa">{previa}</b>.</>}
+        </p>
+      )}
+      {conversao != null && previa && (
+        <p className="sub" data-testid="conversao-item-aviso-conta">
+          A conta usa a quantidade que o SisChef mostra hoje ({formatarQuantidade(Number(item.qtd))}). Se ele já converteu esta linha sozinho, o robô confere e avisa antes de lançar.
+        </p>
+      )}
       <div className="acoes">
         <button type="button" className="botao" disabled={conversao == null || desabilitado || enviando} onClick={() => void guardar(conversao)}>
           {enviando ? 'Confirmando…' : 'Confirmar'}
         </button>
-        {editando && <button type="button" className="link" disabled={enviando} onClick={() => { setEditando(false); setTexto('') }}>Cancelar</button>}
-        {editando && <button type="button" className="link perigo" disabled={desabilitado || enviando} onClick={() => void guardar(null)}>Desfazer a conversão</button>}
+        {editando && <button type="button" className="link" disabled={enviando} onClick={() => { setEditando(false); setTexto(''); setErro('') }}>Cancelar</button>}
+        {editando && valorAtual != null && (
+          <button type="button" className="link perigo" disabled={desabilitado || enviando} onClick={() => void guardar(null)}>Desfazer a conversão</button>
+        )}
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
     </div>
