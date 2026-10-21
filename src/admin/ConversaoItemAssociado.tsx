@@ -78,26 +78,24 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const previa = conta(conversao)
   return (
     <div className={`${pendente ? 'amarelo ' : ''}pedir-conversao editar-caixa`} data-testid={pendente ? 'conversao-item-pendente' : 'editar-item-caixa'} role="group" aria-label="Editar este item">
-      {pendente ? (
+      {pendente && (
         <p className="sub">
           O SisChef marcou <b>UN DIFERE</b> neste item: a unidade da nota é diferente da do cadastro{unidade ? ` (${unidade})` : ''} e a conversão não está registrada.
         </p>
-      ) : (
-        <p className="sub">Se a nota não vem do jeito que entra no estoque (lata de 395 g, caixa com 168 sachês), diga quanto vale 1 da nota.</p>
       )}
       <label>Quanto vale 1 unidade da nota{unidade ? ` em ${unidade}` : ' na unidade do produto no SisChef'}?
-        <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={texto} disabled={desabilitado || enviando}
+        {/* autoFocus só quando o Ivan tocou em Editar (o campo acabou de abrir e o teclado do celular já aparece); a caixa que o robô pediu e abre sozinha não rouba o cursor */}
+        <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={texto} disabled={desabilitado || enviando} autoFocus={editando}
           onChange={(e) => { setTexto(e.target.value); setErro('') }} />
       </label>
       <p className="sub">
-        Ex.: a nota traz 10 UN e cada UN é uma caixa com 168 sachês → <b>168</b> (entram 1.680). Lata de 395 g e estoque em KG → <b>0,395</b>.
-        Se já está certo, digite 1.
+        Ex.: a nota traz 10 UN e cada UN é uma caixa com 168 sachês → <b>168</b> (entram 1.680). Lata de 395 g, estoque em KG → <b>0,395</b>.
       </p>
       {sugestao && texto.trim() === '' && (
         <p className="sub" data-testid="conversao-item-sugestao">
           Sugestão tirada do nome da nota ({sugestao.trecho}):{' '}
-          <button type="button" className="link" disabled={desabilitado || enviando} onClick={() => setTexto(formatarConversao(sugestao.fator))}>usar {formatarConversao(sugestao.fator)}</button>.
-          Confira antes de confirmar.
+          <button type="button" className="link" disabled={desabilitado || enviando} onClick={() => setTexto(formatarConversao(sugestao.fator))}>usar {formatarConversao(sugestao.fator)}</button>
+          {' '}— confira antes de confirmar.
         </p>
       )}
       {invalida && (
@@ -113,7 +111,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
       )}
       {conversao != null && previa && (
         <p className="sub" data-testid="conversao-item-aviso-conta">
-          A conta usa a quantidade que o SisChef mostra hoje ({formatarQuantidade(Number(item.qtd))}). Se ele já converteu esta linha sozinho, o robô confere e avisa antes de lançar.
+          A conta usa a quantidade que o SisChef mostra hoje ({formatarQuantidade(Number(item.qtd))}). Ao lançar, o robô aplica e confere a quantidade antes de gerar a compra; se o SisChef já converteu esta linha sozinho, ou algo não bater, ele para e avisa, sem lançar.
         </p>
       )}
       <div className="acoes">

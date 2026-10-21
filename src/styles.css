@@ -221,7 +221,7 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .conferir-itens li button.link { align-self: flex-start; }
 /* "Editar" em todo item (pedido do Ivan, 21/10/2026): o botão pequeno e a caixa de edição que abre embaixo do item */
 .cupom .editar-linha { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 2px; }
-.cupom .editar-item { font: inherit; font-size: 13px; font-weight: 700; min-height: 36px; padding: 6px 14px; border-radius: 10px; border: 1px solid var(--marca);
+.cupom .editar-item { font: inherit; font-size: 13px; font-weight: 700; min-height: 34px; padding: 5px 12px; border-radius: 10px; border: 1px solid var(--marca);
   background: transparent; color: var(--marca); cursor: pointer; }
 .cupom .editar-item:disabled { opacity: .5; cursor: default; }
 .cupom .conferir-itens li .editar-item { align-self: flex-start; }

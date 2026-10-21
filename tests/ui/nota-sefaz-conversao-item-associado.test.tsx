@@ -48,6 +48,7 @@ describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o I
     const caixa = within(itens[1]).getByTestId('conversao-item-pendente')
     expect(caixa).toHaveTextContent('UN DIFERE')
     expect(within(caixa).getByLabelText(ROTULO)).toHaveValue('')   // vazio: quem define é o Ivan
+    expect(within(caixa).getByLabelText(ROTULO)).not.toHaveFocus()  // a caixa que o robô pediu abre sozinha e não rouba o cursor
     expect(within(caixa).getByRole('button', { name: 'Confirmar' })).toBeDisabled()
     expect(within(itens[1]).queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()    // a caixa já está aberta: não há o que abrir
     expect(screen.getByTestId('conferir')).toHaveAttribute('open')  // abre sozinho: é o que falta

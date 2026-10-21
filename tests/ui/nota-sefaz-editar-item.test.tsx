@@ -50,6 +50,7 @@ describe('NotaSefaz — "Editar" em todo item associado: embalagem de várias un
     await userEvent.click(item.getByRole('button', { name: 'Editar' }))
     const caixa = within(await item.findByTestId('editar-item-caixa'))
     expect(caixa.getByLabelText(ROTULO_UN)).toHaveValue('')                            // vazio: quem define é o Ivan
+    expect(caixa.getByLabelText(ROTULO_UN)).toHaveFocus()                              // o cursor já está no campo (no celular o teclado aparece)
     expect(caixa.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
     expect(caixa.getByTestId('conversao-item-sugestao')).toHaveTextContent('168UN')
     await userEvent.click(caixa.getByRole('button', { name: 'usar 168' }))
