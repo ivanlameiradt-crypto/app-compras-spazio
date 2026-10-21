@@ -23,7 +23,7 @@ import {
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeConversao, conversaoDeItemAssociado,
-  type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
+  etiquetaDaNota, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -497,11 +497,27 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     }
   }
 
+  // Etiqueta curta do título (a nota começa FECHADA — pedido do Ivan, 21/10: só o título aparece até ele tocar): as mesmas condições dos avisos de dentro.
+  const etiqueta = etiquetaDaNota({
+    estado, presa, freteAberto: freteAberto(estado, nota.lancamento_motivo),
+    bloqueada: bloqueios.length > 0 && !bloqueios.every(bloqueioDeProduto),
+    faltaDecidir: pendencias.length > 0 || bloqueios.some(bloqueioDeProduto) || fretePendente || (plano != null && !plano.ok),
+    faltaParcelas: exigeParcelas && podePreparar && !resultadoParcelas.ok,
+    financeiroNaoFecha: !soLancar && !exigeParcelas && !!prontidao.financeiro && bloqueios.length === 0 && estado == null,
+    pronta: soLancar, semForma: forma === '',
+  })
+
   return (
     <li data-testid="nota-a-lancar" className="nota-lancar">
-      <div className="recente-linha">
-        <span><b>{nomeExibido ?? nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
-      </div>
+      {/* A nota começa FECHADA (só o título + a etiqueta de estado) e abre/fecha pelo título (pedido do Ivan, 21/10/2026: as notas ficavam compridas demais).
+          Sem `open` controlado de propósito: o navegador guarda se está aberta (o React não mexe nesse atributo ao reler a lista) e o conteúdo fica sempre
+          montado, então o que o Ivan digitou dentro não se perde ao fechar. */}
+      <details className="nota-recolhivel" data-testid="nota-recolhivel">
+      <summary className="nota-titulo">
+        <span className="nota-titulo-texto"><b>{nomeExibido ?? nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
+        {etiqueta && <span className={`nota-etiqueta etq-${etiqueta.tom}`} data-testid="nota-etiqueta">{etiqueta.texto}</span>}
+      </summary>
+      <div className="nota-corpo">
 
       {soLancar && (
         <div className="ok" data-testid="nota-pronta">
@@ -654,6 +670,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <div><button type="button" className="link perigo" data-testid="descartar-nota" onClick={() => { setErro(''); setDescartando(true) }}>Descartar nota</button></div>
       ))}
       {erro && <p className="erro" role="alert">{erro}</p>}
+      </div>
+      </details>
     </li>
   )
 }

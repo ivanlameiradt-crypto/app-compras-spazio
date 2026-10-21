@@ -296,6 +296,47 @@ export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, mo
   }
 }
 
+// ---------- etiqueta no título da nota FECHADA
+export type TomEtiqueta = 'erro' | 'aviso' | 'ok'
+export interface EtiquetaNota { texto: string; tom: TomEtiqueta }
+/**
+ * A etiqueta curta que fica no TÍTULO da nota, ao lado do nome (pedido do Ivan, 21/10/2026: a nota começa fechada e só o título aparece).
+ * Existe para o aviso importante NÃO sumir junto com a nota fechada: "Ficou pela metade" em vermelho, por exemplo, diz que não se lança de novo
+ * antes de abrir. Cada etiqueta repete o que a nota já diz lá dentro (mesmas condições); a ordem é a de importância. Sem nada a dizer, null.
+ */
+export function etiquetaDaNota(p: {
+  estado: EstadoLancamentoNfe | null | undefined
+  /** o robô "lançando" há mais de 30 min (presa): vira "Precisa de você". */
+  presa: boolean
+  /** pedido aberto no SisChef com o frete (não é falha: falta o funcionário terminar lá). */
+  freteAberto: boolean
+  /** trava que o app não resolve (conta especial, nota sem itens…): só o Ivan, fora do app. */
+  bloqueada: boolean
+  /** falta produto/conversão em algum item, o frete a confirmar ou a data da MAUES a decidir. */
+  faltaDecidir: boolean
+  /** boleto sem duplicatas no XML e as parcelas digitadas ainda não fecham com o valor da nota. */
+  faltaParcelas: boolean
+  /** o financeiro do XML não fecha com o valor da nota (aviso amarelo dentro da nota). */
+  financeiroNaoFecha: boolean
+  /** "Pronta para lançar": itens com produto, boletos que fecham, Boleto marcado. */
+  pronta: boolean
+  /** nenhuma forma de pagamento marcada (PIX e cartão nunca vêm marcados). */
+  semForma: boolean
+}): EtiquetaNota | null {
+  if (p.freteAberto) return { texto: 'Falta terminar no SisChef', tom: 'aviso' }
+  if (p.estado === 'erro') return { texto: 'Ficou pela metade', tom: 'erro' }
+  if (p.estado === 'lancando' && !p.presa) return { texto: 'Lançando…', tom: 'aviso' }
+  if (p.estado === 'revisar' || p.presa) return { texto: 'Precisa de você', tom: 'aviso' }
+  if (p.estado === 'ensaio_ok') return { texto: 'Ensaio ok', tom: 'ok' }
+  if (p.bloqueada) return { texto: 'Precisa de você', tom: 'aviso' }
+  if (p.faltaDecidir) return { texto: 'Falta decidir', tom: 'aviso' }
+  if (p.faltaParcelas) return { texto: 'Falta as parcelas', tom: 'aviso' }
+  if (p.financeiroNaoFecha) return { texto: 'Confira o financeiro', tom: 'aviso' }
+  if (p.pronta) return { texto: 'Pronta', tom: 'ok' }
+  if (p.semForma) return { texto: 'Falta como pagar', tom: 'aviso' }
+  return null
+}
+
 // ---------- nota "pronta" (regra 2 do Ivan) e conferência do financeiro
 /**
  * Diferença aceita entre a soma dos boletos e o valor da nota (R$): NENHUMA. Regra 4 do Ivan (06/10): o que importa é o total lançado ser igual ao
