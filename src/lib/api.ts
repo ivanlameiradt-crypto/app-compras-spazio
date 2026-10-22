@@ -5,6 +5,7 @@ import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
+import { ehUnidadeDaLista } from './unidadesDaLista'
 import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
   HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
@@ -822,7 +823,7 @@ async function lerBuscaDosProdutos() {
   return com
 }
 /**
- * A unidade (e, para o produto que ele acrescentou, o nome do SisChef) de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → { unidade 'kg' | 'un', descricao }. Falha de leitura (tabela ainda não criada, rede)
+ * A unidade (e, para o produto que ele acrescentou, o nome do SisChef) de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → { unidade 'kg' | 'un' | 'ct' | 'pct', descricao }. Falha de leitura (tabela ainda não criada, rede)
  * devolve vazio: o catálogo segue com a unidade de itens_semana, como antes da planilha — melhor que derrubar a caixa de associação inteira.
  */
 async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; descricao: string }>> {
@@ -837,7 +838,8 @@ async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; d
     for (const x of (r.data ?? []) as { produto_id: number | string; unidade: string | null; descricao?: string | null }[]) {
       const id = Number(x.produto_id)
       const u = String(x.unidade ?? '').trim().toLowerCase()
-      if (Number.isFinite(id) && (u === 'kg' || u === 'un')) mapa.set(id, { unidade: u, descricao: String(x.descricao ?? '').replace(/\s+/g, ' ').trim() })
+      // kg e un da planilha de sempre e, desde 22/10/2026, ct (cento) e pct (pacote): produtos que já existiam no SisChef nessas unidades (sacos, garfo)
+      if (Number.isFinite(id) && ehUnidadeDaLista(u)) mapa.set(id, { unidade: u, descricao: String(x.descricao ?? '').replace(/\s+/g, ' ').trim() })
     }
   } catch (e) {
     console.warn('catalogoProdutos: não li a planilha de unidades', e instanceof Error ? e.name : '')
