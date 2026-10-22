@@ -38,23 +38,29 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o Ivan informa a conversão no app (08/10)', () => {
-  it('só o item que o robô apontou ganha a caixa (vazia); os outros itens não mostram nada a mais', async () => {
+  it('só o item que o robô apontou ganha a caixa (vazia); os outros itens ganham só o botão Editar, fechado', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
     const itens = await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item')
     expect(within(itens[0]).queryByTestId('conversao-item-pendente')).not.toBeInTheDocument()
+    expect(within(itens[0]).queryByTestId('editar-item-caixa')).not.toBeInTheDocument()
+    expect(within(itens[0]).getByRole('button', { name: 'Editar' })).toBeEnabled()      // 21/10: todo item tem o botão, mesmo o que está certo
     const caixa = within(itens[1]).getByTestId('conversao-item-pendente')
     expect(caixa).toHaveTextContent('UN DIFERE')
     expect(within(caixa).getByLabelText(ROTULO)).toHaveValue('')   // vazio: quem define é o Ivan
+    expect(within(caixa).getByLabelText(ROTULO)).not.toHaveFocus()  // a caixa que o robô pediu abre sozinha e não rouba o cursor
     expect(within(caixa).getByRole('button', { name: 'Confirmar' })).toBeDisabled()
+    expect(within(itens[1]).queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()    // a caixa já está aberta: não há o que abrir
     expect(screen.getByTestId('conferir')).toHaveAttribute('open')  // abre sozinho: é o que falta
   })
 
-  it('sem o robô ter pedido (nota sem esse motivo) nenhuma caixa aparece', async () => {
+  it('sem o robô ter pedido (nota sem esse motivo) nenhuma caixa aparece, só os botões Editar', async () => {
     m.notasALancar.mockResolvedValue([mateus({ lancamento_estado: null, lancamento_motivo: null })])
     render(<NotaSefaz />)
-    await screen.findByTestId('conferir')
+    const itens = await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item')
     expect(screen.queryByTestId('conversao-item-pendente')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('editar-item-caixa')).not.toBeInTheDocument()
+    for (const item of itens) expect(within(item).getByRole('button', { name: 'Editar' })).toBeEnabled()
   })
 
   it('digita 1 e confirma: grava pela função nova, relê e passa a mostrar "Conversão informada"', async () => {
@@ -90,18 +96,21 @@ describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o I
     expect(m.converterItem).not.toHaveBeenCalled()
   })
 
-  it('já informada: mostra o número com "Trocar"; trocar e confirmar grava o novo; "Desfazer a conversão" grava nulo', async () => {
+  it('já informada: mostra o número com "Editar"; trocar e confirmar grava o novo; "Desfazer a conversão" grava nulo', async () => {
     m.notasALancar.mockResolvedValue([mateus({ associacoes_app: conversaoGravada(1) })])
     m.converterItem.mockResolvedValue(undefined)
     render(<NotaSefaz />)
-    expect(await screen.findByTestId('conversao-item-informada')).toHaveTextContent('1 unidade da nota = 1 KG')
-    await userEvent.click(screen.getByRole('button', { name: 'Trocar' }))
+    const informada = await screen.findByTestId('conversao-item-informada')
+    expect(informada).toHaveTextContent('1 unidade da nota = 1 KG')
+    expect(informada).toHaveTextContent('Entram no estoque: 10 × 1 = 10 KG')
+    const creme = () => within(screen.getByTestId('conversao-item-informada').closest('li') as HTMLElement)   // o Editar do creme de leite (a água, 1º item, também tem o seu)
+    await userEvent.click(creme().getByRole('button', { name: 'Editar' }))
     const campo = screen.getByLabelText(ROTULO)
     expect(campo).toHaveValue('1')
     await userEvent.clear(campo); await userEvent.type(campo, '2')
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenLastCalledWith(CHAVE, 3, 2))
-    await userEvent.click(await screen.findByRole('button', { name: 'Trocar' }))
+    await userEvent.click(await creme().findByRole('button', { name: 'Editar' }))
     await userEvent.click(screen.getByRole('button', { name: 'Desfazer a conversão' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenLastCalledWith(CHAVE, 3, null))
   })

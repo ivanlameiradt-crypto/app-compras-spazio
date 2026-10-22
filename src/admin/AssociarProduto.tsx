@@ -4,7 +4,8 @@
 // 07/10 (pedido do Ivan): ele não deve "Trocar" para confirmar o que já está certo. Por isso, quando há um produto indicado (decisão ainda sem a conversão,
 // sugestão do robô ou das palavras-chave), o cartão já abre com ele escolhido: "Na nota" (a descrição fica em cima, no painel) e "Produto que eu indiquei no
 // SisChef", a conversão no mesmo cartão quando precisa (já preenchida com o peso do nome da nota, quando dá) e Confirmar. "Não é este produto? Escolher outro" abre a
-// busca. Item já confirmado por completo continua como "confirmado no app … Trocar" (Trocar reabre o cartão do mesmo produto, com a conversão para editar).
+// busca. Item já confirmado por completo continua como "confirmado no app … Editar" (21/10: o antigo "Trocar" virou "Editar", o mesmo botão que todo item da nota
+// tem; ele reabre o cartão do mesmo produto, com a conversão para editar, e "Escolher outro" troca o produto).
 // ETAPA 1 só GUARDAVA a escolha (cot_nfe_associar) e o Lançar continuava travado. ETAPA 2 ("confirmou no app → pode lançar"): ao lançar, o robô
 // aplica a escolha na tela de importação do SisChef. Como o de-para que ele grava lá é PERMANENTE para o código do fornecedor, a decisão tem de
 // estar COMPLETA antes: quando a unidade da nota é diferente da unidade do produto (UN × KG), o SisChef abre um modal de conversão e pergunta
@@ -20,8 +21,8 @@
 import { useMemo, useState } from 'react'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, formatarConversao, parseConversao, pesoPeloNome, rotuloUnidade,
-  situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, formatarConversao, formatarQuantidade, parseConversao, pesoPeloNome,
+  quantidadeNoEstoque, rotuloUnidade, situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
@@ -123,15 +124,20 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
     }
   }
 
-  // Já confirmado por completo: o ✓ e o nome ficam no item (lá em cima); aqui só o aviso de confirmado (com a conversão, se houver) e o "Trocar".
+  // Já confirmado por completo: o ✓ e o nome ficam no item (lá em cima); aqui só o aviso de confirmado (com a conversão e, quando o app conhece a unidade do
+  // produto, a conta do que entra no estoque) e o "Editar" (pedido do Ivan, 21/10: todo item tem o botão; ele reabre o cartão — produto e conversão).
   if (decisao && !trocando && !pendente) {
     const conv = conversaoDaDecisao(decisao)
+    const entra = conv != null && decisao.unidade ? quantidadeNoEstoque(item.qtd, conv) : null
     return (
       <div className="associar-feito" data-testid="associacao-confirmada">
         <span className="confirmado">
           confirmado no app · cód. {decisao.produto_id}{conv != null && ` · ${textoConversao(item.unidade_sischef, decisao.unidade, conv)}`}
-        </span>{' '}
-        <button type="button" className="link" onClick={() => { setErro(''); setConversaoAberta(true); setTrocando(true) }}>Trocar</button>
+          {entra != null && conv != null && ` · entram ${formatarQuantidade(Number(item.qtd))} × ${formatarConversao(conv)} = ${formatarQuantidade(entra)} ${rotuloUnidade(decisao.unidade)}`}
+        </span>
+        <button type="button" className="editar-item" onClick={() => { setErro(''); setConversaoAberta(true); setTrocando(true) }}>
+          <span aria-hidden="true">✎</span> Editar
+        </button>
       </div>
     )
   }
@@ -255,7 +261,8 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                       : situacao === 'oculta'
                         ? 'Pelo nome, o produto parece estar na mesma unidade da nota no SisChef. '
                         : 'A lista do app não sabe ao certo a unidade deste produto no SisChef. '}
-                    Se lá ele também for em {unidadeNota}, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Trocar) e informe.
+                    Se lá ele também for em {unidadeNota}, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
+                    {' '}Se cada {unidadeNota} da nota é uma caixa ou um pacote com várias unidades (ex.: caixa de 168), digite quantas.
                   </p>
                 </>
               )}
@@ -280,7 +287,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             <p className="sub" data-testid="sem-conversao">
               Sem conversão: a nota e o produto estão na mesma unidade ({unidadeNota}).{' '}
               <button type="button" className="link" data-testid="abrir-conversao" disabled={enviando} onClick={() => setConversaoAberta(true)}>
-                O produto no SisChef está em outra unidade? Informar a conversão
+                Cada {unidadeNota} da nota é uma caixa ou pacote com várias unidades? O produto no SisChef está em outra unidade? Informar a conversão
               </button>
             </p>
           )}

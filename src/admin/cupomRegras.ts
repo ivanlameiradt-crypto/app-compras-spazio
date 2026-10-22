@@ -130,7 +130,7 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
     return {
       problema: 'Todos os itens já são conhecidos (você os confirmou em cupons anteriores deste fornecedor). Falta só você conferir e confirmar.',
       itens: [], pedidos: [], conferencia: null,
-      solucao: 'Confira os itens abaixo (produto, quantidade e valor) e toque em “Confirmar e lançar”. Se algo estiver errado, toque em “Trocar” no item.',
+      solucao: 'Confira os itens abaixo (produto, quantidade e valor) e toque em “Confirmar e lançar”. Se algo estiver errado, toque em “Editar” no item.',
       corrigivel: total && c.pedido_sischef == null,
     }
   }

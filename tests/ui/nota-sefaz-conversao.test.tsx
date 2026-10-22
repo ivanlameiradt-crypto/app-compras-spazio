@@ -38,7 +38,7 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('NotaSefaz — SEARA: informar a conversão (1 CX = X kg) libera o Lançar na mesma tela, sem sair do app (07/10)', () => {
-  // Desde 07/10 (pedido do Ivan) o item com decisão sem a conversão já abre no cartão "Produto que eu indiquei" + Confirmar: sem Trocar, sem procurar de novo.
+  // Desde 07/10 (pedido do Ivan) o item com decisão sem a conversão já abre no cartão "Produto que eu indiquei" + Confirmar: sem Editar, sem procurar de novo.
   async function informarConversao(valor: string) {
     await userEvent.type(await screen.findByLabelText('Quanto vale 1 CX em KG?'), valor)
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
@@ -75,7 +75,7 @@ describe('NotaSefaz — SEARA: informar a conversão (1 CX = X kg) libera o Lan�
 })
 
 // Cartão do item (07/10, pedido do Ivan): "Na nota" em cima, "Produto que eu indiquei no SisChef", a conversão no mesmo cartão (já preenchida com o peso do nome
-// da nota quando dá) e UM botão Confirmar — sem "Trocar" para confirmar o que já está certo.
+// da nota quando dá) e UM botão Confirmar — sem "Editar" para confirmar o que já está certo.
 describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar com um botão (MATEUS 000089284, 07/10)', () => {
   const LEITE = 3469626
   const BIS = 3476455
@@ -107,7 +107,7 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
   }
   beforeEach(() => { m.catalogoProdutos.mockResolvedValue(CAT); m.associarItem.mockResolvedValue(undefined) })
 
-  it('leite condensado (decisão sem a conversão): cartão com o produto indicado, 0,395 sugerido pelo nome (395G) e um Confirmar — sem Trocar nem busca', async () => {
+  it('leite condensado (decisão sem a conversão): cartão com o produto indicado, 0,395 sugerido pelo nome (395G) e um Confirmar — sem Editar nem busca', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
     const leite = await itemDe(1)
@@ -115,7 +115,7 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
     expect(cartao).toHaveTextContent('Produto que eu indiquei no SisChef')
     expect(cartao).toHaveTextContent('LEITE CONDENSADO - INSUMOS (KG)')
     expect(leite.queryByTestId('item-confirmado')).not.toBeInTheDocument()                 // ainda não vale: sem ✓ "confirmado"
-    expect(leite.queryByRole('button', { name: 'Trocar' })).not.toBeInTheDocument()
+    expect(leite.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
     expect(leite.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
     expect(leite.getByLabelText('Quanto vale 1 UN em KG?')).toHaveValue('0,395')
     expect(leite.getByTestId('conversao-sugerida')).toHaveTextContent('Sugestão tirada do nome da nota (395G = 0,395)')
@@ -156,12 +156,12 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
     expect(await screen.findAllByTestId('produto-escolhido')).not.toHaveLength(0)
   })
 
-  it('Trocar (decisão completa) reabre o cartão do MESMO produto, com a conversão gravada para editar: o "1" do BIS (unidades iguais) sai apagando o campo', async () => {
+  it('Editar (decisão completa) reabre o cartão do MESMO produto, com a conversão gravada para editar: o "1" do BIS (unidades iguais) sai apagando o campo', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
     const bis = await itemDe(0)
     expect(await bis.findByTestId('associacao-confirmada')).toHaveTextContent('confirmado no app · cód. 3476455 · 1 UN = 1 na unidade do produto no SisChef')
-    await userEvent.click(bis.getByRole('button', { name: 'Trocar' }))
+    await userEvent.click(bis.getByRole('button', { name: 'Editar' }))
     expect(await bis.findByTestId('produto-escolhido')).toHaveTextContent('CHOCOLATE BIS ORIGINAL - INSUMOS')
     const campoConv = bis.getByLabelText('Quanto vale 1 UN na unidade do produto no SisChef? (opcional)')
     expect(campoConv).toHaveValue('1')
@@ -170,22 +170,22 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
     await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 2, BIS, null))
   })
 
-  it('Trocar → Cancelar volta para "confirmado no app" sem gravar nada', async () => {
+  it('Editar → Cancelar volta para "confirmado no app" sem gravar nada', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
     const bis = await itemDe(0)
-    await userEvent.click(await bis.findByRole('button', { name: 'Trocar' }))
+    await userEvent.click(await bis.findByRole('button', { name: 'Editar' }))
     await userEvent.click(await bis.findByRole('button', { name: 'Cancelar' }))
     expect(await bis.findByTestId('associacao-confirmada')).toBeInTheDocument()
     expect(m.associarItem).not.toHaveBeenCalled()
   })
 
-  it('óleo (decisão completa, UN × UN): "confirmado no app" e Trocar; o Trocar abre o cartão do mesmo produto', async () => {
+  it('óleo (decisão completa, UN × UN): "confirmado no app" e Editar; o Editar abre o cartão do mesmo produto', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
     const oleo = await itemDe(2)
     expect(await oleo.findByTestId('associacao-confirmada')).toHaveTextContent('confirmado no app · cód. 3138573')
-    await userEvent.click(oleo.getByRole('button', { name: 'Trocar' }))
+    await userEvent.click(oleo.getByRole('button', { name: 'Editar' }))
     expect(await oleo.findByTestId('produto-escolhido')).toHaveTextContent('ÓLEO DE SOJA - INSUMOS (UN)')
   })
 
