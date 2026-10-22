@@ -163,6 +163,20 @@ describe('NotaSefaz — "Editar" em todo item associado: embalagem de várias un
       expect(item.queryByTestId('conversao-item-sugestao')).not.toBeInTheDocument()
     })
 
+    it('enquanto a unidade ainda está sendo lida a sugestão fica ESCONDIDA; só aparece se a leitura disser UN (e fica fora se disser CT)', async () => {
+      m.notasALancar.mockResolvedValue([notaDoSaco()])
+      let liberar: (u: string | null) => void = () => undefined
+      m.unidadeDoProdutoNaPlanilha.mockReturnValue(new Promise<string | null>((r) => { liberar = r }))
+      render(<NotaSefaz />)
+      const item = within((await itens())[0])
+      await userEvent.click(item.getByRole('button', { name: 'Editar' }))
+      await waitFor(() => expect(m.unidadeDoProdutoNaPlanilha).toHaveBeenCalled())
+      expect(item.getByLabelText(ROTULO_UN)).toBeInTheDocument()
+      expect(item.queryByTestId('conversao-item-sugestao')).not.toBeInTheDocument()          // lendo: nada de "usar 100" ainda
+      liberar('un')
+      expect(await item.findByTestId('conversao-item-sugestao')).toHaveTextContent('usar 100')
+    })
+
     it('controle: em UN a sugestão aparece depois da leitura; se a leitura falha ou o produto não está na planilha, a sugestão aparece como sempre', async () => {
       for (const leitura of [() => m.unidadeDoProdutoNaPlanilha.mockResolvedValue('un'), () => m.unidadeDoProdutoNaPlanilha.mockResolvedValue(null),
         () => m.unidadeDoProdutoNaPlanilha.mockRejectedValue(new Error('rede'))]) {

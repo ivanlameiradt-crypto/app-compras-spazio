@@ -27,12 +27,11 @@ describe('unidadesNaEmbalagem — o número que o NOME do produto diz ("C/ 100 U
     ['COPO 300 ML - C / 50 UND', 50],
     ['GUARDANAPO C/ 1000 UND', 1000],
     ['SACO 24X38 3KG - 100 UND', 100],
-    ['SACO C/100 - 100 UND', 100],           // o mesmo número escrito duas vezes vale
+    ['SACO C/100 UND - 100 UND', 100],       // o mesmo número escrito duas vezes vale
     ['c/ 25 und', 25],
     ['GARFO DESCARTAVEL 50 PCS', 50],
     ['COLHER C/ 50 UNIDADES', 50],
     ['PRATO 15CM - C/10', 10],                              // "C/ N" no fim do nome vale
-    ['SACO C/100-PRETO', 100],                              // ... e antes de um traço
     ['SACO PRETO C/ 100 UN', 100],
   ])('%s → %d', (nome, n) => {
     expect(unidadesNaEmbalagem(nome)).toBe(n)
@@ -42,7 +41,7 @@ describe('unidadesNaEmbalagem — o número que o NOME do produto diz ("C/ 100 U
     ['SACO PARA CHOPP'],
     ['SACO 26X44 5KG'],                      // medidas e peso não são "unidades na embalagem"
     ['PAPEL TOALHA'],
-    ['SACO C/ 100 - 50 UND'],                // dois números diferentes: não adivinha
+    ['SACO C/ 100 UND - 50 UND'],            // dois números diferentes: não adivinha
     ['SACO C/ 1 UND'],                       // 1 não é embalagem
     ['SACO C/ 0 UND'],
     ['SACO C/ 2,5 UND'],                     // decimal não é contagem
@@ -57,6 +56,9 @@ describe('unidadesNaEmbalagem — o número que o NOME do produto diz ("C/ 100 U
     ['SACO LIXO 100L C/ 5KG'],
     ['SACO LIXO C/ 5 KG'],
     ['COPO C/ 50 PCT'],                      // "PCT" é pacote, não unidade
+    ['BANDEJA C/ 2 - DIVISOES'],             // a pontuação depois do número não prova que são unidades (2ª revisão)
+    ['BANDEJA C/ 2 (DIVISOES)'],
+    ['SACO C/100-PRETO'],                    // na dúvida a tela pergunta sem sugerir
     ['SACO C/ 2.500 UND'],                   // milhar com ponto ou vírgula: não é "2" nem "500" unidades
     ['SACO 2.500 UND'],
     ['SACO C/ 1,000 UND'],

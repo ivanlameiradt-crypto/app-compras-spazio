@@ -10,9 +10,9 @@ export const ehMilheiro = (unidadeCupom: unknown, unidadeProduto: unknown): bool
 
 // A palavra que diz "isto são unidades" depois do número: UND, UNID, UNIDADES, UN, PCS, PÇS, PEÇAS. "PCT" e "CX" NÃO entram (são embalagens, não unidades).
 const PALAVRA_DE_CONTAGEM = '(?:UNDS?|UNIDS?|UNIDADES?|UNS?|PCS|PÇS|PECAS|PEÇAS)'
-// "C/ 100", "C/100 UND": o número depois de "C/" só vale se vem logo a palavra de contagem, o fim do nome ou um traço/parêntese (revisão independente de 22/10: "C/ 2 DIVISOES",
-// "C/ 500ML", "CX C/ 20 PCT" e "C/ 5KG" contam OUTRA coisa e davam sugestão errada).
-const COM_BARRA = new RegExp(`(?:^|[^A-Za-z0-9])C\\s*\\/\\s*(\\d{1,5})(?![\\d,.])(?=\\s*${PALAVRA_DE_CONTAGEM}(?![A-Za-zÀ-ÿ])|\\s*$|\\s*[-–—;()])`, 'gi')
+// "C/ 100", "C/100 UND": o número depois de "C/" só vale se vem logo a palavra de contagem ou o fim do nome (revisão independente de 22/10: "C/ 2 DIVISOES", "C/ 2 - DIVISOES",
+// "C/ 500ML", "CX C/ 20 PCT" e "C/ 5KG" contam OUTRA coisa e davam sugestão errada; na dúvida a tela pergunta sem sugerir).
+const COM_BARRA = new RegExp(`(?:^|[^A-Za-z0-9])C\\s*\\/\\s*(\\d{1,5})(?![\\d,.])(?=\\s*${PALAVRA_DE_CONTAGEM}(?![A-Za-zÀ-ÿ])|\\s*$)`, 'gi')
 // "PCT 50 UND", "100 UND": número seguido da palavra de contagem, sem letra, ponto, vírgula ou barra colados antes do número.
 const COM_PALAVRA = new RegExp(`(?:^|[^A-Za-z0-9.,/])(\\d{1,5})\\s*${PALAVRA_DE_CONTAGEM}(?![A-Za-zÀ-ÿ])`, 'gi')
 

@@ -32,7 +32,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const [salvo, setSalvo] = useState<number | null | undefined>(undefined) // o que acabou de gravar (vale até a releitura trazer o do servidor)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
-  const [unidadeDoProduto, setUnidadeDoProduto] = useState<string | null | undefined>(undefined) // undefined = ainda não leu
+  const [lida, setLida] = useState<{ produto: string; unidade: string | null } | null>(null) // a última unidade lida e DE QUAL produto (a caixa pode trocar de item)
 
   const valorAtual = salvo !== undefined ? salvo : atual
   const unidade = rotuloUnidade(item.unidade_sischef)
@@ -40,16 +40,18 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const invalida = texto.trim() !== '' && conversao == null
   const pendente = pede && valorAtual == null // o robô pediu e ainda ninguém informou: a caixa abre sozinha
   const aberta = pendente || editando
-  const codigoDoProduto = item.produto_id != null && String(item.produto_id).trim() !== '' ? item.produto_id : null
+  const codigoDoProduto = item.produto_id != null && String(item.produto_id).trim() !== '' ? String(item.produto_id).trim() : null
   useEffect(() => {
     if (!aberta || !buscarUnidade || codigoDoProduto == null) return
     let vivo = true
     Promise.resolve()
       .then(() => buscarUnidade(codigoDoProduto))
-      .then((u) => { if (vivo) setUnidadeDoProduto(u ?? null) })
-      .catch(() => { if (vivo) setUnidadeDoProduto(null) })
+      .then((u) => { if (vivo) setLida({ produto: codigoDoProduto, unidade: u ?? null }) })
+      .catch(() => { if (vivo) setLida({ produto: codigoDoProduto, unidade: null }) })
     return () => { vivo = false }
   }, [aberta, buscarUnidade, codigoDoProduto])
+  // a unidade só vale para o produto de que foi lida: se a caixa passa a outro produto, volta a "ainda não li" (a sugestão fica escondida até a nova leitura)
+  const unidadeDoProduto = lida != null && lida.produto === codigoDoProduto ? lida.unidade : undefined
   const lendoUnidade = aberta && !!buscarUnidade && codigoDoProduto != null && unidadeDoProduto === undefined
   const sugestao = lendoUnidade || ehEmbalagemContada(unidadeDoProduto) ? null : embalagemPeloNome(item.descricao, item.unidade_sischef)
 
