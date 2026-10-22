@@ -56,6 +56,7 @@ const F3L = '20261215000001_nfe_associar_unidade_planilha.sql' // a unidade da d
 const F3O = '20261218000001_nfe_frete.sql' // frete da nota fiscal (cot_nfe.frete_valor / frete_tipo)
 const F3P = '20261220000001_produto_cadastro.sql' // cadastro de produto novo pelo app (produto_cadastro + produto_cadastro_concluir)
 const F3Q = '20261221000001_produto_cadastro_correcoes.sql' // correções da revisão nº 2 (14/10): reescreve SÓ produto_cadastro_concluir (a F3P já está em produção)
+const F3R = '20261222000001_unidades_ct_pct.sql' // a lista do app aceita produtos em CT e PCT (22/10): troca o check de produto_planilha.unidade e reescreve SÓ produto_cadastro_concluir (a F3Q já está em produção)
 const F3N = '20261217000001_fornecedor_cadastro.sql' // cadastro de fornecedor pelo app (fornecedor_cadastro, fornecedor_app)
 const F3M = '20261216000001_produto_planilha_descricao.sql' // produto acrescentado pela planilha (descrição) entra na lista de insumos e em cot_nfe_associar
 // A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 vem depois da B; as da Fase 3 são as últimas por nome.
@@ -63,7 +64,7 @@ const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [
@@ -347,6 +348,66 @@ describe('Fase 2 — base e ordem das migrations', () => {
       expect(await md5Funcoes(db)).toEqual(depois)
       expect(await atributos()).toEqual(atributosAntes)
       expect(await colunas()).toEqual(colunasDepois)
+      expect(await permissoesDaTabela()).toEqual(tabelaAntes)
+    } finally {
+      await db.close()
+    }
+  })
+
+  // A F3Q já está em produção: a F3R só pode (1) trocar a regra de produto_planilha.unidade (KG, UN, CT, PCT), sem mexer nas outras regras, colunas nem permissões da
+  // tabela, e (2) trocar o CORPO da produto_cadastro_concluir (mesma assinatura, mesmas permissões, security definer com search_path = public); e pode ser reaplicada sem efeito.
+  it('X3 (F3R): CT e PCT só trocam a regra da unidade da planilha e o corpo de produto_cadastro_concluir (mesma assinatura e permissões), e reaplicar não muda nada', async () => {
+    const db = new PGlite()
+    const atributos = async () => (await db.query<{ acl: string; definer: boolean; config: string[] | null }>(
+      `select proacl::text as acl, prosecdef as definer, proconfig as config from pg_proc where oid = 'public.${CONCLUIR}'::regprocedure`)).rows[0]
+    const regras = async () => (await db.query<{ nome: string; def: string }>(
+      `select conname as nome, pg_get_constraintdef(oid) as def from pg_constraint where conrelid = 'public.produto_planilha'::regclass order by conname`)).rows
+    const colunas = async () => (await db.query<{ c: string; tipo: string; nulo: string; padrao: string | null }>(
+      `select column_name as c, data_type as tipo, is_nullable as nulo, column_default as padrao from information_schema.columns
+        where table_schema = 'public' and table_name = 'produto_planilha' order by ordinal_position`)).rows
+    const permissoesDaTabela = async () => (await db.query<{ acl: string }>(`select relacl::text as acl from pg_class where oid = 'public.produto_planilha'::regclass`)).rows[0]
+    try {
+      await db.exec(shim())
+      for (const f of ORDEM_ESPERADA.slice(0, ORDEM_ESPERADA.indexOf(F3R))) await db.exec(migration(f))
+      const antes = await md5Funcoes(db)
+      const atributosAntes = await atributos()
+      const regrasAntes = await regras()
+      const colunasAntes = await colunas()
+      const tabelaAntes = await permissoesDaTabela()
+      expect(regrasAntes.find((r) => r.nome === 'produto_planilha_unidade_check')?.def).toMatch(/'KG'::text, 'UN'::text\]/)       // antes: só KG e UN
+      await db.exec(migration(F3R))
+      const depois = await md5Funcoes(db)
+      // (1) a tabela: só a regra da unidade muda (agora KG, UN, CT, PCT); as outras regras, as colunas e as permissões ficam iguais
+      const regrasDepois = await regras()
+      expect(regrasDepois.map((r) => r.nome)).toEqual(regrasAntes.map((r) => r.nome))
+      for (const r of regrasDepois) {
+        if (r.nome === 'produto_planilha_unidade_check') continue
+        expect([r.nome, r.def]).toEqual([r.nome, regrasAntes.find((a) => a.nome === r.nome)?.def])
+      }
+      const regraDaUnidade = regrasDepois.find((r) => r.nome === 'produto_planilha_unidade_check')?.def ?? ''
+      for (const u of ['KG', 'UN', 'CT', 'PCT']) expect(regraDaUnidade, u).toContain(`'${u}'`)
+      expect(await colunas()).toEqual(colunasAntes)
+      expect(await permissoesDaTabela()).toEqual(tabelaAntes)
+      // (2) toda função de antes, menos a concluir, continua com o corpo idêntico; nenhuma função nova nem sumida (a assinatura é a mesma)
+      for (const [nome, hash] of antes) {
+        if (nome === CONCLUIR) continue
+        expect([nome, depois.get(nome)]).toEqual([nome, hash])
+      }
+      expect([...depois.keys()].sort()).toEqual([...antes.keys()].sort())
+      expect(depois.get(CONCLUIR)).not.toEqual(antes.get(CONCLUIR))
+      // as mesmas permissões e atributos: só a service_role executa; security definer com search_path = public
+      expect(await atributos()).toEqual(atributosAntes)
+      expect(atributosAntes).toMatchObject({ definer: true, config: ['search_path=public'] })
+      for (const [papel, pode] of [['anon', false], ['authenticated', false], ['service_role', true]] as const) {
+        const r = await db.query<{ ok: boolean }>(`select has_function_privilege($1, 'public.${CONCLUIR}', 'execute') as ok`, [papel])
+        expect([papel, r.rows[0].ok]).toEqual([papel, pode])
+      }
+      // reaplicar (idempotente): nada muda
+      await db.exec(migration(F3R))
+      expect(await md5Funcoes(db)).toEqual(depois)
+      expect(await atributos()).toEqual(atributosAntes)
+      expect(await regras()).toEqual(regrasDepois)
+      expect(await colunas()).toEqual(colunasAntes)
       expect(await permissoesDaTabela()).toEqual(tabelaAntes)
     } finally {
       await db.close()
