@@ -13,6 +13,8 @@ import { ProdutoNaoCadastrado } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
 import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
+import { ehMilheiro, sugestaoPorMilheiro, unidadesNaEmbalagemDoProduto } from './embalagemContada'
+import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 
 interface Props {
   cupom: CupomRecente
@@ -47,6 +49,9 @@ function modoDaEntrada(it: ItemCupomRecente, produto: ProdutoCatalogo | null): M
   const destino = minusc(produto.unidade)
   if (destino === 'kg' && /^(g|gr|grs)$/i.test(unid(it.unidade_cupom))) return 'auto'
   if ((destino === 'kg' || destino === 'un') && !ehPeso(it.unidade_cupom)) return 'por_unidade'
+  // CT e PCT (22/10/2026, cupom de sacos): embalagem com várias unidades dentro. Cupom em unidade/caixa/pacote… pergunta quantos CT/PCT vêm em 1 unidade do cupom, e "ML" do cupom
+  // de embalagem é MILHEIRO (1.000 unidades), não mililitro: também pergunta (a tela explica e sugere pelo "C/ 100 UND" do nome). Peso e volume de verdade (kg, g, l) seguem no "total".
+  if (ehEmbalagemContada(destino) && (!ehPeso(it.unidade_cupom) || ehMilheiro(it.unidade_cupom, destino))) return 'por_unidade'
   return 'total'
 }
 const arred3 = (v: number): number => Math.round(v * 1000) / 1000
@@ -117,6 +122,11 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const converte = estado.produto != null && precisaConversao(it.unidade_cupom, estado.produto.unidade)
   const modo = modoDaEntrada(it, estado.produto)
   const destinoKg = minusc(estado.produto?.unidade) === 'kg'
+  // CT/PCT (embalagem contada): "ML" no cupom é milheiro; a conta 1.000 ÷ unidades da embalagem sai do nome do produto ("C/ 100 UND")
+  const destinoContado = ehEmbalagemContada(estado.produto?.unidade)
+  const milheiro = ehMilheiro(it.unidade_cupom, estado.produto?.unidade)
+  const rotCupom = milheiro ? 'ML (milheiro)' : unid(it.unidade_cupom)
+  const unidadesNaCaixa = estado.produto && destinoContado ? unidadesNaEmbalagemDoProduto(estado.produto) : null
   const qCupom = lerQuantidade(estado.quantidade)
   const pesoDigitado = lerQuantidade(estado.peso)
   const totalPorPeso = qCupom != null && pesoDigitado != null ? arred3(qCupom * pesoDigitado) : null
@@ -126,7 +136,10 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   if (estado.confirmado && estado.produto && conf && linha) {
     return (
       <div className="associar-feito">
-        <span className="confirmado">✓ {estado.produto.nome} · {qtd(conf.quantidade)} {unCupom} → {formatarReais(linha.valor)}</span>
+        <span className="confirmado">
+          ✓ {estado.produto.nome} · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} → {formatarReais(linha.valor)}
+          {destinoContado && conf.entrada != null && <> · entram {qtd(linha.entrada)} {minusc(estado.produto.unidade)}</>}
+        </span>
         <button type="button" className="editar-item" disabled={travado} onClick={() => mudar({ confirmado: false })}><span aria-hidden="true">✎</span> Editar</button>
       </div>
     )
@@ -139,16 +152,21 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const escolher = (p: ProdutoCatalogo) => {
     const m = modoDaEntrada(it, p)
     const regra = qCupom != null && minusc(p.unidade) === 'kg' ? entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom) : null
-    const sugerido = m === 'por_unidade' && regra?.regra === 1 && qCupom ? qtd(regra.kg / qCupom) : ''
+    // sugestão do peso de 1 unidade (KG, pelo peso do nome do cupom) ou dos CT/PCT em 1 ML (milheiro, pelo "C/ 100 UND" do nome do produto); o Ivan confere
+    const porMilheiro = m === 'por_unidade' ? sugestaoPorMilheiro(it.unidade_cupom, p) : null
+    const sugerido = m === 'por_unidade' && regra?.regra === 1 && qCupom ? qtd(regra.kg / qCupom) : porMilheiro != null ? qtd(porMilheiro) : ''
     const novo: Partial<EstadoItem> = { produto: p, entrada: '', peso: sugerido, forcar: false, lembrar: !itemSempreManual(it) && (!precisaConversao(it.unidade_cupom, p.unidade) || m === 'auto' || sugerido !== '') }
     mudar(novo)
     setTexto('')
     return novo
   }
   // "Confirmar" da sugestão: escolhe o produto e, se não falta nenhum número (mesma unidade e quantidade lida), já confirma o item — um toque só.
+  // Exceção (revisão independente de 22/10): produto em CT/PCT com conversão (ML = milheiro, UN → PCT…). O fator vem do NOME do produto, não do cupom, e a conferência da soma
+  // bate com qualquer fator (o valor da linha é preservado): o item fica aberto para o Ivan ver a pergunta e a conta ("6 ML × 10 ct = 60 ct") e tocar em "Confirmar este item".
   const confirmarSugestao = (p: ProdutoCatalogo) => {
     const novo = escolher(p)
-    if (confirmacaoDe(it, { ...estado, ...novo }) !== null) mudar({ confirmado: true })
+    const fatorDaEmbalagem = ehEmbalagemContada(p.unidade) && modoDaEntrada(it, p) === 'por_unidade'
+    if (!fatorDaEmbalagem && confirmacaoDe(it, { ...estado, ...novo }) !== null) mudar({ confirmado: true })
   }
 
   return (
@@ -244,8 +262,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
               <button type="button" className="link" disabled={travado} onClick={() => mudar({ produto: null, entrada: '', peso: '', forcar: false })}>Escolher outro</button>
             </span>
           </div>
-          <label>{ehPeso(it.unidade_cupom) ? 'Peso' : 'Quantidade'}{unCupom !== '' ? ` (${unCupom})` : ''} que está no cupom
-            <input type="text" inputMode="decimal" placeholder={ehPeso(it.unidade_cupom) ? '0,000' : '0'} value={estado.quantidade} disabled={travado}
+          <label>{ehPeso(it.unidade_cupom) && !milheiro ? 'Peso' : 'Quantidade'}{unCupom !== '' ? ` (${milheiro ? 'ML = milheiro' : unCupom})` : ''} que está no cupom
+            <input type="text" inputMode="decimal" placeholder={ehPeso(it.unidade_cupom) && !milheiro ? '0,000' : '0'} value={estado.quantidade} disabled={travado}
               onChange={(e) => mudar({ quantidade: e.target.value })} />
           </label>
           {converte && modo === 'auto' && (
@@ -260,10 +278,20 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
               <div className="amarelo" data-testid="duvida-unidade">
                 {destinoKg
                   ? <>O produto é controlado em KG no SisChef e o cupom está em {unid(it.unidade_cupom) || 'unidade'}. <b>Quanto pesa 1 {unid(it.unidade_cupom) || 'unidade'}, em kg?</b></>
-                  : <>O cupom está em {unid(it.unidade_cupom)} e o produto é em UN. <b>Quantas unidades vêm em 1 {unid(it.unidade_cupom)}?</b></>}
+                  : destinoContado
+                    ? <>O cupom está em {rotCupom} e o produto é em {unid(estado.produto.unidade)}. <b>Quantos {unid(estado.produto.unidade)} vêm em 1 {unid(it.unidade_cupom)}?</b></>
+                    : <>O cupom está em {unid(it.unidade_cupom)} e o produto é em UN. <b>Quantas unidades vêm em 1 {unid(it.unidade_cupom)}?</b></>}
               </div>
-              <label>{destinoKg ? `Peso de 1 ${unid(it.unidade_cupom) || 'unidade'} (kg)` : `Unidades em 1 ${unid(it.unidade_cupom)}`}
-                <input type="text" inputMode="decimal" placeholder={destinoKg ? 'ex.: 0,600' : 'ex.: 12'} value={estado.peso} disabled={travado}
+              {milheiro && (
+                <p className="sub" data-testid="dica-milheiro">
+                  No cupom, “ML” de saco ou embalagem é <b>milheiro</b> (1.000 unidades), não mililitro.{' '}
+                  {unidadesNaCaixa != null
+                    ? <>Este produto traz {qtd(unidadesNaCaixa)} unidades em cada {unid(estado.produto.unidade)}: 1 ML = {qtd(1000 / unidadesNaCaixa)} {unid(estado.produto.unidade)}.</>
+                    : <>1 ML = 1.000 ÷ (unidades em cada {unid(estado.produto.unidade)}) {unid(estado.produto.unidade)}.</>}
+                </p>
+              )}
+              <label>{destinoKg ? `Peso de 1 ${unid(it.unidade_cupom) || 'unidade'} (kg)` : destinoContado ? `${unid(estado.produto.unidade)} em 1 ${unid(it.unidade_cupom)}` : `Unidades em 1 ${unid(it.unidade_cupom)}`}
+                <input type="text" inputMode="decimal" placeholder={destinoKg ? 'ex.: 0,600' : destinoContado ? 'ex.: 10' : 'ex.: 12'} value={estado.peso} disabled={travado}
                   onChange={(e) => mudar({ peso: e.target.value, forcar: false })} />
               </label>
               {destinoKg && estado.peso !== '' && qCupom != null && entradaEmKg(it.descricao_cupom, it.unidade_cupom, qCupom)?.regra === 1 && (
@@ -279,7 +307,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
               )}
               {qCupom != null && pesoDigitado != null && totalPorPeso != null && !(absurdo && !estado.forcar) && (
                 <p className="sub" data-testid="vai-entrar">
-                  Vai entrar no estoque: {qtd(qCupom)} {unCupom} × {qtd(pesoDigitado)} {minusc(estado.produto.unidade)} = <b>{qtd(totalPorPeso)} {minusc(estado.produto.unidade)}</b>
+                  Vai entrar no estoque: {qtd(qCupom)} {milheiro ? 'ML (milheiro)' : unCupom} × {qtd(pesoDigitado)} {minusc(estado.produto.unidade)} = <b>{qtd(totalPorPeso)} {minusc(estado.produto.unidade)}</b>
                 </p>
               )}
             </>
@@ -297,7 +325,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           )}
           {conf && linha && (
             <p className="sub">
-              Linha: {qtd(conf.quantidade)} {unCupom} × {formatarReais(Number(it.valor_unitario))} = <b>{formatarReais(linha.valor)}</b>
+              Linha: {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} × {formatarReais(Number(it.valor_unitario))} = <b>{formatarReais(linha.valor)}</b>
               {converte && conf.entrada != null && <> · entra {qtd(linha.entrada)} {minusc(estado.produto.unidade)} no estoque</>}
             </p>
           )}

@@ -5,6 +5,7 @@ import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
+import { ehUnidadeDaLista } from './unidadesDaLista'
 import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
   HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
@@ -822,7 +823,7 @@ async function lerBuscaDosProdutos() {
   return com
 }
 /**
- * A unidade (e, para o produto que ele acrescentou, o nome do SisChef) de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → { unidade 'kg' | 'un', descricao }. Falha de leitura (tabela ainda não criada, rede)
+ * A unidade (e, para o produto que ele acrescentou, o nome do SisChef) de cada produto na planilha do Ivan (tabela produto_planilha, admin): produto_id → { unidade 'kg' | 'un' | 'ct' | 'pct', descricao }. Falha de leitura (tabela ainda não criada, rede)
  * devolve vazio: o catálogo segue com a unidade de itens_semana, como antes da planilha — melhor que derrubar a caixa de associação inteira.
  */
 async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; descricao: string }>> {
@@ -837,7 +838,8 @@ async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; d
     for (const x of (r.data ?? []) as { produto_id: number | string; unidade: string | null; descricao?: string | null }[]) {
       const id = Number(x.produto_id)
       const u = String(x.unidade ?? '').trim().toLowerCase()
-      if (Number.isFinite(id) && (u === 'kg' || u === 'un')) mapa.set(id, { unidade: u, descricao: String(x.descricao ?? '').replace(/\s+/g, ' ').trim() })
+      // kg e un da planilha de sempre e, desde 22/10/2026, ct (cento) e pct (pacote): produtos que já existiam no SisChef nessas unidades (sacos, garfo)
+      if (Number.isFinite(id) && ehUnidadeDaLista(u)) mapa.set(id, { unidade: u, descricao: String(x.descricao ?? '').replace(/\s+/g, ' ').trim() })
     }
   } catch (e) {
     console.warn('catalogoProdutos: não li a planilha de unidades', e instanceof Error ? e.name : '')
@@ -891,6 +893,23 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
     }
   }
   return [...porId.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+}
+/**
+ * A unidade de UM produto na planilha do Ivan (produto_planilha: 'kg', 'un', 'ct' ou 'pct'), ou null se ele não está nela ou a leitura falhou. Serve à caixa "Editar" de um item já
+ * associado no SisChef (ConversaoItemAssociado): sem a unidade ela não sabe se o produto é em CT/PCT, e aí o "C/ 100 UND" do nome conta unidades e NÃO vale como conversão.
+ * Lê uma linha só e nunca lança erro para a tela (sem resposta, a caixa segue como sempre).
+ */
+export async function unidadeDoProdutoNaPlanilha(produtoId: number | string): Promise<string | null> {
+  const id = Number(produtoId)
+  if (!Number.isInteger(id) || id <= 0) return null
+  try {
+    const r = await supabase.from('produto_planilha').select('unidade').eq('produto_id', id).limit(1)
+    if (r.error) return null
+    const u = String(((r.data ?? []) as { unidade: string | null }[])[0]?.unidade ?? '').trim().toLowerCase()
+    return ehUnidadeDaLista(u) ? u : null
+  } catch {
+    return null
+  }
 }
 /** Texto claro para o erro de associar: as mensagens do banco (cot_nfe_associar) já são em português e dizem o motivo; o resto vira um texto genérico. */
 function mensagemDaAssociacao(e: unknown): string {

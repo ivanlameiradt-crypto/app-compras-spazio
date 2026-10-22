@@ -725,3 +725,89 @@ describe('"Lembrar" de ponta a ponta: a linha que a confirmar-cupom grava é a q
     expect(r.valor_unitario).toBeCloseTo(99.875, 9)
   })
 })
+
+// 22/10/2026 — cupom da A. N. da Silva Descartáveis: os sacos vêm em "ML" (MILHEIRO, 1.000 unidades), o produto no SisChef é em CT (cento, "C/ 100 UND") e o garfo
+// vem em UN com produto em PCT. A tela pergunta "quantos CT vêm em 1 ML"; o servidor só confere que a unidade difere, guarda o fator e refaz o preço.
+describe('CT e PCT — sacos e garfo do cupom da A. N. da Silva (22/10): o servidor aceita, converte e lembra', () => {
+  const CNPJ_DESCARTAVEIS = '11222333000181'
+  const base = { desconto_item: 0, entrada_estoque: null, sugestao_produto: null, codigo_barras: null, casado_por: null, proposta: null }
+  const SACO: Item = { ...base, descricao_cupom: 'SACO 12X27 1/2 KG AD FONTEPLAST', unidade_cupom: 'ML', valor_unitario: 23.6, quantidade_cupom: 6 }
+  const GARFO: Item = { ...base, descricao_cupom: 'GARFO MASTER ULTRA BR 50 UND', unidade_cupom: 'UN', valor_unitario: 7.6, quantidade_cupom: 6 }
+  const EM_CT: Record<string, Produto> = {
+    '3476481': { id: '3476481', nome: 'SACO 1/2 KG - C/ 100 UND', unidade: 'ct' },
+    '3476453': { id: '3476453', nome: 'GARFO PARA BATATA - PCT 50 UND', unidade: 'pct' },
+  }
+  const SACO_OK = { indice: 0, insumo_id: '3476481', quantidade: 6, entrada: 60, lembrar: true }
+  const GARFO_OK = { indice: 1, insumo_id: '3476453', quantidade: 6, entrada: 6, lembrar: true }
+  const depsDoCupom = (itens: Item[] = [SACO, GARFO], total = 187.2) => fakeDeps({
+    cupom: cupom({ itens: structuredClone(itens), valor_a_pagar: total, emitente_cnpj: CNPJ_DESCARTAVEIS }),
+    async buscarProduto(id) { return EM_CT[id] ?? null },
+  })
+
+  it('ML do cupom × produto em CT: sem a entrada é 400 (diz "em CT"); com 6 ML × 10 = 60 ct a linha vira 60 ct a R$ 2,36 e a soma bate', async () => {
+    const sem = depsDoCupom()
+    const recusado = await tratar(pedido([{ indice: 0, insumo_id: '3476481', quantidade: 6, lembrar: true }, GARFO_OK]), IVAN, sem)
+    expect(recusado.status).toBe(400)
+    expect(recusado.corpo).toEqual({ erro: 'item 1: o cupom está em ML e o produto é em CT: informe quanto entra no estoque em CT' })
+    nadaGravado(sem)
+
+    const deps = depsDoCupom()
+    const r = await tratar(pedido([SACO_OK, GARFO_OK]), IVAN, deps)
+    expect(r.status).toBe(200)
+    const [saco, garfo] = deps.atualizacoes[0].itens
+    expect(saco).toMatchObject({ sugestao_produto: { id: '3476481' }, entrada_estoque: 60, quantidade_cupom: 6, casado_por: 'app' })
+    expect(saco.valor_unitario).toBeCloseTo(2.36, 9)                                     // (6 × 23,60) ÷ 60: o preço por CT
+    expect(Number(saco.entrada_estoque) * Number(saco.valor_unitario)).toBeCloseTo(141.6, 9)
+    expect(garfo).toMatchObject({ sugestao_produto: { id: '3476453' }, entrada_estoque: 6, valor_unitario: 7.6 })   // 1 PCT por UN: fator 1, preço do cupom
+  })
+
+  it('o aprendizado guarda o fator (10 ct por ML) e a unidade do produto; o garfo guarda fator 1 em pct', async () => {
+    const deps = depsDoCupom()
+    expect((await tratar(pedido([SACO_OK, GARFO_OK]), IVAN, deps)).status).toBe(200)
+    expect(deps.aprendizados).toHaveLength(2)
+    expect(deps.aprendizados[0]).toMatchObject({ insumo_id: '3476481', fator_conversao: 10, unidade_destino: 'ct', emitente_cnpj: CNPJ_DESCARTAVEIS, confirmado: true })
+    expect(deps.aprendizados[1]).toMatchObject({ insumo_id: '3476453', fator_conversao: 1, unidade_destino: 'pct', emitente_cnpj: CNPJ_DESCARTAVEIS, confirmado: true })
+  })
+
+  it('de ponta a ponta: no próximo cupom do fornecedor o mesmo saco (4 ML) casa sozinho e entram 40 ct a R$ 2,36; o ML não vira mililitro nem quilo', async () => {
+    const deps = depsDoCupom()
+    await tratar(pedido([SACO_OK, GARFO_OK]), IVAN, deps)
+    const lido: ItemLidoIA = { descricao: 'SACO 12X27 1/2 KG AD FONTEPLAST', quantidade: 4, unidade: 'ML', valor_unitario: 23.6, desconto: null, codigo_barras: null }
+    const [r] = casarItens([lido], CNPJ_DESCARTAVEIS, deps.aprendizados)
+    expect(r.sugestao_produto).toEqual({ id: '3476481' })
+    expect(r.casado_por).toBe('descricao')
+    expect(r.entrada_estoque).toBe(40)
+    expect(r.valor_unitario).toBeCloseTo(2.36, 9)
+    expect(casarItens([lido], '99888777000166', deps.aprendizados)[0].sugestao_produto).toBeNull()   // a chave é do fornecedor
+  })
+
+  it('UN do cupom × produto em PCT também pede a entrada (diz "em PCT")', async () => {
+    const sem = depsDoCupom()
+    const r = await tratar(pedido([SACO_OK, { indice: 1, insumo_id: '3476453', quantidade: 6, lembrar: true }]), IVAN, sem)
+    expect(r.status).toBe(400)
+    expect(r.corpo).toEqual({ erro: 'item 2: o cupom está em UN e o produto é em PCT: informe quanto entra no estoque em PCT' })
+    nadaGravado(sem)
+  })
+
+  it('mesma unidade (cupom em CT/PCT e produto em ct/pct, qualquer grafia): não pede entrada e RECUSA a que vier (gravaria um fator que encolhe o estoque)', async () => {
+    for (const [uCupom, produto] of [['CT', 'ct'], ['ct', 'CT'], ['PCT', 'pct'], [' pct ', 'PCT']] as const) {
+      const itens = [{ ...SACO, unidade_cupom: uCupom, quantidade_cupom: 4 }]
+      const EM = { ...EM_CT['3476481'], unidade: produto }
+      const buscarProduto = async () => EM
+      const ok = fakeDeps({ cupom: cupom({ itens: structuredClone(itens), valor_a_pagar: 94.4 }), buscarProduto })
+      expect((await tratar(pedido([{ indice: 0, insumo_id: '3476481', quantidade: 4, lembrar: true }]), IVAN, ok)).status, `${uCupom} × ${produto}`).toBe(200)
+      expect(ok.atualizacoes[0].itens[0]).toMatchObject({ entrada_estoque: 4, valor_unitario: 23.6 })
+      const com = fakeDeps({ cupom: cupom({ itens: structuredClone(itens), valor_a_pagar: 94.4 }), buscarProduto })
+      const r = await tratar(pedido([{ indice: 0, insumo_id: '3476481', quantidade: 4, entrada: 40, lembrar: true }]), IVAN, com)
+      expect(r.status, `${uCupom} × ${produto}`).toBe(400)
+      expect(String(r.corpo.erro)).toMatch(/mesma unidade/)
+      nadaGravado(com)
+    }
+  })
+
+  it('unidadeNorm: ct e pct passam como são (só perdem espaços e maiúsculas), não viram "un"', () => {
+    expect(unidadeNorm(' CT ')).toBe('ct')
+    expect(unidadeNorm('Pct')).toBe('pct')
+    expect(unidadeNorm('ML')).toBe('ml')
+  })
+})

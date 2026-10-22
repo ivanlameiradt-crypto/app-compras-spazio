@@ -457,6 +457,24 @@ describe('confirmar-cupom/index.ts — caminho feliz (o cupom do ATACADAO de 06/
     cupomIntocado()
   })
 
+  it('CT e PCT da planilha valem como a unidade do produto (22/10/2026: sacos e garfo que já existem no SisChef): cupom em KG pede a entrada "em CT"/"em PCT"; com ela o aprendizado guarda ct/pct; CX na planilha é ignorada', async () => {
+    h.banco.planilha = [{ produto_id: 3484974, unidade: 'CT' }, { produto_id: 3484991, unidade: 'PCT' }]
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(400)
+    expect(await corpoDe(r)).toEqual({ erro: 'item 1: o cupom está em KG e o produto é em CT: informe quanto entra no estoque em CT' })
+    cupomIntocado()
+    const r2 = await handler(confirmacao([{ ...CONFIRMACOES[0], entrada: 5 }, { ...CONFIRMACOES[1], entrada: 9.12 }]))
+    expect(r2.status).toBe(200)
+    expect(h.banco.aprendizado.map((a) => [a.insumo_id, a.unidade_destino])).toEqual([['3484974', 'ct'], ['3484991', 'pct']])
+    expect(Number(h.banco.aprendizado[0].fator_conversao)).toBeCloseTo(10, 9)             // 5 ct para 0,5 kg do cupom
+    h.banco.cupons = [cupomAtacadao()]
+    h.banco.aprendizado = []
+    h.banco.planilha = [{ produto_id: 3484974, unidade: 'CX' }]                          // fora da lista do app: vale a unidade de itens_semana (KG), que bate com o cupom
+    const r3 = await handler(confirmacao())
+    expect(r3.status).toBe(200)
+    expect(h.banco.aprendizado[0]).toMatchObject({ insumo_id: '3484974', unidade_destino: 'KG' })   // a de itens_semana, como estava (a planilha com CX não vale)
+  })
+
   it('o produto vem da linha MAIS RECENTE de itens_semana (order id desc, limit 1): a semana velha dizia UN e faria a confirmação falhar', async () => {
     const r = await handler(confirmacao())
     expect(r.status).toBe(200)

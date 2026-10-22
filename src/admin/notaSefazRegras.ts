@@ -158,7 +158,7 @@ export function conversaoDeItemAssociado(n: NotaSefazLista, it: ItemNotaSefaz): 
 const conversaoInformada = (d: AssociacaoApp): boolean => conversaoDaDecisao(d) != null
 /**
  * O que ainda FALTA na decisão do app para um item sem produto no SisChef (texto para o Ivan), ou null = decisão completa. Só trava quando a conversão
- * é OBRIGATÓRIA (situacaoConversao: nota em UN/CX/… e produto "(KG)" na lista — aí é certo que o SisChef vai pedir o fator) e ela não foi informada.
+ * é OBRIGATÓRIA (situacaoConversao: nota em UN/CX/… e produto "(KG)", CT ou PCT na lista — aí é certo que o SisChef vai pedir o fator) e ela não foi informada.
  * Nos outros casos ("opcional": produto "un", que é um chute pelo nome, ou produto novo sem unidade; "oculta": unidades iguais ou nota sem unidade) a
  * decisão está completa: o robô confere no cadastro vivo do SisChef e, se precisar da conversão, para a nota em "revisar" antes de gravar.
  */

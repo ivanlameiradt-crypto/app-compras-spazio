@@ -125,7 +125,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
               {/* Item que já vem associado, mas o SisChef o marcou UN DIFERE: aparece SÓ quando o robô parou pedindo (ou o Ivan já informou) — vazio, para o Ivan dizer o número */}
               {ok && it.n != null && (
                 <ConversaoItemAssociado item={{ ...it, n: it.n }} atual={conversaoDeItemAssociado(nota, it)} pede={itemPedeConversao(nota, it)}
-                  desabilitado={!podeAssociar} salvar={salvarConversaoItem} />
+                  desabilitado={!podeAssociar} salvar={salvarConversaoItem} buscarUnidade={api.unidadeDoProdutoNaPlanilha} />
               )}
             </li>
           )

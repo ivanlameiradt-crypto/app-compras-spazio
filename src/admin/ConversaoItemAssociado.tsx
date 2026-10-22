@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CONVERSAO_CASAS, CONVERSAO_MAXIMA, embalagemPeloNome, formatarConversao, formatarQuantidade, parseConversao, quantidadeNoEstoque, rotuloUnidade,
 } from './associacaoRegras'
 import type { ItemNotaSefaz } from '../lib/tipos'
+import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 
 /**
  * "Editar" de um item que JÁ vem associado no SisChef (pedido do Ivan, 21/10/2026: todo item tem o botão, mesmo o que está certo). O que se edita aqui é a
@@ -14,7 +15,7 @@ import type { ItemNotaSefaz } from '../lib/tipos'
  * A prévia "entram no estoque" é quantidade × conversão, com a quantidade que o SisChef mostra hoje para o item (a da linha de cima).
  * Item sem produto no SisChef não passa por aqui: lá é a caixa de associação (AssociarProduto) que pede a conversão junto com o produto e tem o seu "Editar".
  */
-export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar }: {
+export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar, buscarUnidade }: {
   item: ItemNotaSefaz & { n: number }
   /** A conversão que o Ivan já informou (decisão com origem "sischef"), ou null. */
   atual: number | null
@@ -22,19 +23,37 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   pede: boolean
   desabilitado: boolean
   salvar: (n: number, conversao: number | null) => Promise<void>
+  /** Lê a unidade do produto na lista do app (kg, un, ct, pct; null = não sabe). Produto em CT/PCT NÃO recebe a sugestão do nome ("C/ 100 UND" → 100): o 100 conta unidades e o
+   *  estoque é em CT (revisão independente de 22/10). Sem esta função (ou sem resposta) a sugestão segue como sempre. Enquanto lê, a sugestão fica escondida. */
+  buscarUnidade?: (produtoId: number | string) => Promise<string | null | undefined>
 }) {
   const [texto, setTexto] = useState('')
   const [editando, setEditando] = useState(false)
   const [salvo, setSalvo] = useState<number | null | undefined>(undefined) // o que acabou de gravar (vale até a releitura trazer o do servidor)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [lida, setLida] = useState<{ produto: string; unidade: string | null } | null>(null) // a última unidade lida e DE QUAL produto (a caixa pode trocar de item)
 
   const valorAtual = salvo !== undefined ? salvo : atual
   const unidade = rotuloUnidade(item.unidade_sischef)
   const conversao = texto.trim() !== '' ? parseConversao(texto) : null
   const invalida = texto.trim() !== '' && conversao == null
   const pendente = pede && valorAtual == null // o robô pediu e ainda ninguém informou: a caixa abre sozinha
-  const sugestao = embalagemPeloNome(item.descricao, item.unidade_sischef)
+  const aberta = pendente || editando
+  const codigoDoProduto = item.produto_id != null && String(item.produto_id).trim() !== '' ? String(item.produto_id).trim() : null
+  useEffect(() => {
+    if (!aberta || !buscarUnidade || codigoDoProduto == null) return
+    let vivo = true
+    Promise.resolve()
+      .then(() => buscarUnidade(codigoDoProduto))
+      .then((u) => { if (vivo) setLida({ produto: codigoDoProduto, unidade: u ?? null }) })
+      .catch(() => { if (vivo) setLida({ produto: codigoDoProduto, unidade: null }) })
+    return () => { vivo = false }
+  }, [aberta, buscarUnidade, codigoDoProduto])
+  // a unidade só vale para o produto de que foi lida: se a caixa passa a outro produto, volta a "ainda não li" (a sugestão fica escondida até a nova leitura)
+  const unidadeDoProduto = lida != null && lida.produto === codigoDoProduto ? lida.unidade : undefined
+  const lendoUnidade = aberta && !!buscarUnidade && codigoDoProduto != null && unidadeDoProduto === undefined
+  const sugestao = lendoUnidade || ehEmbalagemContada(unidadeDoProduto) ? null : embalagemPeloNome(item.descricao, item.unidade_sischef)
 
   async function guardar(valor: number | null) {
     if (enviando) return

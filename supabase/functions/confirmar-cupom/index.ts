@@ -72,7 +72,8 @@ Deno.serve(async (req: Request) => {
         const { data: pl } = await admin.from('produto_planilha').select('unidade, descricao').eq('produto_id', Number(id)).maybeSingle()
         const p = pl as { unidade?: string | null; descricao?: string | null } | null
         const daPlanilha = String(p?.unidade ?? '').trim().toLowerCase()
-        const unidadePlanilha = daPlanilha === 'kg' || daPlanilha === 'un' ? daPlanilha : null
+        // kg, un e (desde 22/10/2026) ct e pct: as mesmas de src/lib/unidadesDaLista.ts (lista do app) e do check de produto_planilha.unidade
+        const unidadePlanilha = ['kg', 'un', 'ct', 'pct'].includes(daPlanilha) ? daPlanilha : null
         if (!linha) {
           const nome = String(p?.descricao ?? '').replace(/\s+/g, ' ').trim()
           return nome !== '' && unidadePlanilha ? ({ id: String(Number(id)), nome, unidade: unidadePlanilha } satisfies Produto) : null

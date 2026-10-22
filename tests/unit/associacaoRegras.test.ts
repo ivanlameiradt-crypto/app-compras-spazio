@@ -57,18 +57,21 @@ describe('buscarProdutos (a caixa de associação)', () => {
 
 describe('situacaoConversao (a caixa pede, oferece ou esconde o campo da conversão?)', () => {
   // A unidade da lista do app é um palpite pelo nome: "kg" (nome com "(KG)") é confiável; "un" é o chute para todo o resto; null = produto novo.
+  // "ct" (cento) e "pct" (pacote) NÃO são palpite (desde 22/10/2026 só chegam pela planilha do app, que é a do SisChef): obrigam, como o kg.
   // O robô é quem confere no cadastro vivo antes de gravar: o app só OBRIGA quando tem certeza, e "opcional" nunca trava o Lançar.
-  const NOTAS: (string | null)[] = ['UN', 'KG', 'CX', 'L', 'PCT', '', null]
+  const NOTAS: (string | null)[] = ['UN', 'KG', 'CX', 'L', 'PCT', 'CT', '', null]
   const esperado = (nota: string | null, produto: string | null): ReturnType<typeof situacaoConversao> => {
     const n = (nota ?? '').trim().toUpperCase()
     const p = (produto ?? '').trim().toLowerCase()
     if (n === '') return 'oculta'                       // sem a unidade da nota não há o que comparar (o robô também barra)
     if (p === '') return 'opcional'                     // produto novo: unidade desconhecida
     if (p === 'kg') return n === 'KG' ? 'oculta' : 'obrigatoria'
+    if (p === 'ct') return n === 'CT' ? 'oculta' : 'obrigatoria'
+    if (p === 'pct') return n === 'PCT' ? 'oculta' : 'obrigatoria'
     return n === 'UN' ? 'oculta' : 'opcional'           // "un" é chute: no SisChef pode ser PCT/CX…
   }
 
-  it.each<string | null>(['kg', 'un', null, 'KG', ' un '])('produto %j × todas as unidades da nota (UN, KG, CX, L, PCT, vazia, null)', (produto) => {
+  it.each<string | null>(['kg', 'un', null, 'KG', ' un ', 'ct', 'CT', ' pct '])('produto %j × todas as unidades da nota (UN, KG, CX, L, PCT, CT, vazia, null)', (produto) => {
     for (const nota of NOTAS) expect([nota, produto, situacaoConversao(nota, produto)]).toEqual([nota, produto, esperado(nota, produto)])
   })
 
@@ -86,11 +89,22 @@ describe('situacaoConversao (a caixa pede, oferece ou esconde o campo da convers
     expect(situacaoConversao('CX', 'un')).toBe('opcional')
     expect(situacaoConversao('L', 'un')).toBe('opcional')
     expect(situacaoConversao('PCT', 'un')).toBe('opcional')
+    // produto "ct" / "pct" (cento e pacote, 22/10/2026 — a unidade vem da planilha do SisChef, não é palpite): só a MESMA unidade esconde; o resto OBRIGA
+    expect(situacaoConversao('CT', 'ct')).toBe('oculta')
+    expect(situacaoConversao(' ct ', 'CT')).toBe('oculta')
+    expect(situacaoConversao('UN', 'ct')).toBe('obrigatoria')                   // saco: "quantos CT vêm em 1 UN" — o SisChef pede no modal "UN DIFERE"
+    expect(situacaoConversao('KG', 'ct')).toBe('obrigatoria')
+    expect(situacaoConversao('CX', 'ct')).toBe('obrigatoria')
+    expect(situacaoConversao('PCT', 'ct')).toBe('obrigatoria')                  // pacote e cento são unidades diferentes
+    expect(situacaoConversao('PCT', 'pct')).toBe('oculta')
+    expect(situacaoConversao('UN', 'pct')).toBe('obrigatoria')                  // garfo: "quantos PCT vêm em 1 UN"
+    expect(situacaoConversao('CX', 'pct')).toBe('obrigatoria')
+    expect(situacaoConversao('CT', 'pct')).toBe('obrigatoria')
     // produto novo (unidade desconhecida): sempre OFERECE
-    for (const nota of ['UN', 'KG', 'CX', 'L', 'PCT']) expect(situacaoConversao(nota, null)).toBe('opcional')
+    for (const nota of ['UN', 'KG', 'CX', 'L', 'PCT', 'CT']) expect(situacaoConversao(nota, null)).toBe('opcional')
     expect(situacaoConversao('UN', undefined)).toBe('opcional')
     // nota sem unidade: nada a comparar
-    for (const produto of ['kg', 'un', null, 'KG', ' un ']) {
+    for (const produto of ['kg', 'un', null, 'KG', ' un ', 'ct', 'pct']) {
       expect(situacaoConversao('', produto)).toBe('oculta')
       expect(situacaoConversao(null, produto)).toBe('oculta')
     }
@@ -341,6 +355,13 @@ describe('formatarConversao e textoConversao (como a tela mostra a conversão)',
     expect(textoConversao(' cx ', 'KG', 12)).toBe('1 CX = 12 KG')
     expect(textoConversao(null, 'kg', 2)).toBe('conversão 2')
     expect(textoConversao('', 'un', 2)).toBe('conversão 2')
+  })
+
+  it('produto em CT ou PCT (unidade confiável, vem da planilha do SisChef): "1 UN = 10 CT" / "1 UN = 1 PCT", com a unidade certa e não "na unidade do produto"', () => {
+    expect(textoConversao('UN', 'ct', 10)).toBe('1 UN = 10 CT')
+    expect(textoConversao('CX', 'pct', 12)).toBe('1 CX = 12 PCT')
+    expect(textoConversao('UN', ' PCT ', 1)).toBe('1 UN = 1 PCT')
+    expect(textoConversao('CT', 'ct', 3)).toBe('1 CT = 3 na unidade do produto no SisChef')    // unidades iguais: conversão aberta pelo link, como no kg
   })
 
   it('unidade do produto que é palpite ("un") ou desconhecida (produto novo): "na unidade do produto no SisChef", nunca "= 2 UN"', () => {

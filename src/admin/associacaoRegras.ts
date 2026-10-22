@@ -3,6 +3,7 @@
 // testes de tela trocam o api inteiro por um mock).
 import { normalizar } from '../lib/regras'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
+import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 
 /** Quantos produtos a busca mostra de uma vez (o resto some atrás de "digite mais letras"). */
 export const MAX_RESULTADOS = 8
@@ -133,6 +134,8 @@ export type SituacaoConversao = 'obrigatoria' | 'opcional' | 'oculta'
  * Regra (nota = sem espaços, em maiúsculas; produto = sem espaços, em minúsculas; vazio/null = desconhecida):
  *  - nota desconhecida → "oculta" (sem a unidade da nota não há o que comparar; o robô também barra isso antes de associar);
  *  - produto "kg": nota "KG" → "oculta"; qualquer outra → "obrigatoria" (certeza de que o SisChef vai pedir o fator no modal "UN DIFERE");
+ *  - produto "ct" ou "pct" (22/10/2026): a unidade NUNCA é palpite (só chega pela planilha do app, que é a do SisChef): nota igual → "oculta"; qualquer outra →
+ *    "obrigatoria", como no kg (nota em UN e produto em CT: o SisChef pede "quantos CT vêm em 1 UN" no modal "UN DIFERE");
  *  - produto "un" (ou qualquer palpite que não seja "kg"): nota igual → "oculta"; diferente → "opcional" (pode ser que no SisChef sejam iguais);
  *  - produto desconhecida (produto novo) → "opcional".
  * "opcional" NUNCA trava o Lançar (notaSefazRegras.faltaNaDecisao); "oculta" ainda pode ser aberta por um link na caixa, para o caso raro de o
@@ -143,7 +146,7 @@ export function situacaoConversao(unidadeNota: string | null | undefined, unidad
   const produto = (unidadeProduto ?? '').trim().toLowerCase()
   if (nota === '') return 'oculta'
   if (produto === '') return 'opcional'
-  if (produto === 'kg') return nota === 'KG' ? 'oculta' : 'obrigatoria'
+  if (produto === 'kg' || ehEmbalagemContada(produto)) return nota === produto.toUpperCase() ? 'oculta' : 'obrigatoria'
   return nota === produto.toUpperCase() ? 'oculta' : 'opcional'
 }
 
@@ -193,7 +196,7 @@ export function parseConversao(texto: string): number | null {
 export const formatarConversao = (v: number): string => v.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: CONVERSAO_CASAS })
 /**
  * A conversão como a tela a mostra (eco "Vai gravar", linha "confirmado no app", bloco "o robô vai associar"). "1 UN = 0,395 KG" só quando a unidade
- * do produto é CONFIÁVEL — situacaoConversao "obrigatoria", isto é, produto com "(KG)" no nome. Nos outros casos a unidade da lista do app é um palpite
+ * do produto é CONFIÁVEL — situacaoConversao "obrigatoria", isto é, produto com "(KG)" no nome ou em CT/PCT. Nos outros casos a unidade da lista do app é um palpite
  * ("un" para todo nome sem "(KG)") ou não existe (produto novo): escrever "1 UN = 2 UN" quando no SisChef o produto pode estar em PCT enganaria o
  * Ivan, então fica "1 UN = 2 na unidade do produto no SisChef" — a mesma frase nos três lugares, para a tela não se contradizer. Sem a unidade da
  * nota (decisão antiga, leitura sem unidade) não há com o que comparar: só "conversão 0,395".

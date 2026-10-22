@@ -143,4 +143,51 @@ describe('NotaSefaz — "Editar" em todo item associado: embalagem de várias un
     expect(await item.findByRole('alert')).toHaveTextContent('maior que zero')
     expect(item.queryByTestId('conversao-item-informada')).not.toBeInTheDocument()
   })
+  // 22/10/2026 (revisão independente do suporte a CT/PCT): item já associado a um produto em CT. O "C/ 100 UND" do nome conta unidades, mas o estoque é em CT:
+  // "1 UN = 100" lançaria 100 vezes demais. A sugestão do nome só vale quando o produto não é CT/PCT (a unidade vem da planilha do app, lida quando a caixa abre).
+  describe('produto em CT ou PCT: a caixa lê a unidade do produto antes de sugerir a embalagem pelo nome', () => {
+    const SACO = 3476481
+    const notaDoSaco = () => mateusKetchup({ itens: [
+      { n: 3, descricao: 'CÓD. FOR: 771 SACO PEAD 1/2KG C/ 100 UND', qtd: 10, unidade_sischef: 'UN', produto_id: String(SACO), produto_nome: 'SACO 1/2 KG - C/ 100 UND', associacao: 'sischef' },
+    ] as unknown as NotaSefazLista['itens'] })
+
+    it('em CT: Editar NÃO sugere "usar 100" (a leitura da unidade termina e a sugestão continua fora)', async () => {
+      m.notasALancar.mockResolvedValue([notaDoSaco()])
+      m.unidadeDoProdutoNaPlanilha.mockResolvedValue('ct')
+      render(<NotaSefaz />)
+      const item = within((await itens())[0])
+      await userEvent.click(item.getByRole('button', { name: 'Editar' }))
+      await waitFor(() => expect(m.unidadeDoProdutoNaPlanilha).toHaveBeenCalledWith(String(SACO)))
+      await m.unidadeDoProdutoNaPlanilha.mock.results[0].value                                  // a leitura terminou
+      await waitFor(() => expect(item.getByLabelText(ROTULO_UN)).toHaveValue(''))
+      expect(item.queryByTestId('conversao-item-sugestao')).not.toBeInTheDocument()
+    })
+
+    it('enquanto a unidade ainda está sendo lida a sugestão fica ESCONDIDA; só aparece se a leitura disser UN (e fica fora se disser CT)', async () => {
+      m.notasALancar.mockResolvedValue([notaDoSaco()])
+      let liberar: (u: string | null) => void = () => undefined
+      m.unidadeDoProdutoNaPlanilha.mockReturnValue(new Promise<string | null>((r) => { liberar = r }))
+      render(<NotaSefaz />)
+      const item = within((await itens())[0])
+      await userEvent.click(item.getByRole('button', { name: 'Editar' }))
+      await waitFor(() => expect(m.unidadeDoProdutoNaPlanilha).toHaveBeenCalled())
+      expect(item.getByLabelText(ROTULO_UN)).toBeInTheDocument()
+      expect(item.queryByTestId('conversao-item-sugestao')).not.toBeInTheDocument()          // lendo: nada de "usar 100" ainda
+      liberar('un')
+      expect(await item.findByTestId('conversao-item-sugestao')).toHaveTextContent('usar 100')
+    })
+
+    it('controle: em UN a sugestão aparece depois da leitura; se a leitura falha ou o produto não está na planilha, a sugestão aparece como sempre', async () => {
+      for (const leitura of [() => m.unidadeDoProdutoNaPlanilha.mockResolvedValue('un'), () => m.unidadeDoProdutoNaPlanilha.mockResolvedValue(null),
+        () => m.unidadeDoProdutoNaPlanilha.mockRejectedValue(new Error('rede'))]) {
+        m.notasALancar.mockResolvedValue([notaDoSaco()])
+        leitura()
+        const { unmount } = render(<NotaSefaz />)
+        const item = within((await itens())[0])
+        await userEvent.click(item.getByRole('button', { name: 'Editar' }))
+        expect(await item.findByTestId('conversao-item-sugestao')).toHaveTextContent('usar 100')
+        unmount()
+      }
+    })
+  })
 })

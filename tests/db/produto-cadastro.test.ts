@@ -82,16 +82,52 @@ describe('produto_cadastro_concluir', () => {
     expect(await como(db, ADMIN, 'select 1 from cot_produto_busca where produto_id = 3469720')).toEqual([])
   })
 
-  it('produto criado com unidade diferente da escolhida, ou unidade do SisChef fora de KG/UN: vira REVISAR e NADA entra na planilha', async () => {
+  it('produto criado com unidade diferente da escolhida, ou unidade do SisChef fora de KG/UN/CT/PCT (CX): vira REVISAR e NADA entra na planilha', async () => {
     const db = await banco()
     const a = await pedir(db)
     expect(await concluir(db, a, 'CADASTRADO', `, 3925001, null, 'UN'`)).toBe('REVISAR')
     const b = await pedir(db, { chave_nome: `'outro nome'` })
-    expect(await concluir(db, b, 'JA_EXISTIA', `, 3925002, null, 'PCT'`)).toBe('REVISAR')
+    expect(await concluir(db, b, 'JA_EXISTIA', `, 3925002, null, 'CX'`)).toBe('REVISAR')
     expect(await como(db, ADMIN, 'select 1 from produto_planilha where produto_id in (3925001, 3925002)')).toEqual([])
     const motivos = await como(db, ADMIN, 'select motivo from produto_cadastro order by criado_em')
     expect(String((motivos[0] as { motivo: string }).motivo)).toMatch(/foi criado no SisChef com a unidade UN/)
-    expect(String((motivos[1] as { motivo: string }).motivo)).toMatch(/só aceita KG ou UN/)
+    expect(String((motivos[1] as { motivo: string }).motivo)).toMatch(/a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT/)
+  })
+
+  // 22/10/2026 (cupom da A. N. da Silva): os sacos em CT ("SACO 1/2 KG - C/ 100 UND") e o garfo em PCT já existiam no SisChef, e o app só aceitava KG e UN
+  it('CT e PCT: o produto que JÁ existia no SisChef nessas unidades entra na planilha (a lista do app) com a unidade lida, como o de KG e UN', async () => {
+    const db = await banco()
+    const saco = await pedir(db, { chave_nome: `'saco 1 2 kg'`, descricao: `'SACO 1/2 KG - INSUMOS'`, palavras: `'saco fonteplast'` })
+    expect(await concluir(db, saco, 'JA_EXISTIA', `, 3476481, null, 'CT', 'SACO 1/2 KG - C/ 100 UND'`)).toBe('JA_EXISTIA')
+    const garfo = await pedir(db, { chave_nome: `'garfo master'`, descricao: `'GARFO MASTER ULTRA BR 50 UND - INSUMOS'` })
+    expect(await concluir(db, garfo, 'JA_EXISTIA', `, 3476453, null, 'pct', 'GARFO PARA BATATA - PCT 50 UND'`)).toBe('JA_EXISTIA')   // minúscula: o banco põe em maiúscula
+    expect(await como(db, ADMIN, 'select produto_id::int as produto_id, descricao, unidade from produto_planilha order by produto_id')).toEqual([
+      { produto_id: 3476453, descricao: 'GARFO PARA BATATA - PCT 50 UND', unidade: 'PCT' },
+      { produto_id: 3476481, descricao: 'SACO 1/2 KG - C/ 100 UND', unidade: 'CT' },
+    ])
+    expect(await como(db, ADMIN, 'select produto_id::int as produto_id, estado, motivo from produto_cadastro order by produto_id')).toEqual([
+      { produto_id: 3476453, estado: 'JA_EXISTIA', motivo: null }, { produto_id: 3476481, estado: 'JA_EXISTIA', motivo: null },
+    ])
+    expect(await como(db, ADMIN, 'select palavras from cot_produto_busca where produto_id = 3476481')).toEqual([{ palavras: 'saco fonteplast' }])   // as palavras-chave entram também
+    expect(await como(db, ADMIN, `${ACEITO_PELO_APP} order by produto_id`)).toEqual([{ produto_id: '3476453' }, { produto_id: '3476481' }])
+  })
+
+  it('CT e PCT só valem para o que JÁ existia: produto CRIADO agora tem de sair do SisChef com a unidade escolhida (KG ou UN); a planilha com outra unidade segue recusando', async () => {
+    const db = await banco()
+    const a = await pedir(db, { unidade: `'UN'` })
+    expect(await concluir(db, a, 'CADASTRADO', `, 3925020, null, 'CT'`)).toBe('REVISAR')   // pediu UN e o SisChef criou CT
+    await db.exec(`insert into produto_planilha (produto_id, descricao, unidade) values (3925021, 'JA TINHA EM UN', 'UN')`)
+    const b = await pedir(db, { chave_nome: `'outro nome'` })
+    expect(await concluir(db, b, 'JA_EXISTIA', `, 3925021, null, 'CT'`)).toBe('REVISAR')   // a planilha tem UN e o SisChef diz CT: nada muda
+    expect(await como(db, ADMIN, 'select produto_id::int as produto_id, unidade from produto_planilha order by produto_id')).toEqual([{ produto_id: 3925021, unidade: 'UN' }])
+  })
+
+  it('a planilha aceita KG, UN, CT e PCT e recusa o resto (CX, L, minúscula) no próprio banco', async () => {
+    const db = await banco()
+    await db.exec(`insert into produto_planilha (produto_id, descricao, unidade) values (3925030, 'A', 'KG'), (3925031, 'B', 'UN'), (3925032, 'C', 'CT'), (3925033, 'D', 'PCT')`)
+    for (const u of ['CX', 'L', 'ct', 'FD', '']) {
+      await expect(db.exec(`insert into produto_planilha (produto_id, descricao, unidade) values (3925040, 'E', '${u}')`)).rejects.toThrow(/produto_planilha_unidade_check|check constraint/)
+    }
   })
 
   it('a planilha já tem o produto com outra unidade: REVISAR e a linha dela não muda', async () => {
@@ -124,10 +160,10 @@ describe('produto_cadastro_concluir', () => {
 })
 
 // A regra do app para aceitar produto FORA de itens_semana, reproduzida em SQL: src/lib/api.ts (lerPlanilhaDeUnidades + catalogoProdutos) e
-// supabase/functions/confirmar-cupom/index.ts (buscarProduto) só aceitam a linha da planilha com unidade kg/un e descrição com algo além de espaço
-// (`String(unidade ?? '').trim().toLowerCase()` em kg/un e `String(descricao ?? '').replace(/\s+/g, ' ').trim() !== ''`).
+// supabase/functions/confirmar-cupom/index.ts (buscarProduto) só aceitam a linha da planilha com unidade kg/un/ct/pct e descrição com algo além de espaço
+// (`String(unidade ?? '').trim().toLowerCase()` em kg/un/ct/pct e `String(descricao ?? '').replace(/\s+/g, ' ').trim() !== ''`).
 const ACEITO_PELO_APP = `select produto_id::text as produto_id from produto_planilha
-  where lower(btrim(coalesce(unidade, ''))) in ('kg', 'un') and btrim(regexp_replace(coalesce(descricao, ''), '\\s+', ' ', 'g')) <> ''`
+  where lower(btrim(coalesce(unidade, ''))) in ('kg', 'un', 'ct', 'pct') and btrim(regexp_replace(coalesce(descricao, ''), '\\s+', ' ', 'g')) <> ''`
 
 describe('produto_cadastro_concluir — correções da revisão nº 2 (14/10/2026)', () => {
   it('I3: a planilha tinha o produto SÓ com a unidade (descrição nula, em branco ou só tabulação): o JA_EXISTIA preenche a descrição, a unidade fica e o produto passa a valer para o app fora de itens_semana', async () => {

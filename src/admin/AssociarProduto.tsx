@@ -13,7 +13,7 @@
 // de adivinhar (uma peça de peso variável, por exemplo, não deve ter conversão fixa: aí o certo é escolher outro produto ou associar no SisChef).
 // MAS a unidade que a lista do app conhece é um palpite pelo nome ("kg" só com "(KG)" no nome; "un" para todo o resto; nada para produto novo), e
 // quem confere de verdade é o robô, no cadastro vivo do SisChef, antes de gravar. Então o campo da conversão tem três jeitos (situacaoConversao):
-// OBRIGATÓRIO quando é certo que o SisChef vai pedir (nota em UN, produto "(KG)"); OPCIONAL quando o app só desconfia (produto "un" ou novo) — aí
+// OBRIGATÓRIO quando é certo que o SisChef vai pedir (nota em UN, produto "(KG)", ou produto em CT/PCT, desde 22/10/2026); OPCIONAL quando o app só desconfia (produto "un" ou novo) — aí
 // o Ivan informa se souber, e se deixar vazio o robô para a nota pedindo, caso precise; ESCONDIDO quando as unidades batem — com um link para
 // abrir, para o caso raro de o produto estar em outra unidade no SisChef apesar do nome.
 // "Lembrar esta descrição" (marcado de início): ao confirmar, a descrição que veio na nota vira palavra-chave do produto, e da próxima vez a caixa
@@ -26,6 +26,7 @@ import {
 } from './associacaoRegras'
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
+import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 
 interface Props {
   item: ItemNotaSefaz
@@ -94,7 +95,8 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   const campoVisivel = atual != null && (situacao !== 'oculta' || conversaoAberta)
   // Valor que o campo mostra enquanto o Ivan não digita: a conversão já gravada para ESTE produto; senão, quando é obrigatória, o peso tirado do nome da nota.
   const gravada = atual != null && decisao?.produto_id === atual.produto_id ? conversaoDaDecisao(decisao) : null
-  const peso = atual != null && situacao === 'obrigatoria' && gravada == null ? pesoPeloNome(item.descricao, item.unidade_sischef) : null
+  // O peso do nome ("395G" → 0,395) só serve a produto em KG. Produto em CT/PCT também tem conversão obrigatória (22/10/2026), mas "3KG" no nome de um saco é a capacidade, não quantas unidades vêm no CT.
+  const peso = atual != null && situacao === 'obrigatoria' && gravada == null && rotuloUnidade(atual.unidade) === 'KG' ? pesoPeloNome(item.descricao, item.unidade_sischef) : null
   const padrao = gravada != null ? formatarConversao(gravada) : peso != null ? formatarConversao(peso.kg) : ''
   const valorConversao = conversaoTexto ?? padrao
   // Em qualquer modo: texto digitado e inválido trava o Confirmar (nunca se grava um palpite); campo vazio só trava quando é obrigatório.
@@ -243,7 +245,12 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                       Sugestão tirada do nome da nota ({peso.trecho} = {formatarConversao(peso.kg)}). Confira na embalagem e corrija se precisar. O robô grava essa conversão no SisChef junto com a associação.
                     </p>
                   ) : (
-                    <p className="sub">Ex.: lata de 395 g = 0,395. O robô grava essa conversão no SisChef junto com a associação.</p>
+                    <p className="sub" data-testid="conversao-exemplo">
+                      {ehEmbalagemContada(atual.unidade)
+                        ? `Ex.: se cada ${unidadeNota} da nota traz 10 ${rotuloUnidade(atual.unidade)}, digite 10.`
+                        : 'Ex.: lata de 395 g = 0,395.'}{' '}
+                      O robô grava essa conversão no SisChef junto com a associação.
+                    </p>
                   )}
                 </>
               ) : (

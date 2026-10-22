@@ -31,7 +31,7 @@ import {
   comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
   associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, pedirCadastroProduto, prepararCotacoes,
-  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha,
+  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha, unidadeDoProdutoNaPlanilha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
@@ -905,6 +905,24 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
       expect(r.map((p) => [p.produto_id, p.unidade])).toEqual([[3882028, 'kg'], [3469626, 'kg'], [3476511, 'un']])
     })
 
+    it('CT (cento) e PCT (pacote) da planilha valem (22/10/2026: sacos e garfo que já existiam no SisChef nessas unidades); CX, L e o resto continuam fora da lista', async () => {
+      const planilha = cadeia({ data: [
+        { produto_id: 3476481, unidade: 'CT', descricao: 'SACO 1/2 KG - C/ 100 UND' },        // fora de itens_semana: entra pela descrição, em ct
+        { produto_id: '3476453', unidade: 'pct', descricao: ' GARFO PARA BATATA  - PCT 50 UND ' },
+        { produto_id: 3469626, unidade: ' Ct ' },                                             // produto da semana: a unidade da planilha manda (ct)
+        { produto_id: 3882028, unidade: 'CX', descricao: 'CAIXA QUALQUER' },                  // recusada: não vira produto nem muda a unidade de itens_semana
+        { produto_id: 3476511, unidade: 'L' },
+      ], error: null, status: 200 })
+      from.mockReturnValueOnce(lista()).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 })).mockReturnValueOnce(planilha)
+      const r = await catalogoProdutos()
+      expect(r.find((p) => p.produto_id === 3476481)).toEqual({ produto_id: 3476481, nome: 'SACO 1/2 KG - C/ 100 UND', unidade: 'ct' })
+      expect(r.find((p) => p.produto_id === 3476453)).toEqual({ produto_id: 3476453, nome: 'GARFO PARA BATATA - PCT 50 UND', unidade: 'pct' })
+      expect(r.find((p) => p.produto_id === 3469626)?.unidade).toBe('ct')
+      expect(r.find((p) => p.produto_id === 3882028)?.unidade).toBe('un')                     // ficou como estava em itens_semana
+      expect(r.find((p) => p.produto_id === 3476511)?.unidade).toBe('kg')
+      expect(r.some((p) => p.nome === 'CAIXA QUALQUER')).toBe(false)
+    })
+
     it('produto que o Ivan acrescentou pela planilha (com descrição) entra na lista mesmo fora de itens_semana, com as palavras-chave dele', async () => {
       const busca = cadeia({ data: [{ produto_id: 3476366, palavras: 'LACTA LAKA OREO', nome_corrigido: null }], error: null, status: 200 })
       const planilha = cadeia({ data: [
@@ -1140,6 +1158,28 @@ describe('cadastro de produto novo: pedirCadastroProduto e statusDoCadastroProdu
     from.mockReturnValueOnce(consulta({ data: [{ ...LINHA, estado: 'CADASTRADO', produto_id: 3924284 }], error: null }))
       .mockReturnValueOnce(consulta({ data: [{ descricao: '', unidade: null }], error: null }))
     expect(await statusDoCadastroProduto({ id: 'ped-1' })).toMatchObject({ produto_id: 3924284, descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', unidade: 'KG' })
+  })
+
+  it('unidadeDoProdutoNaPlanilha: lê UMA linha de produto_planilha e devolve a unidade em minúscula (kg, un, ct, pct); fora da lista, sem linha, código inválido ou erro → null', async () => {
+    const ler = async (resp: Parameters<typeof consulta>[0] | 'lancar') => {
+      if (resp === 'lancar') from.mockImplementationOnce(() => { throw new Error('rede') }); else from.mockReturnValueOnce(consulta(resp))
+      return unidadeDoProdutoNaPlanilha(3476481)
+    }
+    const q = consulta({ data: [{ unidade: 'CT' }], error: null })
+    from.mockReturnValueOnce(q)
+    expect(await unidadeDoProdutoNaPlanilha('3476481')).toBe('ct')
+    expect(from).toHaveBeenCalledWith('produto_planilha')
+    expect(q.eq).toHaveBeenCalledWith('produto_id', 3476481)
+    expect(q.limit).toHaveBeenCalledWith(1)
+    expect(await ler({ data: [{ unidade: ' pct ' }], error: null })).toBe('pct')
+    expect(await ler({ data: [{ unidade: 'KG' }], error: null })).toBe('kg')
+    expect(await ler({ data: [{ unidade: 'CX' }], error: null })).toBeNull()                   // fora da lista do app
+    expect(await ler({ data: [], error: null })).toBeNull()                                   // produto que não está na planilha
+    expect(await ler({ data: null, error: { message: 'permission denied' } })).toBeNull()
+    expect(await ler('lancar')).toBeNull()                                                    // nunca lança erro para a tela
+    from.mockClear()
+    for (const ruim of [0, -3, 1.5, 'abc', '']) expect(await unidadeDoProdutoNaPlanilha(ruim as never)).toBeNull()
+    expect(from).not.toHaveBeenCalled()                                                       // código inválido: nem consulta
   })
 
   it('statusDoCadastroProduto: REVISAR com o código do produto (C2) devolve o código, sem ler a planilha', async () => {
