@@ -262,6 +262,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                         ? 'Pelo nome, o produto parece estar na mesma unidade da nota no SisChef. '
                         : 'A lista do app não sabe ao certo a unidade deste produto no SisChef. '}
                     Se lá ele também for em {unidadeNota}, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
+                    {' '}Se cada {unidadeNota} da nota é uma caixa ou um pacote com várias unidades (ex.: caixa de 168), digite quantas.
                   </p>
                 </>
               )}
@@ -286,7 +287,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
             <p className="sub" data-testid="sem-conversao">
               Sem conversão: a nota e o produto estão na mesma unidade ({unidadeNota}).{' '}
               <button type="button" className="link" data-testid="abrir-conversao" disabled={enviando} onClick={() => setConversaoAberta(true)}>
-                O produto no SisChef está em outra unidade? Informar a conversão
+                Cada {unidadeNota} da nota é uma caixa ou pacote com várias unidades? O produto no SisChef está em outra unidade? Informar a conversão
               </button>
             </p>
           )}
