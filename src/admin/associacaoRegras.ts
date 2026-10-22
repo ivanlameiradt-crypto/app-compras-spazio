@@ -196,7 +196,7 @@ export function parseConversao(texto: string): number | null {
 export const formatarConversao = (v: number): string => v.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: CONVERSAO_CASAS })
 /**
  * A conversão como a tela a mostra (eco "Vai gravar", linha "confirmado no app", bloco "o robô vai associar"). "1 UN = 0,395 KG" só quando a unidade
- * do produto é CONFIÁVEL — situacaoConversao "obrigatoria", isto é, produto com "(KG)" no nome. Nos outros casos a unidade da lista do app é um palpite
+ * do produto é CONFIÁVEL — situacaoConversao "obrigatoria", isto é, produto com "(KG)" no nome ou em CT/PCT. Nos outros casos a unidade da lista do app é um palpite
  * ("un" para todo nome sem "(KG)") ou não existe (produto novo): escrever "1 UN = 2 UN" quando no SisChef o produto pode estar em PCT enganaria o
  * Ivan, então fica "1 UN = 2 na unidade do produto no SisChef" — a mesma frase nos três lugares, para a tela não se contradizer. Sem a unidade da
  * nota (decisão antiga, leitura sem unidade) não há com o que comparar: só "conversão 0,395".

@@ -21,6 +21,7 @@ describe('unidadesNaEmbalagem — o número que o NOME do produto diz ("C/ 100 U
   it.each([
     ['SACO 1/2 KG - C/ 100 UND', 100],
     ['SACO 2KG - C/ 100 UND', 100],
+    ['SACOLA CHOPP (4CMX20CM) - PCT C/ 100 UND', 100],      // o saco de chope real do SisChef (3476489): as medidas "4CMX20CM" não contam
     ['GARFO PARA BATATA - PCT 50 UND', 50],
     ['COPO 300 ML C/50', 50],
     ['COPO 300 ML - C / 50 UND', 50],

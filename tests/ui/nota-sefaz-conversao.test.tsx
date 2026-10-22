@@ -216,3 +216,61 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
     expect(await leite2.findByTestId('associacao-confirmada')).toHaveTextContent('1 UN = 0,395 KG')
   })
 })
+
+// 22/10/2026 — produto em CT/PCT (sacos e garfo do cupom da A. N. da Silva): a nota em outra unidade também PEDE a conversão (como o KG), mas o peso que está no
+// nome da nota ("3KG" de um saco é a capacidade) NÃO é quantas unidades vêm no CT e nunca pode virar sugestão.
+describe('NotaSefaz — produto em CT ou PCT: conversão obrigatória, sem sugestão de peso pelo nome da nota (22/10)', () => {
+  const SACO = 3476484
+  const GARFO = 3476453
+  const CAT_CT: ProdutoCatalogo[] = [
+    { produto_id: SACO, nome: 'SACO 2KG - C/ 100 UND', unidade: 'ct' },
+    { produto_id: GARFO, nome: 'GARFO PARA BATATA - PCT 50 UND', unidade: 'pct' },
+  ]
+  const dec = (id: number, nome: string, unidade: string, conversao?: number) =>
+    ({ produto_id: id, produto_nome: nome, unidade, origem: 'lista', por: 'ivan@spazio.invalid', em: '2026-10-22T10:00:00Z', ...(conversao === undefined ? {} : { conversao }) })
+  const nota = (conversaoSaco?: number): NotaSefazLista => ({
+    chave: CHAVE, cnpj_emitente: '11222333000181', emitente: 'A N DA SILVA DESCARTAVEIS LTDA', numero: '000001234', emissao: '2026-10-22', valor_nf: 340,
+    situacao: 'na_fila', lancada_em: null, nf_sischef: null, parcelas: [],
+    itens: [
+      { n: 1, descricao: 'SACO 24X38 3KG BD LISO', qtd: 10, unidade_sischef: 'UN', produto_id: null },
+      { n: 2, descricao: 'GARFO MASTER ULTRA BR 50 UND', qtd: 6, unidade_sischef: 'PCT', produto_id: null },
+    ],
+    associacoes_app: { '1': dec(SACO, 'SACO 2KG - C/ 100 UND', 'ct', conversaoSaco), '2': dec(GARFO, 'GARFO PARA BATATA - PCT 50 UND', 'pct') },
+  })
+  beforeEach(() => { m.catalogoProdutos.mockResolvedValue(CAT_CT); m.associarItem.mockResolvedValue(undefined) })
+  const itemDe = async (n: number) => within((await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item'))[n])
+
+  it('saco: nota em UN × produto em CT pede "Quanto vale 1 UN em CT?" com o campo VAZIO (o "3KG" do nome não é sugestão), exemplo em CT, Confirmar travado e Lançar travado', async () => {
+    m.notasALancar.mockResolvedValue([nota()])
+    render(<NotaSefaz />)
+    const saco = await itemDe(0)
+    expect(await saco.findByLabelText('Quanto vale 1 UN em CT?')).toHaveValue('')
+    expect(saco.queryByTestId('conversao-sugerida')).not.toBeInTheDocument()
+    expect(saco.getByTestId('conversao-exemplo')).toHaveTextContent('Ex.: se cada UN da nota traz 10 CT, digite 10.')
+    expect(saco.getByTestId('conversao-exemplo')).not.toHaveTextContent('395')
+    expect(saco.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Lançar' })).toBeDisabled()
+    expect(await screen.findByTestId('lancar-travado')).toHaveTextContent('informe quanto vale 1 UN em CT')
+  })
+
+  it('digita 1 e confirma: a conversão vai para a nota com o produto em CT', async () => {
+    m.notasALancar.mockResolvedValue([nota()])
+    render(<NotaSefaz />)
+    const saco = await itemDe(0)
+    await userEvent.type(await saco.findByLabelText('Quanto vale 1 UN em CT?'), '1')
+    expect(saco.getByTestId('conversao-eco')).toHaveTextContent('Vai gravar: 1 UN = 1 CT')
+    await userEvent.click(saco.getByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, SACO, 1))
+  })
+
+  it('garfo: nota em PCT × produto em pct (mesma unidade) já vale sem conversão; o saco com a conversão fica confirmado "1 UN = 1 CT · entram 10 × 1 = 10 CT"', async () => {
+    m.notasALancar.mockResolvedValue([nota(1)])
+    render(<NotaSefaz />)
+    const garfo = await itemDe(1)
+    expect(await garfo.findByTestId('item-confirmado')).toBeInTheDocument()
+    expect(garfo.getByTestId('associacao-confirmada')).not.toHaveTextContent('=')            // mesma unidade: nenhuma conversão
+    expect(garfo.queryByLabelText(/Quanto vale 1 PCT/)).not.toBeInTheDocument()
+    const saco = await itemDe(0)
+    expect(await saco.findByTestId('associacao-confirmada')).toHaveTextContent('1 UN = 1 CT · entram 10 × 1 = 10 CT')
+  })
+})

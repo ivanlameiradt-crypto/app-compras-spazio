@@ -1091,6 +1091,20 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476481', quantidade: 6, entrada: 60, lembrar: true }]))
     })
 
+    it('o saco de chope real do SisChef ("SACOLA CHOPP (4CMX20CM) - PCT C/ 100 UND", CT): 3 ML sugerem 10 CT por ML e entram 30 ct', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3476489, nome: 'SACOLA CHOPP (4CMX20CM) - PCT C/ 100 UND', unidade: 'ct' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'SACO 04X20 CHOPP P BD PLASJOPE', unidade_cupom: 'ML', quantidade_cupom: 3, valor_unitario: 18.35 }), 55.05)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await escolherProduto(item0, 'chopp', /SACOLA CHOPP/)
+      expect(within(item0).getByLabelText('CT em 1 ML')).toHaveValue('10')
+      expect(within(item0).getByTestId('dica-milheiro')).toHaveTextContent('Este produto traz 100 unidades em cada CT: 1 ML = 10 CT.')
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('Vai entrar no estoque: 3 ML (milheiro) × 10 ct = 30 ct')
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476489', quantidade: 3, entrada: 30, lembrar: true }]))
+    })
+
     it('ML com produto em CT cujo nome não diz as unidades da embalagem: explica a conta, não sugere nada e não deixa confirmar sem o número', async () => {
       m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3476489, nome: 'SACO PARA CHOPP', unidade: 'ct' }])
       m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'SACO 04X20 CHOPP P BD PLASJOPE', unidade_cupom: 'ML', quantidade_cupom: 3, valor_unitario: 18.35 }), 55.05)])
