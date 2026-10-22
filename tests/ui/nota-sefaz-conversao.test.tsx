@@ -218,7 +218,7 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
 })
 
 // 22/10/2026 — produto em CT/PCT (sacos e garfo do cupom da A. N. da Silva): a nota em outra unidade também PEDE a conversão (como o KG), mas o peso que está no
-// nome da nota ("3KG" de um saco é a capacidade) NÃO é quantas unidades vêm no CT e nunca pode virar sugestão.
+// nome da nota ("1/2 KG" de um saco é a capacidade; sem a trava o app sugeria "2") NÃO é quantas unidades vêm no CT e nunca pode virar sugestão.
 describe('NotaSefaz — produto em CT ou PCT: conversão obrigatória, sem sugestão de peso pelo nome da nota (22/10)', () => {
   const SACO = 3476484
   const GARFO = 3476453
@@ -232,7 +232,7 @@ describe('NotaSefaz — produto em CT ou PCT: conversão obrigatória, sem suges
     chave: CHAVE, cnpj_emitente: '11222333000181', emitente: 'A N DA SILVA DESCARTAVEIS LTDA', numero: '000001234', emissao: '2026-10-22', valor_nf: 340,
     situacao: 'na_fila', lancada_em: null, nf_sischef: null, parcelas: [],
     itens: [
-      { n: 1, descricao: 'SACO 24X38 3KG BD LISO', qtd: 10, unidade_sischef: 'UN', produto_id: null },
+      { n: 1, descricao: 'SACO 1/2 KG AD FONTEPLAST', qtd: 10, unidade_sischef: 'UN', produto_id: null },
       { n: 2, descricao: 'GARFO MASTER ULTRA BR 50 UND', qtd: 6, unidade_sischef: 'PCT', produto_id: null },
     ],
     associacoes_app: { '1': dec(SACO, 'SACO 2KG - C/ 100 UND', 'ct', conversaoSaco), '2': dec(GARFO, 'GARFO PARA BATATA - PCT 50 UND', 'pct') },
@@ -240,7 +240,7 @@ describe('NotaSefaz — produto em CT ou PCT: conversão obrigatória, sem suges
   beforeEach(() => { m.catalogoProdutos.mockResolvedValue(CAT_CT); m.associarItem.mockResolvedValue(undefined) })
   const itemDe = async (n: number) => within((await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item'))[n])
 
-  it('saco: nota em UN × produto em CT pede "Quanto vale 1 UN em CT?" com o campo VAZIO (o "3KG" do nome não é sugestão), exemplo em CT, Confirmar travado e Lançar travado', async () => {
+  it('saco: nota em UN × produto em CT pede "Quanto vale 1 UN em CT?" com o campo VAZIO (o "1/2 KG" do nome não é sugestão), exemplo em CT, Confirmar travado e Lançar travado', async () => {
     m.notasALancar.mockResolvedValue([nota()])
     render(<NotaSefaz />)
     const saco = await itemDe(0)
