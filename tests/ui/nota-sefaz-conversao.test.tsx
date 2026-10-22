@@ -101,9 +101,13 @@ describe('NotaSefaz — cartão do item: conferir o produto indicado e confirmar
     },
     ...extra,
   })
+  // O item pelo trecho da descrição, não pela posição: desde 22/10 o que FALTA confirmar vem na frente e os confirmados depois (a ordem da nota não vale mais)
+  const TRECHOS = ['CHOC LACTA BIS', 'LEITE COND TIROL', 'OLEO SOJA']
   const itemDe = async (n: number) => {
     const itens = within(await screen.findByTestId('conferir')).getAllByTestId('conferir-item')
-    return within(itens[n])
+    const li = itens.find((x) => x.textContent?.includes(TRECHOS[n]))
+    if (!li) throw new Error(`item ${TRECHOS[n]} não achado entre ${itens.length} itens`)
+    return within(li)
   }
   beforeEach(() => { m.catalogoProdutos.mockResolvedValue(CAT); m.associarItem.mockResolvedValue(undefined) })
 

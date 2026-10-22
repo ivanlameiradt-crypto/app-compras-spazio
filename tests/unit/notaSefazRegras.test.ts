@@ -3,7 +3,7 @@ import {
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
   AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, AVISO_FALTA_CONVERSAO, bloqueioDeProduto,
-  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo,
+  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo, itemPedeAcao,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -555,6 +555,45 @@ describe('notaSefazRegras', () => {
         expect(validarParcelasDigitadas([], 100, '2026-10-05')).toMatchObject({ ok: false, motivo: 'Digite ao menos uma parcela' })
         expect(validarParcelasDigitadas([L('2026-11-05', '100,00')], null, '2026-10-05')).toMatchObject({ ok: false, falta: null })
       })
+    })
+  })
+
+  // Pedido do Ivan (22/10/2026): o item confirmado sai da lista do que falta e vai para o resumo dos confirmados.
+  describe('itemPedeAcao: o item ainda pede algo do Ivan no painel de conferir?', () => {
+    const it0 = (n: number | null, unidade: string | null, extra: Record<string, unknown> = {}) =>
+      ({ descricao: `CÓD. FOR: 376611 ITEM ${n}`, qtd: 1, unidade_sischef: unidade, produto_id: null, n, ...extra })
+    const dec = (unidade: string | null, extra: Record<string, unknown> = {}) => ({ produto_id: 5, produto_nome: 'PRODUTO 5', unidade, ...extra })
+    const pede = (n: NotaSefazLista) => n.itens.map((i) => itemPedeAcao(n, i))
+
+    it('sem produto e sem decisão do app → pede (falta escolher o produto); item sem número na nota também (não há como decidir no app)', () => {
+      expect(pede(nota({ itens: [it0(1, 'UN'), it0(null, 'UN')] }))).toEqual([true, true])
+    })
+
+    it('decisão completa do app (unidades iguais) → confirmado, não pede; "decidido no app" (associacao painel) segue a mesma regra', () => {
+      expect(pede(nota({ itens: [it0(1, 'UN')], associacoes_app: { '1': dec('un') } }))).toEqual([false])
+      expect(pede(nota({ itens: [it0(1, 'UN', { produto_id: 55, associacao: 'painel' })], associacoes_app: { '1': dec('un') } }))).toEqual([false])
+      expect(pede(nota({ itens: [it0(1, 'UN', { produto_id: 55, associacao: 'painel' })] }))).toEqual([true])      // decidido no painel mas sem a decisão gravada: ainda falta
+    })
+
+    it('decisão sem a conversão obrigatória (nota em UN, produto em KG, CT ou PCT) → ainda pede; com a conversão → confirmado', () => {
+      for (const un of ['kg', 'ct', 'pct']) {
+        expect(pede(nota({ itens: [it0(1, 'UN')], associacoes_app: { '1': dec(un) } }))).toEqual([true])
+        expect(pede(nota({ itens: [it0(1, 'UN')], associacoes_app: { '1': dec(un, { conversao: 0 }) } }))).toEqual([true])       // zero não é conversão
+        expect(pede(nota({ itens: [it0(1, 'UN')], associacoes_app: { '1': dec(un, { conversao: 2 }) } }))).toEqual([false])
+      }
+    })
+
+    it('produto só "opcional" (nota em KG, produto "un" na lista) → a decisão basta: não pede', () => {
+      expect(pede(nota({ itens: [it0(1, 'KG')], associacoes_app: { '1': dec('un') } }))).toEqual([false])
+    })
+
+    it('já associado no SisChef (✓) → confirmado; só volta a pedir quando o robô parou com UN DIFERE nesse item e ninguém informou a conversão', () => {
+      const assoc = (extra: Record<string, unknown> = {}) => it0(3, 'UN', { produto_id: 77, associacao: 'sischef', ...extra })
+      expect(pede(nota({ itens: [assoc()] }))).toEqual([false])
+      const parou = { lancamento_estado: 'revisar', lancamento_motivo: 'parou antes de gerar o pedido (nada lançado): UN DIFERE sem conversão na tela: CÓD. FOR 376611 (no app, informe a conversão)' } as Partial<NotaSefazLista>
+      expect(pede(nota({ itens: [assoc()], ...parou }))).toEqual([true])
+      const informada = { '3': { produto_id: 77, produto_nome: 'P', unidade: null, conversao: 2, origem: 'sischef' } }
+      expect(pede(nota({ itens: [assoc()], associacoes_app: informada, ...parou }))).toEqual([false])                    // informou: sai da lista do que falta
     })
   })
 })

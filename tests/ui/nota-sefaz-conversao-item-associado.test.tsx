@@ -41,16 +41,23 @@ describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o I
   it('só o item que o robô apontou ganha a caixa (vazia); os outros itens ganham só o botão Editar, fechado', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
-    const itens = await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item')
-    expect(within(itens[0]).queryByTestId('conversao-item-pendente')).not.toBeInTheDocument()
-    expect(within(itens[0]).queryByTestId('editar-item-caixa')).not.toBeInTheDocument()
-    expect(within(itens[0]).getByRole('button', { name: 'Editar' })).toBeEnabled()      // 21/10: todo item tem o botão, mesmo o que está certo
-    const caixa = within(itens[1]).getByTestId('conversao-item-pendente')
+    const painel = within(await screen.findByTestId('conferir'))
+    // 22/10: o item que o robô apontou fica na lista do que FALTA; o outro (já certo) vai para o resumo dos confirmados, que vem depois
+    const faltam = await painel.findAllByTestId('conferir-item')
+    expect(within(painel.getByTestId('conferir-faltam')).getAllByTestId('conferir-item')).toHaveLength(1)
+    const agua = within(painel.getByTestId('conferir-confirmados')).getByTestId('conferir-item')
+    const creme = within(painel.getByTestId('conferir-faltam')).getByTestId('conferir-item')
+    expect(faltam).toHaveLength(2)
+    expect(within(agua).queryByTestId('conversao-item-pendente')).not.toBeInTheDocument()
+    expect(within(agua).queryByTestId('editar-item-caixa')).not.toBeInTheDocument()
+    expect(within(agua).getByRole('button', { name: 'Editar' })).toBeEnabled()      // 21/10: todo item tem o botão, mesmo o que está certo
+    const caixa = within(creme).getByTestId('conversao-item-pendente')
     expect(caixa).toHaveTextContent('UN DIFERE')
     expect(within(caixa).getByLabelText(ROTULO)).toHaveValue('')   // vazio: quem define é o Ivan
     expect(within(caixa).getByLabelText(ROTULO)).not.toHaveFocus()  // a caixa que o robô pediu abre sozinha e não rouba o cursor
     expect(within(caixa).getByRole('button', { name: 'Confirmar' })).toBeDisabled()
-    expect(within(itens[1]).queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()    // a caixa já está aberta: não há o que abrir
+    expect(within(creme).queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()    // a caixa já está aberta: não há o que abrir
+    expect(painel.getByTestId('conferir-progresso')).toHaveTextContent('Falta confirmar 1 de 2 itens.')
     expect(screen.getByTestId('conferir')).toHaveAttribute('open')  // abre sozinho: é o que falta
   })
 

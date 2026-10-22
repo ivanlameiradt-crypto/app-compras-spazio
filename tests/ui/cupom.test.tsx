@@ -612,6 +612,9 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
   const itensDaCaixa = async () => within(await screen.findByTestId('corrigir-cupom')).getAllByTestId('corrigir-item')
   const reenviar = () => screen.getByTestId('reenviar')
   const soma = () => screen.getByTestId('corrigir-soma')
+  /** O resumo do fim ("Conferência da soma"): uma linha por item do cupom; o item confirmado SAI da lista (pedido do Ivan, 22/10) e passa a morar aqui, com o ✓ e o "Editar". */
+  const resumo = () => within(screen.getByTestId('corrigir-conferencia')).getAllByTestId('resumo-item')
+  const progresso = () => screen.getByTestId('corrigir-progresso')
   /** Aceita a proposta do sistema, digita o peso e confirma o item. */
   const confirmarPelaProposta = async (item: HTMLElement, nome: string, peso: string) => {
     await userEvent.click(await within(item).findByRole('button', { name: nome }))
@@ -652,6 +655,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(reenviar()).toBeDisabled()
     expect(soma()).toHaveTextContent(/Soma R\$\s23,04 · cupom R\$\s35,27 · falta confirmar os itens acima/)  // só o LIMAO TAITI conta por enquanto
     expect(soma()).toHaveClass('sub')
+    expect(progresso()).toHaveTextContent('Faltam confirmar 2 de 2 itens.')
+    expect(progresso()).toHaveClass('sub')
 
     // 1º item: a proposta do sistema vira o produto com um toque; o peso é o que está impresso no cupom
     await userEvent.click(await within(itens[0]).findByRole('button', { name: 'LIMÃO SICILIANO - INSUMOS' }))
@@ -661,8 +666,13 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await userEvent.type(within(itens[0]).getByLabelText('Peso (kg) que está no cupom'), '0,5')
     expect(itens[0]).toHaveTextContent(/Linha: 0,5 kg × R\$\s13,90 = R\$\s6,95/)
     await userEvent.click(within(itens[0]).getByRole('button', { name: 'Confirmar este item' }))
-    expect(itens[0]).toHaveTextContent(/✓ LIMÃO SICILIANO - INSUMOS · 0,5 kg → R\$\s6,95/)
-    expect(within(itens[0]).getByRole('button', { name: 'Editar' })).toBeInTheDocument()
+    // confirmado, o item SAI da lista (pedido do Ivan, 22/10) e passa a morar no resumo do fim, com o ✓, o que está no cupom, o valor e o "Editar"
+    expect(itens[0]).not.toBeInTheDocument()
+    expect(await itensDaCaixa()).toHaveLength(1)                                              // só falta o pepino
+    expect(progresso()).toHaveTextContent('Falta confirmar 1 de 2 itens.')
+    expect(resumo()[0]).toHaveTextContent(/^LIMAO SICILIANO\s*R\$\s6,95\s*✓ LIMÃO SICILIANO - INSUMOS · 0,5 kg\s*✎ Editar$/)
+    expect(within(resumo()[0]).getByRole('button', { name: /Editar/ })).toBeInTheDocument()
+    expect(resumo()[1]).toHaveTextContent(/^PEPINO JAPONES\s*falta confirmar$/)               // o que falta continua marcado no resumo
     expect(reenviar()).toBeDisabled()                                                        // ainda falta o pepino
 
     // 2º item: pela busca na lista de insumos
@@ -675,12 +685,18 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await userEvent.type(within(itens[1]).getByLabelText('Peso (kg) que está no cupom'), '0,912')
     await userEvent.click(within(itens[1]).getByRole('button', { name: 'Confirmar este item' }))
 
-    // a conferência: uma linha por item do cupom, os já confirmados marcados; a soma fecha em R$ 35,27
-    const conferencia = within(screen.getByTestId('corrigir-conferencia')).getAllByRole('listitem')
+    // a lista esvaziou: não sobra caixa de item, só o resumo; e a tela diz que está tudo confirmado
+    expect(screen.queryAllByTestId('corrigir-item')).toHaveLength(0)
+    expect(progresso()).toHaveTextContent('✓ Os 2 itens estão confirmados. Confira a soma abaixo e reenvie.')
+    expect(progresso()).toHaveClass('ok')
+
+    // a conferência: uma linha por item do cupom, com o produto e o que entra no estoque; os já confirmados marcados; a soma fecha em R$ 35,27
+    const conferencia = resumo()
     expect(conferencia).toHaveLength(3)
-    expect(conferencia[0]).toHaveTextContent(/^LIMAO SICILIANO\s*R\$\s6,95$/)
-    expect(conferencia[1]).toHaveTextContent(/^PEPINO JAPONES\s*R\$\s5,28$/)                 // 0,912 × 5,79 = 5,28048 → 5,28 (a 2 casas, como o robô)
-    expect(conferencia[2]).toHaveTextContent(/^LIMAO TAITI TROPICAL \(já confirmado\)\s*R\$\s23,04$/)
+    expect(conferencia[0]).toHaveTextContent(/^LIMAO SICILIANO\s*R\$\s6,95\s*✓ LIMÃO SICILIANO - INSUMOS · 0,5 kg\s*✎ Editar$/)
+    expect(conferencia[1]).toHaveTextContent(/^PEPINO JAPONES\s*R\$\s5,28\s*✓ PEPINO JAPONÊS - INSUMOS · 0,912 kg\s*✎ Editar$/)   // 0,912 × 5,79 = 5,28048 → 5,28 (a 2 casas, como o robô)
+    expect(conferencia[2]).toHaveTextContent(/^LIMAO TAITI TROPICAL \(já confirmado\)\s*R\$\s23,04\s*✓ LIMÃO - INSUMOS · entra 2,884 kg no estoque$/)
+    expect(within(conferencia[2]).queryByRole('button', { name: /Editar/ })).not.toBeInTheDocument()   // o que o servidor já casou não tem "Editar"
     expect(soma()).toHaveTextContent(/Soma R\$\s35,27 · cupom R\$\s35,27 · bate/)
     expect(soma()).toHaveClass('ok')
     expect(reenviar()).toBeEnabled()
@@ -708,12 +724,19 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(reenviar()).toBeDisabled()
     expect(m.confirmarCupom).not.toHaveBeenCalled()
 
-    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Editar' }))
-    const peso = within(itens[1]).getByLabelText('Peso (kg) que está no cupom')
+    // "Editar" fica na linha do item no resumo e abre a caixa ALI MESMO (o item não volta para a lista de pendentes, nem a tela rola)
+    await userEvent.click(within(resumo()[1]).getByRole('button', { name: /Editar/ }))
+    expect(screen.queryAllByTestId('corrigir-item')).toHaveLength(0)
+    expect(progresso()).toHaveTextContent('Falta confirmar 1 de 2 itens.')
+    expect(reenviar()).toBeDisabled()                                                         // reaberto = falta confirmar de novo
+    const peso = within(resumo()[1]).getByLabelText('Peso (kg) que está no cupom')
     expect(peso).toHaveValue('2')                                                             // volta com o que ele tinha digitado
+    expect(peso).toHaveFocus()                                                                // o cursor já cai no campo (no celular o teclado abre)
     await userEvent.clear(peso)
     await userEvent.type(peso, '0,912')
-    await userEvent.click(within(itens[1]).getByRole('button', { name: 'Confirmar este item' }))
+    await userEvent.click(within(resumo()[1]).getByRole('button', { name: 'Confirmar este item' }))
+    expect(screen.queryByTestId('resumo-edicao')).not.toBeInTheDocument()                     // confirmou: a caixa fecha e a linha volta a ser só o resumo
+    expect(resumo()[1]).toHaveTextContent(/^PEPINO JAPONES\s*R\$\s5,28\s*✓ PEPINO JAPONÊS - INSUMOS · 0,912 kg\s*✎ Editar$/)
     expect(soma()).toHaveClass('ok')
     expect(reenviar()).toBeEnabled()
   })
@@ -743,7 +766,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await userEvent.click(reenviar())
     const botao = await screen.findByRole('button', { name: 'Reenviando…' })
     expect(botao).toBeDisabled()
-    expect(within(itens[0]).getByRole('button', { name: 'Editar' })).toBeDisabled()          // trocar no meio do envio mandaria uma coisa e mostraria outra
+    expect(within(resumo()[0]).getByRole('button', { name: /Editar/ })).toBeDisabled()       // trocar no meio do envio mandaria uma coisa e mostraria outra
     await userEvent.click(botao)
     expect(m.confirmarCupom).toHaveBeenCalledTimes(1)
     concluir(ACEITO)
@@ -861,7 +884,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     // próxima com o peso errado sem ninguém ver; só pacote de peso fixo merece a marca
     expect(within(item).getByTestId('vai-lembrar')).toHaveTextContent('Vou lembrar: da próxima vez, “QUEIJO MINAS PC” deste fornecedor entra com 1 UN = 0,8 KG, sem perguntar.')
     await userEvent.click(confirmar)
-    expect(item).toHaveTextContent(/✓ QUEIJO MINAS - INSUMOS · 1 un → R\$\s25,00/)
+    expect(item).not.toBeInTheDocument()                                                      // confirmado: sai da lista
+    expect(resumo()[0]).toHaveTextContent(/^QUEIJO MINAS PC\s*R\$\s25,00\s*✓ QUEIJO MINAS - INSUMOS · 1 un → entram 0,8 kg\s*✎ Editar$/)   // e o resumo diz o que entra no estoque
     expect(soma()).toHaveClass('ok')
     await userEvent.click(reenviar())
     await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('q1', [{ indice: 0, insumo_id: '3500001', quantidade: 1, entrada: 0.8, lembrar: true }]))
@@ -975,10 +999,13 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
         motivo: 'CONFIRMAR: 1 item(ns) já conhecido(s) — confira e confirme no app',
         itens: [item({ descricao_cupom: 'TOMATE ITALIANO', unidade_cupom: 'KG', valor_unitario: 10, entrada_estoque: 2, sugestao_produto: { id: '3482196' }, casado_por: 'descricao' })] })])
       render(<Cupom />)
+      // sem lista de pendentes nem blocos repetidos (22/10): só o resumo, com o produto e o que entra no estoque de cada item já conhecido
       const conhecido = await screen.findByTestId('item-conhecido')
-      expect(conhecido).toHaveTextContent('TOMATE ITALIANO')
-      expect(conhecido).toHaveTextContent('Já conhecido')
+      expect(conhecido.closest('li')).toHaveTextContent('TOMATE ITALIANO (já confirmado)')
       await waitFor(() => expect(conhecido).toHaveTextContent('TOMATE ITALIANO - INSUMOS (KG)'))     // o nome vem da lista de produtos, que carrega depois
+      expect(conhecido).toHaveTextContent('entra 2 kg no estoque')
+      expect(screen.queryAllByTestId('corrigir-item')).toHaveLength(0)
+      expect(screen.queryByTestId('corrigir-progresso')).not.toBeInTheDocument()
       expect(soma()).toHaveTextContent('bate')
       expect(reenviar()).toHaveTextContent('Confirmar e lançar')
       await userEvent.click(reenviar())
@@ -996,7 +1023,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(sugestao).toHaveTextContent('O app acha que é este (as palavras batem com o SisChef)')
       expect(sugestao).toHaveTextContent('TOMATE ITALIANO - INSUMOS (KG)')
       await userEvent.click(within(sugestao).getByRole('button', { name: 'Confirmar' }))
-      expect(within(item0).getByText(/✓ TOMATE ITALIANO - INSUMOS \(KG\)/)).toBeInTheDocument()   // já confirmado: sem passo a mais
+      expect(item0).not.toBeInTheDocument()                                                          // já confirmado (sem passo a mais): saiu da lista
+      expect(resumo()[0]).toHaveTextContent(/✓ TOMATE ITALIANO - INSUMOS \(KG\)/)                    // e está no resumo do fim
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3482196', quantidade: 2, lembrar: true }]))
     })
@@ -1012,6 +1040,29 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(sugestao).toHaveTextContent('Nenhum produto tem todas as palavras')
       expect(within(sugestao).getByRole('button', { name: 'Usar este' })).toBeInTheDocument()
       expect(within(item0).queryByText(/✓/)).not.toBeInTheDocument()
+    })
+
+    it('"Usar este" (sugestão fraca) SÓ ESCOLHE o produto: o item fica na lista até o "Confirmar este item" e só então sai — a etapa a mais que o Ivan pediu (22/10)', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO,
+        { produto_id: 3469574, nome: 'ALHO COMUM DESCASCADO - INSUMOS (KG)', unidade: 'kg' },
+        { produto_id: 3531993, nome: 'MOLHO DE ALHO - INSUMOS (KG)', unidade: 'kg' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'ALHO Kg A GRANEL', unidade_cupom: 'KG', quantidade_cupom: 1, valor_unitario: 10 }), 10)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await userEvent.click(within(await within(item0).findByTestId('sugestao-palavras')).getByRole('button', { name: 'Usar este' }))
+      // mesma unidade (kg) e quantidade lida no cupom: antes este toque já confirmava o item; agora o produto só fica escolhido e o item CONTINUA na lista
+      expect(item0).toBeInTheDocument()
+      expect(within(item0).queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()   // o produto foi escolhido (o campo de busca deu lugar a ele)
+      expect(progresso()).toHaveTextContent('Falta confirmar 1 de 1 item.')
+      expect(resumo()[0]).toHaveTextContent(/^ALHO Kg A GRANEL\s*falta confirmar$/)
+      expect(reenviar()).toBeDisabled()
+      const confirmar = within(item0).getByRole('button', { name: 'Confirmar este item' })
+      expect(confirmar).toBeEnabled()
+      await userEvent.click(confirmar)
+      expect(item0).not.toBeInTheDocument()                                                    // agora sim: confirmado, sai da lista
+      expect(resumo()[0]).toHaveTextContent(/^ALHO Kg A GRANEL\s*R\$\s10,00\s*✓ .*ALHO.* · 1 kg\s*✎ Editar$/)
+      expect(progresso()).toHaveTextContent('✓ O item está confirmado. Confira a soma abaixo e reenvie.')
+      expect(reenviar()).toBeEnabled()
     })
 
     it('trava: 850 kg por unidade parece errado — "Usar 0,85" corrige; "Não, é isso mesmo" libera', async () => {
@@ -1121,7 +1172,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('Vai entrar no estoque: 6 ML (milheiro) × 10 ct = 60 ct')
       expect(reenviar()).toBeDisabled()                                                                      // nada vai para o servidor sem o toque no "Confirmar este item"
       await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
-      expect(item0).toHaveTextContent('✓ SACO 1/2 KG - C/ 100 UND · 6 ML (milheiro) → R$ 141,60 · entram 60 ct')   // a linha fechada mostra o milheiro e o que entra no estoque
+      expect(item0).not.toBeInTheDocument()                                                                  // confirmado: sai da lista
+      expect(resumo()[0]).toHaveTextContent(/^SACO 12X27 1\/2 KG AD FONTEPLAST\s*R\$\s141,60\s*✓ SACO 1\/2 KG - C\/ 100 UND · 6 ML \(milheiro\) → entram 60 ct\s*✎ Editar$/)   // o resumo mostra o milheiro e o que entra no estoque
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476481', quantidade: 6, entrada: 60, lembrar: true }]))
     })
@@ -1150,7 +1202,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       render(<Cupom />)
       const [item0] = await itensDaCaixa()
       await userEvent.click(within(await within(item0).findByTestId('sugestao-palavras')).getByRole('button', { name: 'Confirmar' }))
-      expect(within(item0).getByText(/✓ IOGURTE NATURAL - INSUMOS \(KG\)/)).toBeInTheDocument()
+      expect(item0).not.toBeInTheDocument()                                                                  // confirmado na hora: saiu da lista
+      expect(resumo()[0]).toHaveTextContent(/✓ IOGURTE NATURAL - INSUMOS \(KG\) · 10 un → entram 8,5 kg/)
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '1855909', quantidade: 10, entrada: 8.5, lembrar: true }]))
     })
