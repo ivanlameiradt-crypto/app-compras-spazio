@@ -1105,6 +1105,56 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476489', quantidade: 3, entrada: 30, lembrar: true }]))
     })
 
+    // Revisão independente de 22/10: o atalho de um toque ("Confirmar" da sugestão por palavras, "Usar este", "Sim, é este") escolhia o produto E confirmava o item. Com CT/PCT o fator
+    // vem do NOME do produto (não do cupom) e a conferência da soma bate com qualquer fator: o item agora fica ABERTO, com a pergunta e a conta na tela.
+    it('um toque na sugestão por palavras NÃO confirma saco em CT com milheiro: o item fica aberto com a pergunta e a conta; "Confirmar este item" fecha e a linha diz "entram 60 ct"', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3476481, nome: 'SACO 1/2 KG - C/ 100 UND', unidade: 'ct', palavras: 'saco fonteplast' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'SACO 12X27 1/2 KG AD FONTEPLAST', unidade_cupom: 'ML', quantidade_cupom: 6, valor_unitario: 23.6 }), 141.6)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      const sugestao = await within(item0).findByTestId('sugestao-palavras')
+      expect(sugestao).toHaveTextContent('O app acha que é este')
+      await userEvent.click(within(sugestao).getByRole('button', { name: 'Confirmar' }))
+      expect(within(item0).queryByText(/✓/)).not.toBeInTheDocument()                                       // ainda aberto
+      expect(within(item0).getByTestId('duvida-unidade')).toHaveTextContent('Quantos CT vêm em 1 ML?')
+      expect(within(item0).getByLabelText('CT em 1 ML')).toHaveValue('10')
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('Vai entrar no estoque: 6 ML (milheiro) × 10 ct = 60 ct')
+      expect(reenviar()).toBeDisabled()                                                                      // nada vai para o servidor sem o toque no "Confirmar este item"
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      expect(item0).toHaveTextContent('✓ SACO 1/2 KG - C/ 100 UND · 6 ML (milheiro) → R$ 141,60 · entram 60 ct')   // a linha fechada mostra o milheiro e o que entra no estoque
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476481', quantidade: 6, entrada: 60, lembrar: true }]))
+    })
+
+    it('a sugestão FRACA ("Usar este") e o "Sim, é este" da descrição que mudou também deixam o saco em CT aberto para a conta', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3476481, nome: 'SACO 1/2 KG - C/ 100 UND', unidade: 'ct' }])   // sem palavras-chave: sugestão fraca
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'SACO 12X27 1/2 KG AD FONTEPLAST', unidade_cupom: 'ML', quantidade_cupom: 6, valor_unitario: 23.6 }), 141.6)])
+      const { unmount } = render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await userEvent.click(within(await within(item0).findByTestId('sugestao-palavras')).getByRole('button', { name: 'Usar este' }))
+      expect(within(item0).queryByText(/✓/)).not.toBeInTheDocument()
+      expect(within(item0).getByTestId('vai-entrar')).toHaveTextContent('6 ML (milheiro) × 10 ct = 60 ct')
+      unmount()
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'SACO 12X27 1/2 KG AD FONTEPLAST', unidade_cupom: 'ML', quantidade_cupom: 6, valor_unitario: 23.6,
+        conhecidos_do_fornecedor: [{ insumo_id: '3476481', insumo_nome: 'SACO 1/2 KG - C/ 100 UND', descricao_norm: 'saco 12x27 1/2 kg ad fonteplast' }] }), 141.6)])
+      render(<Cupom />)
+      const [item1] = await itensDaCaixa()
+      await userEvent.click(within(await within(item1).findByTestId('descricao-mudou')).getByRole('button', { name: 'Sim, é este' }))
+      expect(within(item1).queryByText(/✓/)).not.toBeInTheDocument()
+      expect(within(item1).getByTestId('vai-entrar')).toHaveTextContent('6 ML (milheiro) × 10 ct = 60 ct')
+    })
+
+    it('CONTROLE: com produto em KG o atalho de um toque continua igual (o peso vem impresso no cupom, "850G"): confirma na hora', async () => {
+      m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 1855909, nome: 'IOGURTE NATURAL - INSUMOS (KG)', unidade: 'kg', palavras: 'iogurte natural' }])
+      m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'IOGURTE NATURAL 850G', unidade_cupom: 'UN', quantidade_cupom: 10, valor_unitario: 18.88 }), 188.8)])
+      render(<Cupom />)
+      const [item0] = await itensDaCaixa()
+      await userEvent.click(within(await within(item0).findByTestId('sugestao-palavras')).getByRole('button', { name: 'Confirmar' }))
+      expect(within(item0).getByText(/✓ IOGURTE NATURAL - INSUMOS \(KG\)/)).toBeInTheDocument()
+      await userEvent.click(reenviar())
+      await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '1855909', quantidade: 10, entrada: 8.5, lembrar: true }]))
+    })
+
     it('ML com produto em CT cujo nome não diz as unidades da embalagem: explica a conta, não sugere nada e não deixa confirmar sem o número', async () => {
       m.catalogoProdutos.mockResolvedValue([...CATALOGO, { produto_id: 3476489, nome: 'SACO PARA CHOPP', unidade: 'ct' }])
       m.cuponsRecentes.mockResolvedValue([cupomCom(item({ descricao_cupom: 'SACO 04X20 CHOPP P BD PLASJOPE', unidade_cupom: 'ML', quantidade_cupom: 3, valor_unitario: 18.35 }), 55.05)])

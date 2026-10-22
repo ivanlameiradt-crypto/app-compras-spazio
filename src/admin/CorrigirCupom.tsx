@@ -136,7 +136,10 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   if (estado.confirmado && estado.produto && conf && linha) {
     return (
       <div className="associar-feito">
-        <span className="confirmado">✓ {estado.produto.nome} · {qtd(conf.quantidade)} {unCupom} → {formatarReais(linha.valor)}</span>
+        <span className="confirmado">
+          ✓ {estado.produto.nome} · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} → {formatarReais(linha.valor)}
+          {destinoContado && conf.entrada != null && <> · entram {qtd(linha.entrada)} {minusc(estado.produto.unidade)}</>}
+        </span>
         <button type="button" className="editar-item" disabled={travado} onClick={() => mudar({ confirmado: false })}><span aria-hidden="true">✎</span> Editar</button>
       </div>
     )
@@ -158,9 +161,12 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
     return novo
   }
   // "Confirmar" da sugestão: escolhe o produto e, se não falta nenhum número (mesma unidade e quantidade lida), já confirma o item — um toque só.
+  // Exceção (revisão independente de 22/10): produto em CT/PCT com conversão (ML = milheiro, UN → PCT…). O fator vem do NOME do produto, não do cupom, e a conferência da soma
+  // bate com qualquer fator (o valor da linha é preservado): o item fica aberto para o Ivan ver a pergunta e a conta ("6 ML × 10 ct = 60 ct") e tocar em "Confirmar este item".
   const confirmarSugestao = (p: ProdutoCatalogo) => {
     const novo = escolher(p)
-    if (confirmacaoDe(it, { ...estado, ...novo }) !== null) mudar({ confirmado: true })
+    const fatorDaEmbalagem = ehEmbalagemContada(p.unidade) && modoDaEntrada(it, p) === 'por_unidade'
+    if (!fatorDaEmbalagem && confirmacaoDe(it, { ...estado, ...novo }) !== null) mudar({ confirmado: true })
   }
 
   return (
@@ -319,7 +325,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           )}
           {conf && linha && (
             <p className="sub">
-              Linha: {qtd(conf.quantidade)} {unCupom} × {formatarReais(Number(it.valor_unitario))} = <b>{formatarReais(linha.valor)}</b>
+              Linha: {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} × {formatarReais(Number(it.valor_unitario))} = <b>{formatarReais(linha.valor)}</b>
               {converte && conf.entrada != null && <> · entra {qtd(linha.entrada)} {minusc(estado.produto.unidade)} no estoque</>}
             </p>
           )}

@@ -8,6 +8,14 @@ import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 export const ehMilheiro = (unidadeCupom: unknown, unidadeProduto: unknown): boolean =>
   String(unidadeCupom ?? '').trim().toUpperCase() === 'ML' && ehEmbalagemContada(unidadeProduto)
 
+// A palavra que diz "isto são unidades" depois do número: UND, UNID, UNIDADES, UN, PCS, PÇS, PEÇAS. "PCT" e "CX" NÃO entram (são embalagens, não unidades).
+const PALAVRA_DE_CONTAGEM = '(?:UNDS?|UNIDS?|UNIDADES?|UNS?|PCS|PÇS|PECAS|PEÇAS)'
+// "C/ 100", "C/100 UND": o número depois de "C/" só vale se vem logo a palavra de contagem, o fim do nome ou um traço/parêntese (revisão independente de 22/10: "C/ 2 DIVISOES",
+// "C/ 500ML", "CX C/ 20 PCT" e "C/ 5KG" contam OUTRA coisa e davam sugestão errada).
+const COM_BARRA = new RegExp(`(?:^|[^A-Za-z0-9])C\\s*\\/\\s*(\\d{1,5})(?![\\d,.])(?=\\s*${PALAVRA_DE_CONTAGEM}(?![A-Za-zÀ-ÿ])|\\s*$|\\s*[-–—;()])`, 'gi')
+// "PCT 50 UND", "100 UND": número seguido da palavra de contagem, sem letra, ponto, vírgula ou barra colados antes do número.
+const COM_PALAVRA = new RegExp(`(?:^|[^A-Za-z0-9.,/])(\\d{1,5})\\s*${PALAVRA_DE_CONTAGEM}(?![A-Za-zÀ-ÿ])`, 'gi')
+
 /**
  * Quantas unidades vêm em 1 CT ou PCT, tiradas do NOME do produto: "SACO 1/2 KG - C/ 100 UND" → 100; "GARFO PARA BATATA - PCT 50 UND" → 50. Só quando o nome diz UM
  * número claro ("C/ N" ou "N UND"; o mesmo número escrito duas vezes vale); dois números diferentes ou nenhum → null (não adivinha).
@@ -15,8 +23,8 @@ export const ehMilheiro = (unidadeCupom: unknown, unidadeProduto: unknown): bool
 export function unidadesNaEmbalagem(nome: string | null | undefined): number | null {
   const t = String(nome ?? '')
   const achados = new Set<number>()
-  for (const m of t.matchAll(/(?:^|[^A-Za-z0-9])C\s*\/\s*(\d{1,5})(?![\d,.])/gi)) achados.add(Number(m[1]))
-  for (const m of t.matchAll(/(?:^|[^A-Za-z0-9.,/])(\d{1,5})\s*UNDS?(?![A-Za-z])/gi)) achados.add(Number(m[1]))
+  for (const m of t.matchAll(COM_BARRA)) achados.add(Number(m[1]))
+  for (const m of t.matchAll(COM_PALAVRA)) achados.add(Number(m[1]))
   if (achados.size !== 1) return null
   const n = [...achados][0]
   return Number.isInteger(n) && n >= 2 ? n : null

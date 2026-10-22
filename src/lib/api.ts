@@ -894,6 +894,23 @@ export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
   }
   return [...porId.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
+/**
+ * A unidade de UM produto na planilha do Ivan (produto_planilha: 'kg', 'un', 'ct' ou 'pct'), ou null se ele não está nela ou a leitura falhou. Serve à caixa "Editar" de um item já
+ * associado no SisChef (ConversaoItemAssociado): sem a unidade ela não sabe se o produto é em CT/PCT, e aí o "C/ 100 UND" do nome conta unidades e NÃO vale como conversão.
+ * Lê uma linha só e nunca lança erro para a tela (sem resposta, a caixa segue como sempre).
+ */
+export async function unidadeDoProdutoNaPlanilha(produtoId: number | string): Promise<string | null> {
+  const id = Number(produtoId)
+  if (!Number.isInteger(id) || id <= 0) return null
+  try {
+    const r = await supabase.from('produto_planilha').select('unidade').eq('produto_id', id).limit(1)
+    if (r.error) return null
+    const u = String(((r.data ?? []) as { unidade: string | null }[])[0]?.unidade ?? '').trim().toLowerCase()
+    return ehUnidadeDaLista(u) ? u : null
+  } catch {
+    return null
+  }
+}
 /** Texto claro para o erro de associar: as mensagens do banco (cot_nfe_associar) já são em português e dizem o motivo; o resto vira um texto genérico. */
 function mensagemDaAssociacao(e: unknown): string {
   const texto = e instanceof Error ? e.message : ''

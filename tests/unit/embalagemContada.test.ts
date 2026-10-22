@@ -29,6 +29,11 @@ describe('unidadesNaEmbalagem — o número que o NOME do produto diz ("C/ 100 U
     ['SACO 24X38 3KG - 100 UND', 100],
     ['SACO C/100 - 100 UND', 100],           // o mesmo número escrito duas vezes vale
     ['c/ 25 und', 25],
+    ['GARFO DESCARTAVEL 50 PCS', 50],
+    ['COLHER C/ 50 UNIDADES', 50],
+    ['PRATO 15CM - C/10', 10],                              // "C/ N" no fim do nome vale
+    ['SACO C/100-PRETO', 100],                              // ... e antes de um traço
+    ['SACO PRETO C/ 100 UN', 100],
   ])('%s → %d', (nome, n) => {
     expect(unidadesNaEmbalagem(nome)).toBe(n)
   })
@@ -44,6 +49,17 @@ describe('unidadesNaEmbalagem — o número que o NOME do produto diz ("C/ 100 U
     ['SACO 1.000 UND'],                      // milhar escrito com ponto: não confunde com 1 ou 000
     ['SACOS200UND'],                         // o número colado numa palavra não conta
     [''],
+    // revisão independente de 22/10: "C/ N" que conta OUTRA coisa (divisões, volume, pacotes dentro da caixa, peso) dava sugestão errada
+    ['BANDEJA ISOPOR C/ 2 DIVISOES'],
+    ['MARMITEX ALUMINIO C/ 4 DIVISOES'],
+    ['POTE REDONDO C/ 500ML'],
+    ['COPO 200ML CX C/ 20 PCT'],
+    ['SACO LIXO 100L C/ 5KG'],
+    ['SACO LIXO C/ 5 KG'],
+    ['COPO C/ 50 PCT'],                      // "PCT" é pacote, não unidade
+    ['SACO C/ 2.500 UND'],                   // milhar com ponto ou vírgula: não é "2" nem "500" unidades
+    ['SACO 2.500 UND'],
+    ['SACO C/ 1,000 UND'],
   ])('%j → null (não adivinha)', (nome) => {
     expect(unidadesNaEmbalagem(nome)).toBeNull()
   })
@@ -77,6 +93,11 @@ describe('sugestaoPorMilheiro — quantos CT/PCT vêm em 1 ML: 1.000 ÷ unidades
     expect(sugestaoPorMilheiro('ML', produto({ nome: 'SACO C/ 30 UND' }))).toBeNull()
     expect(sugestaoPorMilheiro('ML', produto({ nome: 'SACO C/ 300 UND' }))).toBeNull()
     expect(sugestaoPorMilheiro('ML', produto({ nome: 'SACO PARA CHOPP' }))).toBeNull()
+  })
+  it('nome em que o "C/ N" conta divisões, volume ou peso NÃO vira sugestão (a tela pergunta sem chutar)', () => {
+    expect(sugestaoPorMilheiro('ML', produto({ nome: 'BANDEJA ISOPOR C/ 2 DIVISOES', unidade: 'pct' }))).toBeNull()
+    expect(sugestaoPorMilheiro('ML', produto({ nome: 'POTE REDONDO C/ 500ML' }))).toBeNull()
+    expect(sugestaoPorMilheiro('ML', produto({ nome: 'SACO LIXO 100L C/ 5KG', unidade: 'pct' }))).toBeNull()
   })
   it('só vale para ML com produto ct/pct: UN, CT, KG no cupom ou produto em kg/un → null', () => {
     for (const c of ['UN', 'CT', 'PCT', 'KG', '']) expect(sugestaoPorMilheiro(c, produto()), c).toBeNull()

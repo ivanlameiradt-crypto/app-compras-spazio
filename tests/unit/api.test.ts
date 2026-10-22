@@ -31,7 +31,7 @@ import {
   comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
   associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, pedirCadastroProduto, prepararCotacoes,
-  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha,
+  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha, unidadeDoProdutoNaPlanilha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
@@ -1158,6 +1158,28 @@ describe('cadastro de produto novo: pedirCadastroProduto e statusDoCadastroProdu
     from.mockReturnValueOnce(consulta({ data: [{ ...LINHA, estado: 'CADASTRADO', produto_id: 3924284 }], error: null }))
       .mockReturnValueOnce(consulta({ data: [{ descricao: '', unidade: null }], error: null }))
     expect(await statusDoCadastroProduto({ id: 'ped-1' })).toMatchObject({ produto_id: 3924284, descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', unidade: 'KG' })
+  })
+
+  it('unidadeDoProdutoNaPlanilha: lê UMA linha de produto_planilha e devolve a unidade em minúscula (kg, un, ct, pct); fora da lista, sem linha, código inválido ou erro → null', async () => {
+    const ler = async (resp: Parameters<typeof consulta>[0] | 'lancar') => {
+      if (resp === 'lancar') from.mockImplementationOnce(() => { throw new Error('rede') }); else from.mockReturnValueOnce(consulta(resp))
+      return unidadeDoProdutoNaPlanilha(3476481)
+    }
+    const q = consulta({ data: [{ unidade: 'CT' }], error: null })
+    from.mockReturnValueOnce(q)
+    expect(await unidadeDoProdutoNaPlanilha('3476481')).toBe('ct')
+    expect(from).toHaveBeenCalledWith('produto_planilha')
+    expect(q.eq).toHaveBeenCalledWith('produto_id', 3476481)
+    expect(q.limit).toHaveBeenCalledWith(1)
+    expect(await ler({ data: [{ unidade: ' pct ' }], error: null })).toBe('pct')
+    expect(await ler({ data: [{ unidade: 'KG' }], error: null })).toBe('kg')
+    expect(await ler({ data: [{ unidade: 'CX' }], error: null })).toBeNull()                   // fora da lista do app
+    expect(await ler({ data: [], error: null })).toBeNull()                                   // produto que não está na planilha
+    expect(await ler({ data: null, error: { message: 'permission denied' } })).toBeNull()
+    expect(await ler('lancar')).toBeNull()                                                    // nunca lança erro para a tela
+    from.mockClear()
+    for (const ruim of [0, -3, 1.5, 'abc', '']) expect(await unidadeDoProdutoNaPlanilha(ruim as never)).toBeNull()
+    expect(from).not.toHaveBeenCalled()                                                       // código inválido: nem consulta
   })
 
   it('statusDoCadastroProduto: REVISAR com o código do produto (C2) devolve o código, sem ler a planilha', async () => {
