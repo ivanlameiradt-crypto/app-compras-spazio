@@ -90,14 +90,16 @@ function confirmacaoDe(it: ItemCupomRecente, e: EstadoItem): Confirmada | null {
 
 /** A caixa de UM item pendente: escolher o produto → quantidade(s) → "Confirmar este item". Confirmado (22/10/2026), o item SAI desta lista e passa a morar no resumo do fim
  *  ("Conferência da soma"), com o ✓ e o "Editar" (era "Trocar" até 21/10); o "Editar" reabre esta mesma caixa ali, na linha do resumo (estado.editando). */
-function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado }: {
+function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado, novos, registrarNovo }: {
   cupom: CupomRecente; it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null; catalogoFalhou: boolean
   estado: EstadoItem; mudar: (e: Partial<EstadoItem>) => void
   /** Reenvio em curso: nada pode mudar por baixo do que está sendo mandado. */
   travado: boolean
+  /** Produtos que o Ivan acabou de cadastrar pelo app: entram na busca de TODAS as caixas na hora. Moram na tela de cima porque a caixa de um item confirmado é desmontada
+   *  (o item sai da lista) e remontada no "Editar" — se ficassem aqui, o "Escolher outro" do Editar não acharia o produto recém-criado. */
+  novos: ProdutoCatalogo[]; registrarNovo: (p: ProdutoCatalogo) => void
 }) {
   const [texto, setTexto] = useState('')
-  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos que o Ivan acabou de cadastrar pelo app: entram na busca desta caixa na hora
   const lista = useMemo(() => [...(catalogo ?? []), ...novos.filter((n) => !(catalogo ?? []).some((p) => p.produto_id === n.produto_id))], [catalogo, novos])
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
   // a proposta do sistema só vira botão se o produto está na lista de insumos (e não é escondido): fora dela o servidor a recusaria
@@ -244,7 +246,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           {!travado && (
             <ProdutoNaoCadastrado descricaoDoItem={descricaoLida} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
               discreto={!(busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)))}
-              aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
+              aoUsar={(p) => { registrarNovo(p); escolher(p) }} />
           )}
         </>
       )}
@@ -382,6 +384,8 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
   const [estados, setEstados] = useState<Record<number, EstadoItem>>({})
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos cadastrados agora pelo app (de qualquer item): valem na busca de todas as caixas
+  const registrarNovo = (p: ProdutoCatalogo) => setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p])
 
   const pendentes = useMemo(() => itensPendentes(cupom), [cupom])
   const estadoDe = (i: number): EstadoItem => estados[i] ?? estadoInicial(cupom.itens[i])
@@ -476,7 +480,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
               )}
             </p>
             <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={estadoDe(i)} mudar={(e) => mudar(i, e)}
-              travado={enviando} />
+              travado={enviando} novos={novos} registrarNovo={registrarNovo} />
           </div>
         )
       })}
@@ -500,7 +504,8 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
               )}
               {e?.editando && !e.confirmado && (
                 <div className="resumo-edicao" data-testid="resumo-edicao">
-                  <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={e} mudar={(x) => mudar(l.indice, x)} travado={enviando} />
+                  <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={e} mudar={(x) => mudar(l.indice, x)} travado={enviando}
+                    novos={novos} registrarNovo={registrarNovo} />
                 </div>
               )}
             </li>

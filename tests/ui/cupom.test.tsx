@@ -1326,6 +1326,13 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(item0).toHaveTextContent('MAION.HELLMANNS 1X3KG - INSUMOS')
       expect(item0).toHaveTextContent('cód. 3924999')
       expect(within(item0).queryByTestId('cadastrar-produto')).not.toBeInTheDocument()
+      // 22/10: o item confirmado sai da lista (a caixa é desmontada) e volta no "Editar"; o produto recém-criado continua achável no "Escolher outro" (a lista dos novos mora na tela de cima)
+      await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
+      expect(item0).not.toBeInTheDocument()
+      await userEvent.click(within(resumo()[0]).getByRole('button', { name: /Editar/ }))
+      await userEvent.click(within(resumo()[0]).getByRole('button', { name: 'Escolher outro' }))
+      await userEvent.type(within(resumo()[0]).getByLabelText('Produto do SisChef'), 'maion')
+      expect(within(within(resumo()[0]).getByTestId('achados')).getByRole('button')).toHaveTextContent('MAION.HELLMANNS 1X3KG - INSUMOS')
     })
   })
 

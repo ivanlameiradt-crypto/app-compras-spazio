@@ -143,7 +143,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
       )}
       {faltam.length > 0 && <ul className="conferir-itens" data-testid="conferir-faltam">{faltam.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
       {faltam.length > 0 && confirmados.length > 0 && <div className="grupo" data-testid="conferir-confirmados-titulo">Itens confirmados ({confirmados.length})</div>}
-      {confirmados.length > 0 && <ul className="conferir-itens" data-testid="conferir-confirmados">{confirmados.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
+      {confirmados.length > 0 && <ul className="conferir-itens confirmados" data-testid="conferir-confirmados">{confirmados.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
       <div className="grupo">Financeiro</div>
       {/* Regra do Ivan (07/10): com o XML por ler, o que ele determinar no app vale — não fica esperando a próxima leitura. */}
       {!f.lido ? <p className="sub" data-testid="fin-nao-lido">O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>
