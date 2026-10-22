@@ -2,6 +2,7 @@
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
 import { conversaoDaDecisao, rotuloUnidade, situacaoConversao } from './associacaoRegras'
+import { explicarMotivoDoRobo, motivoSemPrefixoTecnico } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
@@ -61,12 +62,17 @@ export function lembrarForma(emitente: string, forma: string): void {
 // ---------- textos do estado
 const SEM_BOLETO = 'A nota não tem boleto: escolha como pagar'
 
-/** O motivo que o robô gravou, em português simples ("sem boletos na nota — pagamento manual" vira o aviso de escolher como pagar). */
-export function traduzirMotivo(motivo: string | null | undefined): string {
+/** O motivo que o robô gravou, em português simples ("sem boletos na nota — pagamento manual" vira o aviso de escolher como pagar; os motivos que a regra
+ *  reconhece — a conta de unidades que não bate, o frete, o UN DIFERE — viram "o que aconteceu + o que fazer", com o produto pelo NOME quando se passam os
+ *  `itens` da nota; o resto segue como o robô escreveu, só sem o começo técnico "parou antes de gerar o pedido"). Pedido do Ivan, 21/10/2026. */
+export function traduzirMotivo(motivo: string | null | undefined, itens?: ItemNotaSefaz[]): string {
   const t = (motivo ?? '').replace(/\s+/g, ' ').trim()
   const trocado = t.replace(/sem boletos?\s+na nota\s*[—–-]\s*pagamento manual/i, SEM_BOLETO)
   if (trocado !== t) return trocado
-  return /sem boletos?/i.test(t) ? SEM_BOLETO : t
+  if (/sem boletos?/i.test(t)) return SEM_BOLETO
+  const explicado = explicarMotivoDoRobo(t, itens)
+  if (explicado) return `${explicado.porque} O que fazer: ${explicado.fazer}`
+  return motivoSemPrefixoTecnico(t)
 }
 
 /** A nota voltou do robô porque não tem boleto: a forma "boleto" já tentada não serve, o Ivan tem que escolher. */
@@ -254,7 +260,7 @@ export function motivoDoDescarte(n: NotaSefazLista): string {
   if (pendencias.some((p) => p.codigo == null)) partes.push('Item sem produto no SisChef')
   if (pendencias.some((p) => p.codigo != null)) partes.push('Item confirmado no app sem a conversão de unidade')
   if (contaEspecial(n.emitente)) partes.push('Conta especial')
-  if (n.lancamento_estado === 'revisar') partes.push(`O robô parou: ${traduzirMotivo(n.lancamento_motivo) || 'confira a nota'}`)
+  if (n.lancamento_estado === 'revisar') partes.push(`O robô parou: ${traduzirMotivo(n.lancamento_motivo, n.itens) || 'confira a nota'}`)
   return partes.join('; ').slice(0, 300)
 }
 
@@ -283,13 +289,18 @@ export const freteAberto = (estado: EstadoLancamentoNfe | null | undefined, moti
   estado === 'erro' && /aberto na tela de pagamento com o frete/i.test(motivo ?? '')
 export const TEXTO_FRETE_ABERTO = 'Pedido aberto no SisChef com o frete: falta lançar o boleto do frete e finalizar a compra lá (não lance de novo aqui)'
 
-/** Texto do estado da nota (null = nunca disparada). */
-export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined): string | null {
-  const m = traduzirMotivo(motivo)
+/** Texto do estado da nota (null = nunca disparada). Com os `itens` da nota, o motivo do robô que a regra reconhece vem em 3 linhas: que nada foi lançado, por
+ *  quê (com o produto pelo nome) e o que fazer (a tela mostra as quebras de linha). */
+export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined, itens?: ItemNotaSefaz[]): string | null {
+  const m = traduzirMotivo(motivo, itens)
   if (freteAberto(estado, motivo)) return TEXTO_FRETE_ABERTO
   switch (estado) {
     case 'lancando': return 'Lançando… (o robô está trabalhando)'
-    case 'revisar': return m ? `Precisa de você: ${m}` : 'Precisa de você: confira a nota'
+    case 'revisar': {
+      const explicado = explicarMotivoDoRobo(motivo, itens)
+      if (explicado) return `Precisa de você — nada foi lançado.\nPor quê: ${explicado.porque}\nO que fazer: ${explicado.fazer}`
+      return m ? `Precisa de você: ${m}` : 'Precisa de você: confira a nota'
+    }
     case 'erro': return 'Ficou pela metade — NÃO lance de novo (chame o Ivan/confira no SisChef)'
     case 'ensaio_ok': return m ? `Ensaio ok (nada foi criado): ${m}` : 'Ensaio ok (nada foi criado)'
     default: return null
@@ -407,7 +418,7 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   if (contaEspecial(n.emitente)) motivos.push(AVISO_CONTA_ESPECIAL)
   if (freteAberto(n.lancamento_estado, n.lancamento_motivo)) motivos.push('Pedido aberto no SisChef com o frete: falta o boleto do frete e finalizar a compra lá')
   else if (n.lancamento_estado === 'erro') motivos.push('Ficou pela metade: não lance de novo')
-  if (n.lancamento_estado === 'revisar' && n.lancamento_motivo) motivos.push(`Precisa de você: ${traduzirMotivo(n.lancamento_motivo)}`)
+  if (n.lancamento_estado === 'revisar' && n.lancamento_motivo) motivos.push(`Precisa de você: ${traduzirMotivo(n.lancamento_motivo, n.itens)}`)
   return { pronta: motivos.length === 0, motivos, financeiro }
 }
 
