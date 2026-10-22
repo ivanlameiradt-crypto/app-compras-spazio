@@ -412,7 +412,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const estado = nota.lancamento_estado ?? null
   const bloqueios = bloqueiosDaNota(nota)
   const presa = lancandoPresa(nota)
-  const estadoTexto = presa ? AVISO_PRESA : textoDoEstado(estado, nota.lancamento_motivo)
+  const estadoTexto = presa ? AVISO_PRESA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
   const robotOuMetade = estado === 'erro' || (estado === 'lancando' && !presa)
@@ -534,7 +534,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {estadoTexto && (
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
-      {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo)}</div>}
+      {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo, nota.itens)}</div>}
       {estado === 'lancando' && <VerificarRobo nota={nota} recarregar={recarregar} />}
       {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
       {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}

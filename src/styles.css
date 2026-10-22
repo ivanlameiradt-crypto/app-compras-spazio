@@ -122,6 +122,8 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .nota-item { font-size: 13px; color: var(--aviso-texto); }
 .linha-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .amarelo { padding: 8px 10px; border-radius: 10px; background: var(--aviso-fundo); color: var(--aviso-texto); font-size: 14px; }
+/* o aviso de "Precisa de você" vem em 3 linhas (nada foi lançado / por quê / o que fazer): respeita as quebras de linha do texto */
+.nota-lancar [data-testid="status-nota"] { white-space: pre-line; line-height: 1.45; }
 .copiado { align-self: center; }
 .copiar-manual { flex-basis: 100%; }
 .copiar-manual textarea { font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; width: 100%; padding: 8px; border-radius: 10px; border: 1px solid var(--linha); background: var(--cartao); color: var(--texto); }
