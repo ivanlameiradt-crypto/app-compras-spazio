@@ -209,6 +209,20 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .conferir-itens .tick-ok { flex: none; margin-top: 1px; }
 .cupom .conferir-itens .tick-ok circle { fill: var(--marca); }
 .cupom .conferir-itens .tick-ok path { stroke: var(--marca-texto); }
+/* Itens confirmados da nota (22/10/2026, pedido do Ivan: a tela é comprida): linha compacta — descrição e produto à esquerda, "Editar" à direita, na altura da descrição.
+   Só vale com o item FECHADO (o :has() reconhece o botão Editar); com a caixa de edição aberta (ou num navegador sem :has) a linha segue empilhada como sempre. */
+.cupom .conferir-itens.confirmados li:has(> .associar-feito > .editar-item),
+.cupom .conferir-itens.confirmados li:has(> .editar-linha > .editar-item) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: start; }
+.cupom .conferir-itens.confirmados li > .associar-feito:has(> .editar-item),
+.cupom .conferir-itens.confirmados li > .editar-linha:has(> .editar-item) { display: contents; }
+.cupom .conferir-itens.confirmados li:has(> .associar-feito > .editar-item) > span:first-child,
+.cupom .conferir-itens.confirmados li:has(> .editar-linha > .editar-item) > span:first-child,
+.cupom .conferir-itens.confirmados li:has(> .associar-feito > .editar-item) > b.produto,
+.cupom .conferir-itens.confirmados li:has(> .editar-linha > .editar-item) > b.produto,
+.cupom .conferir-itens.confirmados li > .associar-feito > .confirmado,
+.cupom .conferir-itens.confirmados li > .editar-linha > p { grid-column: 1; }
+.cupom .conferir-itens.confirmados li > .associar-feito > .editar-item,
+.cupom .conferir-itens.confirmados li > .editar-linha > .editar-item { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
 /* Caixa de associação de produto (item sem produto no SisChef): campo, resultados, produto escolhido e "confirmado no app" */
 .cupom .associar { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 10px; border: 1px dashed var(--linha); border-radius: 10px; }
 .cupom .associar .achados { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -265,6 +279,14 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 /* a conferência é uma lista de duas colunas (descrição à esquerda, valor à direita), ao contrário da lista empilhada da nota */
 .cupom .corrigir-cupom .soma-itens li { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 10px; }
 .cupom .corrigir-cupom .soma-itens li b { flex: none; white-space: nowrap; }
+/* O resumo do fim (22/10/2026): a linha de cada item tem a descrição e o valor; embaixo (linha inteira) vêm o produto, a conta e o "Editar", e — editando — a caixa do item */
+.cupom .corrigir-cupom .soma-itens { gap: 0; }
+.cupom .corrigir-cupom .soma-itens li { flex-wrap: wrap; row-gap: 4px; padding: 8px 0; border-top: 1px solid var(--linha); }
+.cupom .corrigir-cupom .soma-itens li:first-child { border-top: 0; padding-top: 2px; }
+.cupom .corrigir-cupom .soma-itens li > span:first-child { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.cupom .corrigir-cupom .resumo-detalhe { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; font-size: 13px; }
+.cupom .corrigir-cupom .resumo-detalhe > span { min-width: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
+.cupom .corrigir-cupom .resumo-edicao { flex: 1 0 100%; min-width: 0; }
 .cupom .corrigir-cupom .acoes { margin-top: 4px; }
 
 /* Etapa 2 da associação pelo app: embaixo do Lançar, o aviso do que o robô vai associar no SisChef ao lançar (.lancar-associa) tem a mesma forma

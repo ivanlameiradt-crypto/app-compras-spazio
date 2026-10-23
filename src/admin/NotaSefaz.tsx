@@ -22,7 +22,7 @@ import {
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
-  textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeConversao, conversaoDeItemAssociado,
+  textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
   etiquetaDaNota, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
@@ -91,46 +91,59 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
   const quartaDaMaues = ehPagamentoSemanal(nota) ? planoSemanal(nota, [])?.quarta ?? null : null
   // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
   const [aberto, setAberto] = useState(() => nota.itens.some((it) => (!itemAssociado(it) && decisaoDoItem(nota, it) == null) || itemPedeConversao(nota, it)))
+  // Pedido do Ivan (22/10/2026): o item confirmado sai da lista do que falta e vai para o resumo dos confirmados — a lista fica só com o que ainda pede algo dele.
+  // "Editar" de um item confirmado abre a caixa dele ali mesmo, no resumo; só "Desfazer a escolha" (ou o robô pedir de novo) o devolve para a lista do que falta.
+  const todos = nota.itens.map((it, i) => ({ it, i }))
+  const faltam = todos.filter(({ it }) => itemPedeAcao(nota, it))
+  const confirmados = todos.filter(({ it }) => !itemPedeAcao(nota, it))
+  const itemDoPainel = (it: ItemNotaSefaz, i: number) => {
+    const ok = itemAssociado(it)
+    const decisao = decisaoDoItem(nota, it) // o que o Ivan confirmou NO APP para este item (só existe se ele ainda não tem produto no SisChef)
+    const conversao = conversaoDaDecisao(decisao) // o que o robô vai digitar no modal de conversão do SisChef (null = nada)
+    // o rótulo do ✓ de confirmado também lê a conversão (leitor de tela), já que o texto dela fica na linha "confirmado no app" embaixo
+    const rotuloConfirmado = conversao != null && decisao
+      ? `produto confirmado no app, ${textoConversao(it.unidade_sischef, decisao.unidade, conversao)}`
+      : 'produto confirmado no app'
+    return (
+      <li key={i} data-testid="conferir-item">
+        <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
+        {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app"
+            embaixo, com a conversão quando houver). Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
+        {/* Decisão ainda INCOMPLETA (falta a conversão): sem ✓ e sem repetir o nome aqui — o cartão logo embaixo mostra "Produto que eu indiquei" e o botão Confirmar. */}
+        {(!decisao || decisaoCompleta(it, decisao)) && (
+          <b className="produto">
+            {ok && <TickOk />}
+            {decisao && <TickOk rotulo={rotuloConfirmado} testid="item-confirmado" />}
+            <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
+          </b>
+        )}
+        {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
+        {!ok && it.n != null && (decisao != null || podeAssociar) && (
+          <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} />
+        )}
+        {/* Item que já vem associado, mas o SisChef o marcou UN DIFERE: aparece SÓ quando o robô parou pedindo (ou o Ivan já informou) — vazio, para o Ivan dizer o número */}
+        {ok && it.n != null && (
+          <ConversaoItemAssociado item={{ ...it, n: it.n }} atual={conversaoDeItemAssociado(nota, it)} pede={itemPedeConversao(nota, it)}
+            desabilitado={!podeAssociar} salvar={salvarConversaoItem} buscarUnidade={api.unidadeDoProdutoNaPlanilha} />
+        )}
+      </li>
+    )
+  }
   return (
     <details className="conferir" data-testid="conferir" open={aberto} onToggle={(e) => setAberto((e.currentTarget as HTMLDetailsElement).open)}>
       <summary>Conferir itens e financeiro</summary>
       <div className="grupo">Itens e produtos associados</div>
       {nota.itens.length === 0 && <p className="sub" data-testid="conferir-sem-itens">Nenhum item lido: no SisChef esta nota costuma aparecer como “XML resumido” (só o resumo da nota, sem os itens).</p>}
-      <ul className="conferir-itens">
-        {nota.itens.map((it, i) => {
-          const ok = itemAssociado(it)
-          const decisao = decisaoDoItem(nota, it) // o que o Ivan confirmou NO APP para este item (só existe se ele ainda não tem produto no SisChef)
-          const conversao = conversaoDaDecisao(decisao) // o que o robô vai digitar no modal de conversão do SisChef (null = nada)
-          // o rótulo do ✓ de confirmado também lê a conversão (leitor de tela), já que o texto dela fica na linha "confirmado no app" embaixo
-          const rotuloConfirmado = conversao != null && decisao
-            ? `produto confirmado no app, ${textoConversao(it.unidade_sischef, decisao.unidade, conversao)}`
-            : 'produto confirmado no app'
-          return (
-            <li key={i} data-testid="conferir-item">
-              <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
-              {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app"
-                  embaixo, com a conversão quando houver). Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
-              {/* Decisão ainda INCOMPLETA (falta a conversão): sem ✓ e sem repetir o nome aqui — o cartão logo embaixo mostra "Produto que eu indiquei" e o botão Confirmar. */}
-              {(!decisao || decisaoCompleta(it, decisao)) && (
-                <b className="produto">
-                  {ok && <TickOk />}
-                  {decisao && <TickOk rotulo={rotuloConfirmado} testid="item-confirmado" />}
-                  <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
-                </b>
-              )}
-              {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
-              {!ok && it.n != null && (decisao != null || podeAssociar) && (
-                <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} />
-              )}
-              {/* Item que já vem associado, mas o SisChef o marcou UN DIFERE: aparece SÓ quando o robô parou pedindo (ou o Ivan já informou) — vazio, para o Ivan dizer o número */}
-              {ok && it.n != null && (
-                <ConversaoItemAssociado item={{ ...it, n: it.n }} atual={conversaoDeItemAssociado(nota, it)} pede={itemPedeConversao(nota, it)}
-                  desabilitado={!podeAssociar} salvar={salvarConversaoItem} buscarUnidade={api.unidadeDoProdutoNaPlanilha} />
-              )}
-            </li>
-          )
-        })}
-      </ul>
+      {nota.itens.length > 0 && (
+        <p className={faltam.length === 0 ? 'ok' : 'sub'} role="status" aria-live="polite" data-testid="conferir-progresso">
+          {faltam.length === 0
+            ? `✓ ${todos.length === 1 ? 'O item está confirmado' : `Todos os ${todos.length} itens estão confirmados`}.`
+            : `${faltam.length === 1 ? 'Falta' : 'Faltam'} confirmar ${faltam.length} de ${todos.length} ${todos.length === 1 ? 'item' : 'itens'}.`}
+        </p>
+      )}
+      {faltam.length > 0 && <ul className="conferir-itens" data-testid="conferir-faltam">{faltam.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
+      {faltam.length > 0 && confirmados.length > 0 && <div className="grupo" data-testid="conferir-confirmados-titulo">Itens confirmados ({confirmados.length})</div>}
+      {confirmados.length > 0 && <ul className="conferir-itens confirmados" data-testid="conferir-confirmados">{confirmados.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
       <div className="grupo">Financeiro</div>
       {/* Regra do Ivan (07/10): com o XML por ler, o que ele determinar no app vale — não fica esperando a próxima leitura. */}
       {!f.lido ? <p className="sub" data-testid="fin-nao-lido">O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>

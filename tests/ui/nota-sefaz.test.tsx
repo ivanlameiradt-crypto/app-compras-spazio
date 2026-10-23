@@ -668,6 +668,12 @@ describe('NotaSefaz', () => {
       expect(par[0]).toHaveTextContent('Parcela 001 · vence 05/11/2026')
       expect(par[0]).toHaveTextContent(/R\$\s60,00/)
       expect(within(painel).getByTestId('fin-total')).toHaveTextContent(/Soma dos boletos R\$\s100,00 · valor da nota R\$\s100,00 · bate/)
+      // tudo associado no SisChef: nada falta, só o resumo dos confirmados (22/10)
+      expect(within(painel).getByTestId('conferir-progresso')).toHaveTextContent('✓ Todos os 2 itens estão confirmados.')
+      expect(within(painel).getByTestId('conferir-progresso')).toHaveClass('ok')
+      expect(within(painel).queryByTestId('conferir-faltam')).not.toBeInTheDocument()
+      expect(within(painel).queryByTestId('conferir-confirmados-titulo')).not.toBeInTheDocument()   // sem lista do que falta, o título "Itens confirmados" não precisa aparecer
+      expect(within(within(painel).getByTestId('conferir-confirmados')).getAllByTestId('conferir-item')).toHaveLength(2)
     })
 
     it('painel de conferir: só o item com produto leva o ✓; o sem produto e o decidido só no app ficam sem ✓ e com o aviso escrito', async () => {
@@ -679,14 +685,21 @@ describe('NotaSefaz', () => {
       ] }))
       render(<NotaSefaz />)
       const itens = within(await screen.findByTestId('conferir')).getAllByTestId('conferir-item')
-      expect(within(itens[0]).getByTestId('item-ok')).toBeInTheDocument()
-      expect(itens[0]).toHaveTextContent('AGUA SEM GÁS 500ML')
-      expect(within(itens[1]).queryByTestId('item-ok')).not.toBeInTheDocument()
-      expect(itens[1]).toHaveTextContent('sem produto')
-      expect(itens[1]).toHaveTextContent('sem associação')
-      expect(within(itens[2]).queryByTestId('item-ok')).not.toBeInTheDocument()
-      expect(itens[2]).toHaveTextContent('decidido no app (ainda não está no SisChef)')
-      expect(within(itens[3]).getByTestId('item-ok')).toBeInTheDocument()
+      // 22/10: o que falta confirmar vem na frente e os confirmados depois — por isso o item se acha pelo texto, não pela posição
+      const por = (trecho: string): HTMLElement => itens.find((li) => li.textContent?.includes(trecho)) as HTMLElement
+      expect(within(por('AGUA SEM GÁS')).getByTestId('item-ok')).toBeInTheDocument()
+      expect(por('AGUA SEM GÁS')).toHaveTextContent('AGUA SEM GÁS 500ML')
+      expect(within(por('CHOC LACTA BIS')).queryByTestId('item-ok')).not.toBeInTheDocument()
+      expect(por('CHOC LACTA BIS')).toHaveTextContent('sem produto')
+      expect(por('CHOC LACTA BIS')).toHaveTextContent('sem associação')
+      expect(within(por('LEITE COND')).queryByTestId('item-ok')).not.toBeInTheDocument()
+      expect(por('LEITE COND')).toHaveTextContent('decidido no app (ainda não está no SisChef)')
+      expect(within(por('OLEO')).getByTestId('item-ok')).toBeInTheDocument()
+      // os dois sem produto ficam na lista "Falta confirmar"; os dois com produto, em "Itens confirmados"
+      expect(screen.getByTestId('conferir-progresso')).toHaveTextContent('Faltam confirmar 2 de 4 itens.')
+      expect(within(screen.getByTestId('conferir-faltam')).getAllByTestId('conferir-item')).toHaveLength(2)
+      expect(screen.getByTestId('conferir-confirmados-titulo')).toHaveTextContent('Itens confirmados (2)')
+      expect(within(screen.getByTestId('conferir-confirmados')).getAllByTestId('conferir-item')).toHaveLength(2)
       // sem ✓ em algum item ⇒ o aviso vermelho aparece e o Lançar fica travado (o ✓ não contradiz o bloqueio)
       expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef')
       expect(botaoLancar()).toBeDisabled()
@@ -1207,6 +1220,11 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       expect(item).not.toHaveTextContent('sem produto')
       expect(within(item).queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
       expect(within(item).getByRole('button', { name: 'Editar' })).toBeInTheDocument()
+      // 22/10 (pedido do Ivan): confirmado, o item saiu da lista do que falta e passou para o resumo dos confirmados
+      const p = await painel()
+      expect(p.queryByTestId('conferir-faltam')).not.toBeInTheDocument()
+      expect(within(p.getByTestId('conferir-confirmados')).getAllByTestId('conferir-item')).toHaveLength(1)
+      expect(p.getByTestId('conferir-progresso')).toHaveTextContent('✓ O item está confirmado.')
     })
 
     it('a sugestão do robô já abre no cartão "Produto que eu indiquei": quem guarda é o Confirmar (sem Editar nem busca)', async () => {
@@ -1769,11 +1787,16 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     it('com o item só pela metade decidido (um confirmado, um não): o aviso é o vermelho de sempre e o outro item continua com o campo', async () => {
       aLancar(nota({ itens: [sem(1), sem(2, { descricao: 'CÓD. FOR: 1 LEITE COND TIROL' })], associacoes_app: { '1': decisao(OLEO, 'ÓLEO DE SOJA - INSUMOS (UN)') } }))
       render(<NotaSefaz />)
-      const itens = (await painel()).getAllByTestId('conferir-item')
-      expect(within(itens[0]).getByTestId('item-confirmado')).toBeInTheDocument()
-      expect(within(itens[1]).queryByTestId('item-confirmado')).not.toBeInTheDocument()
+      const p = await painel()
+      // 22/10: o item decidido sai da lista do que falta e fica no resumo dos confirmados; na lista só sobra o outro
+      const faltam = within(p.getByTestId('conferir-faltam'))
+      const confirmados = within(p.getByTestId('conferir-confirmados'))
+      expect(confirmados.getByTestId('item-confirmado')).toBeInTheDocument()
+      expect(faltam.queryByTestId('item-confirmado')).not.toBeInTheDocument()
+      expect(faltam.getAllByTestId('conferir-item')).toHaveLength(1)
       // o cartão do outro item só aparece quando a lista de produtos termina de carregar; as palavras-chave ("leite cond") indicam o LEITE CONDESSADO
-      expect(await within(itens[1]).findByTestId('produto-escolhido')).toHaveTextContent('Produto que eu indiquei no SisChef')
+      expect(await faltam.findByTestId('produto-escolhido')).toHaveTextContent('Produto que eu indiquei no SisChef')
+      expect(p.getByTestId('conferir-progresso')).toHaveTextContent('Falta confirmar 1 de 2 itens.')
       expect(screen.getByTestId('bloqueio-nota')).toHaveClass('erro')
       expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef: escolha o produto na caixa de associação (ou associe no SisChef) antes de lançar')
     })
@@ -1847,11 +1870,13 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     it('item já associado no SisChef não tem caixa; item sem número (n) não dá para associar pelo app', async () => {
       aLancar(nota({ itens: [item({ n: 1 }), sem(null)] }))
       render(<NotaSefaz />)
-      const itens = (await painel()).getAllByTestId('conferir-item')
-      expect(within(itens[0]).queryByTestId('associar-produto')).not.toBeInTheDocument()
-      expect(within(itens[0]).getByTestId('item-ok')).toBeInTheDocument()
-      expect(within(itens[1]).queryByTestId('associar-produto')).not.toBeInTheDocument()
-      expect(itens[1]).toHaveTextContent('sem associação')
+      const p = await painel()
+      const confirmados = within(p.getByTestId('conferir-confirmados'))      // 22/10: o já associado mora no resumo dos confirmados; o sem número, na lista do que falta
+      const faltam = within(p.getByTestId('conferir-faltam'))
+      expect(confirmados.queryByTestId('associar-produto')).not.toBeInTheDocument()
+      expect(confirmados.getByTestId('item-ok')).toBeInTheDocument()
+      expect(faltam.queryByTestId('associar-produto')).not.toBeInTheDocument()
+      expect(faltam.getByTestId('conferir-item')).toHaveTextContent('sem associação')
     })
 
     it('com o robô lançando a nota (ou ela pela metade) não dá para escolher produto: o campo some', async () => {

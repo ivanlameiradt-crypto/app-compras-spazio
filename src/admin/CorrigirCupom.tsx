@@ -38,6 +38,8 @@ interface EstadoItem {
   forcar: boolean
   lembrar: boolean
   confirmado: boolean
+  /** Reaberto pelo "Editar" do resumo (22/10/2026): a caixa abre ali mesmo, na linha do resumo — o item não volta para a lista de pendentes — até o Ivan confirmar de novo. */
+  editando: boolean
 }
 
 /** Como a caixa pede o que entra no estoque quando a unidade do cupom é outra (regras do Ivan, 08/10):
@@ -61,7 +63,7 @@ const minusc = (u: string | null | undefined): string => (u ?? '').trim().toLowe
 const qtd = (v: number): string => v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
 /** A quantidade que o robô leu no cupom, pronta para o campo (com vírgula): o Ivan só confere, em vez de digitar de novo. */
 const quantidadeLida = (it: ItemCupomRecente): string => (it.quantidade_cupom != null && Number(it.quantidade_cupom) > 0 ? qtd(Number(it.quantidade_cupom)) : '')
-const estadoInicial = (it: ItemCupomRecente): EstadoItem => ({ produto: null, quantidade: quantidadeLida(it), entrada: '', peso: '', forcar: false, lembrar: true, confirmado: false })
+const estadoInicial = (it: ItemCupomRecente): EstadoItem => ({ produto: null, quantidade: quantidadeLida(it), entrada: '', peso: '', forcar: false, lembrar: true, confirmado: false, editando: false })
 
 /** A confirmação válida deste item (quantidades lidas e, com conversão, a entrada também), ou null enquanto falta algo. */
 function confirmacaoDe(it: ItemCupomRecente, e: EstadoItem): Confirmada | null {
@@ -86,15 +88,18 @@ function confirmacaoDe(it: ItemCupomRecente, e: EstadoItem): Confirmada | null {
   return entrada == null ? null : { quantidade, entrada }
 }
 
-/** A caixa de UM item pendente: escolher o produto → quantidade(s) → "Confirmar este item"; confirmado vira uma linha com ✓ e "Editar" (era "Trocar" até 21/10). */
-function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado }: {
+/** A caixa de UM item pendente: escolher o produto → quantidade(s) → "Confirmar este item". Confirmado (22/10/2026), o item SAI desta lista e passa a morar no resumo do fim
+ *  ("Conferência da soma"), com o ✓ e o "Editar" (era "Trocar" até 21/10); o "Editar" reabre esta mesma caixa ali, na linha do resumo (estado.editando). */
+function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado, novos, registrarNovo }: {
   cupom: CupomRecente; it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null; catalogoFalhou: boolean
   estado: EstadoItem; mudar: (e: Partial<EstadoItem>) => void
   /** Reenvio em curso: nada pode mudar por baixo do que está sendo mandado. */
   travado: boolean
+  /** Produtos que o Ivan acabou de cadastrar pelo app: entram na busca de TODAS as caixas na hora. Moram na tela de cima porque a caixa de um item confirmado é desmontada
+   *  (o item sai da lista) e remontada no "Editar" — se ficassem aqui, o "Escolher outro" do Editar não acharia o produto recém-criado. */
+  novos: ProdutoCatalogo[]; registrarNovo: (p: ProdutoCatalogo) => void
 }) {
   const [texto, setTexto] = useState('')
-  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos que o Ivan acabou de cadastrar pelo app: entram na busca desta caixa na hora
   const lista = useMemo(() => [...(catalogo ?? []), ...novos.filter((n) => !(catalogo ?? []).some((p) => p.produto_id === n.produto_id))], [catalogo, novos])
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
   // a proposta do sistema só vira botão se o produto está na lista de insumos (e não é escondido): fora dela o servidor a recusaria
@@ -133,17 +138,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const absurdo = modo === 'por_unidade' && destinoKg && qCupom != null && totalPorPeso != null && kgPorUnidadeAbsurdo(totalPorPeso, qCupom)
   const lembravel = podeLembrar(cupom, it)
 
-  if (estado.confirmado && estado.produto && conf && linha) {
-    return (
-      <div className="associar-feito">
-        <span className="confirmado">
-          ✓ {estado.produto.nome} · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} → {formatarReais(linha.valor)}
-          {destinoContado && conf.entrada != null && <> · entram {qtd(linha.entrada)} {minusc(estado.produto.unidade)}</>}
-        </span>
-        <button type="button" className="editar-item" disabled={travado} onClick={() => mudar({ confirmado: false })}><span aria-hidden="true">✎</span> Editar</button>
-      </div>
-    )
-  }
+  // Item confirmado não tem caixa: quem o mostra é o resumo do fim (ItemConfirmadoNoResumo), com o "Editar" que reabre esta caixa na própria linha do resumo.
+  if (estado.confirmado) return null
 
   // Com conversão de unidade o "Lembrar" começa DESMARCADO: o que fica guardado é também o fator (1 UN = x KG), e num produto de peso variável
   // (uma peça de queijo) o fator desta compra lançaria a próxima com o peso errado sem ninguém ver. Pacote de peso fixo (lata de 395 g): ele marca.
@@ -202,7 +198,10 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
                 <b>{porPalavras.produto.nome}</b>
               </p>
               <div className="acoes">
-                <button type="button" className={porPalavras.forca === 'forte' ? 'botao' : 'botao secundario'} disabled={travado} onClick={() => confirmarSugestao(porPalavras.produto)}>
+                {/* "Confirmar" (as palavras batem) vale o item de uma vez; "Usar este" (o mais parecido, nada bate por inteiro) SÓ ESCOLHE o produto: o item fica aberto
+                    e o Ivan toca em "Confirmar este item" — a etapa a mais que ele pediu em 22/10/2026. */}
+                <button type="button" className={porPalavras.forca === 'forte' ? 'botao' : 'botao secundario'} disabled={travado}
+                  onClick={() => (porPalavras.forca === 'forte' ? confirmarSugestao(porPalavras.produto) : escolher(porPalavras.produto))}>
                   {porPalavras.forca === 'forte' ? 'Confirmar' : 'Usar este'}
                 </button>
               </div>
@@ -247,7 +246,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           {!travado && (
             <ProdutoNaoCadastrado descricaoDoItem={descricaoLida} acoes={ACOES_PRODUTO} origem={{ tipo: 'cupom', id: cupom.id }}
               discreto={!(busca.total === 0 && (texto.trim() !== '' || (!proposta && !it.proposta && !porPalavras && !antes)))}
-              aoUsar={(p) => { setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p]); escolher(p) }} />
+              aoUsar={(p) => { registrarNovo(p); escolher(p) }} />
           )}
         </>
       )}
@@ -263,8 +262,9 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             </span>
           </div>
           <label>{ehPeso(it.unidade_cupom) && !milheiro ? 'Peso' : 'Quantidade'}{unCupom !== '' ? ` (${milheiro ? 'ML = milheiro' : unCupom})` : ''} que está no cupom
+            {/* autoFocus só quando o Ivan tocou em "Editar" no resumo (a caixa acabou de abrir naquela linha); na lista de pendentes o cursor não é roubado */}
             <input type="text" inputMode="decimal" placeholder={ehPeso(it.unidade_cupom) && !milheiro ? '0,000' : '0'} value={estado.quantidade} disabled={travado}
-              onChange={(e) => mudar({ quantidade: e.target.value })} />
+              autoFocus={estado.editando} onChange={(e) => mudar({ quantidade: e.target.value })} />
           </label>
           {converte && modo === 'auto' && (
             <div className="ok" data-testid="entrada-automatica">
@@ -349,17 +349,54 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   )
 }
 
+/** A linha de um item que o Ivan confirmou AGORA, no resumo do fim: o ✓ com o produto, o que está no cupom e, com conversão, quanto entra no estoque — e o "Editar",
+ *  que reabre a caixa do item ali mesmo (pedido do Ivan, 22/10/2026: o item confirmado sai da lista e só aparece no resumo, com todas as informações). */
+function ItemConfirmadoNoResumo({ it, produto, conf, travado, aoEditar }: {
+  it: ItemCupomRecente; produto: ProdutoCatalogo; conf: Confirmada; travado: boolean; aoEditar: () => void
+}) {
+  const milheiro = ehMilheiro(it.unidade_cupom, produto.unidade)
+  const linha = linhaConfirmada(it, conf)
+  return (
+    <div className="resumo-detalhe" data-testid="resumo-confirmado">
+      <span>
+        <span className="confirmado">✓ {produto.nome}</span>
+        <span className="sub"> · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : minusc(it.unidade_cupom)}{conf.entrada != null && <> → entram {qtd(linha.entrada)} {minusc(produto.unidade)}</>}</span>
+      </span>
+      <button type="button" className="editar-item" disabled={travado} onClick={aoEditar}><span aria-hidden="true">✎</span> Editar</button>
+    </div>
+  )
+}
+
+/** Item que já tinha produto confirmado antes de o Ivan abrir esta tela (o servidor casou sozinho): produto e quanto entra no estoque, só para ele conferir. */
+function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null }) {
+  const produto = (catalogo ?? []).find((p) => String(p.produto_id) === String(it.sugestao_produto?.id))
+  return (
+    <div className="resumo-detalhe" data-testid="item-conhecido">
+      <span>
+        <span className="confirmado">✓ {produto ? produto.nome : `produto cód. ${it.sugestao_produto?.id ?? '?'}`}</span>
+        {it.entrada_estoque != null && <span className="sub"> · entra {qtd(Number(it.entrada_estoque))} {produto?.unidade ? minusc(produto.unidade) : ''} no estoque</span>}
+      </span>
+    </div>
+  )
+}
+
 export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenviar }: Props) {
   const [estados, setEstados] = useState<Record<number, EstadoItem>>({})
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos cadastrados agora pelo app (de qualquer item): valem na busca de todas as caixas
+  const registrarNovo = (p: ProdutoCatalogo) => setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p])
 
   const pendentes = useMemo(() => itensPendentes(cupom), [cupom])
   const estadoDe = (i: number): EstadoItem => estados[i] ?? estadoInicial(cupom.itens[i])
   const mudar = (i: number, e: Partial<EstadoItem>) => {
     setErro('') // mexer em qualquer item apaga o erro do último reenvio: ele já não descreve o que está na tela
-    setEstados((atual) => ({ ...atual, [i]: { ...(atual[i] ?? estadoInicial(cupom.itens[i])), ...e } }))
+    // confirmar de novo encerra a edição: a caixa fecha e a linha volta a mostrar só o resumo do item
+    setEstados((atual) => ({ ...atual, [i]: { ...(atual[i] ?? estadoInicial(cupom.itens[i])), ...e, ...(e.confirmado ? { editando: false } : {}) } }))
   }
+  // Os que ainda faltam confirmar (inclui o que o Ivan reabriu pelo "Editar") e, destes, os que moram na LISTA: o item reaberto fica na linha do resumo, não volta para a lista.
+  const semConfirmar = pendentes.filter((i) => !estadoDe(i).confirmado)
+  const naLista = semConfirmar.filter((i) => !estadoDe(i).editando)
 
   // só o que está CONFIRMADO entra na soma: um peso digitado pela metade não pode fazer a conferência oscilar
   const confirmadas = useMemo(() => {
@@ -421,24 +458,18 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
       : soma.diferenca == null ? ' · o total do cupom não foi lido'
         : ` · diferença de ${formatarReais(Math.abs(soma.diferenca))}: confira os pesos`
 
+  // Quantos faltam, para o Ivan saber onde está sem rolar a tela (os confirmados saem da lista e moram no resumo do fim)
+  const progresso = pendentes.length === 0 ? null
+    : semConfirmar.length === 0
+      ? `✓ ${pendentes.length === 1 ? 'O item está confirmado' : `Os ${pendentes.length} itens estão confirmados`}. Confira a soma abaixo e reenvie.`
+      : `${semConfirmar.length === 1 ? 'Falta' : 'Faltam'} confirmar ${semConfirmar.length} de ${pendentes.length} ${pendentes.length === 1 ? 'item' : 'itens'}.`
+
   return (
     <div className="associar corrigir-cupom" data-testid="corrigir-cupom">
       <div className="grupo">{soConfirmar ? 'Confira os itens e confirme' : 'Confirmar os itens deste cupom'}</div>
-      {soConfirmar && (cupom.itens ?? []).map((it, i) => {
-        const produto = (catalogo ?? []).find((p) => String(p.produto_id) === String(it.sugestao_produto?.id))
-        return (
-          <div key={i} className="corrigir-item" data-testid="item-conhecido">
-            <p>
-              <b>{(it.descricao_cupom ?? '').trim() || 'item'}</b> <span className="tag-conhecido">Já conhecido</span>
-            </p>
-            <p className="sub">
-              {produto ? produto.nome : `produto cód. ${it.sugestao_produto?.id ?? '?'}`}
-              {it.entrada_estoque != null && <> · entra {qtd(Number(it.entrada_estoque))} {produto?.unidade ? minusc(produto.unidade) : ''} no estoque</>}
-            </p>
-          </div>
-        )
-      })}
-      {pendentes.map((i) => {
+      {progresso && <p className={semConfirmar.length === 0 ? 'ok' : 'sub'} role="status" aria-live="polite" data-testid="corrigir-progresso">{progresso}</p>}
+      {/* Só os itens que faltam: confirmado, o item sai daqui e passa para o resumo do fim (pedido do Ivan, 22/10/2026) */}
+      {naLista.map((i) => {
         const it = cupom.itens[i]
         return (
           <div key={i} className="corrigir-item" data-testid="corrigir-item">
@@ -449,20 +480,34 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
               )}
             </p>
             <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={estadoDe(i)} mudar={(e) => mudar(i, e)}
-              travado={enviando} />
+              travado={enviando} novos={novos} registrarNovo={registrarNovo} />
           </div>
         )
       })}
 
-      <div className="grupo">Conferência da soma</div>
+      {/* O resumo do fim: uma linha por item do cupom com a descrição e o valor; o item confirmado ganha embaixo o produto, a quantidade, o que entra no estoque e o
+          "Editar" (abre a caixa do item aqui mesmo); o que já veio conhecido do servidor mostra o produto; o que falta diz "falta confirmar". */}
+      {!soConfirmar && <div className="grupo">Conferência da soma</div>}
       <ul className="conferir-itens soma-itens" data-testid="corrigir-conferencia">
         {soma.linhas.map((l) => {
           const it = cupom.itens[l.indice]
-          const jaConfirmado = !pendentes.includes(l.indice)
+          const pendente = pendentes.includes(l.indice)
+          const e = pendente ? estadoDe(l.indice) : null
+          const conf = pendente ? confirmadas.get(l.indice) : undefined
           return (
-            <li key={l.indice}>
-              <span>{(it?.descricao_cupom ?? '').trim() || 'item'}{jaConfirmado ? ' (já confirmado)' : ''}</span>
+            <li key={l.indice} data-testid="resumo-item">
+              <span>{(it?.descricao_cupom ?? '').trim() || 'item'}{pendente ? '' : ' (já confirmado)'}</span>
               <b>{l.valor == null ? 'falta confirmar' : formatarReais(l.valor)}</b>
+              {!pendente && it && <ItemConhecidoNoResumo it={it} catalogo={catalogo} />}
+              {e?.confirmado && conf && e.produto && (
+                <ItemConfirmadoNoResumo it={it} produto={e.produto} conf={conf} travado={enviando} aoEditar={() => mudar(l.indice, { confirmado: false, editando: true })} />
+              )}
+              {e?.editando && !e.confirmado && (
+                <div className="resumo-edicao" data-testid="resumo-edicao">
+                  <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={e} mudar={(x) => mudar(l.indice, x)} travado={enviando}
+                    novos={novos} registrarNovo={registrarNovo} />
+                </div>
+              )}
             </li>
           )
         })}

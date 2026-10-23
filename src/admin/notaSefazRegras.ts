@@ -173,6 +173,19 @@ function faltaNaDecisao(it: ItemNotaSefaz, d: AssociacaoApp | null): string | nu
 /** A decisão do app para o item está COMPLETA (produto e, quando é certo que precisa, a conversão)? Só então o painel mostra o ✓ de "confirmado". */
 export const decisaoCompleta = (it: ItemNotaSefaz, d: AssociacaoApp | null): boolean => d != null && faltaNaDecisao(it, d) == null
 
+/**
+ * O item ainda PEDE algo do Ivan no painel "Conferir itens e financeiro"? (pedido dele, 22/10/2026: o item confirmado sai da lista do que falta e vai para o resumo
+ * dos confirmados, para a tela não ficar comprida). Pede quando:
+ *  - não tem produto de verdade no SisChef e o app ainda não tem a decisão COMPLETA dele (falta o produto, ou a conversão que é certo que o SisChef vai pedir;
+ *    item sem número na nota também, porque não há como decidi-lo no app) — o mesmo critério de `pendenciasParaLancar`;
+ *  - já vem associado do SisChef, mas o robô parou dizendo que ele está com UN DIFERE e ninguém informou a conversão (`itemPedeConversao`).
+ * Todo o resto está CONFIRMADO: o ✓ do SisChef ou a decisão completa do app.
+ */
+export function itemPedeAcao(n: NotaSefazLista, it: ItemNotaSefaz): boolean {
+  if (itemSemProduto(it)) return faltaNaDecisao(it, decisaoDoItem(n, it)) != null
+  return itemPedeConversao(n, it) && conversaoDeItemAssociado(n, it) == null
+}
+
 /** Item sem produto no SisChef cuja decisão do app está INCOMPLETA: é o que ainda TRAVA o Lançar (etapa 2). `falta` diz o que fazer no app; as unidades
  *  vêm para a tela montar o pedido de conversão. `codigo`/`nome` nulos = ainda sem produto escolhido; com produto = falta só a conversão. */
 export interface PendenciaParaLancar extends PendenciaSischef { n: number | null; falta: string; unidadeNota: string | null; unidadeProduto: string | null }
