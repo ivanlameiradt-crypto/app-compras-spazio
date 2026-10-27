@@ -94,10 +94,15 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
   if (difere) {
     const cods = difere[1].split(/\s*;\s*/).map((c) => c.trim()).filter(Boolean)
     const nomes = cods.map((c) => rotuloDoItem(itens, c))
-    const lista = nomes.length === 1 ? nomes[0] : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`
+    const um = nomes.length === 1
+    const lista = um ? nomes[0] : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`
+    // Primeiro MANDA CONFERIR o produto: o SisChef liga o código do fornecedor a um produto sozinho e, se essa ligação está errada (SEARA 190347, 27/10/2026:
+    // o código da linguiça estava ligado ao produto-marcador "LANCAMENTO DE BOLETO NF"), pedir a conversão leva o Ivan a informar um número para o produto errado.
     return {
       porque: `O SisChef pede a conversão de unidade de ${lista}: a nota vem numa unidade, o produto está em outra, e o app ainda não tem o número.`,
-      fazer: `Toque em Editar ${nomes.length === 1 ? 'nesse item' : 'em cada um desses itens'} e informe quanto vale 1 unidade da nota. Depois lance de novo.`,
+      fazer: `Confira se ${um ? `o produto que o SisChef ligou a este código está certo (aqui: ${lista})` : 'os produtos que o SisChef ligou a estes códigos estão certos'}. `
+        + `Se ${um ? 'está certo' : 'estão certos'}, toque em Editar ${um ? 'nesse item' : 'em cada um desses itens'} e informe quanto vale 1 unidade da nota. `
+        + `Se ${um ? 'NÃO está certo' : 'algum NÃO está certo'}, a ligação do SisChef está errada e o app ainda não troca o produto de um item já ligado: peça ao Claude para corrigir no SisChef. Depois lance de novo.`,
     }
   }
 
