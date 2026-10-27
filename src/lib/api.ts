@@ -610,6 +610,9 @@ function associacoesLidas(x: unknown): Record<string, AssociacaoApp> | null {
     saida[n] = {
       produto_id: id, produto_nome: d.produto_nome, unidade: typeof d.unidade === 'string' ? d.unidade : null,
       ...(Number.isFinite(conversao) && conversao > 0 ? { conversao } : {}),
+      // A ORIGEM também TEM de passar: "sischef" marca a decisão que é SÓ a conversão de um item que já vem associado (conversaoJaInformada, notaSefazRegras).
+      // Sem ela a tela nunca via a conversão gravada ao recarregar e mantinha o item na lista do que falta (achado em 23/10/2026, MATEUS 89465).
+      ...(typeof d.origem === 'string' && d.origem.trim() !== '' ? { origem: d.origem } : {}),
       por: typeof d.por === 'string' ? d.por : null, em: typeof d.em === 'string' ? d.em : null,
     }
   }
