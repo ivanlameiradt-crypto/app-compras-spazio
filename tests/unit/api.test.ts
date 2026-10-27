@@ -865,6 +865,22 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     expect(a['1']).toMatchObject({ produto_id: 3469754, unidade: 'kg' })
   })
 
+  it('lê a ORIGEM da decisão do app: "sischef" = só a conversão de um item que já vem associado (sem ela a tela não via a conversão gravada ao recarregar, 23/10)', async () => {
+    const base = { produto_id: 3469754, produto_nome: 'NUGGSTES SUPREME - INSUMOS (KG)', unidade: null, conversao: 15, por: 'ivan@spazio.invalid', em: '2026-10-23T00:13:00Z' }
+    const c = cadeia({ data: [{ ...linha, associacoes_app: {
+      '1': { ...base, origem: 'sischef' },
+      '2': { ...base, origem: 'lista' },
+      '3': { ...base, origem: '  ' },            // vazia: não vira campo
+      '4': { ...base, origem: 7 },               // lixo: não vira campo
+      '5': base,                                  // decisão antiga, sem o campo
+    } }], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const a = (await notasALancar())[0].associacoes_app!
+    expect(a['1']).toMatchObject({ origem: 'sischef', conversao: 15 })
+    expect(a['2'].origem).toBe('lista')
+    for (const k of ['3', '4', '5']) expect(a[k]).not.toHaveProperty('origem')
+  })
+
   it('catalogoProdutos: UMA linha por produto (a da semana mais nova), nome sem espaço sobrando, em ordem alfabética; descarta linha sem nome ou sem código', async () => {
     const c = cadeia({ data: [
       { produto_id: 3469626, produto: 'LEITE CONDESSADO  - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },

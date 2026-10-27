@@ -70,10 +70,14 @@ describe('explicarMotivoDoRobo — frete, UN DIFERE e o que não conhece', () =>
   it('UN DIFERE sem conversão: um item e vários, pelo nome', () => {
     const um = explicarMotivoDoRobo('UN DIFERE sem conversão na tela: CÓD. FOR 263230 (no app, informe a conversão desse item e lance de novo, ou registre no SisChef)', ITENS)
     expect(um!.porque).toBe('O SisChef pede a conversão de unidade de SHOYU TRADICIONAL: a nota vem numa unidade, o produto está em outra, e o app ainda não tem o número.')
-    expect(um!.fazer).toBe('Toque em Editar nesse item e informe quanto vale 1 unidade da nota. Depois lance de novo.')
+    expect(um!.fazer).toBe('Confira se o produto que o SisChef ligou a este código está certo (aqui: SHOYU TRADICIONAL). '
+      + 'Se está certo, toque em Editar nesse item e informe quanto vale 1 unidade da nota. '
+      + 'Se NÃO está certo, a ligação do SisChef está errada e o app ainda não troca o produto de um item já ligado: peça ao Claude para corrigir no SisChef. Depois lance de novo.')
     const varios = explicarMotivoDoRobo('UN DIFERE sem conversão na tela: CÓD. FOR 263230; 14192; 999 (no app, informe a conversão desse item e lance de novo, ou registre no SisChef)', ITENS)
     expect(varios!.porque).toContain('de SHOYU TRADICIONAL, AÇUCAR CRISTAL e item 999:')
+    expect(varios!.fazer).toContain('Confira se os produtos que o SisChef ligou a estes códigos estão certos.')
     expect(varios!.fazer).toContain('em cada um desses itens')
+    expect(varios!.fazer).toContain('Se algum NÃO está certo')
   })
 
   it('motivo que nenhuma regra conhece, vazio ou nulo: null', () => {
