@@ -262,7 +262,19 @@ export function embalagemPeloNome(descricao: string | null | undefined, unidadeN
   for (const m of t.matchAll(/(?:^|[^\dA-Za-z.,/])(\d{2,5})\s*(UNIDS?|UNDS?|UN)(?![A-Za-z])/gi)) anotar(Number(m[1]), `${m[1]}${m[2].toUpperCase()}`)
   // PCT/15 e C/12 ("com 12"); "PCT/15X4" é outra conta (15 vezes 4): fora
   for (const m of t.matchAll(/(?:^|[^A-Za-z])(PCT|C)\s*\/\s*(\d{1,5})(?![\d,.]|\s*[xX]\s*\d)/gi)) anotar(Number(m[2]), `${m[1].toUpperCase()}/${m[2]}`)
+  // SIX PACK / SIXPACK: o fardo de 6 latas ou garrafas ("REFRIG COCA COLA LT SIX PACK 350ML", Mateus, 28/10/2026); "350ML" não conta como número de unidades
+  for (const m of t.matchAll(/(?:^|[^A-Za-z])(SIX\s*PACK)(?![A-Za-z])/gi)) anotar(6, m[1].toUpperCase().replace(/\s+/g, ' '))
   if (achados.size !== 1) return null
   const [fator, trecho] = [...achados.entries()][0]
   return fator >= 2 && fator <= CONVERSAO_MAXIMA ? { fator, trecho } : null
+}
+/**
+ * O nome da nota diz que cada unidade dela é um FARDO ("SIX PACK" = 6)? Mesma leitura de embalagemPeloNome, só do trecho SIX PACK. Diferente das outras embalagens do nome
+ * (que o Ivan só vê como sugestão ao Editar), o fardo não pode passar batido: com a nota e o produto na mesma unidade (UN × UN) o SisChef não pede conversão nenhuma e
+ * o estoque entra com 1 lata por fardo (NF 90049 do Mateus, 28/10/2026: Coca e Fanta "SIX PACK" entraram como 6 e 2 latas, em vez de 36 e 12, a R$ 21,79 e R$ 18,28 a lata).
+ * Por isso o app abre o campo da conversão já com o número do nome e a decisão só vale com a conversão informada (digitar 1 diz "o produto já é o fardo inteiro").
+ */
+export function fardoPeloNome(descricao: string | null | undefined, unidadeNota: string | null | undefined): { fator: number; trecho: string } | null {
+  const e = embalagemPeloNome(descricao, unidadeNota)
+  return e != null && /^SIX ?PACK$/.test(e.trecho) ? e : null
 }

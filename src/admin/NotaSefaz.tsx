@@ -23,7 +23,7 @@ import {
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
-  etiquetaDaNota, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
+  etiquetaDaNota, itensNoMesmoProduto, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -141,6 +141,12 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
             : `${faltam.length === 1 ? 'Falta' : 'Faltam'} confirmar ${faltam.length} de ${todos.length} ${todos.length === 1 ? 'item' : 'itens'}.`}
         </p>
       )}
+      {/* Dois itens da nota no MESMO produto quase sempre é engano (a Fanta escolhida como Coca-Cola, NF 90049, 28/10/2026): só avisa, não trava. */}
+      {itensNoMesmoProduto(nota).map((p) => (
+        <p key={p.produto_id} className="amarelo" role="status" data-testid="itens-no-mesmo-produto">
+          Atenção: os itens {p.itens.length > 2 ? `${p.itens.slice(0, -1).join(', ')} e ${p.itens[p.itens.length - 1]}` : p.itens.join(' e ')} da nota estão no mesmo produto ({p.nome}). Confira se não é engano.
+        </p>
+      ))}
       {faltam.length > 0 && <ul className="conferir-itens" data-testid="conferir-faltam">{faltam.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
       {faltam.length > 0 && confirmados.length > 0 && <div className="grupo" data-testid="conferir-confirmados-titulo">Itens confirmados ({confirmados.length})</div>}
       {confirmados.length > 0 && <ul className="conferir-itens confirmados" data-testid="conferir-confirmados">{confirmados.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
