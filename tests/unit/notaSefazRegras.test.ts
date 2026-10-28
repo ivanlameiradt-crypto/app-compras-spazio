@@ -3,7 +3,7 @@ import {
   traduzirMotivo, formaNaoProvada, lancandoPresa, MINUTOS_PRESA, formaPadraoDoFornecedor, podeVirMarcada, parseValorBr, formatarValorBr, validarParcelasDigitadas, linhasIniciais, precisaDigitarParcelas, FORNECEDORES_XML_SEM_PAGAMENTO, prontidaoDaNota, resumoFinanceiro, fornecedorAprendido, NOTAS_PARA_APRENDER,
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
   AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, AVISO_FALTA_CONVERSAO, bloqueioDeProduto,
-  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo, itemPedeAcao,
+  rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo, itemPedeAcao, itensNoMesmoProduto,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -595,5 +595,66 @@ describe('notaSefazRegras', () => {
       const informada = { '3': { produto_id: 77, produto_nome: 'P', unidade: null, conversao: 2, origem: 'sischef' } }
       expect(pede(nota({ itens: [assoc()], associacoes_app: informada, ...parou }))).toEqual([false])                    // informou: sai da lista do que falta
     })
+  })
+})
+
+describe('fardo "SIX PACK" e itens no mesmo produto (Mateus NF 90049, 28/10/2026)', () => {
+  const COCA = 1836982
+  const dec = (id: number, nome: string, conversao: number | null = null) => ({ produto_id: id, produto_nome: nome, unidade: 'un', origem: 'lista', por: 'ivan@spazio.invalid', em: '2026-10-27T18:35:53Z', conversao })
+  const six = (extra: Partial<NotaSefazLista> = {}) => nota({
+    itens: [
+      { n: 1, descricao: 'CÓD. FOR: 420713 REFRIG COCA COLA LT SIX PACK 350ML', qtd: 6, unidade_sischef: 'UN', produto_id: null },
+      { n: 6, descricao: 'CÓD. FOR: 456548 REFRIG FANTA LAR SIX PACK 350ML', qtd: 2, unidade_sischef: 'UN', produto_id: null },
+    ],
+    associacoes_app: { '1': dec(COCA, 'COCA COLA 350 ML'), '6': dec(COCA, 'COCA COLA 350 ML') },
+    ...extra,
+  })
+
+  it('decisão sem a conversão em item SIX PACK (UN × UN) é INCOMPLETA: trava o Lançar com o motivo do nome', () => {
+    const n = six()
+    expect(pendenciasParaLancar(n).map((p) => p.n)).toEqual([1, 6])
+    expect(pendenciasParaLancar(n)[0].falta).toBe('o nome da nota diz SIX PACK: informe quantas unidades do produto tem 1 UN da nota (6; se o produto já é o fardo inteiro, digite 1)')
+    expect(bloqueiosDaNota(n)).toEqual([AVISO_FALTA_CONVERSAO])
+    expect(itemPedeAcao(n, n.itens[0])).toBe(true)
+    expect(associacoesPeloRobo(n)).toEqual([])
+  })
+
+  it('com a conversão informada (6, ou 1 = o produto já é o fardo) a decisão vale e o robô recebe o número', () => {
+    const n = six({ associacoes_app: { '1': dec(COCA, 'COCA COLA 350 ML', 6), '6': dec(2722189, 'FANTA LARANJA 350 ML', 1) } })
+    expect(pendenciasParaLancar(n)).toEqual([])
+    expect(bloqueiosDaNota(n)).toEqual([])
+    expect(associacoesPeloRobo(n).map((a) => [a.n, a.produto_id, a.conversao])).toEqual([[1, COCA, 6], [6, 2722189, 1]])
+  })
+
+  it('nome sem SIX PACK em UN × UN segue como sempre: decisão sem número vale', () => {
+    const n = nota({
+      itens: [{ n: 3, descricao: 'CÓD. FOR: 515972 CHOC LACTA BIS ORIGINAL PACK 302,4G', qtd: 15, unidade_sischef: 'UN', produto_id: null }],
+      associacoes_app: { '3': dec(3476455, 'CHOCOLATE BIS ORIGINAL - INSUMOS') },
+    })
+    expect(pendenciasParaLancar(n)).toEqual([])
+    expect(bloqueiosDaNota(n)).toEqual([])
+  })
+
+  it('itensNoMesmoProduto: dois itens da decisão do app no mesmo produto viram um aviso, na ordem da nota', () => {
+    expect(itensNoMesmoProduto(six())).toEqual([{ produto_id: COCA, nome: 'COCA COLA 350 ML', itens: [1, 6] }])
+  })
+
+  it('itensNoMesmoProduto: item que já vem associado do SisChef conta com o produto dele, junto com o da decisão', () => {
+    const n = nota({
+      itens: [
+        { n: 1, descricao: 'COCA 350', qtd: 6, unidade_sischef: 'UN', produto_id: COCA, produto_nome: 'COCA COLA 350 ML', associacao: 'sischef' },
+        { n: 2, descricao: 'COCA 350 OUTRA', qtd: 2, unidade_sischef: 'UN', produto_id: null },
+        { n: 3, descricao: 'OUTRO', qtd: 2, unidade_sischef: 'UN', produto_id: 99, produto_nome: 'OUTRO PRODUTO', associacao: 'sischef' },
+      ],
+      associacoes_app: { '2': dec(COCA, 'COCA COLA 350 ML', 6) },
+    })
+    expect(itensNoMesmoProduto(n)).toEqual([{ produto_id: COCA, nome: 'COCA COLA 350 ML', itens: [1, 2] }])
+  })
+
+  it('itensNoMesmoProduto: cada item no seu produto, item sem número e item sem decisão não geram aviso', () => {
+    expect(itensNoMesmoProduto(six({ associacoes_app: { '1': dec(COCA, 'COCA COLA 350 ML', 6), '6': dec(2722189, 'FANTA LARANJA 350 ML', 6) } }))).toEqual([])
+    expect(itensNoMesmoProduto(six({ associacoes_app: {} }))).toEqual([])
+    const semNumero = nota({ itens: [{ descricao: 'A', qtd: 1, unidade_sischef: 'UN', produto_id: 5, associacao: 'sischef' }, { descricao: 'B', qtd: 1, unidade_sischef: 'UN', produto_id: 5, associacao: 'sischef' }] })
+    expect(itensNoMesmoProduto(semNumero)).toEqual([])
   })
 })

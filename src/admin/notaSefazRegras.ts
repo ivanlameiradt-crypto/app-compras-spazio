@@ -1,7 +1,7 @@
 // Regras puras da aba "Lançamento fiscal" (Fase 3; até 06/10/2026 "Lançamento de nota SEFAZ"): "Como pagar", memória por fornecedor, bloqueios e textos.
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
-import { conversaoDaDecisao, rotuloUnidade, situacaoConversao } from './associacaoRegras'
+import { conversaoDaDecisao, fardoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
 import { explicarMotivoDoRobo, motivoSemPrefixoTecnico } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
@@ -167,7 +167,37 @@ function faltaNaDecisao(it: ItemNotaSefaz, d: AssociacaoApp | null): string | nu
   if (situacaoConversao(it.unidade_sischef, d.unidade) === 'obrigatoria' && !conversaoInformada(d)) {
     return `informe quanto vale 1 ${rotuloUnidade(it.unidade_sischef)} em ${rotuloUnidade(d.unidade)} na caixa de associação`
   }
+  // O nome diz SIX PACK (fardo): com UN × UN o SisChef não pede conversão e cada fardo entraria como 1 unidade (NF 90049, 28/10/2026). A decisão só vale com o número informado;
+  // "1" quer dizer que o produto do SisChef já é o fardo inteiro (o robô não multiplica por 1).
+  const fardo = fardoPeloNome(it.descricao, it.unidade_sischef)
+  if (fardo != null && !conversaoInformada(d)) {
+    return `o nome da nota diz ${fardo.trecho}: informe quantas unidades do produto tem 1 ${rotuloUnidade(it.unidade_sischef) || 'unidade'} da nota (${fardo.fator}; se o produto já é o fardo inteiro, digite 1)`
+  }
   return null
+}
+
+/** Itens da nota que o Ivan (ou o SisChef) ligou ao MESMO produto: quase sempre é engano (a Fanta escolhida como Coca-Cola na NF 90049, 28/10/2026; o SisChef marca "Repetido").
+ *  Só avisa, não trava: duas linhas do mesmo produto com preços diferentes existem. Uma entrada por produto, com os números dos itens (na ordem da nota) e o nome. */
+export interface ProdutoEmDoisItens { produto_id: number; nome: string; itens: number[] }
+export function itensNoMesmoProduto(n: NotaSefazLista): ProdutoEmDoisItens[] {
+  const porProduto = new Map<number, ProdutoEmDoisItens>()
+  for (const it of n.itens) {
+    if (it.n == null) continue
+    let id: number | null = null
+    let nome = ''
+    if (itemSemProduto(it)) {
+      const d = decisaoDoItem(n, it)
+      if (d != null) { id = Number(d.produto_id); nome = d.produto_nome }
+    } else {
+      id = Number(String(it.produto_id).trim())
+      nome = (it.produto_nome ?? '').trim() || `produto ${id}`
+    }
+    if (id == null || !Number.isFinite(id) || id <= 0) continue
+    const atual = porProduto.get(id)
+    if (atual) atual.itens.push(it.n)
+    else porProduto.set(id, { produto_id: id, nome, itens: [it.n] })
+  }
+  return [...porProduto.values()].filter((p) => p.itens.length >= 2)
 }
 
 /** A decisão do app para o item está COMPLETA (produto e, quando é certo que precisa, a conversão)? Só então o painel mostra o ✓ de "confirmado". */

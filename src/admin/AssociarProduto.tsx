@@ -21,7 +21,7 @@
 import { useMemo, useState } from 'react'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, formatarConversao, formatarQuantidade, parseConversao, pesoPeloNome,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, fardoPeloNome, formatarConversao, formatarQuantidade, parseConversao, pesoPeloNome,
   quantidadeNoEstoque, rotuloUnidade, situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
@@ -78,8 +78,11 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
     if (!decisao) return null
     return lista.find((p) => p.produto_id === decisao.produto_id) ?? { produto_id: decisao.produto_id, nome: decisao.produto_nome, unidade: decisao.unidade }
   }, [decisao, lista])
-  // Decisão que ainda NÃO vale: é certo que o SisChef vai pedir a conversão (nota em UN, produto "(KG)") e ela não foi informada. Fica no cartão, para confirmar.
-  const pendente = decisao != null && situacaoConversao(item.unidade_sischef, decisao.unidade) === 'obrigatoria' && conversaoDaDecisao(decisao) == null
+  // O nome da nota diz que cada unidade é um FARDO ("SIX PACK" = 6): com UN × UN o SisChef não pede conversão e o fardo entraria como 1 unidade (NF 90049, 28/10/2026).
+  // Então o número é pedido sempre (já vem preenchido pelo nome); "1" diz que o produto do SisChef já é o fardo inteiro.
+  const fardoDoNome = fardoPeloNome(item.descricao, item.unidade_sischef)
+  // Decisão que ainda NÃO vale: é certo que o SisChef vai pedir a conversão (nota em UN, produto "(KG)") ou o nome diz que é fardo, e ela não foi informada. Fica no cartão, para confirmar.
+  const pendente = decisao != null && (situacaoConversao(item.unidade_sischef, decisao.unidade) === 'obrigatoria' || fardoDoNome != null) && conversaoDaDecisao(decisao) == null
   // O produto que o app INDICA para o Ivan só confirmar: o da decisão (se falta a conversão ou ele quer editar) ou, sem decisão, o do robô / das palavras-chave.
   // Só depois que a lista de produtos carrega (ou falha): antes disso o nome e a unidade do produto ainda não são os da lista, e o Ivan poderia confirmar com o palpite cru.
   const listaPronta = catalogo !== null || catalogoFalhou
@@ -92,17 +95,19 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   // Como fica o campo da conversão para o produto escolhido (ver o cabeçalho e associacaoRegras.situacaoConversao):
   // "obrigatoria" = campo aberto e o Confirmar espera um número; "opcional" = campo aberto, pode ficar vazio; "oculta" = sem campo, só um link para abrir.
   const situacao = atual != null ? situacaoConversao(item.unidade_sischef, atual.unidade) : 'oculta'
-  const campoVisivel = atual != null && (situacao !== 'oculta' || conversaoAberta)
+  // Fardo pelo nome só vale para o campo quando o número não é obrigatório por outro motivo (nota em UN × produto em KG/CT/PCT já tem a sua conta e o seu exemplo)
+  const fardo = atual != null && situacao !== 'obrigatoria' ? fardoDoNome : null
+  const campoVisivel = atual != null && (situacao !== 'oculta' || conversaoAberta || fardo != null)
   // Valor que o campo mostra enquanto o Ivan não digita: a conversão já gravada para ESTE produto; senão, quando é obrigatória, o peso tirado do nome da nota.
   const gravada = atual != null && decisao?.produto_id === atual.produto_id ? conversaoDaDecisao(decisao) : null
   // O peso do nome ("395G" → 0,395) só serve a produto em KG. Produto em CT/PCT também tem conversão obrigatória (22/10/2026), mas "3KG" no nome de um saco é a capacidade, não quantas unidades vêm no CT.
   const peso = atual != null && situacao === 'obrigatoria' && gravada == null && rotuloUnidade(atual.unidade) === 'KG' ? pesoPeloNome(item.descricao, item.unidade_sischef) : null
-  const padrao = gravada != null ? formatarConversao(gravada) : peso != null ? formatarConversao(peso.kg) : ''
+  const padrao = gravada != null ? formatarConversao(gravada) : peso != null ? formatarConversao(peso.kg) : fardo != null ? formatarConversao(fardo.fator) : ''
   const valorConversao = conversaoTexto ?? padrao
-  // Em qualquer modo: texto digitado e inválido trava o Confirmar (nunca se grava um palpite); campo vazio só trava quando é obrigatório.
+  // Em qualquer modo: texto digitado e inválido trava o Confirmar (nunca se grava um palpite); campo vazio só trava quando é obrigatório (ou o nome diz que é fardo).
   const conversao = valorConversao.trim() !== '' ? parseConversao(valorConversao) : null
   const conversaoInvalida = valorConversao.trim() !== '' && conversao == null
-  const podeConfirmar = !enviando && !conversaoInvalida && (situacao !== 'obrigatoria' || conversao != null)
+  const podeConfirmar = !enviando && !conversaoInvalida && (situacao !== 'obrigatoria' && fardo == null || conversao != null)
   const unidadeNota = rotuloUnidade(item.unidade_sischef)
   // O eco usa o MESMO texto que a linha "confirmado no app" e o bloco "o robô vai associar" (associacaoRegras.textoConversao): só nomeia a unidade do
   // produto quando ela é confiável ("(KG)" no nome); nos outros modos a unidade da lista é um chute, e dizer "= 2 UN" quando no SisChef o produto pode
@@ -258,19 +263,26 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                   {/* O app não sabe ao certo em que unidade este produto está no SisChef (a unidade da lista é um palpite pelo nome, ou o produto é
                       novo e nem isso tem). Não dá para obrigar um número que talvez nem seja pedido — e não dá para esconder o campo, senão o robô
                       para pedindo a conversão num campo que não existe. Fica opcional: o Ivan informa se souber; vazio = "no SisChef é a mesma unidade". */}
-                  <label>Quanto vale 1 {unidadeNota} na unidade do produto no SisChef? (opcional)
+                  <label>Quanto vale 1 {unidadeNota} na unidade do produto no SisChef?{fardo == null ? ' (opcional)' : ''}
                     <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={valorConversao} disabled={enviando}
                       onChange={(e) => { setConversaoTexto(e.target.value); setErro('') }} />
                   </label>
-                  <p className="sub">
-                    {atual.novo
-                      ? 'Produto fora da lista semanal: o app não conhece a unidade dele no SisChef. '
-                      : situacao === 'oculta'
-                        ? 'Pelo nome, o produto parece estar na mesma unidade da nota no SisChef. '
-                        : 'A lista do app não sabe ao certo a unidade deste produto no SisChef. '}
-                    Se lá ele também for em {unidadeNota}, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
-                    {' '}Se cada {unidadeNota} da nota é uma caixa ou um pacote com várias unidades (ex.: caixa de 168), digite quantas.
-                  </p>
+                  {fardo != null ? (
+                    <p className="amarelo sub" data-testid="conversao-fardo">
+                      O nome da nota diz {fardo.trecho}: cada {unidadeNota} da nota é um fardo com {fardo.fator} unidades, então deixei {formatarConversao(fardo.fator)} aqui. Confira e
+                      corrija se precisar. Se o produto do SisChef já é o fardo inteiro, digite 1.
+                    </p>
+                  ) : (
+                    <p className="sub">
+                      {atual.novo
+                        ? 'Produto fora da lista semanal: o app não conhece a unidade dele no SisChef. '
+                        : situacao === 'oculta'
+                          ? 'Pelo nome, o produto parece estar na mesma unidade da nota no SisChef. '
+                          : 'A lista do app não sabe ao certo a unidade deste produto no SisChef. '}
+                      Se lá ele também for em {unidadeNota}, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
+                      {' '}Se cada {unidadeNota} da nota é uma caixa ou um pacote com várias unidades (ex.: caixa de 168), digite quantas.
+                    </p>
+                  )}
                 </>
               )}
               {conversaoInvalida && (
@@ -290,7 +302,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
               e pedir para atualizar a lista de notas; se a unidade continuar em branco, associe este item no SisChef.
             </p>
           )}
-          {situacao === 'oculta' && !conversaoAberta && unidadeNota !== '' && (
+          {situacao === 'oculta' && !conversaoAberta && fardo == null && unidadeNota !== '' && (
             <p className="sub" data-testid="sem-conversao">
               Sem conversão: a nota e o produto estão na mesma unidade ({unidadeNota}).{' '}
               <button type="button" className="link" data-testid="abrir-conversao" disabled={enviando} onClick={() => setConversaoAberta(true)}>
