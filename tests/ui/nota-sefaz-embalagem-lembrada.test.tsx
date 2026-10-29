@@ -383,16 +383,26 @@ describe('NotaSefaz — memória de OUTRO produto: aviso amarelo, sem botão de 
 
 describe('NotaSefaz — a leitura da memória é só um complemento', () => {
   it('leitura falhando: a tela segue como hoje, sem memória e sem erro na frente do Ivan', async () => {
-    m.notasALancar.mockResolvedValue([nota()])
-    m.memoriaDeEmbalagem.mockRejectedValue(new Error('permission denied for table nfe_aprendizado'))
-    render(<NotaSefaz />)
-    const item = await fanta()
-    await memoriaLida()
-    expect(item.getByRole('button', { name: 'Editar' })).toBeEnabled()
-    expect(item.queryByTestId('embalagem-lembrada')).not.toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.queryByText(/nfe_aprendizado|permission denied/)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()                    // e o resto da nota funciona
+    // um erro de leitura que ninguém trata vira "promessa rejeitada sem tratamento": o teste olha isso de frente, em vez de só esperar o vitest reclamar no fim da rodada
+    const semTratamento: unknown[] = []
+    const ouvir = (motivo: unknown) => { semTratamento.push(motivo) }
+    process.on('unhandledRejection', ouvir)
+    try {
+      m.notasALancar.mockResolvedValue([nota()])
+      m.memoriaDeEmbalagem.mockRejectedValue(new Error('permission denied for table nfe_aprendizado'))
+      render(<NotaSefaz />)
+      const item = await fanta()
+      await memoriaLida()
+      await new Promise((r) => setTimeout(r, 50))                                           // dá tempo de o Node avisar de uma rejeição que ninguém tratou
+      expect(semTratamento).toEqual([])
+      expect(item.getByRole('button', { name: 'Editar' })).toBeEnabled()
+      expect(item.queryByTestId('embalagem-lembrada')).not.toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByText(/nfe_aprendizado|permission denied/)).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()                  // e o resto da nota funciona
+    } finally {
+      process.off('unhandledRejection', ouvir)
+    }
   })
 
   it('resposta que não é lista (indefinida, nula): ignorada, sem quebrar', async () => {
