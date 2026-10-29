@@ -7,6 +7,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk@0.70.0'
 import { tratar, type Corpo, type Deps, type ImagemBase64, type PedidoModelo } from './logica.ts'
 import { gravarSemDuplicar } from './gravacao.ts'
 import type { Aprendizado } from './casamento.ts'
+import { juntarConhecidos, type CnpjConhecido } from './cnpj.ts'
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
@@ -43,6 +44,18 @@ function mediaType(path: string): ImagemBase64['media_type'] {
 // Só dígitos entram no filtro do PostgREST (que é texto): EAN e CNPJ vêm da leitura por IA, dado não confiável.
 const ehEan = (v: string) => /^\d{1,14}$/.test(v)
 const ehCnpj = (v: string) => /^\d{14}$/.test(v)
+
+// Onde o app já conhece CNPJs de fornecedor, para corrigir um CNPJ que a leitura da foto trocou por um dígito (pedido do Ivan, 29/10/2026; cnpj.ts). A ordem põe primeiro
+// as fontes de nome mais "oficial" (o nome do primeiro que combina é o que o Ivan lê no resumo); `recentes` = a coluna que traz as linhas mais novas primeiro (o PostgREST
+// corta em 1000 por pedido).
+const FONTES_DE_CNPJ = [
+  { tabela: 'fornecedor_cadastro', cnpj: 'cnpj', nome: 'razao_social', recentes: 'criado_em' },
+  { tabela: 'fornecedor_app', cnpj: 'cnpj', nome: 'razao_social', recentes: 'atualizado_em' },
+  { tabela: 'cot_nfe', cnpj: 'cnpj_emitente', nome: 'emitente', recentes: 'emissao' },
+  { tabela: 'cupom', cnpj: 'emitente_cnpj', nome: 'emitente_nome', recentes: 'criado_em' },
+] as const
+const LINHAS_POR_FONTE = 1000
+const TEMPO_POR_FONTE_MS = 5_000 // uma fonte lenta não pode segurar o envio: passou disso, vale como falha só dela
 
 Deno.serve(async (req: Request) => {
   const cors = cabecalhosCors(req.headers.get('origin'))
@@ -122,6 +135,25 @@ Deno.serve(async (req: Request) => {
         // erro de leitura NÃO vira "sem aprendizado": viraria uma linha REVISAR com o motivo errado (e o dedup travaria o reenvio)
         if (error) throw new Error(error.message)
         return ((data ?? []) as Aprendizado[]).map((a) => ({ ...a, fator_conversao: Number(a.fator_conversao) }))
+      },
+      async cnpjsConhecidos() {
+        // Os CNPJs que fecham as contas e o app já conhece (cupons, fornecedores, notas fiscais). Cada fonte é lida SOZINHA: uma que falha (rede, permissão, tempo) é registrada
+        // e as outras seguem; no pior caso volta lista vazia e a tratar() só avisa que o número não fecha as contas. Nunca derruba o envio.
+        const porFonte = await Promise.all(FONTES_DE_CNPJ.map(async (f): Promise<CnpjConhecido[]> => {
+          try {
+            const { data, error } = await admin.from(f.tabela).select(`${f.cnpj}, ${f.nome}`).not(f.cnpj, 'is', null)
+              .order(f.recentes, { ascending: false }).limit(LINHAS_POR_FONTE).abortSignal(AbortSignal.timeout(TEMPO_POR_FONTE_MS))
+            if (error) throw new Error(error.message)
+            return ((data ?? []) as unknown as Record<string, unknown>[]).map((l) => ({
+              cnpj: String(l[f.cnpj] ?? ''), nome: typeof l[f.nome] === 'string' ? (l[f.nome] as string) : null,
+            }))
+          } catch (e) {
+            // só a tabela e a mensagem do banco (nunca chave, foto nem dado do cupom)
+            console.error(`enviar-cupom: não consegui ler os CNPJs conhecidos de ${f.tabela}`, e instanceof Error ? e.message : String(e))
+            return []
+          }
+        }))
+        return juntarConhecidos(porFonte.flat())
       },
       // insert simples + 23505 tratado em gravacao.ts (o índice de foto_path é PARCIAL: nada de insert-ou-atualiza do PostgREST)
       inserirCupom: (linha) => gravarSemDuplicar(linha, {

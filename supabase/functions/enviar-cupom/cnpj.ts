@@ -97,6 +97,25 @@ export function conferirCnpjLido(
   return { tipo: 'corrigido', cnpj, original, nome }
 }
 
+/**
+ * A lista de conhecidos que o index.ts entrega à tratar(): só CNPJs que fecham as contas (14 dígitos, sem pontuação), sem repetir o par (CNPJ, nome); a ordem da
+ * entrada se mantém (o nome que o Ivan lê no resumo é o do primeiro que combina). Nome vazio ou em branco vira null.
+ */
+export function juntarConhecidos(linhas: CnpjConhecido[]): CnpjConhecido[] {
+  const vistos = new Set<string>()
+  const saida: CnpjConhecido[] = []
+  for (const l of linhas) {
+    const cnpj = soDigitos(l?.cnpj)
+    if (cnpj.length !== 14 || !cnpjValido(cnpj)) continue
+    const nome = limpar(l.nome) || null
+    const chave = `${cnpj}|${nome ?? ''}`
+    if (vistos.has(chave)) continue
+    vistos.add(chave)
+    saida.push({ cnpj, nome })
+  }
+  return saida
+}
+
 /** O que o Ivan lê no resumo do envio quando o CNPJ foi corrigido (sem ponto final: a tela acrescenta o resto da frase; o ponto final do nome, como em "S.A.", sai). */
 export function fraseCnpjCorrigido(c: Extract<ConferenciaCnpj, { tipo: 'corrigido' }>): string {
   const nome = limpar(c.nome).replace(/[\s.]+$/, '')

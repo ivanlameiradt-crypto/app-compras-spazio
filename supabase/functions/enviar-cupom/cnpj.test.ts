@@ -1,5 +1,5 @@
 import {
-  cnpjValido, conferirCnpjLido, formatarCnpj, fraseCnpjCorrigido, fraseCnpjInvalido, nomesCompativeis, type CnpjConhecido,
+  cnpjValido, conferirCnpjLido, formatarCnpj, fraseCnpjCorrigido, fraseCnpjInvalido, juntarConhecidos, nomesCompativeis, type CnpjConhecido,
 } from './cnpj'
 
 // Pedido do Ivan (29/10/2026): a leitura da foto às vezes troca UM número do CNPJ (22/10: "8" virou "0" no CNPJ da A. N. da Silva) e o cupom para em
@@ -12,6 +12,7 @@ const SILVA: CnpjConhecido = { cnpj: '63540861000182', nome: 'A. N. DA SILVA DES
 const CONHECIDOS = [MATEUS, ATACADAO, LIDER, SILVA]
 /** O caso real de 22/10: o "8" do penúltimo grupo virou "0". */
 const SILVA_LIDO_ERRADO = '63540861000102'
+const NOME_SILVA_LISTA = 'A. N. DA SILVA DESCARTAVEIS LTDA'
 
 /** Todas as 126 trocas de UM dígito (14 posições × 9 outros dígitos) de um CNPJ. */
 function trocasDeUmDigito(cnpj: string): string[] {
@@ -254,6 +255,49 @@ describe('conferirCnpjLido — varredura: TODA troca de um dígito dos CNPJs rea
       }
     }
     expect(quebradas).toBeGreaterThan(120) // das 126 trocas, praticamente todas quebram as contas
+  })
+})
+
+describe('juntarConhecidos — a lista que o index.ts entrega: só CNPJ que fecha as contas, sem repetir', () => {
+  it('tira a pontuação e fica com os 14 dígitos; descarta o que não fecha as contas, não tem 14 dígitos ou está vazio', () => {
+    const entrada: CnpjConhecido[] = [
+      { cnpj: '63.540.861/0001-82', nome: NOME_SILVA_LISTA },
+      { cnpj: SILVA_LIDO_ERRADO, nome: 'NÃO FECHA AS CONTAS' },
+      { cnpj: '6354086100018', nome: '13 DÍGITOS' },
+      { cnpj: '635408610001822', nome: '15 DÍGITOS' },
+      { cnpj: '', nome: 'VAZIO' },
+      { cnpj: '00000000000000', nome: 'TUDO ZERO' },
+      { cnpj: 'sem número', nome: null },
+    ]
+    expect(juntarConhecidos(entrada)).toEqual([{ cnpj: '63540861000182', nome: NOME_SILVA_LISTA }])
+  })
+
+  it('não repete o mesmo CNPJ com o mesmo nome (várias fontes), mas guarda os nomes diferentes do mesmo CNPJ, na ordem em que vieram', () => {
+    const entrada: CnpjConhecido[] = [
+      { cnpj: SILVA.cnpj, nome: 'A. N. DA SILVA DESCARTAVEIS LTDA' },
+      { cnpj: SILVA.cnpj, nome: 'A. N. DA SILVA DESCARTAVEIS LTDA' },
+      { cnpj: '63.540.861/0001-82', nome: '  A. N. DA   SILVA DESCARTAVEIS LTDA ' }, // o mesmo nome com espaço sobrando
+      { cnpj: SILVA.cnpj, nome: 'A. N. DA SILVA' },
+      { cnpj: MATEUS.cnpj, nome: MATEUS.nome },
+      { cnpj: SILVA.cnpj, nome: 'A. N. DA SILVA DESCARTAVEIS LTDA' },
+    ]
+    expect(juntarConhecidos(entrada)).toEqual([
+      { cnpj: SILVA.cnpj, nome: 'A. N. DA SILVA DESCARTAVEIS LTDA' },
+      { cnpj: SILVA.cnpj, nome: 'A. N. DA SILVA' },
+      { cnpj: MATEUS.cnpj, nome: MATEUS.nome },
+    ])
+  })
+
+  it('nome vazio, em branco ou ausente vira null (e o mesmo CNPJ sem nome conta uma vez só)', () => {
+    const entrada = [
+      { cnpj: MATEUS.cnpj, nome: null }, { cnpj: MATEUS.cnpj, nome: '' }, { cnpj: MATEUS.cnpj, nome: '   ' },
+      { cnpj: MATEUS.cnpj } as unknown as CnpjConhecido,
+    ]
+    expect(juntarConhecidos(entrada)).toEqual([{ cnpj: MATEUS.cnpj, nome: null }])
+  })
+
+  it('lista vazia dá lista vazia', () => {
+    expect(juntarConhecidos([])).toEqual([])
   })
 })
 
