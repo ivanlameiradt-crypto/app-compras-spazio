@@ -37,6 +37,16 @@ export function cnpjValido(v: string): boolean {
   return d1 === Number(d[12]) && dv(d.slice(0, 13)) === Number(d[13])
 }
 
+/**
+ * CNPJ que a leitura da foto do cupom trouxe e que NÃO fecha as contas dos dígitos verificadores: algum número foi lido errado (pedido do Ivan, 29/10/2026: 22/10 o "8" virou "0").
+ * Sem CNPJ (vazio, nulo ou sem nenhum dígito) não há o que avisar. O servidor (enviar-cupom/cnpj.ts) corrige sozinho quando acha um só CNPJ conhecido a um dígito; o que sobra
+ * sem correção é o que a tela avisa.
+ */
+export function cnpjLidoSuspeito(cnpj: string | null | undefined): boolean {
+  const d = soDigitos(cnpj ?? '')
+  return d !== '' && !cnpjValido(d)
+}
+
 const limpar = (t: string | null | undefined): string => (t ?? '').replace(/\s+/g, ' ').trim()
 
 /**

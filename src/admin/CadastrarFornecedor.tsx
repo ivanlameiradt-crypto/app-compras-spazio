@@ -4,7 +4,7 @@
 // As ações (rede) entram por `acoes`, para a tela ser testada e mostrada sem servidor.
 import { useEffect, useRef, useState } from 'react'
 import {
-  CADASTRO_CONCLUIDO, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, problemaDoFormulario, soDigitos,
+  CADASTRO_CONCLUIDO, cnpjLidoSuspeito, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, problemaDoFormulario, soDigitos,
   type DadosCnpj, type EstadoCadastro, type PedidoCadastro,
 } from './fornecedorRegras'
 
@@ -51,6 +51,9 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   const cadastrando = estado === 'PENDENTE' || estado === 'PROCESSANDO'
   const pronto = CADASTRO_CONCLUIDO(estado)
   const problema = problemaDoFormulario({ cnpj, razao, uf, municipio })
+  // 29/10: o CNPJ que a leitura da foto trouxe e que NÃO fecha as contas (a leitura trocou algum número). O aviso vale enquanto o campo ainda tem esse número: mexeu no campo, já foi atendido.
+  const cnpjLido = soDigitos(lido?.cnpj || cupom.emitente_cnpj || '')
+  const avisoCnpjLido = cnpjLidoSuspeito(cnpjLido) && soDigitos(cnpj) === cnpjLido
 
   // Se já existe um pedido de cadastro deste CNPJ (a tela foi fechada no meio), retoma de onde parou.
   useEffect(() => {
@@ -125,6 +128,11 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   return (
     <div className="associar cadastrar-fornecedor" data-testid="cadastrar-fornecedor">
       <div className="grupo">Fornecedor não cadastrado no SisChef</div>
+      {avisoCnpjLido && (
+        <p className="amarelo aviso-cnpj" data-testid="cnpj-lido-errado">
+          O CNPJ que li na foto ({formatarCnpj(cnpjLido)}) parece errado: é provável que seja só um número trocado. Olhe a foto, digite o CNPJ certo no campo abaixo e toque em “Buscar dados do CNPJ”.
+        </p>
+      )}
       {aoUsar ? (
         <p className="sub">Esse fornecedor ainda não está no app nem no SisChef. Digite o CNPJ: o app busca os dados e você confere. O robô só cadastra quando você tocar em “Cadastrar no SisChef”.</p>
       ) : (
