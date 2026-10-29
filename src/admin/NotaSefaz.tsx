@@ -19,7 +19,8 @@ import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } fr
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
 import {
-  AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, associacoesPeloRobo, bloqueiosDaNota,
+  AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
+  TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, precisaEscolherForma,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
@@ -156,8 +157,9 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
       {faltam.length > 0 && confirmados.length > 0 && <div className="grupo" data-testid="conferir-confirmados-titulo">Itens confirmados ({confirmados.length})</div>}
       {confirmados.length > 0 && <ul className="conferir-itens confirmados" data-testid="conferir-confirmados">{confirmados.map(({ it, i }) => itemDoPainel(it, i))}</ul>}
       <div className="grupo">Financeiro</div>
-      {/* Regra do Ivan (07/10): com o XML por ler, o que ele determinar no app vale — não fica esperando a próxima leitura. */}
-      {!f.lido ? <p className="sub" data-testid="fin-nao-lido">O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>
+      {/* Regra do Ivan (07/10): com o XML por ler, o que ele determinar no app vale — não fica esperando a próxima leitura. Bonificação sem cobrança (CFOP 5910/6910 e o XML sem boletos): nada de boleto a digitar. */}
+      {bonificacaoSemCobranca(nota) ? <p className="sub" data-testid="fin-bonificacao">Nota de bonificação: não tem boleto nem conta a pagar. Entra só no estoque.</p>
+        : !f.lido ? <p className="sub" data-testid="fin-nao-lido">O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>
         : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">O XML da nota não traz boletos (duplicatas). Digite as parcelas do boleto ou escolha outra forma de pagamento.</p>
         : (
           <>
@@ -430,20 +432,28 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const fretePendente = comFrete && frete === null
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
 
-  const forma = escolha ?? formaInicial(nota, padroes)
+  // Bonificação sem cobrança (pedido do Ivan, 27/10/2026 — CFOP 5910/6910 em TODOS os itens e o XML lido sem boletos): "só estoque" sozinho. Vale mais que qualquer escolha anterior desta tela
+  // (o robô pode etiquetar a nota depois de o Ivan mexer no "Como pagar"). Com boletos no XML a tela só avisa; com o XML por ler a nota é como qualquer outra (notaSefazRegras).
+  const soEstoque = bonificacaoSemCobranca(nota)
+  const forma = soEstoque ? FORMA_SO_ESTOQUE : escolha ?? formaInicial(nota, padroes)
   const padraoDoFornecedor = formaPadraoDoFornecedor(nota, padroes)
   const prontidao = prontidaoDaNota(nota)
   const financeiro = resumoFinanceiro(nota)
   const aprendido = fornecedorAprendido(nota, seguidas)
   // Regra 2: nota pronta (itens associados + boletos que fecham) com Boleto marcado = só falta lançar. Mudando a forma, volta ao normal.
   const soLancar = prontidao.pronta && forma === 'boleto' && !mudandoForma
+  // Bonificação sem cobrança pronta (itens com produto; não há boleto a conferir): também só falta lançar, em "só estoque".
+  const prontaSoEstoque = soEstoque && prontidao.pronta
   const estado = nota.lancamento_estado ?? null
   const bloqueios = bloqueiosDaNota(nota)
   const presa = lancandoPresa(nota)
-  const estadoTexto = presa ? AVISO_PRESA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
+  // Bonificação que o robô devolveu por "sem boletos" (a tentativa antiga foi em Boleto): a escolha que ele pedia a tela já fez, e o texto diz que é só lançar.
+  const estadoTexto = presa ? AVISO_PRESA : soEstoque && precisaEscolherForma(nota) ? TEXTO_BONIFICACAO_DEVOLVIDA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
   const robotOuMetade = estado === 'erro' || (estado === 'lancando' && !presa)
+  // Bonificação que TRAZ boletos: não marca nada sozinha; enquanto ainda dá para lançar, avisa para o Ivan conferir com o fornecedor se há algo a pagar.
+  const avisoBonificacaoComBoleto = bonificacaoComBoletos(nota) && !robotOuMetade
   const travada = robotOuMetade || bloqueios.length > 0
   // Só falta produto no SisChef (ou nada trava): dá para escolher a forma de pagamento e digitar as parcelas já; o Lançar segue travado até lá.
   // Conta especial, nota sem itens, robô lançando e nota pela metade continuam sem nada para preparar.
@@ -532,8 +542,9 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     bloqueada: bloqueios.length > 0 && !bloqueios.every(bloqueioDeProduto),
     faltaDecidir: pendencias.length > 0 || bloqueios.some(bloqueioDeProduto) || fretePendente || (plano != null && !plano.ok),
     faltaParcelas: exigeParcelas && podePreparar && !resultadoParcelas.ok,
-    financeiroNaoFecha: !soLancar && !exigeParcelas && !!prontidao.financeiro && bloqueios.length === 0 && estado == null,
-    pronta: soLancar, semForma: forma === '',
+    // bonificação com boletos também pede "Confira o financeiro" no título: sem isso ela poderia parecer "Pronta" e ser lançada sem abrir a nota (e sem ler o aviso)
+    financeiroNaoFecha: (!soLancar && !exigeParcelas && !!prontidao.financeiro && bloqueios.length === 0 && estado == null) || avisoBonificacaoComBoleto,
+    pronta: soLancar || prontaSoEstoque, semForma: forma === '',
   })
 
   return (
@@ -548,11 +559,23 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       </summary>
       <div className="nota-corpo">
 
+      {/* Bonificação sem cobrança: uma informação calma (não é aviso) — o que é a nota e que ela entra só no estoque. */}
+      {soEstoque && (
+        <p className="nota-bonificacao" data-testid="nota-bonificacao">
+          <b>Nota de bonificação:</b> o fornecedor mandou como brinde (CFOP {cfopsDaBonificacao(nota)}). Entra só no estoque, sem conta a pagar.
+        </p>
+      )}
+      {avisoBonificacaoComBoleto && <div className="amarelo" data-testid="aviso-bonificacao-com-boleto">{AVISO_BONIFICACAO_COM_BOLETO}</div>}
       {soLancar && (
         <div className="ok" data-testid="nota-pronta">
           Pronta para lançar: todos os itens {peloRobo.length > 0 ? 'com produto (os confirmados no app, o robô associa ao lançar)' : 'associados'} e{' '}
           {financeiro.parcelas.length === 1 ? '1 boleto fecha' : `${financeiro.parcelas.length} boletos fecham`} com o valor da nota.
           {aprendido > 0 && <> Fornecedor aprendido ({aprendido} notas seguidas lançadas em boleto sem problema): pode só confirmar.</>}
+        </div>
+      )}
+      {prontaSoEstoque && (
+        <div className="ok" data-testid="nota-pronta">
+          Pronta para lançar: todos os itens {peloRobo.length > 0 ? 'com produto (os confirmados no app, o robô associa ao lançar)' : 'associados'} e a nota entra só no estoque, sem boleto.
         </div>
       )}
       {!soLancar && !exigeParcelas && prontidao.financeiro && !bloqueios.length && estado == null && (
@@ -572,7 +595,14 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       <FreteDaNota chave={nota.chave} valorNota={nota.valor_nf} itens={itensParaFrete(nota)} comFrete={comFrete} aoTrocarModo={(v) => { setComFrete(v); if (!v) setFrete(null) }} confirmado={frete} aoMudar={setFrete} desabilitado={enviando || confirmando} />
       {fretePendente && <div className="amarelo" data-testid="frete-pendente">Confirme o frete (ou marque “Sem frete”) para poder lançar.</div>}
 
-      {soLancar ? (
+      {soEstoque ? (
+        // bonificação sem cobrança: UMA só opção, já marcada e sem poder trocar (nota que entra só no estoque não tem outra forma de pagar)
+        <label>Como pagar
+          <select value={OPCAO_BONIFICACAO.valor} disabled>
+            <option value={OPCAO_BONIFICACAO.valor}>{OPCAO_BONIFICACAO.rotulo}</option>
+          </select>
+        </label>
+      ) : soLancar ? (
         <div className="sub" data-testid="pagamento-fixo">
           Pagamento: Boleto ({financeiro.parcelas.length} {financeiro.parcelas.length === 1 ? 'parcela' : 'parcelas'}){' '}
           <button type="button" className="link" onClick={() => setMudandoForma(true)}>mudar forma de pagamento</button>
@@ -607,7 +637,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
 
       {confirmando ? (
         <div className="bloco-envio">
-          <p>Vai lançar a NF {nota.numero} de {nota.emitente} — pagamento: {rotuloForma(forma)}{frete && <>, com frete de {formatarReais(frete.valor)} (só entra no preço do produto, não no financeiro)</>}. Confirmar?</p>
+          <p>Vai lançar a NF {nota.numero} de {nota.emitente} — {soEstoque ? TEXTO_CONFIRMA_BONIFICACAO : `pagamento: ${rotuloForma(forma)}`}{frete && <>, com frete de {formatarReais(frete.valor)} (só entra no preço do produto, não no financeiro)</>}. Confirmar?</p>
           {(exigeParcelas || plano) && (
             <ul className="conferir-itens" data-testid="parcelas-confirmar">
               {(exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? []).map((p, i) => (
