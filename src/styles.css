@@ -246,6 +246,16 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .editar-caixa label { font-size: 13px; color: inherit; }
 .cupom .editar-caixa input[inputmode='decimal'] { max-width: 180px; }
 .cupom .editar-caixa p { margin: 0; }
+/* Memória de embalagem das notas fiscais (29/10/2026): o que o robô lembra para o item (com Corrigir e Esquecer), o aviso de outro produto, a linha "vale o número que você informou" e, no item sem
+   produto, o produto lembrado com "Usar o lembrado". Ocupam a linha toda do item (nos confirmados a linha é uma grade de 2 colunas). */
+.cupom .embalagem-lembrada { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding: 8px 10px; border: 1px solid var(--linha); border-left: 3px solid var(--marca); border-radius: 10px; font-size: 13px; }
+.cupom .embalagem-lembrada p { margin: 0; }
+.cupom .embalagem-lembrada .acoes { margin-top: 0; }
+.cupom .embalagem-lembrada .acoes .botao { font-size: 13px; padding: 8px 12px; }
+.cupom .embalagem-confirmar { display: flex; flex-direction: column; gap: 6px; }
+.cupom .embalagem-aviso { margin: 4px 0 0; }
+.cupom .amarelo.embalagem-aviso { font-size: 13px; }
+.cupom .conferir-itens li > .embalagem-lembrada, .cupom .conferir-itens li > .embalagem-aviso { grid-column: 1 / -1; }
 /* "Lembrar esta descrição" na caixa de associação; e os blocos que dizem o que está errado e como resolver (cupom parado, Lançar travado) */
 .cupom .associar .marcar.lembrar { font-size: 13px; align-items: flex-start; }
 .cupom .associar .marcar.lembrar input { flex: none; width: 18px; height: 18px; margin-top: 1px; }

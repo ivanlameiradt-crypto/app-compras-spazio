@@ -9,7 +9,7 @@ import { ehUnidadeDaLista } from './unidadesDaLista'
 import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
   HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
-  FreteDaNotaConfirmado, LinhaCompra, LinhaConferencia, MarcaItem, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
+  FreteDaNotaConfirmado, LinhaCompra, LinhaConferencia, MarcaItem, NfeAprendizado, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
   Preparo, ProdutoCatalogo, Recebimento, RespostaConfirmacaoCupom, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
@@ -948,6 +948,54 @@ export async function converterItem(chave: string, n: number, conversao: number 
  */
 export async function lembrarDescricao(produtoId: number, texto: string): Promise<boolean> {
   return (await chamarRet<boolean | null>('cot_produto_lembrar', { p_produto_id: produtoId, p_texto: texto })) === true
+}
+
+// ---------- memória de embalagem das notas fiscais (fase 2, 29/10/2026): o que o robô aprendeu (public.nfe_aprendizado, só o admin lê) e o botão "Esquecer"
+const COLUNAS_MEMORIA = 'emitente_cnpj, cod_forn, unidade_nota, produto_id, produto_nome, fator, preco_ref, descricao_exemplo, vezes, ultima_chave, atualizado_em'
+/** Uma linha da tabela como o PostgREST a entrega (numeric pode vir como texto) para o tipo da tela; linha fora do formato (que o banco não deixaria gravar) = null, e fica de fora. */
+function linhaDaMemoria(x: Record<string, unknown>): NfeAprendizado | null {
+  const cnpj = String(x.emitente_cnpj ?? '').replace(/\D/g, '')
+  const cod = String(x.cod_forn ?? '').trim()
+  const unidade = String(x.unidade_nota ?? '').trim().toUpperCase()
+  const produto = Number(x.produto_id)
+  const fator = Number(x.fator)
+  if (!/^\d{14}$/.test(cnpj) || cod === '' || unidade === '' || !Number.isInteger(produto) || produto <= 0 || !Number.isFinite(fator) || !(fator > 1)) return null
+  const texto = (v: unknown): string | null => (v == null ? null : String(v))
+  return {
+    emitente_cnpj: cnpj, cod_forn: cod, unidade_nota: unidade, produto_id: produto, produto_nome: texto(x.produto_nome), fator,
+    preco_ref: num(x.preco_ref), descricao_exemplo: texto(x.descricao_exemplo), vezes: Math.max(1, Math.floor(Number(x.vezes) || 1)),
+    ultima_chave: texto(x.ultima_chave), atualizado_em: String(x.atualizado_em ?? ''),
+  }
+}
+/**
+ * Tudo o que o robô lembra (nfe_aprendizado, só leitura por RLS de admin): a tabela é pequena (uma linha por fornecedor + código + unidade que o Ivan decidiu), mas é lida INTEIRA
+ * (lerTabelaInteira), nunca cortada em silêncio nas 1000 linhas do servidor. A ordem é total (a chave única da tabela). Tabela ainda não criada = nenhuma. Quem chama decide o que fazer com o
+ * erro: a tela segue sem a memória, sem mostrar erro (a memória é um complemento).
+ */
+export async function memoriaDeEmbalagem(): Promise<NfeAprendizado[]> {
+  const r = await lerTabelaInteira('nfe_aprendizado', COLUNAS_MEMORIA, [['emitente_cnpj', true], ['cod_forn', true], ['unidade_nota', true]])
+  if (r.error) {
+    if (tabelaInexistente(r.error.code)) return []
+    throw new ErroApi(r.error.message, r.status, r.error.code)
+  }
+  return ((r.data ?? []) as Record<string, unknown>[]).map(linhaDaMemoria).filter((l): l is NfeAprendizado => l !== null)
+}
+function mensagemDoEsquecer(e: unknown): string {
+  const texto = e instanceof Error ? e.message : ''
+  if (/administrador|n[ãa]o autorizado/i.test(texto)) return 'Só o administrador pode fazer isso.'
+  return 'Não consegui esquecer agora. Confira a internet e tente de novo.'
+}
+/**
+ * "Esquecer" (nfe_aprendizado_esquecer, admin): o robô volta a não multiplicar este código. Apaga a UMA linha de fornecedor (CNPJ) + código na nota + unidade; devolve quantas apagou
+ * (1, ou 0 se ela já não existia). O erro vem sempre com texto em português.
+ */
+export async function esquecerEmbalagem(cnpj: string, codForn: string, unidade: string): Promise<number> {
+  try {
+    const n = Number(await chamarRet<number | string | null>('nfe_aprendizado_esquecer', { p_cnpj: cnpj, p_cod_forn: codForn, p_unidade: unidade }))
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch (e) {
+    throw new ErroApi(mensagemDoEsquecer(e), e instanceof ErroApi ? e.status : undefined)
+  }
 }
 export const vincularNfe = (chave: string, cotacao: number | null) => chamar('cot_nfe_vincular', { p_chave: chave, p_cotacao: cotacao })
 export const desvincularNfe = (chave: string) => chamar('cot_nfe_desvincular', { p_chave: chave })
