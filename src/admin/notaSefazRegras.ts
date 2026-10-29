@@ -422,6 +422,8 @@ export function etiquetaDaNota(p: {
   pronta: boolean
   /** nenhuma forma de pagamento marcada (PIX e cartão nunca vêm marcados). */
   semForma: boolean
+  /** algum item com o preço por unidade de estoque fora do normal (aviso amarelo dentro da nota; 29/10/2026). Ausente = não. */
+  precoForaDoNormal?: boolean
 }): EtiquetaNota | null {
   if (p.freteAberto) return { texto: 'Falta terminar no SisChef', tom: 'aviso' }
   if (p.estado === 'erro') return { texto: 'Ficou pela metade', tom: 'erro' }
@@ -432,6 +434,7 @@ export function etiquetaDaNota(p: {
   if (p.faltaDecidir) return { texto: 'Falta decidir', tom: 'aviso' }
   if (p.faltaParcelas) return { texto: 'Falta as parcelas', tom: 'aviso' }
   if (p.financeiroNaoFecha) return { texto: 'Confira o financeiro', tom: 'aviso' }
+  if (p.precoForaDoNormal) return { texto: 'Confira os preços', tom: 'aviso' }
   if (p.pronta) return { texto: 'Pronta', tom: 'ok' }
   if (p.semForma) return { texto: 'Falta como pagar', tom: 'aviso' }
   return null

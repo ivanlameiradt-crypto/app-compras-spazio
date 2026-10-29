@@ -15,6 +15,8 @@ import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmad
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 import { ehMilheiro, sugestaoPorMilheiro, unidadesNaEmbalagemDoProduto } from './embalagemContada'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
+import AvisoPreco from './AvisoPreco'
+import { precoForaDoNormal } from './precoForaDoNormal'
 
 interface Props {
   cupom: CupomRecente
@@ -124,6 +126,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const unCupom = minusc(it.unidade_cupom)
   const conf = confirmacaoDe(it, estado)
   const linha = conf ? linhaConfirmada(it, conf) : null
+  // Preço fora do normal (29/10/2026): o preço por unidade de ESTOQUE desta linha não se parece com o das últimas compras do produto. Só avisa; some sozinho se o Ivan acertar a conversão.
+  const avisoPreco = linha && estado.produto ? precoForaDoNormal(linha.valorUnitario, estado.produto.unidade, estado.produto.compras) : null
   const converte = estado.produto != null && precisaConversao(it.unidade_cupom, estado.produto.unidade)
   const modo = modoDaEntrada(it, estado.produto)
   const destinoKg = minusc(estado.produto?.unidade) === 'kg'
@@ -329,6 +333,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
               {converte && conf.entrada != null && <> · entra {qtd(linha.entrada)} {minusc(estado.produto.unidade)} no estoque</>}
             </p>
           )}
+          <AvisoPreco aviso={avisoPreco} />   {/* só desenha quando há aviso */}
           {lembravel ? (
             <p className="sub" data-testid="vai-lembrar">
               {converte && conf?.entrada != null
@@ -363,6 +368,8 @@ function ItemConfirmadoNoResumo({ it, produto, conf, travado, aoEditar }: {
         <span className="sub"> · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : minusc(it.unidade_cupom)}{conf.entrada != null && <> → entram {qtd(linha.entrada)} {minusc(produto.unidade)}</>}</span>
       </span>
       <button type="button" className="editar-item" disabled={travado} onClick={aoEditar}><span aria-hidden="true">✎</span> Editar</button>
+      {/* a última chance de ver o preço fora do normal antes de reenviar: o item confirmado sai da lista e só mora aqui */}
+      <AvisoPreco aviso={precoForaDoNormal(linha.valorUnitario, produto.unidade, produto.compras)} testid="preco-fora-do-normal-resumo" />
     </div>
   )
 }
@@ -370,12 +377,15 @@ function ItemConfirmadoNoResumo({ it, produto, conf, travado, aoEditar }: {
 /** Item que já tinha produto confirmado antes de o Ivan abrir esta tela (o servidor casou sozinho): produto e quanto entra no estoque, só para ele conferir. */
 function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null }) {
   const produto = (catalogo ?? []).find((p) => String(p.produto_id) === String(it.sugestao_produto?.id))
+  // o valor unitário de um item que já tem produto é o preço por unidade de ESTOQUE (entrada × preço − desconto = a linha); sem a quantidade que entra não há como julgar
+  const aviso = produto && it.entrada_estoque != null ? precoForaDoNormal(Number(it.valor_unitario), produto.unidade, produto.compras) : null
   return (
     <div className="resumo-detalhe" data-testid="item-conhecido">
       <span>
         <span className="confirmado">✓ {produto ? produto.nome : `produto cód. ${it.sugestao_produto?.id ?? '?'}`}</span>
         {it.entrada_estoque != null && <span className="sub"> · entra {qtd(Number(it.entrada_estoque))} {produto?.unidade ? minusc(produto.unidade) : ''} no estoque</span>}
       </span>
+      <AvisoPreco aviso={aviso} testid="preco-fora-do-normal-resumo" />
     </div>
   )
 }

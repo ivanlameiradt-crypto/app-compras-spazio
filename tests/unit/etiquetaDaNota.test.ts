@@ -57,4 +57,16 @@ describe('etiquetaDaNota', () => {
     expect(etiquetaDaNota({ ...tudo, bloqueada: false, faltaDecidir: false, faltaParcelas: false })?.texto).toBe('Confira o financeiro')
     expect(etiquetaDaNota({ ...tudo, bloqueada: false, faltaDecidir: false, faltaParcelas: false, financeiroNaoFecha: false })?.texto).toBe('Pronta')
   })
+
+  // Preço fora do normal (29/10/2026): a nota "pronta" com um item de preço estranho NÃO pode parecer só "Pronta" no título fechado, ou seria lançada sem abrir (e sem ler o aviso).
+  it('preço fora do normal: "Confira os preços", em aviso, no lugar de "Pronta" e depois do que falta decidir e do financeiro', () => {
+    expect(etiquetaDaNota({ ...base, pronta: true, precoForaDoNormal: true })).toEqual({ texto: 'Confira os preços', tom: 'aviso' })
+    expect(etiquetaDaNota({ ...base, pronta: true, precoForaDoNormal: false })).toEqual({ texto: 'Pronta', tom: 'ok' })
+    expect(etiquetaDaNota({ ...base, pronta: true })).toEqual({ texto: 'Pronta', tom: 'ok' })                       // campo ausente = sem aviso
+    const tudo = { ...base, faltaDecidir: true, financeiroNaoFecha: true, pronta: true, precoForaDoNormal: true }
+    expect(etiquetaDaNota(tudo)?.texto).toBe('Falta decidir')
+    expect(etiquetaDaNota({ ...tudo, faltaDecidir: false })?.texto).toBe('Confira o financeiro')
+    expect(etiquetaDaNota({ ...tudo, faltaDecidir: false, financeiroNaoFecha: false })?.texto).toBe('Confira os preços')
+    expect(etiquetaDaNota({ ...base, estado: 'erro', precoForaDoNormal: true })?.texto).toBe('Ficou pela metade')   // o que o robô fez vem antes
+  })
 })

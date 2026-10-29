@@ -10,7 +10,7 @@ import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
   HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
   FreteDaNotaConfirmado, LinhaCompra, LinhaConferencia, MarcaItem, NfeAprendizado, NfeResumo, NotaSefazLista, ParcelaDigitada, PagamentoCupom, PainelEconomia, Papel, Pedido, PedidoAReceber, PedidoRecente,
-  Preparo, ProdutoCatalogo, Recebimento, RespostaConfirmacaoCupom, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
+  Preparo, PrecoDeCompra, ProdutoCatalogo, Recebimento, RespostaConfirmacaoCupom, ResultadoEnvio, ResumoCotacao, ResumoEnvioCupom, ResumoIA, Semana, Unidade, Usuario, Vendedor,
 } from './tipos'
 
 /** Erro vindo do Supabase, com o status HTTP e o código (PostgREST/Postgres) para a fila saber se tenta de novo. */
@@ -859,20 +859,36 @@ async function lerPlanilhaDeUnidades(): Promise<Map<number, { unidade: string; d
  * da migração: a tabela não existe e o catálogo vem como sempre, sem palavras. Qualquer outro erro nessa leitura é erro (a caixa avisa).
  * O produto marcado `ocultar` (receita da casa, não é de compra) vem com `oculto: true`: a busca e as sugestões o ignoram.
  */
+/** Quantas compras de cada produto o catálogo guarda para o aviso de preço fora do normal (as mais novas, uma por dia; é o mesmo número de admin/precoForaDoNormal). */
+const MAX_COMPRAS_POR_PRODUTO = 5
 export async function catalogoProdutos(): Promise<ProdutoCatalogo[]> {
   const [lista, busca] = await Promise.all([
     // a semana mais nova primeiro; `id` (chave primária) desempata, para a leitura em várias páginas não repetir nem pular linhas
-    lerTabelaInteira('itens_semana', 'produto_id, produto, unidade, semana_id', [['semana_id', false], ['id', false]]),
+    lerTabelaInteira('itens_semana', 'produto_id, produto, unidade, semana_id, preco_estimado, data_ultima_compra', [['semana_id', false], ['id', false]]),
     lerBuscaDosProdutos(),
   ])
   const planilha = await lerPlanilhaDeUnidades()
   if (lista.error) throw new ErroApi(lista.error.message, lista.status, lista.error.code)
   const porId = new Map<number, ProdutoCatalogo>()
-  for (const r of (lista.data ?? []) as { produto_id: number | string; produto: string | null; unidade: string | null }[]) {
+  // As últimas compras de cada produto (aviso de preço fora do normal): a lista semanal repete a mesma compra em várias semanas, então vale UMA por dia (a da semana mais nova, que vem primeiro).
+  const comprasPorId = new Map<number, Map<string, PrecoDeCompra>>()
+  for (const r of (lista.data ?? []) as { produto_id: number | string; produto: string | null; unidade: string | null; preco_estimado?: number | string | null; data_ultima_compra?: string | null }[]) {
     const id = Number(r.produto_id)
     const nome = (r.produto ?? '').replace(/\s+/g, ' ').trim()
-    if (!Number.isFinite(id) || nome === '' || porId.has(id)) continue // a 1ª de cada produto é a da semana mais nova
+    if (!Number.isFinite(id) || nome === '') continue
+    const preco = Number(r.preco_estimado)
+    const dia = typeof r.data_ultima_compra === 'string' ? r.data_ultima_compra.trim().slice(0, 10) : ''
+    if (r.preco_estimado != null && Number.isFinite(preco) && preco > 0 && /^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+      const doProduto = comprasPorId.get(id) ?? new Map<string, PrecoDeCompra>()
+      if (!doProduto.has(dia)) doProduto.set(dia, { preco, data: dia, unidade: r.unidade ?? null })
+      comprasPorId.set(id, doProduto)
+    }
+    if (porId.has(id)) continue // a 1ª de cada produto é a da semana mais nova
     porId.set(id, { produto_id: id, nome, unidade: r.unidade ?? null })
+  }
+  for (const [id, doProduto] of comprasPorId) {
+    const p = porId.get(id)
+    if (p) p.compras = [...doProduto.values()].sort((a, b) => (a.data! < b.data! ? 1 : a.data! > b.data! ? -1 : 0)).slice(0, MAX_COMPRAS_POR_PRODUTO) // a mais nova primeiro
   }
   // A planilha "Produtos - como eu lanço no SisChef" do Ivan (08/10): a unidade dela MANDA sobre a de itens_semana (que o app só adivinhava pelo nome) e o produto
   // que ele acrescentou com o nome do SisChef (ex.: CHOCOLATE BARRA LACTA LAKA OREO) entra na lista mesmo fora da lista semanal de compra. Entra ANTES das palavras-chave,

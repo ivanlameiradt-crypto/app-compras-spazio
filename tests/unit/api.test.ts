@@ -904,6 +904,37 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     ])
   })
 
+  it('catalogoProdutos: leva as últimas compras de cada produto (aviso de preço fora do normal): uma por dia, a mais nova primeiro, no máximo 5, só com preço e dia válidos', async () => {
+    const coca = (semana_id: number, preco_estimado: unknown, data_ultima_compra: unknown, unidade = 'un') =>
+      ({ produto_id: 1836984, produto: 'COCA COLA - ZERO 350 ML', unidade, semana_id, preco_estimado, data_ultima_compra })
+    const c = cadeia({ data: [
+      coca(8, '3.5417', '2026-10-21'),                                          // preço como texto (numeric do banco): vale
+      coca(7, 3.6, '2026-10-21'),                                               // a MESMA compra vista numa semana mais velha: vale a da semana mais nova
+      coca(6, 3.4, '2026-10-14'), coca(5, 3.3, '2026-10-07'), coca(4, 3.2, '2026-09-30'),
+      coca(3, 0, '2026-09-28'), coca(3, null, '2026-09-27'), coca(3, -2, '2026-09-26'), coca(3, 3.15, null), coca(3, 3.15, 'ontem'), coca(3, 'abc', '2026-09-25'),   // lixo: não vale
+      coca(2, 3.1, '2026-09-23'), coca(1, 3.0, '2026-09-16'),                  // a 6ª compra (a mais velha): fora do limite de 5
+      { produto_id: 3469754, produto: 'NUGGSTES SUPREME - INSUMOS (KG)', unidade: 'kg', semana_id: 8, preco_estimado: 22.65, data_ultima_compra: '2026-10-21T03:00:00+00:00' },
+      { produto_id: 3138549, produto: 'PÃO BRIOCHE - INSUMO (UN)', unidade: 'un', semana_id: 8, preco_estimado: null, data_ultima_compra: null },   // sem compra nenhuma
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))
+    const r = await catalogoProdutos()
+    expect(c.select).toHaveBeenCalledWith(expect.stringContaining('preco_estimado, data_ultima_compra'), expect.anything())
+    expect(r.find((p) => p.produto_id === 1836984)?.compras).toEqual([
+      { preco: 3.5417, data: '2026-10-21', unidade: 'un' }, { preco: 3.4, data: '2026-10-14', unidade: 'un' }, { preco: 3.3, data: '2026-10-07', unidade: 'un' },
+      { preco: 3.2, data: '2026-09-30', unidade: 'un' }, { preco: 3.1, data: '2026-09-23', unidade: 'un' },
+    ])
+    expect(r.find((p) => p.produto_id === 3469754)?.compras).toEqual([{ preco: 22.65, data: '2026-10-21', unidade: 'kg' }])   // dia com hora e fuso: fica só o dia
+    expect(r.find((p) => p.produto_id === 3138549)).toEqual({ produto_id: 3138549, nome: 'PÃO BRIOCHE - INSUMO (UN)', unidade: 'un' })      // sem compra: nem a chave `compras`
+  })
+
+  it('catalogoProdutos: a compra de um produto que só aparece em semana velha também chega ao catálogo', async () => {
+    const c = cadeia({ data: [
+      { produto_id: 99, produto: 'SÓ NA SEMANA VELHA (KG)', unidade: 'kg', semana_id: 1, preco_estimado: 12.5, data_ultima_compra: '2026-08-01' },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c).mockReturnValueOnce(cadeia({ data: [], error: null, status: 200 }))
+    expect((await catalogoProdutos())[0].compras).toEqual([{ preco: 12.5, data: '2026-08-01', unidade: 'kg' }])
+  })
+
   describe('catalogoProdutos: a unidade da planilha do Ivan (produto_planilha) manda sobre a de itens_semana', () => {
     const lista = () => cadeia({ data: [
       { produto_id: 3476511, produto: 'MANJERICÃO - INSUMOS (KG)', unidade: 'kg', semana_id: 3 },
