@@ -13,6 +13,9 @@ import { semear, importar, idSemana, ADMIN, JOAO, PAYLOAD } from './fixture'
 // Fase 2 D (§8.6): +10 funções de admin/ativo (recebimento, NF-e, desempenho, CNPJ); +3 do robô para anon (só com o
 // segredo); 5 tabelas + a view cot_conferencia entram na leitura do admin; a view cot_desempenho só a chave de serviço
 // lê (SO_SERVICO passa a 5). A lista completa é reaplicada pela última migration por nome de arquivo.
+// Memória de embalagem das NF-e (29/10/2026, 20261223000001): +2 funções do robô para anon (nfe_aprendizado_ler/gravar, só com o segredo, como
+// as outras 5; a migration NÃO reaplica a lista completa: só cria, revoga e concede as duas); a tabela nfe_aprendizado entra na leitura do admin,
+// sem nenhuma escrita direta para anon ou authenticated.
 const atual = bancoPorArquivo(semear)
 const banco = async () => atual()
 
@@ -113,12 +116,15 @@ const DO_APP = [
   'cot_produto_lembrar(bigint,text)',
 ]
 
-/** A página do vendedor (chave anônima): estas duas + as 4 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,
+/** A página do vendedor (chave anônima): estas duas + as 7 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,
  * cot_nfe_marcar_estado, é da Fase 3 — o robô grava 'revisar'/'erro'/'ensaio_ok' no fim do disparo do "Lançar"; a 5ª,
- * cot_nfe_anexar_parcelas, grava os boletos do XML para a aba marcar a nota como pronta). */
+ * cot_nfe_anexar_parcelas, grava os boletos do XML para a aba marcar a nota como pronta; a 6ª e a 7ª, nfe_aprendizado_ler e
+ * nfe_aprendizado_gravar, são da memória de embalagem das notas fiscais — o robô lê o que já aprendeu do fornecedor antes de lançar
+ * a nota e grava o que a nota lançada ensinou). */
 const DA_PAGINA = ['cotacao_abrir(text,boolean)', 'cotacao_responder(text,uuid,jsonb,jsonb)']
 const DO_ROBO_NFE = ['cot_nfe_sincronizar(text,jsonb)', 'cot_nfe_marcar_notificado(text,text,text,text)', 'cot_nfe_marcar_lancadas(text,jsonb)',
-  'cot_nfe_marcar_estado(text,jsonb)', 'cot_nfe_anexar_parcelas(text,jsonb)']
+  'cot_nfe_marcar_estado(text,jsonb)', 'cot_nfe_anexar_parcelas(text,jsonb)',
+  'nfe_aprendizado_ler(text,text)', 'nfe_aprendizado_gravar(text,jsonb)']
 const ANON = [...DA_PAGINA, ...DO_ROBO_NFE]
 
 /** Chamadas pelo robô com a chave de serviço (grant explícito). */
@@ -189,7 +195,7 @@ describe('tabelas: leitura pela RLS, escrita só pelas funções', () => {
   it('anon não tem privilégio nenhum em tabela de public', async () => {
     const db = await banco()
     const ts = await tabelas(db)
-    expect(ts).toEqual(expect.arrayContaining(['usuarios', 'semanas', 'itens_semana', 'compras', 'compras_itens', 'historico_alteracoes']))
+    expect(ts).toEqual(expect.arrayContaining(['usuarios', 'semanas', 'itens_semana', 'compras', 'compras_itens', 'historico_alteracoes', 'nfe_aprendizado']))
     for (const t of ts) {
       for (const priv of ['SELECT', ...ALEM_DA_LEITURA]) {
         const [r] = (await db.query<{ ok: boolean }>(`select has_table_privilege('anon', $1, $2) as ok`, [`public.${t}`, priv])).rows
@@ -203,7 +209,7 @@ describe('tabelas: leitura pela RLS, escrita só pelas funções', () => {
     const ts = await tabelas(db)
     expect(ts).toEqual(expect.arrayContaining([
       'cot_itens_admin', 'cot_resumo', 'cot_economia', 'cot_economia_linhas', 'cot_categorias',
-      'cot_leituras_ia', 'cot_ia_uso', ...SO_SERVICO,
+      'cot_leituras_ia', 'cot_ia_uso', 'nfe_aprendizado', ...SO_SERVICO,
     ]))
     for (const t of ts) {
       const [sel] = (await db.query<{ ok: boolean }>(`select has_table_privilege('authenticated', $1, 'SELECT') as ok`, [`public.${t}`])).rows
@@ -264,7 +270,7 @@ describe('tabelas: leitura pela RLS, escrita só pelas funções', () => {
 })
 
 describe('funções: lista completa de grants', () => {
-  it('anon executa as 2 da página do vendedor + as 5 do robô de NF-e (Fase 2 D + Fase 3)', async () => {
+  it('anon executa as 2 da página do vendedor + as 7 do robô de NF-e (Fase 2 D + Fase 3 + memória de embalagem)', async () => {
     const db = await banco()
     expect(await funcoesQue(db, 'anon')).toEqual([...ANON].sort())
     await expect(como(db, 'anon', 'select eh_admin()')).rejects.toThrow(/permission denied/)
