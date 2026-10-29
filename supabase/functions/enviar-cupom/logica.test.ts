@@ -481,9 +481,9 @@ describe('tratar — CNPJ lido errado na foto', () => {
   })
 
   it('CNPJ válido com outro CNPJ válido a UM dígito na lista: continua o que a IA leu', async () => {
-    // 02164629000100 e 22164629000100 fecham as contas e diferem em um dígito (raro, mas existe)
-    const lido = '22164629000100'
-    const deps = depsSilva({ async cnpjsConhecidos() { return [{ cnpj: '02164629000100', nome: null }] } }, leituraSilva({ emitente_cnpj: lido }))
+    // 12345678001400 e 12345678901400 fecham as contas e diferem em um dígito (raro, mas existe)
+    const lido = '12345678901400'
+    const deps = depsSilva({ async cnpjsConhecidos() { return [{ cnpj: '12345678001400', nome: null }] } }, leituraSilva({ emitente_cnpj: lido }))
     const r = await enviar(deps)
     expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: lido })
     expect(String(r.corpo.resumo)).not.toMatch(/CNPJ/)

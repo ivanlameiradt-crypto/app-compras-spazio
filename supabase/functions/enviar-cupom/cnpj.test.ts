@@ -105,9 +105,9 @@ describe('nomesCompativeis — o nome lido e o conhecido repartem ao menos uma p
 
 describe('conferirCnpjLido — CNPJ que fecha as contas ou ausente: nada a fazer', () => {
   it('CNPJ válido NUNCA é tocado, mesmo com outro CNPJ conhecido a um dígito de distância', () => {
-    // 02164629000100 e 22164629000100 são dois CNPJs válidos que diferem em UM dígito (raro, mas existe): o lido é válido, então fica como veio
-    expect(cnpjValido('02164629000100') && cnpjValido('22164629000100')).toBe(true)
-    expect(conferirCnpjLido('22164629000100', 'EMPRESA EXEMPLO', [{ cnpj: '02164629000100', nome: 'EMPRESA EXEMPLO LTDA' }])).toEqual({ tipo: 'ok' })
+    // 12345678001400 e 12345678901400 são dois CNPJs válidos que diferem em UM dígito (raro, mas existe): o lido é válido, então fica como veio
+    expect(cnpjValido('12345678001400') && cnpjValido('12345678901400')).toBe(true)
+    expect(conferirCnpjLido('12345678901400', 'EMPRESA EXEMPLO', [{ cnpj: '12345678001400', nome: 'EMPRESA EXEMPLO LTDA' }])).toEqual({ tipo: 'ok' })
     expect(conferirCnpjLido(SILVA.cnpj, SILVA.nome, CONHECIDOS)).toEqual({ tipo: 'ok' })
   })
 
@@ -164,9 +164,9 @@ describe('conferirCnpjLido — CNPJ que NÃO fecha as contas', () => {
   })
 
   it('dois candidatos distintos no MESMO dígito (dois CNPJs válidos que diferem em 1 dígito): também ambíguo', () => {
-    const lido = '12164629000100' // o 1º dígito não é nem 0 nem 2
+    const lido = '12345678101400' // o 9º dígito não é nem 0 nem 9
     expect(cnpjValido(lido)).toBe(false)
-    const dois: CnpjConhecido[] = [{ cnpj: '02164629000100', nome: null }, { cnpj: '22164629000100', nome: null }]
+    const dois: CnpjConhecido[] = [{ cnpj: '12345678001400', nome: null }, { cnpj: '12345678901400', nome: null }]
     expect(conferirCnpjLido(lido, null, dois)).toEqual({ tipo: 'invalido' })
   })
 
