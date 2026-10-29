@@ -16,6 +16,7 @@ import { semear, importar, idSemana, ADMIN, JOAO, PAYLOAD } from './fixture'
 // Memória de embalagem das NF-e (29/10/2026, 20261223000001): +2 funções do robô para anon (nfe_aprendizado_ler/gravar, só com o segredo, como
 // as outras 5; a migration NÃO reaplica a lista completa: só cria, revoga e concede as duas); a tabela nfe_aprendizado entra na leitura do admin,
 // sem nenhuma escrita direta para anon ou authenticated.
+// Fase 2 da memória (29/10/2026, 20261224000001): +1 função de admin para authenticated (nfe_aprendizado_esquecer, a única porta para apagar uma linha); anon não a executa.
 const atual = bancoPorArquivo(semear)
 const banco = async () => atual()
 
@@ -24,7 +25,7 @@ const ESCRITA = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGE
 const ALEM_DA_LEITURA = [...ESCRITA, 'MAINTAIN']
 
 /** Funções que o App (usuário logado) chama; todo o resto fica sem grant para authenticated (72 depois da C2:
- * 37 da 1B + 2 E1 + 10 D + 5 B + 14 C1 + 4 C2). */
+ * 37 da 1B + 2 E1 + 10 D + 5 B + 14 C1 + 4 C2; mais as da Fase 3 e, desde 29/10/2026, a nfe_aprendizado_esquecer). */
 const DO_APP = [
   'abrir_compra(uuid,bigint,text)',
   'admin_fechar_compra(uuid,boolean,numeric)',
@@ -114,6 +115,8 @@ const DO_APP = [
   'cot_nfe_converter_item(text,integer,numeric)',
   // Fase 3: deixar a descrição da nota/cupom como palavra-chave do produto (admin)
   'cot_produto_lembrar(bigint,text)',
+  // Memória de embalagem das NF-e, fase 2 (20261224000001): "Esquecer" no item da nota apaga UMA linha de nfe_aprendizado (admin; a tabela não aceita escrita direta)
+  'nfe_aprendizado_esquecer(text,text,text)',
 ]
 
 /** A página do vendedor (chave anônima): estas duas + as 7 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,

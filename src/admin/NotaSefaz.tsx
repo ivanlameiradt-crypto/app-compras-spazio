@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { formatarDataHora, formatarReais } from '../lib/regras'
-import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
+import type { ItemNotaSefaz, NfeAprendizado, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
 import { cnpjDaChave, formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { unidadeDoProduto } from './unidadeEstoque'
@@ -17,6 +17,7 @@ import type { ItemParaRateio } from './freteRegras'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
+import { memoriaDoItem } from './embalagemLembrada'
 import {
   AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX, associacoesPeloRobo, bloqueiosDaNota,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
@@ -76,7 +77,7 @@ function TickOk({ rotulo = 'produto associado no SisChef', testid = 'item-ok' }:
 }
 
 /** "Conferir": o que foi associado a cada item e o financeiro (boletos contra o valor da nota), para o Ivan abrir e checar. */
-function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAssociacao, salvarConversaoItem }: {
+function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAssociacao, salvarConversaoItem, memoria, esquecerEmbalagem }: {
   nota: NotaSefazLista
   /** Lista de insumos do app (null = carregando) e se a leitura dela falhou. */
   catalogo: ProdutoCatalogo[] | null
@@ -86,6 +87,9 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
   salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
   /** Guarda a conversão de um item que já vem associado do SisChef com UN DIFERE (nula desfaz). */
   salvarConversaoItem: (n: number, conversao: number | null) => Promise<void>
+  /** O que o robô lembra das notas já lançadas (memória de embalagem; vazia se ainda não leu ou se a leitura falhou) e o botão Esquecer. */
+  memoria: NfeAprendizado[]
+  esquecerEmbalagem: (linha: NfeAprendizado) => Promise<void>
 }) {
   const f = resumoFinanceiro(nota)
   const quartaDaMaues = ehPagamentoSemanal(nota) ? planoSemanal(nota, [])?.quarta ?? null : null
@@ -104,6 +108,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
     const rotuloConfirmado = conversao != null && decisao
       ? `produto confirmado no app, ${textoConversao(it.unidade_sischef, decisao.unidade, conversao)}`
       : 'produto confirmado no app'
+    const lembrada = memoriaDoItem(memoria, nota, it) // a embalagem que o robô lembra para o código deste item (CNPJ + CÓD. FOR + unidade), se houver
     return (
       <li key={i} data-testid="conferir-item">
         <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
@@ -119,12 +124,12 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
         )}
         {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
         {!ok && it.n != null && (decisao != null || podeAssociar) && (
-          <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} />
+          <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} lembrada={lembrada} />
         )}
         {/* Item que já vem associado, mas o SisChef o marcou UN DIFERE: aparece SÓ quando o robô parou pedindo (ou o Ivan já informou) — vazio, para o Ivan dizer o número */}
         {ok && it.n != null && (
           <ConversaoItemAssociado item={{ ...it, n: it.n }} atual={conversaoDeItemAssociado(nota, it)} pede={itemPedeConversao(nota, it)}
-            desabilitado={!podeAssociar} salvar={salvarConversaoItem} buscarUnidade={api.unidadeDoProdutoNaPlanilha} />
+            desabilitado={!podeAssociar} salvar={salvarConversaoItem} buscarUnidade={api.unidadeDoProdutoNaPlanilha} lembrada={lembrada} esquecer={esquecerEmbalagem} />
         )}
       </li>
     )
@@ -399,8 +404,12 @@ interface PropsNota {
   catalogoFalhou: boolean
   /** Lê a lista de insumos de novo (depois de "Lembrar esta descrição", que muda as palavras-chave de um produto). */
   recarregarCatalogo: () => Promise<void>
+  /** O que o robô lembra das notas já lançadas (memória de embalagem; vazia se ainda não leu ou se a leitura falhou), o botão Esquecer e a releitura dela (depois de o Ivan corrigir um número). */
+  memoria: NfeAprendizado[]
+  esquecerEmbalagem: (linha: NfeAprendizado) => Promise<void>
+  recarregarMemoria: () => Promise<void>
 }
-function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo }: PropsNota) {
+function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo, memoria, esquecerEmbalagem, recarregarMemoria }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -470,6 +479,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   async function salvarConversaoItem(n: number, conversao: number | null) {
     await api.converterItem(nota.chave, n, conversao)
     try { await recarregar() } catch { /* já está gravado: a caixa mostra o que foi guardado mesmo sem a releitura */ }
+    void recarregarMemoria() // "Corrigir" a embalagem que o robô lembra passa por aqui: lê a memória de novo (a leitura nunca lança)
   }
 
   function escolher(nova: string) {
@@ -549,7 +559,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <div className="amarelo" data-testid="aviso-financeiro">{prontidao.financeiro}</div>
       )}
       <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao}
-        salvarConversaoItem={salvarConversaoItem} />
+        salvarConversaoItem={salvarConversaoItem} memoria={memoria} esquecerEmbalagem={esquecerEmbalagem} />
       {estadoTexto && (
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
@@ -720,6 +730,26 @@ export default function NotaSefaz() {
     Promise.resolve(api.fantasiasDosFornecedores()).then((f) => { if (vivo) setFantasias(f ?? {}) }).catch(() => undefined)
     return () => { vivo = false }
   }, [])
+  // Memória de embalagem (29/10/2026): o que o robô aprendeu das notas já lançadas. Lida ao abrir a tela, depois de o Ivan corrigir ou esquecer um número e, em silêncio, quando a lista de notas é relida
+  // (ao voltar para o app e a cada poucos minutos: o robô pode ter aprendido algo desde a última leitura). É só um complemento: se a leitura falhar, a tela segue como sempre, sem memória e sem erro na frente
+  // dele. Só vale a leitura que COMEÇOU por último (uma resposta atrasada de antes não traz de volta um número que o Ivan acabou de esquecer).
+  const [memoria, setMemoria] = useState<NfeAprendizado[]>([])
+  const leituraDaMemoria = useRef(0)
+  async function recarregarMemoria(): Promise<void> {
+    const minha = ++leituraDaMemoria.current
+    try {
+      const lida = await Promise.resolve(api.memoriaDeEmbalagem())
+      if (Array.isArray(lida) && minha === leituraDaMemoria.current) setMemoria(lida)
+    } catch { /* segue com o que já tinha */ }
+  }
+  useEffect(() => { void recarregarMemoria() }, [])
+  /** "Esquecer": apaga a linha no banco (lança Error com texto claro se falhar: a caixa do item mostra) e já a tira da tela, sem esperar a leitura de confirmação que vem logo depois. */
+  async function esquecerEmbalagem(linha: NfeAprendizado): Promise<void> {
+    await api.esquecerEmbalagem(linha.emitente_cnpj, linha.cod_forn, linha.unidade_nota)
+    leituraDaMemoria.current += 1
+    setMemoria((m) => m.filter((x) => !(x.emitente_cnpj === linha.emitente_cnpj && x.cod_forn === linha.cod_forn && x.unidade_nota === linha.unidade_nota)))
+    void recarregarMemoria()
+  }
   const cnpjDe = (n: NotaSefazLista): string => n.cnpj_emitente || cnpjDaChave(n.chave)
   const nomeDe = (n: NotaSefazLista): string => nomeDoFornecedor(n.emitente, fantasias[cnpjDe(n)])
 
@@ -813,6 +843,7 @@ export default function NotaSefaz() {
       if (document.visibilityState !== 'visible' || Date.now() - ultima < RELER_MIN_MS) return
       ultima = Date.now()
       void carregar(true)
+      void recarregarMemoria()
     }
     const aoVoltar = () => { if (document.visibilityState === 'visible') reler() }
     document.addEventListener('visibilitychange', aoVoltar)
@@ -835,7 +866,7 @@ export default function NotaSefaz() {
               {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} nomeExibido={nomeDe(n)} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)} aplicarDecisao={aplicarDecisao}
                 outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
                 emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou}
-                recarregarCatalogo={recarregarCatalogo} />)}
+                recarregarCatalogo={recarregarCatalogo} memoria={memoria} esquecerEmbalagem={esquecerEmbalagem} recarregarMemoria={recarregarMemoria} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
           </>

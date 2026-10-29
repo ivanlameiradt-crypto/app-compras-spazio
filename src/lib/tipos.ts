@@ -429,6 +429,28 @@ export interface ProdutoCatalogo {
   /** A descrição do produto na planilha do Ivan (produto_planilha.descricao = a do SisChef): cada palavra dela serve de palavra-chave para a sugestão do cupom. */
   descricao_sischef?: string
 }
+/** Uma embalagem que o robô aprendeu das notas já lançadas (public.nfe_aprendizado; migração 20261223000001): para o fornecedor (CNPJ) + o código do produto na nota (CÓD. FOR)
+ *  + a unidade da nota, o produto do estoque e quantas unidades dele vêm em 1 unidade da nota (fator > 1: "6 UN" na nota = 6 fardos de 6 latas, produto em lata). Só o admin lê. */
+export interface NfeAprendizado {
+  /** 14 dígitos, sem pontuação. */
+  emitente_cnpj: string
+  /** O CÓD. FOR do item na nota, texto exato (sem espaços nas pontas). */
+  cod_forn: string
+  /** Unidade da nota em maiúsculas ("UN", "CX"…). */
+  unidade_nota: string
+  produto_id: number
+  produto_nome: string | null
+  /** Quantas unidades do produto vêm em 1 unidade da nota (sempre maior que 1). */
+  fator: number
+  /** Preço por unidade da nota na última vez (null = sem referência). */
+  preco_ref: number | null
+  descricao_exemplo: string | null
+  /** Em quantas notas lançadas este mesmo número foi visto. */
+  vezes: number
+  ultima_chave: string | null
+  /** Quando a linha foi atualizada pela última vez (data e hora com fuso). */
+  atualizado_em: string
+}
 /** Uma duplicata (boleto) do XML da nota: cot_nfe.parcelas (migração 20261207000001). */
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
 /** Parcela que o Ivan digita quando o XML não traz as duplicatas: vencimento aaaa-mm-dd e valor em reais. */

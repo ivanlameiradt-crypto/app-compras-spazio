@@ -58,6 +58,7 @@ const F3P = '20261220000001_produto_cadastro.sql' // cadastro de produto novo pe
 const F3Q = '20261221000001_produto_cadastro_correcoes.sql' // correções da revisão nº 2 (14/10): reescreve SÓ produto_cadastro_concluir (a F3P já está em produção)
 const F3R = '20261222000001_unidades_ct_pct.sql' // a lista do app aceita produtos em CT e PCT (22/10): troca o check de produto_planilha.unidade e reescreve SÓ produto_cadastro_concluir (a F3Q já está em produção)
 const F3S = '20261223000001_nfe_aprendizado.sql' // memória de embalagem das notas fiscais (29/10/2026): nfe_aprendizado + nfe_aprendizado_ler/gravar (só cria; as 2 funções são do robô, para anon)
+const F3T = '20261224000001_nfe_aprendizado_esquecer.sql' // memória de embalagem, fase 2 (29/10/2026): nfe_aprendizado_esquecer, o "Esquecer" do app (só cria a função; é do admin, para authenticated)
 const F3N = '20261217000001_fornecedor_cadastro.sql' // cadastro de fornecedor pelo app (fornecedor_cadastro, fornecedor_app)
 const F3M = '20261216000001_produto_planilha_descricao.sql' // produto acrescentado pela planilha (descrição) entra na lista de insumos e em cot_nfe_associar
 // A C1 entra entre a D1 e a D2 (nome 29-01 < 29-02); a C2 vem depois da B; as da Fase 3 são as últimas por nome.
@@ -65,7 +66,7 @@ const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R, F3S]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R, F3S, F3T]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [
@@ -446,6 +447,39 @@ describe('Fase 2 — base e ordem das migrations', () => {
           const r = await db.query<{ ok: boolean }>(`select has_function_privilege($1, 'public.${f}', 'execute') as ok`, [papel])
           expect([f, papel, r.rows[0].ok]).toEqual([f, papel, pode])
         }
+      }
+    } finally {
+      await db.close()
+    }
+  })
+
+  // A F3T só CRIA UMA função (o "Esquecer" do app): nenhuma função de antes muda de corpo nem de permissão (nem as 2 do robô que a F3S criou), nenhuma tabela nasce nem muda de
+  // permissão, e a função nova nasce só para o admin logado (authenticated), nunca para o anon nem para o público.
+  it('X2 (F3T): o "esquecer" da memória de embalagem só cria uma função — nada de antes muda de corpo nem de permissão; a nova é só do authenticated', async () => {
+    const db = new PGlite()
+    const funcoes = async () => (await db.query<{ f: string; h: string; acl: string | null }>(
+      `select regexp_replace(p.oid::regprocedure::text, '\\s', '', 'g') as f, md5(p.prosrc) as h, p.proacl::text as acl
+         from pg_proc p where p.pronamespace = 'public'::regnamespace order by 1`)).rows
+    const tabelasEPermissoes = async () => (await db.query<{ t: string; acl: string | null }>(
+      `select c.relname as t, c.relacl::text as acl from pg_class c
+        where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm') order by 1`)).rows
+    const NOVA = 'nfe_aprendizado_esquecer(text,text,text)'
+    try {
+      await db.exec(shim())
+      for (const f of ORDEM_ESPERADA.slice(0, ORDEM_ESPERADA.indexOf(F3T))) await db.exec(migration(f))
+      const funcoesAntes = await funcoes()
+      const tabelasAntes = await tabelasEPermissoes()
+      await db.exec(migration(F3T))
+      const funcoesDepois = await funcoes()
+      const tabelasDepois = await tabelasEPermissoes()
+      const existiam = new Set(funcoesAntes.map((x) => x.f))
+      // o que existia continua igual (corpo e permissões); o que apareceu é só a função esperada
+      expect(funcoesDepois.filter((x) => existiam.has(x.f))).toEqual(funcoesAntes)
+      expect(funcoesDepois.filter((x) => !existiam.has(x.f)).map((x) => x.f)).toEqual([NOVA])
+      expect(tabelasDepois).toEqual(tabelasAntes)                                      // nenhuma tabela nasceu, sumiu ou mudou de permissão
+      for (const [papel, pode] of [['authenticated', true], ['anon', false]] as const) {
+        const r = await db.query<{ ok: boolean }>(`select has_function_privilege($1, 'public.${NOVA}', 'execute') as ok`, [papel])
+        expect([papel, r.rows[0].ok]).toEqual([papel, pode])
       }
     } finally {
       await db.close()

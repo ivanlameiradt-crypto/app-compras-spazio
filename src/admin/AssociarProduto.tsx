@@ -19,9 +19,9 @@
 // "Lembrar esta descrição" (marcado de início): ao confirmar, a descrição que veio na nota vira palavra-chave do produto, e da próxima vez a caixa
 // já o sugere — é assim que a lista do Ivan aprende sem travar.
 import { useMemo, useState } from 'react'
-import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../lib/tipos'
+import type { AssociacaoApp, ItemNotaSefaz, NfeAprendizado, ProdutoCatalogo } from '../lib/tipos'
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, fardoPeloNome, formatarConversao, formatarQuantidade, parseConversao, pesoPeloNome,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, fardoPeloNome, formatarConversao, formatarQuantidade, nomeParaMostrar, parseConversao, pesoPeloNome,
   quantidadeNoEstoque, rotuloUnidade, situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
@@ -43,6 +43,8 @@ interface Props {
   salvar: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
   /** A chave da nota: vai como origem do pedido de "Cadastrar produto novo" (com o número do item), para o pedido dizer de onde veio. */
   notaChave?: string
+  /** Memória de embalagem (29/10/2026): a linha que o robô lembra para o código deste item (CNPJ + CÓD. FOR + unidade), ou nada. Com ela e sem decisão do Ivan, a caixa oferece "Usar o lembrado". */
+  lembrada?: NfeAprendizado | null
 }
 
 // As regras puras da conversão (parseConversao, formatarConversao, textoConversao, conversaoDaDecisao, pesoPeloNome) moram em associacaoRegras.ts, com
@@ -54,7 +56,7 @@ const descricaoCurta = (d: string | undefined): string => {
   return t.length > 60 ? `${t.slice(0, 59)}…` : t
 }
 
-export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, decisao, salvar, notaChave }: Props) {
+export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, decisao, salvar, notaChave, lembrada }: Props) {
   const [texto, setTexto] = useState('')
   const [escolhido, setEscolhido] = useState<ProdutoCatalogo | null>(null) // produto que o Ivan PROCUROU na lista (o indicado vem em `proposta`)
   const [dispensou, setDispensou] = useState(false) // "Não é este produto? Escolher outro": para de propor o produto indicado
@@ -131,6 +133,23 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
     }
   }
 
+  // Memória de embalagem (29/10/2026): o robô já viu este código desta loja numa nota lançada. "Usar o lembrado" grava a decisão como se o Ivan a tivesse feito à mão — o produto e a
+  // conversão lembrados, pela mesma função `salvar` do Confirmar — e, por já vir com o número, também resolve o aviso do fardo ("SIX PACK" pede o número). Sem "Lembrar esta
+  // descrição": a opção nem aparece aqui, e o código do fornecedor já é a chave da memória. Só aparece enquanto não há decisão do Ivan para o item.
+  const nomeLembrado = lembrada ? nomeParaMostrar(catalogo, lembrada.produto_id, (lembrada.produto_nome ?? '').trim() || `produto ${lembrada.produto_id}`).nome : ''
+  async function usarLembrado() {
+    if (enviando || !lembrada) return
+    setEnviando(true); setErro('')
+    try {
+      await salvar(n, lembrada.produto_id, false, lembrada.fator)
+      limpar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não consegui guardar a escolha agora. Tente de novo.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
   // Já confirmado por completo: o ✓ e o nome ficam no item (lá em cima); aqui só o aviso de confirmado (com a conversão e, quando o app conhece a unidade do
   // produto, a conta do que entra no estoque) e o "Editar" (pedido do Ivan, 21/10: todo item tem o botão; ele reabre o cartão — produto e conversão).
   if (decisao && !trocando && !pendente) {
@@ -164,6 +183,14 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
 
   return (
     <div className="associar" data-testid="associar-produto">
+      {lembrada && !decisao && (
+        <div className="embalagem-lembrada" role="group" aria-label="Produto que o robô lembra para este código" data-testid="produto-lembrado">
+          <p>{`Da última vez este código foi ${nomeLembrado} (1 ${unidadeNota} = ${formatarConversao(lembrada.fator)}).`}</p>
+          <div className="acoes">
+            <button type="button" className="botao secundario" disabled={enviando} onClick={() => void usarLembrado()}>Usar o lembrado</button>
+          </div>
+        </div>
+      )}
       {catalogo === null && !catalogoFalhou && <p className="sub">Carregando a lista de produtos…</p>}
       {catalogoFalhou && <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p>}
 
