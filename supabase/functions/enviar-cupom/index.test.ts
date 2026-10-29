@@ -13,6 +13,9 @@ const h = vi.hoisted(() => {
     usuarios: [] as L[],
     cupons: [] as L[],
     aprendizado: [] as L[],
+    fornecedoresApp: [] as L[],
+    fornecedoresCadastro: [] as L[],
+    notasNfe: [] as L[],
     tokens: {} as Record<string, string>,
     arquivos: {} as Record<string, Uint8Array<ArrayBuffer>>,
     consultasAprendizado: [] as string[],
@@ -20,8 +23,10 @@ const h = vi.hoisted(() => {
     selects: [] as { tabela: string; colunas: string }[],
     /** simula a corrida: o PRIMEIRO SELECT por foto_path (o do dedup) "não vê" a linha que outro pedido gravou logo depois */
     cegarPrimeiroSelectPorFoto: false,
-    /** leitura que falha (rede/permissão): o select devolve erro em vez de dados */
-    falharLeitura: { cupom: false, aprendizado: false },
+    /** leitura que falha (rede/permissão): o select devolve erro em vez de dados. `cupom_conhecidos` = só a leitura dos CNPJs conhecidos (29/10), não a do dedup */
+    falharLeitura: { cupom: false, aprendizado: false, cupom_conhecidos: false, fornecedor_app: false, fornecedor_cadastro: false, cot_nfe: false } as Record<string, boolean>,
+    /** cada leitura de CNPJs conhecidos (29/10): a tabela, as colunas, a ordem, o limite, as colunas exigidas não nulas e se levou um tempo máximo */
+    consultasConhecidos: [] as { tabela: string; colunas: string; ordem: string | null; limite: number | null; naoNulos: string[]; comTempoMaximo: boolean }[],
     proximoId: 1,
   }
   const ia = {
@@ -34,26 +39,48 @@ const h = vi.hoisted(() => {
   class Consulta {
     private filtros: [string, unknown][] = []
     private orFiltro: string | null = null
+    private naoNulos: string[] = []
+    private ordem: { coluna: string; crescente: boolean } | null = null
+    private maximo: number | null = null
+    private comTempoMaximo = false
+    private colunasBrutas = '*'
     private linhaNova: L | null = null
     private colunas: string[] | null = null // null = todas (select('*') ou sem argumento)
     constructor(private tabela: string) {}
     select(colunas?: string) {
       banco.selects.push({ tabela: this.tabela, colunas: colunas ?? '*' })
+      this.colunasBrutas = colunas ?? '*'
       this.colunas = colunas && colunas.trim() !== '*' ? colunas.split(',').map((c) => c.trim()) : null
       return this
     }
     eq(coluna: string, valor: unknown) { this.filtros.push([coluna, valor]); return this }
     or(filtro: string) { this.orFiltro = filtro; return this }
+    not(coluna: string, operador: string, valor: unknown) { if (operador === 'is' && valor === null) this.naoNulos.push(coluna); return this }
+    order(coluna: string, opcoes?: { ascending?: boolean }) { this.ordem = { coluna, crescente: opcoes?.ascending !== false }; return this }
+    limit(n: number) { this.maximo = n; return this }
+    abortSignal(sinal: AbortSignal) { this.comTempoMaximo = sinal instanceof AbortSignal; return this }
     insert(linha: L) { this.linhaNova = linha; return this }
 
     private lista(): L[] {
       if (this.tabela === 'usuarios') return banco.usuarios
       if (this.tabela === 'cupom') return banco.cupons
+      if (this.tabela === 'fornecedor_app') return banco.fornecedoresApp
+      if (this.tabela === 'fornecedor_cadastro') return banco.fornecedoresCadastro
+      if (this.tabela === 'cot_nfe') return banco.notasNfe
       return banco.aprendizado
     }
     private executar(): { data: L[] | L | null; error: { code?: string; message: string } | null } {
       if (this.linhaNova) return this.gravar(this.linhaNova)
       if (this.tabela === 'cupom' && banco.falharLeitura.cupom) return { data: null, error: { message: 'connection reset' } }
+      // 29/10: a leitura dos CNPJs conhecidos (para corrigir um CNPJ mal lido) — registra como foi pedida e falha sozinha, por fonte
+      const leituraDeConhecidos = this.tabela === 'cupom' ? this.colunasBrutas.includes('emitente_cnpj') : ['fornecedor_app', 'fornecedor_cadastro', 'cot_nfe'].includes(this.tabela)
+      if (leituraDeConhecidos) {
+        banco.consultasConhecidos.push({
+          tabela: this.tabela, colunas: this.colunasBrutas, ordem: this.ordem ? `${this.ordem.coluna} ${this.ordem.crescente ? 'asc' : 'desc'}` : null,
+          limite: this.maximo, naoNulos: [...this.naoNulos], comTempoMaximo: this.comTempoMaximo,
+        })
+        if (banco.falharLeitura[this.tabela === 'cupom' ? 'cupom_conhecidos' : this.tabela]) return { data: null, error: { message: 'connection reset' } }
+      }
       if (this.tabela === 'cupom_aprendizado') {
         // registra TODA consulta ao aprendizado (com ou sem filtro): sem filtro seria a tabela inteira
         banco.consultasAprendizado.push(this.orFiltro ?? '(sem filtro)')
@@ -73,6 +100,12 @@ const h = vi.hoisted(() => {
         linhas = linhas.filter((l) =>
           listas.some((x) => x.valores.includes(String(l[x.coluna]))) || nulos.some((c) => l[c] == null))
       }
+      for (const c of this.naoNulos) linhas = linhas.filter((l) => l[c] != null)
+      if (this.ordem) {
+        const { coluna, crescente } = this.ordem
+        linhas = [...linhas].sort((x, y) => (String(x[coluna]) < String(y[coluna]) ? -1 : String(x[coluna]) > String(y[coluna]) ? 1 : 0) * (crescente ? 1 : -1))
+      }
+      if (this.maximo !== null) linhas = linhas.slice(0, this.maximo)
       return { data: linhas, error: null }
     }
     private gravar(l: L): { data: L | null; error: { code?: string; message: string } | null } {
@@ -141,11 +174,11 @@ const CHAVE_FISCAL = '12345678901234567890123456789012345678901234'
 const EAN = '7891234567895'
 
 const LEITURA = {
-  legivel: true, chave: null, emitente_cnpj: '12.345.678/0001-90', emitente_nome: 'ATACADAO', valor_total: 9,
+  legivel: true, chave: null, emitente_cnpj: '12.345.678/0001-95', emitente_nome: 'ATACADAO', valor_total: 9, // 29/10: …-95 fecha as contas (o …-90 de antes não fechava)
   itens: [{ descricao: 'ARROZ 5KG', quantidade: 4, unidade: 'UN', valor_unitario: 2.25, desconto: null, codigo_barras: EAN }],
 }
 const APRENDIZADO = {
-  codigo_barras: EAN, emitente_cnpj: '12345678000190', descricao_norm: 'arroz 5kg', insumo_id: '333', insumo_nome: 'ARROZ',
+  codigo_barras: EAN, emitente_cnpj: '12345678000195', descricao_norm: 'arroz 5kg', insumo_id: '333', insumo_nome: 'ARROZ',
   fator_conversao: '0.5', // numeric chega como texto
   unidade_destino: 'un', confirmado: true,
 }
@@ -188,7 +221,8 @@ beforeEach(() => {
   h.banco.consultasAprendizado = []
   h.banco.selects = []
   h.banco.cegarPrimeiroSelectPorFoto = false
-  h.banco.falharLeitura = { cupom: false, aprendizado: false }
+  h.banco.falharLeitura = { cupom: false, aprendizado: false, cupom_conhecidos: false, fornecedor_app: false, fornecedor_cadastro: false, cot_nfe: false }
+  h.banco.fornecedoresApp = []; h.banco.fornecedoresCadastro = []; h.banco.notasNfe = []; h.banco.consultasConhecidos = []
   h.banco.proximoId = 1
   h.ia.chamadas = []; h.ia.construcoes = []; h.clientes.criacoes = []
   h.ia.resposta = iaResponde(LEITURA)
@@ -281,7 +315,7 @@ describe('enviar-cupom/index.ts — caminho feliz e disparo', () => {
     // conversão (4 un × R$ 2,25 = R$ 9 → 2 kg a R$ 4,50/kg), então a linha que o robô confere (2 × 4,50) fecha com o total (9)
     expect(h.banco.cupons).toHaveLength(1)
     expect(h.banco.cupons[0]).toMatchObject({
-      estado: 'PENDENTE', foto_path: 'cupom/a.jpg', teste: false, emitente_cnpj: '12345678000190', valor_a_pagar: 9,
+      estado: 'PENDENTE', foto_path: 'cupom/a.jpg', teste: false, emitente_cnpj: '12345678000195', valor_a_pagar: 9,
       pagamento: PG, motivo: null,
     })
     expect((h.banco.cupons[0].itens as Linha[])[0]).toMatchObject({
@@ -289,7 +323,7 @@ describe('enviar-cupom/index.ts — caminho feliz e disparo', () => {
     })
 
     // o aprendizado foi buscado pelos sinônimos globais (emitente_cnpj null) + o que a leitura trouxe (EAN e CNPJ, só dígitos)
-    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`])
+    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000195")`])
 
     // disparo: POST no workflow certo, ref master, cupom_id, PAT no cabeçalho (e só lá)
     expect(fetchFalso).toHaveBeenCalledTimes(1)
@@ -500,7 +534,7 @@ describe('enviar-cupom/index.ts — o que a IA devolve é dado não confiável',
     })
     await handler(envio())
     expect(h.banco.consultasAprendizado).toHaveLength(1)
-    expect(h.banco.consultasAprendizado[0]).toBe(`and(emitente_cnpj.is.null,codigo_barras.is.null),codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000190")`)
+    expect(h.banco.consultasAprendizado[0]).toBe(`and(emitente_cnpj.is.null,codigo_barras.is.null),codigo_barras.in.("${EAN}"),emitente_cnpj.in.("12345678000195")`)
     expect(h.banco.consultasAprendizado[0]).not.toContain('confirmado')
   })
 
@@ -522,12 +556,177 @@ describe('enviar-cupom/index.ts — o que a IA devolve é dado não confiável',
       fator_conversao: '1', unidade_destino: 'un', confirmado: true,
     }]
     h.ia.resposta = iaResponde({
-      ...LEITURA, emitente_cnpj: '98.765.432/0001-10', itens: [{ ...LEITURA.itens[0], codigo_barras: null }],
+      ...LEITURA, emitente_cnpj: '11.222.333/0001-81', itens: [{ ...LEITURA.itens[0], codigo_barras: null }],
     })
     const corpo = await corpoDe(await handler(envio()))
-    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),emitente_cnpj.in.("98765432000110")`])
+    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),emitente_cnpj.in.("11222333000181")`])
     expect(corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
     expect(h.banco.cupons[0]).toMatchObject({ itens: [{ sugestao_produto: { id: '777' }, casado_por: 'descricao', entrada_estoque: 4 }] })
     expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---- CNPJ lido errado na foto (pedido do Ivan, 29/10/2026). Os CNPJs que o app já conhece vêm de 4 tabelas (cupom, fornecedor_app, fornecedor_cadastro, cot_nfe), lidas com a
+// chave de serviço, UMA fonte por vez e sem que a falha de uma impeça as outras; só são lidas quando o CNPJ lido NÃO fecha as contas (cupom comum não paga essa leitura).
+describe('enviar-cupom/index.ts — CNPJ lido errado na foto', () => {
+  const SILVA_CERTO = '63540861000182'
+  const SILVA_ERRADO = '63540861000102' // o caso real de 22/10: o "8" virou "0"
+  const NOME_SILVA = 'A. N. DA SILVA DESCARTAVEIS LTDA'
+  const FRASE = `corrigi o CNPJ lido na foto: era 63.540.861/0001-02, agora 63.540.861/0001-82, o da ${NOME_SILVA}`
+  const AVISO = 'o CNPJ lido na foto (63.540.861/0001-02) não fecha as contas dos números: confira na foto'
+  const FONTES = ['cupom', 'fornecedor_app', 'fornecedor_cadastro', 'cot_nfe'] as const
+  type Fonte = (typeof FONTES)[number]
+  const chaveDaFalha = (f: Fonte) => (f === 'cupom' ? 'cupom_conhecidos' : f)
+
+  /** Põe um CNPJ conhecido numa fonte (por padrão o CERTO da A. N. da Silva): cada fonte tem as suas colunas. */
+  function semear(fonte: Fonte, cnpj = SILVA_CERTO, nome: string | null = NOME_SILVA) {
+    const n = h.banco.cupons.length + h.banco.fornecedoresApp.length + h.banco.fornecedoresCadastro.length + h.banco.notasNfe.length
+    if (fonte === 'cupom') h.banco.cupons.push({ id: `velho-${n}`, estado: 'LANCADO', foto_path: `cupom/velha-${n}.jpg`, chave: null, emitente_cnpj: cnpj, emitente_nome: nome, criado_em: '2026-10-08T20:54:49Z' })
+    if (fonte === 'fornecedor_app') h.banco.fornecedoresApp.push({ cnpj, razao_social: nome, atualizado_em: '2026-10-08T20:00:00Z' })
+    if (fonte === 'fornecedor_cadastro') h.banco.fornecedoresCadastro.push({ cnpj, razao_social: nome, criado_em: '2026-10-08T20:00:00Z' })
+    if (fonte === 'cot_nfe') h.banco.notasNfe.push({ chave: String(n).padStart(44, '0'), cnpj_emitente: cnpj, emitente: nome, emissao: '2026-10-20' })
+  }
+  const ultimoGravado = () => h.banco.cupons[h.banco.cupons.length - 1]
+
+  beforeEach(() => {
+    // a IA leu o CNPJ da A. N. da Silva com um dígito errado, sem EAN no item; só o CNPJ CERTO tem o produto aprendido
+    h.ia.resposta = iaResponde({
+      ...LEITURA, emitente_cnpj: '63.540.861/0001-02', emitente_nome: 'A. N. DA SILVA DESCARTAVEIS',
+      itens: [{ ...LEITURA.itens[0], codigo_barras: null }],
+    })
+    h.banco.aprendizado = [{ ...APRENDIZADO, codigo_barras: null, emitente_cnpj: SILVA_CERTO }]
+  })
+
+  it.each(FONTES)('a fonte %s, SOZINHA, basta: o CNPJ lido errado vira o certo, o item casa e o cupom sai para lançar', async (fonte) => {
+    semear(fonte)
+    const r = await handler(envio())
+    const corpo = await corpoDe(r)
+    expect(r.status).toBe(200)
+    expect(corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true, resumo: `enviado para lançar; ${FRASE}` })
+    expect(ultimoGravado()).toMatchObject({ estado: 'PENDENTE', emitente_cnpj: SILVA_CERTO, emitente_nome: 'A. N. DA SILVA DESCARTAVEIS' }) // o nome lido fica como veio
+    // o aprendizado foi buscado pelo CNPJ CERTO (e só por ele)
+    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),emitente_cnpj.in.("${SILVA_CERTO}")`])
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+    semVazamento(JSON.stringify(corpo))
+  })
+
+  it('o mesmo CNPJ nas quatro fontes conta UMA vez (não vira "dois candidatos")', async () => {
+    for (const f of FONTES) semear(f)
+    const corpo = await corpoDe(await handler(envio()))
+    expect(corpo).toMatchObject({ estado: 'PENDENTE', resumo: `enviado para lançar; ${FRASE}` })
+    expect(ultimoGravado()).toMatchObject({ emitente_cnpj: SILVA_CERTO })
+  })
+
+  it('o nome que o Ivan lê no resumo é o do cadastro (razão social), não o que a IA leu num cupom antigo', async () => {
+    semear('cupom', SILVA_CERTO, 'A. N. DA SILVA DESC') // como a IA leu no cupom antigo
+    semear('fornecedor_cadastro', SILVA_CERTO, NOME_SILVA)
+    const corpo = await corpoDe(await handler(envio()))
+    expect(corpo.resumo).toBe(`enviado para lançar; ${FRASE}`)
+  })
+
+  it('nenhuma fonte tem o CNPJ certo (só outros fornecedores): nada é corrigido, o cupom segue com o número lido e o resumo avisa', async () => {
+    semear('cupom', '03995515011363', 'MATEUS SUPERMERCADOS SA')
+    semear('fornecedor_app', '75315333032655', 'ATACADAO S.A.')
+    const corpo = await corpoDe(await handler(envio()))
+    expect(corpo).toMatchObject({ estado: 'REVISAR', disparo_ok: false, resumo: `1 item(ns) para você conferir; ${AVISO}` })
+    expect(ultimoGravado()).toMatchObject({ emitente_cnpj: SILVA_ERRADO })
+    expect(h.banco.consultasAprendizado).toEqual([`and(emitente_cnpj.is.null,codigo_barras.is.null),emitente_cnpj.in.("${SILVA_ERRADO}")`])
+    expect(fetchFalso).not.toHaveBeenCalled()
+  })
+
+  it('CNPJ conhecido que NÃO fecha as contas (lixo gravado antes) não vale como candidato, nem atrapalha o que vale', async () => {
+    semear('cupom', '63540861000103', NOME_SILVA) // a um dígito do lido, mas não fecha as contas
+    const sozinho = await corpoDe(await handler(envio()))
+    expect(sozinho.resumo).toBe(`1 item(ns) para você conferir; ${AVISO}`)
+    h.banco.cupons = []; h.banco.proximoId = 1; fetchFalso.mockClear()
+    semear('cupom', '63540861000103', NOME_SILVA)
+    semear('cot_nfe') // o certo, em outra fonte
+    const junto = await corpoDe(await handler(envio()))
+    expect(junto.resumo).toBe(`enviado para lançar; ${FRASE}`)
+  })
+
+  it('nome incompatível (a IA leu outra empresa): não corrige e avisa, mesmo sendo o único CNPJ a um dígito', async () => {
+    semear('cot_nfe', SILVA_CERTO, 'PADARIA PAO QUENTE LTDA')
+    const corpo = await corpoDe(await handler(envio()))
+    expect(corpo.resumo).toBe(`1 item(ns) para você conferir; ${AVISO}`)
+    expect(ultimoGravado()).toMatchObject({ emitente_cnpj: SILVA_ERRADO })
+  })
+
+  it('nome do conhecido ausente (null): vale; a frase fica sem o "o da …"', async () => {
+    semear('fornecedor_app', SILVA_CERTO, null)
+    const corpo = await corpoDe(await handler(envio()))
+    expect(corpo.resumo).toBe('enviado para lançar; corrigi o CNPJ lido na foto: era 63.540.861/0001-02, agora 63.540.861/0001-82')
+  })
+
+  it.each(FONTES)('só a fonte %s tem o CNPJ e as OUTRAS TRÊS falham: ainda corrige (uma fonte que cai não impede as outras)', async (fonte) => {
+    semear(fonte)
+    for (const f of FONTES) if (f !== fonte) h.banco.falharLeitura[chaveDaFalha(f)] = true
+    const corpo = await corpoDe(await handler(envio()))
+    expect(corpo).toMatchObject({ estado: 'PENDENTE', resumo: `enviado para lançar; ${FRASE}` })
+    const log = errosNoLog.join('\n')
+    for (const f of FONTES) {
+      if (f !== fonte) expect(log).toContain(`não consegui ler os CNPJs conhecidos de ${f}`)
+      else expect(log).not.toContain(`conhecidos de ${f}`)
+    }
+    semVazamento(JSON.stringify(corpo))
+  })
+
+  it('as QUATRO fontes falham: o envio NÃO cai (200, linha gravada com o número lido) e o resumo só avisa que o número não fecha as contas', async () => {
+    for (const f of FONTES) h.banco.falharLeitura[chaveDaFalha(f)] = true
+    const r = await handler(envio())
+    const corpo = await corpoDe(r)
+    expect(r.status).toBe(200)
+    expect(corpo).toMatchObject({ estado: 'REVISAR', resumo: `1 item(ns) para você conferir; ${AVISO}` })
+    expect(ultimoGravado()).toMatchObject({ emitente_cnpj: SILVA_ERRADO })
+    expect(errosNoLog.filter((l) => l.includes('não consegui ler os CNPJs conhecidos de'))).toHaveLength(4)
+    expect(errosNoLog.join('\n')).toContain('connection reset') // só a mensagem do banco; nada de segredo
+    semVazamento(JSON.stringify(corpo))
+  })
+
+  it('CNPJ que fecha as contas: nenhuma das quatro fontes é lida (cupom comum não paga essa leitura) e o resumo é o de sempre', async () => {
+    h.ia.resposta = iaResponde(LEITURA) // 12.345.678/0001-95 fecha as contas
+    h.banco.aprendizado = [{ ...APRENDIZADO }] // o do arroz, que casa pelo EAN: o cupom sai sozinho
+    const corpo = await corpoDe(await handler(envio()))
+    expect(h.banco.consultasConhecidos).toEqual([])
+    expect(corpo.resumo).toBe('enviado para lançar')
+  })
+
+  it('sem CNPJ lido: nenhuma das quatro fontes é lida', async () => {
+    h.ia.resposta = iaResponde({ ...LEITURA, emitente_cnpj: null })
+    await handler(envio())
+    expect(h.banco.consultasConhecidos).toEqual([])
+  })
+
+  it('cada fonte é pedida UMA vez, só com as duas colunas, sem CNPJ nulo, as linhas mais novas primeiro, no máximo 1000 e com tempo máximo', async () => {
+    await handler(envio())
+    expect(h.banco.consultasConhecidos).toHaveLength(4)
+    const por = Object.fromEntries(h.banco.consultasConhecidos.map((c) => [c.tabela, c]))
+    expect(por.fornecedor_cadastro).toMatchObject({ colunas: 'cnpj, razao_social', ordem: 'criado_em desc', naoNulos: ['cnpj'] })
+    expect(por.fornecedor_app).toMatchObject({ colunas: 'cnpj, razao_social', ordem: 'atualizado_em desc', naoNulos: ['cnpj'] })
+    expect(por.cot_nfe).toMatchObject({ colunas: 'cnpj_emitente, emitente', ordem: 'emissao desc', naoNulos: ['cnpj_emitente'] })
+    expect(por.cupom).toMatchObject({ colunas: 'emitente_cnpj, emitente_nome', ordem: 'criado_em desc', naoNulos: ['emitente_cnpj'] })
+    for (const c of h.banco.consultasConhecidos) expect(c).toMatchObject({ limite: 1000, comTempoMaximo: true })
+  })
+
+  describe('o PostgREST corta em 1000 linhas por pedido: vale o que está entre as 1000 MAIS NOVAS de cada fonte', () => {
+    /** 1200 notas, da mais velha (i = 0) à mais nova (i = 1199), todas de uma empresa de exemplo; `onde` diz em qual delas está o CNPJ certo. */
+    function muitasNotas(onde: number) {
+      for (let i = 0; i < 1200; i++) {
+        h.banco.notasNfe.push({
+          chave: String(i).padStart(44, '0'), cnpj_emitente: i === onde ? SILVA_CERTO : '11222333000181',
+          emitente: i === onde ? NOME_SILVA : 'EMPRESA EXEMPLO LTDA', emissao: new Date(Date.UTC(2024, 0, 1 + i)).toISOString().slice(0, 10),
+        })
+      }
+    }
+    it('o CNPJ certo na nota mais NOVA (dentro do corte): é achado', async () => {
+      muitasNotas(1199)
+      const corpo = await corpoDe(await handler(envio()))
+      expect(corpo.resumo).toBe(`enviado para lançar; ${FRASE}`)
+    })
+    it('o CNPJ certo só na nota mais VELHA (fora das 1000 mais novas): não é achado — o limite conhecido, e o resumo avisa em vez de calar', async () => {
+      muitasNotas(0)
+      const corpo = await corpoDe(await handler(envio()))
+      expect(corpo.resumo).toBe(`1 item(ns) para você conferir; ${AVISO}`)
+    })
   })
 })

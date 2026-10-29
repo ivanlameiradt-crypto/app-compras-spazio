@@ -2,6 +2,7 @@ import { interpretarIA, montarPedidoIA, tratar, validarPagamento, type Deps, typ
 import { ESQUEMA_CUPOM, type LeituraCupomIA } from './esquema'
 import { SISTEMA } from './prompt'
 import type { Aprendizado } from './casamento'
+import type { CnpjConhecido } from './cnpj'
 
 const LEITURA_OK: LeituraCupomIA = {
   legivel: true, chave: null, emitente_cnpj: '12345678000190', emitente_nome: 'ATACADAO', valor_total: 9,
@@ -383,5 +384,210 @@ describe('tratar', () => {
       expect(deps.disparou).toHaveLength(0)
       expect(r.corpo).toMatchObject({ estado: 'REVISAR', disparo_ok: false })
     }
+  })
+})
+
+// ---- CNPJ lido errado na foto (pedido do Ivan, 29/10/2026). A leitura às vezes troca UM número do CNPJ (22/10: "8" virou "0" no da A. N. da Silva) e o cupom para em
+// "fornecedor não encontrado", com o aprendizado gravado no CNPJ errado. Se o CNPJ lido NÃO fecha as contas e existe UM só CNPJ conhecido (válido, a um dígito, nome
+// compatível), a leitura passa a usar esse: a busca do aprendizado, o casamento e a linha gravada recebem o certo. A dep `cnpjsConhecidos` é opcional e NUNCA derruba o envio.
+describe('tratar — CNPJ lido errado na foto', () => {
+  const SILVA_ERRADO = '63540861000102' // o caso real de 22/10
+  const SILVA_CERTO = '63540861000182'
+  const NOME_SILVA = 'A. N. DA SILVA DESCARTAVEIS LTDA'
+  const CONHECIDOS: CnpjConhecido[] = [
+    { cnpj: '03995515011363', nome: 'MATEUS SUPERMERCADOS SA' },
+    { cnpj: '75315333032655', nome: 'ATACADAO S.A.' },
+    { cnpj: '05054671003840', nome: 'LIDER COMERCIO E INDUSTRIA LTDA' },
+    { cnpj: SILVA_CERTO, nome: NOME_SILVA },
+  ]
+  const FRASE_CORRIGIDO = `corrigi o CNPJ lido na foto: era 63.540.861/0001-02, agora 63.540.861/0001-82, o da ${NOME_SILVA}`
+  const FRASE_INVALIDO = 'o CNPJ lido na foto (63.540.861/0001-02) não fecha as contas dos números: confira na foto'
+  const APRENDIDO_DA_SILVA: Aprendizado = { ...CONFIRMADO, codigo_barras: null, emitente_cnpj: SILVA_CERTO }
+
+  /** Sem EAN no item: só o CNPJ + a descrição casam, então só o CNPJ CERTO acha o aprendizado. */
+  const leituraSilva = (over: Partial<LeituraCupomIA> = {}): LeituraCupomIA => ({
+    ...LEITURA_OK, emitente_cnpj: SILVA_ERRADO, emitente_nome: 'A. N. DA SILVA DESCARTAVEIS',
+    itens: [{ ...LEITURA_OK.itens[0], codigo_barras: null }], ...over,
+  })
+  /** O aprendizado confirmado só existe para o CNPJ certo e só vem quando a busca o pede (como o filtro `emitente_cnpj.in.(…)` do SQL). */
+  function depsSilva(over: Partial<Deps> = {}, leitura: LeituraCupomIA = leituraSilva()) {
+    const buscas: { eans: string[]; chaves: { cnpj: string; desc: string }[] }[] = []
+    const deps = fakeDeps({
+      async chamarModelo() { return { ok: true, resp: RESP(leitura) } },
+      async buscarAprendizado(eans, chaves) { buscas.push({ eans, chaves }); return chaves.some((k) => k.cnpj === SILVA_CERTO) ? [APRENDIDO_DA_SILVA] : [] },
+      async cnpjsConhecidos() { return CONHECIDOS },
+      ...over,
+    })
+    return Object.assign(deps, { buscas })
+  }
+  const enviar = (deps: Deps) => tratar({ foto_path: 'cupom/a.jpg', pagamento: PG }, IVAN, deps)
+
+  it('corrigido: o CNPJ certo é o que chega na busca do aprendizado, no casamento e na linha gravada; o nome lido fica como veio', async () => {
+    const deps = depsSilva()
+    await enviar(deps)
+    // 1) buscarAprendizado
+    expect(deps.buscas).toEqual([{ eans: [], chaves: [{ cnpj: SILVA_CERTO, desc: 'arroz 5kg' }] }])
+    // 2) casarItens: o aprendizado é do CNPJ certo, então o item só casa se o casamento usou o CNPJ corrigido
+    // 3) inserirCupom: a linha leva o CNPJ certo
+    expect(deps.gravou[0]).toMatchObject({ estado: 'PENDENTE', emitente_cnpj: SILVA_CERTO, emitente_nome: 'A. N. DA SILVA DESCARTAVEIS' })
+    expect((deps.gravou[0].itens as { sugestao_produto: { id: string } | null; casado_por: string }[])[0]).toMatchObject({ sugestao_produto: { id: '333' }, casado_por: 'descricao' })
+    expect(deps.disparou).toEqual(['c-novo'])
+  })
+
+  it('o resto da leitura não muda: itens, total e chave seguem como a IA leu', async () => {
+    const CHAVE = '12345678901234567890123456789012345678901234'
+    const deps = depsSilva({}, leituraSilva({ chave: CHAVE, valor_total: 9 }))
+    await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ chave: CHAVE, valor_a_pagar: 9 })
+    expect((deps.gravou[0].itens as { descricao_cupom: string; quantidade_cupom: number }[])[0]).toMatchObject({ descricao_cupom: 'ARROZ 5KG', quantidade_cupom: 1 })
+  })
+
+  it('o resumo ganha a frase da correção (cupom que sai para lançar), sem ponto final', async () => {
+    const r = await enviar(depsSilva())
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true, resumo: `enviado para lançar; ${FRASE_CORRIGIDO}` })
+  })
+
+  it('o resumo da correção também vem no cupom que espera o Ivan: item incerto, ou "confirmar antes"', async () => {
+    const incerto = await enviar(depsSilva({ async buscarAprendizado() { return [] } }))
+    expect(incerto.corpo).toMatchObject({ estado: 'REVISAR', resumo: `1 item(ns) para você conferir; ${FRASE_CORRIGIDO}` })
+    const confirmar = await enviar({ ...depsSilva(), exigirConfirmacao: true })
+    expect(confirmar.corpo).toMatchObject({ estado: 'REVISAR', resumo: `todos os itens já conhecidos — confira e confirme no app; ${FRASE_CORRIGIDO}` })
+  })
+
+  it('o disparo que falhou continua dito por inteiro, e a frase da correção vem depois', async () => {
+    const r = await enviar(depsSilva({ async dispararLancamento() { throw new Error('sem GITHUB_PAT') } }))
+    const resumo = String(r.corpo.resumo)
+    expect(resumo).toMatch(/^enviado, mas o disparo automático falhou/)
+    expect(resumo.endsWith(`; ${FRASE_CORRIGIDO}`)).toBe(true)
+    expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: false })
+  })
+
+  it('sem a correção o mesmo cupom NÃO casaria: o CNPJ errado não acha o aprendizado do certo (prova de que é o certo que casa)', async () => {
+    const deps = depsSilva({ cnpjsConhecidos: undefined })
+    const r = await enviar(deps)
+    expect(deps.buscas).toEqual([{ eans: [], chaves: [{ cnpj: SILVA_ERRADO, desc: 'arroz 5kg' }] }])
+    expect(deps.gravou[0]).toMatchObject({ estado: 'REVISAR', emitente_cnpj: SILVA_ERRADO })
+    expect(r.corpo.resumo).toBe('1 item(ns) para você conferir')
+  })
+
+  it('CNPJ que fecha as contas NUNCA é tocado: a lista de conhecidos nem é pedida e o resumo é o de sempre', async () => {
+    let pedidos = 0
+    const deps = depsSilva({ async cnpjsConhecidos() { pedidos++; return CONHECIDOS } }, leituraSilva({ emitente_cnpj: SILVA_CERTO }))
+    const r = await enviar(deps)
+    expect(pedidos).toBe(0)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_CERTO })
+    expect(r.corpo.resumo).toBe('enviado para lançar')
+  })
+
+  it('CNPJ válido com outro CNPJ válido a UM dígito na lista: continua o que a IA leu', async () => {
+    // 12345678001400 e 12345678901400 fecham as contas e diferem em um dígito (raro, mas existe)
+    const lido = '12345678901400'
+    const deps = depsSilva({ async cnpjsConhecidos() { return [{ cnpj: '12345678001400', nome: null }] } }, leituraSilva({ emitente_cnpj: lido }))
+    const r = await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: lido })
+    expect(String(r.corpo.resumo)).not.toMatch(/CNPJ/)
+  })
+
+  it('sem CNPJ lido: a lista de conhecidos nem é pedida, nada é avisado', async () => {
+    let pedidos = 0
+    const deps = depsSilva({ async cnpjsConhecidos() { pedidos++; return CONHECIDOS } }, leituraSilva({ emitente_cnpj: null }))
+    const r = await enviar(deps)
+    expect(pedidos).toBe(0)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: null })
+    expect(r.corpo.resumo).toBe('1 item(ns) para você conferir')
+  })
+
+  it('o CNPJ lido com pontuação ("63.540.861/0001-02") também é corrigido (interpretarIA já o normaliza para os 14 dígitos)', async () => {
+    const deps = depsSilva({}, leituraSilva({ emitente_cnpj: '63.540.861/0001-02' }))
+    await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_CERTO })
+  })
+
+  it('o mesmo CNPJ conhecido por várias fontes conta UMA vez e corrige', async () => {
+    const repetidos = [...CONHECIDOS, { cnpj: SILVA_CERTO, nome: 'A. N. DA SILVA DESCARTAVEIS' }, { cnpj: SILVA_CERTO, nome: null }]
+    const deps = depsSilva({ async cnpjsConhecidos() { return repetidos } })
+    const r = await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_CERTO })
+    expect(r.corpo.resumo).toBe(`enviado para lançar; ${FRASE_CORRIGIDO}`)
+  })
+
+  it('dois candidatos distintos a um dígito: não corrige, o CNPJ fica como veio e o resumo avisa', async () => {
+    // 12345678000195 e 02348678000195 fecham as contas; o lido 02345678000195 está a UM dígito dos dois
+    const lido = '02345678000195'
+    const deps = depsSilva({ async cnpjsConhecidos() { return [{ cnpj: '12345678000195', nome: null }, { cnpj: '02348678000195', nome: null }] } },
+      leituraSilva({ emitente_cnpj: lido, emitente_nome: null }))
+    const r = await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: lido })
+    expect(r.corpo.resumo).toBe('1 item(ns) para você conferir; o CNPJ lido na foto (02.345.678/0001-95) não fecha as contas dos números: confira na foto')
+  })
+
+  it('nenhum candidato (lista vazia, só outros fornecedores, ou o CNPJ certo a 2 dígitos): não corrige, o CNPJ fica como veio e o resumo avisa', async () => {
+    const casos: [CnpjConhecido[], string, string][] = [
+      [[], SILVA_ERRADO, '63.540.861/0001-02'],
+      [CONHECIDOS.slice(0, 3), SILVA_ERRADO, '63.540.861/0001-02'], // a A. N. da Silva não está na lista
+      [CONHECIDOS, '53540861000102', '53.540.861/0001-02'],          // dois dígitos trocados ("6" virou "5" e "8" virou "0"): fora do alcance, de propósito
+    ]
+    for (const [conhecidos, lido, formatado] of casos) {
+      const deps = depsSilva({ async cnpjsConhecidos() { return conhecidos } }, leituraSilva({ emitente_cnpj: lido }))
+      const r = await enviar(deps)
+      expect(deps.gravou[0]).toMatchObject({ estado: 'REVISAR', emitente_cnpj: lido })
+      expect(deps.buscas[0].chaves).toEqual([{ cnpj: lido, desc: 'arroz 5kg' }])
+      expect(r.corpo.resumo).toBe(`1 item(ns) para você conferir; o CNPJ lido na foto (${formatado}) não fecha as contas dos números: confira na foto`)
+    }
+  })
+
+  it('candidato com nome incompatível: não corrige e avisa', async () => {
+    const deps = depsSilva({}, leituraSilva({ emitente_nome: 'PADARIA PAO QUENTE' }))
+    const r = await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_ERRADO, emitente_nome: 'PADARIA PAO QUENTE' })
+    expect(r.corpo.resumo).toBe(`1 item(ns) para você conferir; ${FRASE_INVALIDO}`)
+  })
+
+  it('nome ausente no cupom lido: vale, corrige só pelo número', async () => {
+    const deps = depsSilva({}, leituraSilva({ emitente_nome: null }))
+    await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_CERTO, emitente_nome: null })
+  })
+
+  it('sem a dep `cnpjsConhecidos`: nada muda, nem o resumo (CNPJ inválido continua passando em silêncio, como hoje)', async () => {
+    const deps = depsSilva({ cnpjsConhecidos: undefined })
+    const r = await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_ERRADO })
+    expect(String(r.corpo.resumo)).not.toMatch(/CNPJ/)
+  })
+
+  it('a dep que falha (rejeita, lança na hora, ou devolve lixo) NUNCA derruba o envio: vale a leitura como veio, sem frase', async () => {
+    const falhas: (() => Promise<CnpjConhecido[]>)[] = [
+      async () => { throw new Error('connection reset') },
+      () => { throw new Error('lançou na hora') },
+      async () => undefined as unknown as CnpjConhecido[],
+      async () => null as unknown as CnpjConhecido[],
+      async () => 'isto não é uma lista' as unknown as CnpjConhecido[],
+    ]
+    for (const cnpjsConhecidos of falhas) {
+      const deps = depsSilva({ cnpjsConhecidos })
+      const r = await enviar(deps)
+      expect(r.status).toBe(200)
+      expect(deps.gravou).toHaveLength(1)
+      expect(deps.gravou[0]).toMatchObject({ emitente_cnpj: SILVA_ERRADO })
+      expect(r.corpo.resumo).toBe('1 item(ns) para você conferir')
+    }
+  })
+
+  it('foto ilegível ou cupom já recebido: a lista de conhecidos nem é pedida; o duplicado não leva a frase', async () => {
+    let pedidos = 0
+    const contar = { async cnpjsConhecidos() { pedidos++; return CONHECIDOS } }
+    await enviar(depsSilva({ ...contar, async chamarModelo() { return { ok: false } } }))
+    await enviar(depsSilva({ ...contar, async acharCupomPorFoto() { return { id: 'c-velho' } } }))
+    expect(pedidos).toBe(0)
+    const corrida = await enviar(depsSilva({ async inserirCupom() { return { id: 'c-existente', duplicado: true } } }))
+    expect(corrida.corpo).toEqual({ cupom_id: 'c-existente', resumo: 'já recebido', duplicado: true })
+  })
+
+  it('a frase não muda o estado nem o motivo: o cupom segue o caminho de sempre (incerto ⇒ REVISAR com o motivo de sempre)', async () => {
+    const deps = depsSilva({ async buscarAprendizado() { return [] } })
+    await enviar(deps)
+    expect(deps.gravou[0]).toMatchObject({ estado: 'REVISAR', motivo: '1 item(ns) sem casamento confirmado — confira no Code' })
   })
 })

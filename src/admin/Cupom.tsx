@@ -13,7 +13,7 @@ import { diagnosticoDoCupom, envioRepetido } from './cupomRegras'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
 import { unidadeDoProduto } from './unidadeEstoque'
-import { formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor } from './fornecedorRegras'
+import { cnpjLidoSuspeito, formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor } from './fornecedorRegras'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
   PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
@@ -77,6 +77,19 @@ function avisoDeReenvio(r: RespostaConfirmacaoCupom): AvisoReenvio {
   if (r.disparo_ok === false) return { classe: 'amarelo', texto: naoGuardou ? `${r.resumo}. Além disso, ${naoGuardou}` : r.resumo }
   if (naoGuardou) return { classe: 'amarelo', texto: `Cupom corrigido e reenviado para lançar, mas ${naoGuardou}` }
   return { classe: 'ok', texto: 'Cupom corrigido e reenviado para lançar. Em 2 ou 3 minutos ele aparece como “lançado ✓” ou volta com um motivo novo.' }
+}
+
+/**
+ * CNPJ que a leitura da foto trouxe e que NÃO fecha as contas dos dígitos verificadores (pedido do Ivan, 29/10): algum número foi lido errado (22/10, o "8" virou "0"). O servidor corrige
+ * sozinho quando acha um só CNPJ conhecido a um dígito; o que sobra é este aviso, para o Ivan olhar a foto e digitar o certo ANTES de confirmar os itens. Sem CNPJ, ou com CNPJ que fecha, não mostra nada.
+ */
+function AvisoCnpjSuspeito({ cnpj }: { cnpj: string | null | undefined }) {
+  if (!cnpjLidoSuspeito(cnpj)) return null
+  return (
+    <p className="amarelo aviso-cnpj" data-testid="cnpj-suspeito">
+      O CNPJ que li na foto ({formatarCnpj(cnpj ?? '')}) não fecha nas contas dos números: algum número foi lido errado. Confira na foto.
+    </p>
+  )
 }
 
 /** Cupom parado ("precisa de você"): o que está errado e o que fazer para o robô poder lançá-lo (pedido do Ivan, 06/10 à noite). O motivo técnico
@@ -352,6 +365,9 @@ export default function Cupom() {
           {recentes.map((c) => {
             const valor = valorDaLinha(c)
             const aberto = expandido === c.id
+            // CNPJ lido errado (29/10): o aviso mora no detalhe aberto. No cupom parado ele aparece TAMBÉM com o detalhe fechado (o Ivan precisa vê-lo antes de confirmar os itens), menos no
+            // "já lançado em outro envio" (nada a fazer) e no "fornecedor não encontrado" (a caixa de cadastro já avisa, com o passo a passo). Nunca os dois ao mesmo tempo: é um aviso só.
+            const avisoCnpjSemAbrir = !aberto && cnpjLidoSuspeito(c.emitente_cnpj) && c.estado === 'REVISAR' && !envioRepetido(c) && !fornecedorNaoEncontrado(c.motivo)
             return (
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
@@ -364,6 +380,7 @@ export default function Cupom() {
                 )}
                 {/* envio repetido de um cupom já lançado: a compra já está no SisChef — concluído, sem bloco de problema, foto nem caixa */}
                 {envioRepetido(c) && <p className="sub" data-testid="envio-repetido">Envio repetido: este cupom já tinha sido lançado em outro envio. Nada a fazer.</p>}
+                {avisoCnpjSemAbrir && <AvisoCnpjSuspeito cnpj={c.emitente_cnpj} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <ProblemaDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <FotoDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && fornecedorNaoEncontrado(c.motivo) && (
@@ -372,6 +389,7 @@ export default function Cupom() {
                 {corrigivel(c) && (
                   <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} />
                 )}
+                {aberto && <AvisoCnpjSuspeito cnpj={c.emitente_cnpj} />}
                 {/* Lançado em: dia e hora do lançamento (pedido do Ivan, 07/10, igual ao da aba fiscal). Só cupom LANCADO: o robô grava atualizado_em ao
                     terminar. O "envio repetido" é REVISAR (a compra foi lançada em outro envio) e não tem hora própria, então não mostra. */}
                 {aberto && (

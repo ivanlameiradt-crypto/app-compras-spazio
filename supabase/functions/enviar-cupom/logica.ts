@@ -5,6 +5,7 @@ import { ESQUEMA_CUPOM, validarSaidaCupom, type LeituraCupomIA } from './esquema
 import { SISTEMA } from './prompt.ts'
 import { casarItens, type Aprendizado } from './casamento.ts'
 import { normalizar } from './normalizar.ts'
+import { conferirCnpjLido, cnpjValido, fraseCnpjCorrigido, fraseCnpjInvalido, type CnpjConhecido } from './cnpj.ts'
 
 export interface Pagamento { forma: string; conta?: string }
 export interface Corpo { foto_path?: unknown; pagamento?: unknown; teste?: unknown }
@@ -25,6 +26,11 @@ export interface Deps {
    */
   inserirCupom(linha: Record<string, unknown>): Promise<{ id: string; duplicado?: boolean }>
   dispararLancamento(cupomId: string): Promise<void>
+  /**
+   * Pedido do Ivan (29/10): os CNPJs que o app já conhece (cupons, fornecedores, notas fiscais), só os que fecham as contas, para corrigir um CNPJ que a leitura da
+   * foto trocou por um dígito (cnpj.ts). É pedida SÓ quando o CNPJ lido não fecha as contas; qualquer falha dela vale a leitura como veio. Ausente = nada muda.
+   */
+  cnpjsConhecidos?(): Promise<CnpjConhecido[]>
   /**
    * Pedido do Ivan (08/10): cupom com TODOS os itens já conhecidos também espera o "confirmar" dele no app (estado REVISAR, motivo CONFIRMAR:…) em vez de
    * sair sozinho. O index.ts liga por padrão; `CUPOM_CONFIRMAR_ANTES=OFF` (segredo da função) volta ao lançamento automático. Ausente = desligado.
@@ -115,6 +121,25 @@ function linha(x: {
 const jaRecebido = (cupomId: string): Resultado =>
   ({ status: 200, corpo: { cupom_id: cupomId, resumo: 'já recebido', duplicado: true } })
 
+/**
+ * Pedido do Ivan (29/10): confere o CNPJ que a IA leu na foto (cnpj.ts). Só quando ele NÃO fecha as contas e a dep existe é que se pede a lista dos CNPJs conhecidos
+ * (cupom com CNPJ que fecha, ou sem CNPJ, nem chega a ler o banco). Corrigido: a leitura segue com o CNPJ certo (o nome lido fica como veio) e o aviso diz o que foi
+ * feito; inválido: a leitura segue como veio e o aviso diz que o número está errado. Qualquer falha — da dep, ou da própria conta — vale a leitura como veio, SEM
+ * aviso: isto nunca derruba o envio.
+ */
+async function conferirCnpjDaLeitura(leitura: LeituraCupomIA, deps: Deps): Promise<{ leitura: LeituraCupomIA; aviso: string | null }> {
+  const lido = leitura.emitente_cnpj
+  if (!lido || !deps.cnpjsConhecidos || cnpjValido(lido)) return { leitura, aviso: null }
+  try {
+    const conhecidos = await deps.cnpjsConhecidos()
+    if (!Array.isArray(conhecidos)) return { leitura, aviso: null } // não é uma lista: a dep falhou, vale a leitura como veio
+    const r = conferirCnpjLido(lido, leitura.emitente_nome, conhecidos)
+    if (r.tipo === 'corrigido') return { leitura: { ...leitura, emitente_cnpj: r.cnpj }, aviso: fraseCnpjCorrigido(r) }
+    if (r.tipo === 'invalido') return { leitura, aviso: fraseCnpjInvalido(lido) }
+  } catch { /* a busca ou a conta falhou: vale a leitura como veio */ }
+  return { leitura, aviso: null }
+}
+
 export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo = 'claude-sonnet-5'): Promise<Resultado> {
   // 1. autoriza (admin ativo) — a RLS do Plano 1 é a trava real; isto é defesa em profundidade, como gerenciar-usuarios.
   const u = await deps.buscarUsuario(chamador.trim().toLowerCase())
@@ -141,7 +166,9 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo 
     if (cupom.duplicado) return jaRecebido(cupom.id)
     return { status: 200, corpo: { cupom_id: cupom.id, resumo: 'não consegui ler a foto — precisa de você', estado: REVISAR, disparo_ok: false } }
   }
-  const leitura = interp.leitura
+  // 4b. confere o CNPJ lido (pedido do Ivan, 29/10): o que não fecha as contas e tem UM só CNPJ conhecido a um dígito é trocado ANTES de buscar o aprendizado,
+  // casar os itens e gravar a linha (o nome lido fica como veio); sem candidato único nada muda e o resumo avisa.
+  const { leitura, aviso: avisoCnpj } = await conferirCnpjDaLeitura(interp.leitura, deps)
 
   // 5. casa (só o aprendizado confirmado; o resto vira incerto → REVISAR).
   const eans = leitura.itens.map((i) => i.codigo_barras).filter((x): x is string => !!x)
@@ -179,8 +206,10 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo 
   if (estado === PENDENTE) {
     try { await deps.dispararLancamento(cupom.id); disparoOk = true } catch { /* fica PENDENTE; quem registra o motivo é o index.ts */ }
   }
-  const resumo = estado === REVISAR
+  const resumoBase = estado === REVISAR
     ? incertos > 0 ? `${incertos} item(ns) para você conferir` : aguardaConfirmacao ? 'todos os itens já conhecidos — confira e confirme no app' : 'não consegui ler o total do cupom — precisa de você'
     : disparoOk ? 'enviado para lançar' : AVISO_DISPARO_FALHOU
+  // a frase do CNPJ (corrigido ou inválido) vai depois do resumo de sempre; sem ela o resumo é exatamente o de antes
+  const resumo = avisoCnpj ? `${resumoBase}; ${avisoCnpj}` : resumoBase
   return { status: 200, corpo: { cupom_id: cupom.id, resumo, estado, disparo_ok: disparoOk } }
 }
