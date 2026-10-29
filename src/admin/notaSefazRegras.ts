@@ -76,8 +76,12 @@ export function cfopsDaBonificacao(n: NotaSefazLista): string {
 export const AVISO_BONIFICACAO_COM_BOLETO = 'Esta nota tem CFOP de bonificação (5910/6910), mas traz boletos. Confira com o fornecedor se há algo a pagar antes de lançar.'
 /** O que a pergunta "Confirmar?" diz no lugar de "pagamento: …" numa bonificação sem cobrança. */
 export const TEXTO_CONFIRMA_BONIFICACAO = 'nota de bonificação: entra só no estoque, sem conta a pagar'
-/** A bonificação voltou do robô por "sem boletos" (a tentativa antiga foi em Boleto): o que ele pedia — outra forma de pagamento — a tela já escolheu. */
-export const TEXTO_BONIFICACAO_DEVOLVIDA = 'Precisa de você — nada foi lançado.\nPor quê: a nota não tem boleto e o robô tinha tentado lançá-la como Boleto.\nO que fazer: como é uma nota de bonificação, a forma certa já está marcada (só estoque, sem conta a pagar). Toque em Lançar.'
+/** O robô devolveu a bonificação (REVISAR) por causa da forma de pagamento de uma tentativa antiga: ou pelo "sem boletos na nota" de sempre, ou pela trava nova dele ("nota de bonificação
+ *  (CFOP 5910/6910): é um brinde do fornecedor…", com ou sem o "parou antes de gerar o pedido" na frente). Nos dois casos o que ele pedia — outra forma de pagamento — a tela já escolheu. */
+export const devolvidaPorFormaDeBonificacao = (n: NotaSefazLista): boolean =>
+  n.lancamento_estado === 'revisar' && (precisaEscolherForma(n) || /nota de bonifica[çc][ãa]o \(CFOP/i.test(n.lancamento_motivo ?? ''))
+/** O texto no lugar do motivo do robô nessa devolução: o que a tela já fez e que agora é só lançar. */
+export const TEXTO_BONIFICACAO_DEVOLVIDA = 'Precisa de você — nada foi lançado.\nPor quê: a nota não tem conta a pagar, e a forma de pagamento da tentativa anterior (por exemplo Boleto) criaria uma.\nO que fazer: como é uma nota de bonificação, a forma certa já está marcada (só estoque, sem conta a pagar). Toque em Lançar.'
 
 // ---------- memória da última escolha, por fornecedor (emitente). Sempre em try/catch: a tela funciona sem localStorage.
 const PREFIXO_MEMORIA = 'spazio.notaSefaz.forma.'
@@ -412,9 +416,9 @@ export function etiquetaDaNota(p: {
   faltaDecidir: boolean
   /** boleto sem duplicatas no XML e as parcelas digitadas ainda não fecham com o valor da nota. */
   faltaParcelas: boolean
-  /** o financeiro do XML não fecha com o valor da nota (aviso amarelo dentro da nota). */
+  /** o financeiro do XML não fecha com o valor da nota, ou a nota é de bonificação mas traz boletos (aviso amarelo dentro da nota). */
   financeiroNaoFecha: boolean
-  /** "Pronta para lançar": itens com produto, boletos que fecham, Boleto marcado. */
+  /** "Pronta para lançar": itens com produto, boletos que fecham, Boleto marcado — ou bonificação sem cobrança pronta em "só estoque". */
   pronta: boolean
   /** nenhuma forma de pagamento marcada (PIX e cartão nunca vêm marcados). */
   semForma: boolean

@@ -21,6 +21,9 @@ const TODAS_AS_FORMAS = [
 ]
 const AVISO_COM_BOLETO = 'Esta nota tem CFOP de bonificação (5910/6910), mas traz boletos. Confira com o fornecedor se há algo a pagar antes de lançar.'
 const TEXTO_BONIFICACAO = 'Nota de bonificação: o fornecedor mandou como brinde (CFOP 5910). Entra só no estoque, sem conta a pagar.'
+/** A mensagem da trava nova do robô (PR do robô, 29/10/2026) para a bonificação que ele recebeu com uma forma que criaria conta a pagar. */
+const MOTIVO_TRAVA_DO_ROBO = 'nota de bonificação (CFOP 5910/6910): é um brinde do fornecedor, entra só no estoque e não tem conta a pagar — a forma de pagamento escolhida (boleto) criaria um pagamento que não existe. '
+  + 'Nada foi feito no SisChef. No app, escolha “só estoque” e lance de novo'
 
 /** Um item já associado no SisChef; `cfop` undefined = sem a chave (nota que o robô ainda não re-etiquetou). */
 const item = (cfop?: string | null, extra: Partial<ItemNotaSefaz> = {}): ItemNotaSefaz =>
@@ -76,7 +79,7 @@ describe('NotaSefaz — bonificação sem cobrança (CFOP 5910/6910 e o XML sem 
     expect(info).not.toHaveClass('erro')
     expect(etiqueta()).toHaveTextContent('Pronta')
     expect(etiqueta()).toHaveClass('etq-ok')
-    expect(screen.getByTestId('nota-pronta')).toHaveTextContent('Pronta para lançar: todos os itens associados e a nota entra só no estoque, sem boleto.')
+    expect(screen.getByTestId('nota-pronta')).toHaveTextContent('Pronta para lançar: todos os itens associados. Não há boleto para conferir.')
     expect(botaoLancar()).toBeEnabled()
   })
 
@@ -152,6 +155,19 @@ describe('NotaSefaz — bonificação sem cobrança (CFOP 5910/6910 e o XML sem 
     await userEvent.click(botaoLancar())
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
     expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'cartao')
+  })
+
+  it.each([
+    ['como o robô a escreve', MOTIVO_TRAVA_DO_ROBO],
+    ['com o começo "parou antes de gerar o pedido"', `parou antes de gerar o pedido (nada lançado): ${MOTIVO_TRAVA_DO_ROBO}`],
+  ])('devolvida pela trava nova do robô (a bonificação saiu em Boleto antes de a tela existir), %s: já está em cartão e o texto diz que é só lançar', async (_nome, motivo) => {
+    await abrir(nota({ forma_pagamento: 'boleto', lancamento_estado: 'revisar', lancamento_motivo: motivo }))
+    expect(comoPagar().value).toBe('cartao')
+    const estado = screen.getByTestId('status-nota')
+    expect(estado).toHaveTextContent('Precisa de você — nada foi lançado.')
+    expect(estado).toHaveTextContent('a forma certa já está marcada (só estoque, sem conta a pagar). Toque em Lançar.')
+    expect(estado).not.toHaveTextContent('escolha “só estoque”')
+    expect(botaoLancar()).toBeEnabled()
   })
 
   it('devolvida pelo robô por OUTRO motivo: o texto do robô continua valendo e o Lançar segue em "só estoque"', async () => {
@@ -266,6 +282,13 @@ describe('NotaSefaz — bonificação que TRAZ boletos: não marca nada sozinha,
     await abrir(comBoleto({ lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' }))
     expect(screen.getByTestId('aviso-bonificacao-com-boleto')).toBeInTheDocument()
     expect(etiqueta()).toHaveTextContent('Precisa de você')
+  })
+
+  it('devolvida pela trava do robô, mas a nota traz boletos: o texto do robô fica como ele escreveu (a tela não decide nada nessa nota)', async () => {
+    await abrir(comBoleto({ lancamento_estado: 'revisar', lancamento_motivo: MOTIVO_TRAVA_DO_ROBO }))
+    expect(screen.getByTestId('status-nota')).toHaveTextContent('Precisa de você: nota de bonificação (CFOP 5910/6910): é um brinde do fornecedor')
+    expect(screen.getByTestId('status-nota')).not.toHaveTextContent('Toque em Lançar')
+    expect(comoPagar().value).toBe('boleto')
   })
 })
 

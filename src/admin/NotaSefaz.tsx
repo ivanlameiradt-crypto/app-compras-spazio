@@ -20,7 +20,7 @@ import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
 import {
   AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
-  TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, precisaEscolherForma,
+  TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, devolvidaPorFormaDeBonificacao,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
@@ -447,8 +447,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const estado = nota.lancamento_estado ?? null
   const bloqueios = bloqueiosDaNota(nota)
   const presa = lancandoPresa(nota)
-  // Bonificação que o robô devolveu por "sem boletos" (a tentativa antiga foi em Boleto): a escolha que ele pedia a tela já fez, e o texto diz que é só lançar.
-  const estadoTexto = presa ? AVISO_PRESA : soEstoque && precisaEscolherForma(nota) ? TEXTO_BONIFICACAO_DEVOLVIDA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
+  // Bonificação que o robô devolveu por causa da forma de uma tentativa antiga ("sem boletos" ou a trava nova de bonificação): a escolha que ele pedia a tela já fez, e o texto diz que é só lançar.
+  const estadoTexto = presa ? AVISO_PRESA : soEstoque && devolvidaPorFormaDeBonificacao(nota) ? TEXTO_BONIFICACAO_DEVOLVIDA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
   const robotOuMetade = estado === 'erro' || (estado === 'lancando' && !presa)
@@ -575,7 +575,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       )}
       {prontaSoEstoque && (
         <div className="ok" data-testid="nota-pronta">
-          Pronta para lançar: todos os itens {peloRobo.length > 0 ? 'com produto (os confirmados no app, o robô associa ao lançar)' : 'associados'} e a nota entra só no estoque, sem boleto.
+          Pronta para lançar: todos os itens {peloRobo.length > 0 ? 'com produto (os confirmados no app, o robô associa ao lançar)' : 'associados'}. Não há boleto para conferir.
         </div>
       )}
       {!soLancar && !exigeParcelas && prontidao.financeiro && !bloqueios.length && estado == null && (

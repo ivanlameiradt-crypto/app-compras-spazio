@@ -4,8 +4,8 @@
 // Tudo INVENTADO (repositório público).
 import {
   AVISO_BONIFICACAO_COM_BOLETO, AVISO_CONTA_ESPECIAL, AVISO_ITEM_SEM_PRODUTO, AVISO_SEM_ITENS, CFOPS_BONIFICACAO, FORMAS_PROVADAS, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO,
-  bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, ehNotaDeBonificacao, formaInicial, formaNaoProvada, lembrarForma,
-  precisaEscolherForma, prontidaoDaNota, rotuloForma,
+  TEXTO_BONIFICACAO_DEVOLVIDA, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, devolvidaPorFormaDeBonificacao, ehNotaDeBonificacao, formaInicial,
+  formaNaoProvada, lembrarForma, precisaEscolherForma, prontidaoDaNota, rotuloForma,
 } from '../../src/admin/notaSefazRegras'
 import type { ItemNotaSefaz, NotaSefazLista } from '../../src/lib/tipos'
 
@@ -175,6 +175,40 @@ describe('formaInicial: "cartao" só para bonificação sem cobrança, ANTES de 
     expect(formaInicial(nota({ itens: [item('5910'), item('5102', { n: 2 })] }))).toBe('boleto')
     expect(formaInicial(nota({ itens: [item()] }))).toBe('boleto')
     expect(formaInicial(nota({ itens: [] }))).toBe('boleto')
+  })
+})
+
+describe('devolvidaPorFormaDeBonificacao: o robô devolveu a bonificação por causa da forma de uma tentativa antiga', () => {
+  // a mensagem da trava nova do robô (PR do robô, 29/10/2026), como ele a escreve
+  const TRAVA_DO_ROBO = 'nota de bonificação (CFOP 5910/6910): é um brinde do fornecedor, entra só no estoque e não tem conta a pagar — a forma de pagamento escolhida (boleto) criaria um pagamento que não existe. '
+    + 'Nada foi feito no SisChef. No app, escolha “só estoque” e lance de novo'
+  const devolvida = (motivo: string | null, estado: NotaSefazLista['lancamento_estado'] = 'revisar') => nota({ lancamento_estado: estado, lancamento_motivo: motivo })
+
+  it('pelo "sem boletos na nota" de sempre', () => {
+    expect(devolvidaPorFormaDeBonificacao(devolvida('sem boletos na nota — pagamento manual'))).toBe(true)
+  })
+
+  it('pela trava nova do robô, com ou sem o começo "parou antes de gerar o pedido", em maiúsculas ou sem acento', () => {
+    expect(devolvidaPorFormaDeBonificacao(devolvida(TRAVA_DO_ROBO))).toBe(true)
+    expect(devolvidaPorFormaDeBonificacao(devolvida(`parou antes de gerar o pedido (nada lançado): ${TRAVA_DO_ROBO}`))).toBe(true)
+    expect(devolvidaPorFormaDeBonificacao(devolvida(TRAVA_DO_ROBO.toUpperCase()))).toBe(true)
+    expect(devolvidaPorFormaDeBonificacao(devolvida(TRAVA_DO_ROBO.replace('bonificação', 'bonificacao')))).toBe(true)
+  })
+
+  it('por qualquer outro motivo, sem motivo, ou fora do estado "revisar": não (o texto do robô fica como ele escreveu)', () => {
+    for (const motivo of ['total diferente', 'UN DIFERE sem conversão na tela: CÓD. FOR 17253', '', null]) expect(devolvidaPorFormaDeBonificacao(devolvida(motivo))).toBe(false)
+    for (const estado of ['erro', 'lancando', 'ensaio_ok', null] as const) {
+      expect(devolvidaPorFormaDeBonificacao(devolvida(TRAVA_DO_ROBO, estado))).toBe(false)
+      expect(devolvidaPorFormaDeBonificacao(devolvida('sem boletos na nota — pagamento manual', estado))).toBe(false)
+    }
+  })
+
+  it('o texto que entra no lugar diz que nada foi lançado, que a forma certa já está marcada e que é só lançar', () => {
+    expect(TEXTO_BONIFICACAO_DEVOLVIDA.split('\n')).toEqual([
+      'Precisa de você — nada foi lançado.',
+      'Por quê: a nota não tem conta a pagar, e a forma de pagamento da tentativa anterior (por exemplo Boleto) criaria uma.',
+      'O que fazer: como é uma nota de bonificação, a forma certa já está marcada (só estoque, sem conta a pagar). Toque em Lançar.',
+    ])
   })
 })
 
