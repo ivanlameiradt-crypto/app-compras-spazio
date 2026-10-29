@@ -396,6 +396,9 @@ export interface ItemNotaSefaz {
   /** CFOP do item no XML da nota, texto de 4 dígitos ("5910"); o robô de leitura o etiqueta em cada item (29/10/2026) e só quando consegue. Sem ele (nota ainda não
    *  re-etiquetada, ou CFOP ilegível) o app se comporta como sempre; é por ele que se reconhece a nota de bonificação (CFOP 5910/6910 em todos os itens). */
   cfop?: string | null
+  /** O total da linha em reais (o robô de leitura o manda desde 29/10/2026; notas lidas antes não o têm): dividido pela quantidade que entra no estoque dá o preço por
+   *  unidade do aviso de "preço fora do normal". Sem ele o app não avisa nada neste item. */
+  valor?: number | null
 }
 /** Produto que o Ivan escolheu e CONFIRMOU no app para um item sem produto no SisChef (cot_nfe.associacoes_app; migração 20261210000001).
  *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 2 (migração 20261212000001): o robô aplica a decisão na tela do SisChef
@@ -431,6 +434,16 @@ export interface ProdutoCatalogo {
   oculto?: boolean
   /** A descrição do produto na planilha do Ivan (produto_planilha.descricao = a do SisChef): cada palavra dela serve de palavra-chave para a sugestão do cupom. */
   descricao_sischef?: string
+  /** As últimas compras do produto na lista semanal (mais novas primeiro, uma por dia, no máximo 5): a referência do aviso de preço fora do normal. Vazio/ausente = sem referência. */
+  compras?: PrecoDeCompra[]
+}
+/** Uma compra de um produto como a lista semanal a guarda (itens_semana.preco_estimado + data_ultima_compra): o preço por unidade DA LISTA, o dia e a unidade em que o preço está. */
+export interface PrecoDeCompra {
+  preco: number
+  /** Dia da compra, aaaa-mm-dd (null = a lista não o sabe). */
+  data: string | null
+  /** A unidade do preço na lista ("kg", "un"…): o aviso só compara preço na MESMA unidade do estoque. */
+  unidade: string | null
 }
 /** Uma embalagem que o robô aprendeu das notas já lançadas (public.nfe_aprendizado; migração 20261223000001): para o fornecedor (CNPJ) + o código do produto na nota (CÓD. FOR)
  *  + a unidade da nota, o produto do estoque e quantas unidades dele vêm em 1 unidade da nota (fator > 1: "6 UN" na nota = 6 fardos de 6 latas, produto em lata). Só o admin lê. */

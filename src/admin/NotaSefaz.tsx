@@ -5,7 +5,7 @@
 // para ele está completa (produto e, quando é CERTO que as unidades diferem — nota em UN, produto "(KG)" —, a conversão) — ao lançar, o robô aplica a
 // decisão na tela do SisChef, e a tela avisa embaixo do botão o que ele vai associar (fica gravado lá para as próximas notas do fornecedor). Quando o
 // app só desconfia da unidade (produto "un" ou novo) e o Ivan não informou a conversão, a linha do item avisa que o robô confere no SisChef e pode parar.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NfeAprendizado, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
@@ -18,6 +18,9 @@ import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
+import AvisoPreco from './AvisoPreco'
+import { avisoDePrecoDoItem, itensComPrecoForaDoNormal } from './precoDaNota'
+import { detalheDoPrecoForaDoNormal } from './precoForaDoNormal'
 import {
   AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
   TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, devolvidaPorFormaDeBonificacao,
@@ -110,6 +113,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
       ? `produto confirmado no app, ${textoConversao(it.unidade_sischef, decisao.unidade, conversao)}`
       : 'produto confirmado no app'
     const lembrada = memoriaDoItem(memoria, nota, it) // a embalagem que o robô lembra para o código deste item (CNPJ + CÓD. FOR + unidade), se houver
+    const avisoPreco = avisoDePrecoDoItem(nota, it, catalogo, memoria) // preço por unidade de estoque longe das últimas compras (só avisa)
     return (
       <li key={i} data-testid="conferir-item">
         <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
@@ -132,6 +136,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
           <ConversaoItemAssociado item={{ ...it, n: it.n }} atual={conversaoDeItemAssociado(nota, it)} pede={itemPedeConversao(nota, it)}
             desabilitado={!podeAssociar} salvar={salvarConversaoItem} buscarUnidade={api.unidadeDoProdutoNaPlanilha} lembrada={lembrada} esquecer={esquecerEmbalagem} />
         )}
+        <AvisoPreco aviso={avisoPreco} />
       </li>
     )
   }
@@ -431,6 +436,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [frete, setFrete] = useState<FreteConfirmado | null>(null)
   const fretePendente = comFrete && frete === null
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
+  // Itens cujo preço por unidade de estoque (total da linha ÷ o que entra no estoque) não se parece com o das últimas compras do produto (pedido do Ivan, 29/10/2026): só avisa, nunca trava.
+  const precosFora = useMemo(() => itensComPrecoForaDoNormal(nota, catalogo, memoria), [nota, catalogo, memoria])
 
   // Bonificação sem cobrança (pedido do Ivan, 27/10/2026 — CFOP 5910/6910 em TODOS os itens e o XML lido sem boletos): "só estoque" sozinho. Vale mais que qualquer escolha anterior desta tela
   // (o robô pode etiquetar a nota depois de o Ivan mexer no "Como pagar"). Com boletos no XML a tela só avisa; com o XML por ler a nota é como qualquer outra (notaSefazRegras).
@@ -545,6 +552,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     // bonificação com boletos também pede "Confira o financeiro" no título: sem isso ela poderia parecer "Pronta" e ser lançada sem abrir a nota (e sem ler o aviso)
     financeiroNaoFecha: (!soLancar && !exigeParcelas && !!prontidao.financeiro && bloqueios.length === 0 && estado == null) || avisoBonificacaoComBoleto,
     pronta: soLancar || prontaSoEstoque, semForma: forma === '',
+    // preço fora do normal também pede "Confira os preços" no título: sem isso a nota poderia parecer "Pronta" e ser lançada sem abrir (e sem ler o aviso)
+    precoForaDoNormal: precosFora.length > 0,
   })
 
   return (
@@ -583,6 +592,18 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       )}
       <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao}
         salvarConversaoItem={salvarConversaoItem} memoria={memoria} esquecerEmbalagem={esquecerEmbalagem} />
+      {/* Preço fora do normal: fica FORA do painel recolhido, para ninguém lançar sem ver. O quadro some sozinho quando o Ivan acerta a conversão do item. */}
+      {precosFora.length > 0 && !robotOuMetade && (
+        <div className="amarelo precos-fora" role="status" data-testid="precos-fora-do-normal">
+          <b>{precosFora.length === 1 ? 'Um item está com o preço fora do normal' : `${precosFora.length} itens estão com o preço fora do normal`}: confira antes de lançar.</b>
+          <ul>
+            {precosFora.map(({ item, indice, aviso }) => (
+              <li key={indice} data-testid="preco-fora-item">{semCodFor(item.descricao)}: {detalheDoPrecoForaDoNormal(aviso, formatarReais)}</li>
+            ))}
+          </ul>
+          <p>Quase sempre é a embalagem: a “UN” da nota é um fardo, uma caixa ou um pacote. Abra “Conferir itens e financeiro” e toque em Editar no item para acertar a conversão.</p>
+        </div>
+      )}
       {estadoTexto && (
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
@@ -638,6 +659,11 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {confirmando ? (
         <div className="bloco-envio">
           <p>Vai lançar a NF {nota.numero} de {nota.emitente} — {soEstoque ? TEXTO_CONFIRMA_BONIFICACAO : `pagamento: ${rotuloForma(forma)}`}{frete && <>, com frete de {formatarReais(frete.valor)} (só entra no preço do produto, não no financeiro)</>}. Confirmar?</p>
+          {precosFora.length > 0 && (
+            <p className="amarelo" data-testid="confirmar-precos">
+              Atenção: {precosFora.length === 1 ? '1 item está com o preço fora do normal' : `${precosFora.length} itens estão com o preço fora do normal`} (veja acima). Confirme só se estiver certo.
+            </p>
+          )}
           {(exigeParcelas || plano) && (
             <ul className="conferir-itens" data-testid="parcelas-confirmar">
               {(exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? []).map((p, i) => (
@@ -799,8 +825,9 @@ export default function NotaSefaz() {
   }
   useEffect(() => { void carregar() }, [])
 
-  // a lista de insumos também dá a unidade do estoque no detalhe de uma nota lançada aberta (regra do Ivan, 09/10)
-  const precisaCatalogo = aLancar.some((n) => n.itens.some((it) => !itemAssociado(it))) || expandido !== null
+  // a lista de insumos também dá a unidade do estoque no detalhe de uma nota lançada aberta (regra do Ivan, 09/10) e as últimas compras de cada produto: com o total da linha (`valor`)
+  // a tela confere o preço por unidade (aviso de preço fora do normal, 29/10/2026), mesmo quando todos os itens já vêm associados do SisChef
+  const precisaCatalogo = aLancar.some((n) => n.itens.some((it) => !itemAssociado(it) || (typeof it.valor === 'number' && it.valor > 0))) || expandido !== null
   useEffect(() => {
     if (!precisaCatalogo || catalogo !== null) return
     let vivo = true

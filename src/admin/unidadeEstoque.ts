@@ -4,7 +4,7 @@
 import type { ProdutoCatalogo } from '../lib/tipos'
 
 /** A unidade do estoque do produto `produtoId` (minúscula, como na lista: "kg", "un"…), ou null quando a lista não o tem. */
-export function unidadeDoProduto(catalogo: ProdutoCatalogo[] | null | undefined, produtoId: unknown): string | null {
+export function unidadeDoProduto(catalogo: readonly ProdutoCatalogo[] | null | undefined, produtoId: unknown): string | null {
   const id = String(produtoId ?? '').trim()
   if (id === '' || !catalogo) return null
   const u = catalogo.find((p) => String(p.produto_id) === id)?.unidade
