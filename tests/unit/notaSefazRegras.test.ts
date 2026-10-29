@@ -385,10 +385,12 @@ describe('notaSefazRegras', () => {
     expect(textoDoEstado('ensaio_ok', null)).toBe('Ensaio ok (nada foi criado)')
   })
 
-  it('formaNaoProvada: só o boleto foi provado ao vivo', () => {
+  it('formaNaoProvada: boleto e cartão (só estoque) foram provados ao vivo; as outras não', () => {
+    // cartão: nota 113301 da De Marchi, lançada pelo robô em 27/10/2026 (run 40557196249) — por isso a bonificação sozinha não leva o aviso de "forma não testada"
     expect(formaNaoProvada('boleto')).toBe(false)
+    expect(formaNaoProvada('cartao')).toBe(false)
     expect(formaNaoProvada('')).toBe(false)
-    for (const f of ['dinheiro', 'tesouraria', 'cartao', 'pix:bradesco|ij']) expect(formaNaoProvada(f)).toBe(true)
+    for (const f of ['dinheiro', 'tesouraria', 'pix:bradesco|ij']) expect(formaNaoProvada(f)).toBe(true)
   })
 
   it('lancandoPresa: só "lancando" com carimbo mais velho que 30 min (o mesmo limite da Edge Function)', () => {

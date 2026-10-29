@@ -393,6 +393,9 @@ export interface ItemNotaSefaz {
   n?: number | null
   /** Palpite do robô de leitura para um item sem produto (o produto do SisChef mais parecido); só sugestão, nunca vale sozinho. */
   sugestao?: { id: number | string; nome: string } | null
+  /** CFOP do item no XML da nota, texto de 4 dígitos ("5910"); o robô de leitura o etiqueta em cada item (29/10/2026) e só quando consegue. Sem ele (nota ainda não
+   *  re-etiquetada, ou CFOP ilegível) o app se comporta como sempre; é por ele que se reconhece a nota de bonificação (CFOP 5910/6910 em todos os itens). */
+  cfop?: string | null
 }
 /** Produto que o Ivan escolheu e CONFIRMOU no app para um item sem produto no SisChef (cot_nfe.associacoes_app; migração 20261210000001).
  *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 2 (migração 20261212000001): o robô aplica a decisão na tela do SisChef

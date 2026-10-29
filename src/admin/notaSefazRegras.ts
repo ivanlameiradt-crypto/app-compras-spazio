@@ -8,9 +8,10 @@ import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista,
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
 export const FORMA_PADRAO = 'boleto'
 
-/** Formas já PROVADAS ao vivo no SisChef (OLINDA, boleto). As outras têm texto de conta/opção ainda não confirmado na tela e, se
- *  errarem, só quebram DEPOIS do pedido criado (nota pela metade). Quando uma for provada num lançamento real, entra aqui. */
-export const FORMAS_PROVADAS: string[] = ['boleto']
+/** Formas já PROVADAS ao vivo no SisChef (OLINDA, boleto; cartão = "só estoque", nota 113301 da De Marchi lançada pelo robô em 27/10/2026, run 40557196249).
+ *  As outras têm texto de conta/opção ainda não confirmado na tela e, se errarem, só quebram DEPOIS do pedido criado (nota pela metade).
+ *  Quando uma for provada num lançamento real, entra aqui. */
+export const FORMAS_PROVADAS: string[] = ['boleto', 'cartao']
 export const AVISO_FORMA_NAO_PROVADA = 'Esta forma ainda não foi testada ao vivo no robô. No 1º lançamento real, use Boleto.'
 export const formaNaoProvada = (forma: string): boolean => forma !== '' && !FORMAS_PROVADAS.includes(forma)
 
@@ -38,6 +39,45 @@ export function rotuloForma(forma: string): string {
   if (!o) return forma
   return OPCOES_PIX.includes(o) ? `PIX — ${o.rotulo}` : o.rotulo
 }
+
+// ---------- nota de bonificação (CFOP 5910/6910): entra SÓ no estoque, sem conta a pagar (pedido do Ivan, 27/10/2026: "sempre só estoque")
+/** A forma "só estoque" (cartão): nenhuma parcela, nenhuma conta. É a que o robô e a Edge Function lancar-nfe aceitam, provada ao vivo em 27/10/2026. */
+export const FORMA_SO_ESTOQUE = 'cartao'
+/** A única opção do "Como pagar" numa bonificação sem cobrança (a lista normal continua chamando a mesma forma de "Cartão (só estoque)"). */
+export const OPCAO_BONIFICACAO: OpcaoPagar = { valor: FORMA_SO_ESTOQUE, rotulo: 'Só estoque (bonificação)' }
+/** CFOP de remessa em bonificação, doação ou brinde: 5910 (dentro do estado) e 6910 (para outro estado). É a MESMA lista do robô; amostra grátis (5911/6911) e o resto
+ *  ficam de fora até o Ivan pedir. */
+export const CFOPS_BONIFICACAO: string[] = ['5910', '6910']
+
+/** O CFOP que o robô etiquetou no item (texto, sem espaços nas pontas), ou null: sem a etiqueta, ilegível ou que não é texto não conta (na dúvida, a nota é tratada como sempre). */
+const cfopDoItem = (it: ItemNotaSefaz | null | undefined): string | null => (typeof it?.cfop === 'string' ? it.cfop.trim() : null)
+
+/**
+ * Nota de bonificação: TODOS os itens têm CFOP de bonificação (5910/6910). Nota mista (parte dos itens de venda), item sem CFOP, CFOP de outro tipo ou nota sem itens NÃO é.
+ * Só olha os itens: o que a tela faz com isso depende dos boletos (`bonificacaoSemCobranca` e `bonificacaoComBoletos`).
+ */
+export function ehNotaDeBonificacao(n: NotaSefazLista): boolean {
+  const itens = Array.isArray(n.itens) ? n.itens : []
+  return itens.length > 0 && itens.every((it) => { const c = cfopDoItem(it); return c != null && CFOPS_BONIFICACAO.includes(c) })
+}
+/**
+ * Bonificação E o XML foi lido e NÃO traz boletos (`parcelas` = lista vazia): só esta vira "só estoque" sozinha (forma cartão marcada e única opção, sem pedir boleto nem
+ * parcelas). É a mesma conta do robô, por segurança do dinheiro: bonificação COM boleto é estranha e não pode virar "sem financeiro" calada; com o XML por ler (`parcelas`
+ * nulo) ainda não se sabe, e a nota segue como qualquer outra.
+ */
+export const bonificacaoSemCobranca = (n: NotaSefazLista): boolean => ehNotaDeBonificacao(n) && Array.isArray(n.parcelas) && n.parcelas.length === 0
+/** Bonificação que TRAZ boletos (1 ou mais): não marca nada sozinha; a tela avisa para conferir com o fornecedor se há algo a pagar antes de lançar. */
+export const bonificacaoComBoletos = (n: NotaSefazLista): boolean => ehNotaDeBonificacao(n) && Array.isArray(n.parcelas) && n.parcelas.length > 0
+/** Os CFOPs da nota de bonificação como o texto da tela os diz: "5910", "6910" ou "5910/6910"; nota que não é de bonificação = ''. */
+export function cfopsDaBonificacao(n: NotaSefazLista): string {
+  if (!ehNotaDeBonificacao(n)) return ''
+  return [...new Set(n.itens.map((it) => cfopDoItem(it) as string))].sort().join('/')
+}
+export const AVISO_BONIFICACAO_COM_BOLETO = 'Esta nota tem CFOP de bonificação (5910/6910), mas traz boletos. Confira com o fornecedor se há algo a pagar antes de lançar.'
+/** O que a pergunta "Confirmar?" diz no lugar de "pagamento: …" numa bonificação sem cobrança. */
+export const TEXTO_CONFIRMA_BONIFICACAO = 'nota de bonificação: entra só no estoque, sem conta a pagar'
+/** A bonificação voltou do robô por "sem boletos" (a tentativa antiga foi em Boleto): o que ele pedia — outra forma de pagamento — a tela já escolheu. */
+export const TEXTO_BONIFICACAO_DEVOLVIDA = 'Precisa de você — nada foi lançado.\nPor quê: a nota não tem boleto e o robô tinha tentado lançá-la como Boleto.\nO que fazer: como é uma nota de bonificação, a forma certa já está marcada (só estoque, sem conta a pagar). Toque em Lançar.'
 
 // ---------- memória da última escolha, por fornecedor (emitente). Sempre em try/catch: a tela funciona sem localStorage.
 const PREFIXO_MEMORIA = 'spazio.notaSefaz.forma.'
@@ -86,8 +126,10 @@ export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<strin
 }
 
 /** Forma que a tela começa mostrando: a gravada na nota, senão o padrão do fornecedor no banco, senão a lembrada neste celular,
- *  senão Boleto. '' = ainda sem escolha (a nota voltou do robô sem boleto: o robô para e o Ivan escolhe). */
+ *  senão Boleto. '' = ainda sem escolha (a nota voltou do robô sem boleto: o robô para e o Ivan escolhe). Bonificação sem cobrança (CFOP 5910/6910 e o XML sem boletos)
+ *  vem ANTES de tudo isso: sempre "só estoque" — inclusive quando o robô a devolveu por "sem boletos" ou quando há uma forma gravada de uma tentativa antiga. */
 export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>): string {
+  if (bonificacaoSemCobranca(n)) return FORMA_SO_ESTOQUE
   if (precisaEscolherForma(n)) return ''
   return formaValida(n.forma_pagamento) ?? formaPadraoDoFornecedor(n, padroes) ?? formaLembrada(n.emitente) ?? FORMA_PADRAO
 }
@@ -437,7 +479,8 @@ export interface ProntidaoNota {
  * Regra 2 do Ivan: a nota está "pronta" (só falta lançar) quando TODOS os itens estão associados no SisChef — ou, desde a etapa 2, têm decisão
  * completa do app, que o robô aplica ao lançar —, o pagamento é em boleto (a nota tem duplicatas) e os boletos fecham com o valor da nota.
  * Qualquer coisa fora disso vira motivo, em português, e a nota segue o fluxo normal (conferir e escolher como pagar). Nota bloqueada, lançando
- * ou pela metade nunca é "pronta".
+ * ou pela metade nunca é "pronta". Exceções da bonificação (CFOP 5910/6910): sem cobrança (XML sem boletos) não precisa de boleto para estar pronta; COM boletos
+ * nunca está pronta (o Ivan confere com o fornecedor se há algo a pagar).
  */
 export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   const motivos: string[] = []
@@ -453,11 +496,15 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   }
   const f = resumoFinanceiro(n)
   let financeiro: string | null = null
+  // Bonificação sem cobrança (CFOP 5910/6910, XML lido e sem boletos): entra só no estoque, não há boleto a conferir — a nota pode estar pronta sem ele.
+  if (bonificacaoSemCobranca(n)) financeiro = null
   // Regra do Ivan (07/10): com o XML por ler, o que ele digitar no app vale — a nota segue NÃO pronta (não há boleto conferido), mas a tela abre o editor.
-  if (!f.lido) financeiro = 'Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)'
+  else if (!f.lido) financeiro = 'Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)'
   else if (f.parcelas.length === 0) financeiro = 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'
   else if (!f.bate) financeiro = 'Os boletos não fecham com o valor da nota'
   if (financeiro) motivos.push(financeiro)
+  // Bonificação que TRAZ boletos: nunca fica "pronta" sozinha — o Ivan confere com o fornecedor se há algo a pagar (a forma de pagamento segue a de sempre).
+  if (bonificacaoComBoletos(n)) motivos.push(AVISO_BONIFICACAO_COM_BOLETO)
   if (contaEspecial(n.emitente)) motivos.push(AVISO_CONTA_ESPECIAL)
   if (freteAberto(n.lancamento_estado, n.lancamento_motivo)) motivos.push('Pedido aberto no SisChef com o frete: falta o boleto do frete e finalizar a compra lá')
   else if (n.lancamento_estado === 'erro') motivos.push('Ficou pela metade: não lance de novo')
