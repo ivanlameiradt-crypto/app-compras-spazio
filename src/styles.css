@@ -197,6 +197,8 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .nota-etiqueta.etq-aviso { background: var(--aviso-fundo); color: var(--aviso-texto); }
 .cupom .nota-etiqueta.etq-ok { background: var(--ok-fundo); color: var(--ok-texto); }
 .cupom details.nota-recolhivel > .nota-corpo { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px; }
+/* Nota de bonificação (29/10/2026): informação calma — moldura discreta com a barra verde da marca, sem o amarelo de aviso. Usa só as cores do tema (claro e escuro). */
+.cupom .nota-bonificacao { padding: 8px 10px; border: 1px solid var(--linha); border-left: 3px solid var(--marca); border-radius: 10px; font-size: 14px; }
 
 /* Aba "Lançamento de nota SEFAZ": painel "Conferir itens e financeiro" (regra 2 do Ivan) */
 .cupom details.conferir { border: 1px solid var(--linha); border-radius: 10px; padding: 8px 10px; background: var(--fundo-cartao, transparent); }
