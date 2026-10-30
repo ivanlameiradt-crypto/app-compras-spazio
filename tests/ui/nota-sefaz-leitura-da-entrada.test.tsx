@@ -47,7 +47,7 @@ describe('NotaSefaz — a leitura clara do que entra no SisChef (Oliveira 000970
     await userEvent.click(await p.findByRole('button', { name: 'Editar' }))
     expect(p.queryByTestId('conversao-entrada')).not.toBeInTheDocument()                      // campo vazio: ainda não há o que dizer
     expect(await p.findByTestId('conversao-ajuda')).toHaveTextContent(
-      'Digite quantas UN tem cada CX da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em CX. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
+      'Digite quantas UN tem cada CX da nota. Deixe vazio só se, no SisChef, este produto também for controlado em CX. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
     expect(p.getByTestId('pedir-conversao')).not.toHaveTextContent('não sabe ao certo')         // o texto genérico saiu
     await userEvent.type(p.getByLabelText(CAMPO_OPCIONAL), '12')
     expect(p.getByTestId('conversao-entrada')).toHaveTextContent(
@@ -111,5 +111,68 @@ describe('NotaSefaz — a leitura clara do que entra no SisChef (Oliveira 000970
     await userEvent.type(p.getByLabelText(CAMPO_OPCIONAL), '12')
     expect(p.queryByTestId('conversao-entrada')).not.toBeInTheDocument()
     expect(p.getByTestId('conversao-eco')).toHaveTextContent('Vai gravar: 1 CX = 12 na unidade do produto no SisChef')
+  })
+})
+
+// Pedido do Ivan (30/10/2026), no mesmo print: ao lado da descrição que está na nota fiscal um sinal "da nota fiscal", e ao lado do produto ligado (o do ✓) um sinal "do SisChef" —
+// para ele ver de relance o que o fornecedor escreveu e o que é cadastro. Vale também para o cupom (os testes dele estão em cupom.test.tsx). E a embalagem que o app mostra na pergunta da conversão
+// é SEMPRE a da nota (caixa → CX, unidade → UN, pacote → PCT, fardo → FD), nunca uma palavra genérica.
+describe('NotaSefaz — de onde vem cada texto do item: "da nota fiscal" e "do SisChef" (30/10/2026)', () => {
+  it('item confirmado no app: a descrição da nota leva "da nota fiscal" (depois da quantidade) e o produto ligado, com o ✓, leva "do SisChef"', async () => {
+    m.notasALancar.mockResolvedValue([oliveira([ITEM_GUARANA], { '1': decisao(GUARANA, 'GUARANÁ ANTARC. S/ AÇÚCAR 350 ML', 'un', 12) })])
+    render(<NotaSefaz />)
+    const p = await painel()
+    const item = within(await p.findByTestId('conferir-item'))
+    expect(item.getByTestId('origem-nota')).toHaveTextContent('da nota fiscal')
+    expect(item.getByTestId('origem-sischef')).toHaveTextContent('do SisChef')
+    const li = item.getByTestId('origem-nota').closest('li') as HTMLElement
+    expect(li).toHaveTextContent('GUARANA CHP ANTARCTICA DIET LATA 350ML SH 32,7000 · 10 CX da nota fiscal')   // o selo vem DEPOIS da quantidade e da embalagem, com espaço de verdade
+    await waitFor(() => expect(li).toHaveTextContent('GUARANÁ ANTARCTICA S/ AÇÚCAR 350ML do SisChef'))                // o nome da lista chega depois de o catálogo carregar
+  })
+
+  it('item que já vem associado do SisChef: os dois selos; item sem produto nenhum: só "da nota fiscal" (não há produto do SisChef para marcar)', async () => {
+    const jaAssociado: ItemNotaSefaz = { n: 3, descricao: 'CÓD. FOR: 594614 KETCHUP SACHE 168UN - INSUMOS', qtd: 10, unidade_sischef: 'UN', produto_id: 3469734, produto_nome: 'KETCHUP SACHE 168UN - INSUMOS', associacao: 'sischef' }
+    const semNada: ItemNotaSefaz = { n: 4, descricao: 'CÓD. FOR: 77 PRODUTO QUE NINGUÉM CONHECE', qtd: 2, unidade_sischef: 'UN', produto_id: null }
+    m.notasALancar.mockResolvedValue([oliveira([jaAssociado, semNada])])
+    render(<NotaSefaz />)
+    const p = await painel()
+    const itens = await p.findAllByTestId('conferir-item')
+    const ketchup = within(itens.find((x) => x.textContent?.includes('KETCHUP')) as HTMLElement)
+    expect(ketchup.getByTestId('origem-nota')).toBeInTheDocument()
+    expect(ketchup.getByTestId('origem-sischef')).toBeInTheDocument()
+    const vazio = within(itens.find((x) => x.textContent?.includes('NINGUÉM CONHECE')) as HTMLElement)
+    expect(vazio.getByTestId('origem-nota')).toHaveTextContent('da nota fiscal')
+    expect(vazio.queryByTestId('origem-sischef')).not.toBeInTheDocument()
+  })
+
+  it('na caixa de associação: o produto que o app INDICA já diz "no SisChef" no título (sem selo repetido); o que o Ivan ESCOLHE na lista leva "do SisChef"', async () => {
+    m.notasALancar.mockResolvedValue([oliveira([ITEM_GUARANA], { '1': decisao(GUARANA, 'GUARANÁ ANTARC. S/ AÇÚCAR 350 ML', 'un', null) })])
+    render(<NotaSefaz />)
+    const p = await painel()
+    await userEvent.click(await p.findByRole('button', { name: 'Editar' }))
+    const indicado = within(await p.findByTestId('produto-escolhido'))
+    expect(indicado.getByText('Produto que eu indiquei no SisChef')).toBeInTheDocument()
+    expect(indicado.queryByTestId('origem-sischef')).not.toBeInTheDocument()
+    await userEvent.click(p.getByRole('button', { name: /Escolher outro/ }))
+    await userEvent.type(await p.findByLabelText('Produto do SisChef'), 'guarana')
+    await userEvent.click(within(await p.findByTestId('achados')).getByRole('button', { name: /GUARANÁ ANTARCTICA/ }))
+    const escolhido = within(await p.findByTestId('produto-escolhido'))
+    expect(escolhido.getByText('Produto escolhido')).toBeInTheDocument()
+    expect(escolhido.getByTestId('origem-sischef')).toHaveTextContent('do SisChef')
+  })
+
+  describe('a embalagem da pergunta é a que está na nota (nunca uma palavra genérica)', () => {
+    const emUnidade = (un: string): ItemNotaSefaz => ({ ...ITEM_GUARANA, unidade_sischef: un })
+    it.each(['CX', 'PCT', 'FD', 'UN', 'SC'])('nota em %s × produto "un": a pergunta e a conta falam em %s', async (un) => {
+      m.notasALancar.mockResolvedValue([oliveira([emUnidade(un)], { '1': decisao(GUARANA, 'GUARANÁ ANTARC. S/ AÇÚCAR 350 ML', 'un', null) })])
+      render(<NotaSefaz />)
+      const p = await painel()
+      await userEvent.click(await p.findByRole('button', { name: 'Editar' }))
+      // UN × UN: unidades iguais, o campo fica escondido atrás do link e o Editar o abre; nas outras a pergunta já está aberta
+      const campo = await p.findByLabelText(`Quanto vale 1 ${un} na unidade do produto no SisChef? (opcional)`)
+      await userEvent.type(campo, '12')
+      expect(p.getByTestId('conversao-entrada')).toHaveTextContent(`Conta: 10 ${un} × 12 = 120 UN.`)
+      expect(p.getByTestId('conversao-eco')).toHaveTextContent(`Vai gravar: 1 ${un} = 12`)
+    })
   })
 })

@@ -1206,7 +1206,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       const achados = within(await screen.findByTestId('achados'))
       expect(achados.getAllByRole('button')).toHaveLength(1)
       await userEvent.click(achados.getByRole('button', { name: /ÓLEO DE SOJA - INSUMOS \(UN\)/ }))
-      expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`ÓLEO DE SOJA - INSUMOS (UN) cód. ${OLEO} · UN`)
+      expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`ÓLEO DE SOJA - INSUMOS (UN) do SisChef cód. ${OLEO} · UN`)
       expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()   // escolhido: o campo dá lugar ao produto
       expect(m.associarItem).not.toHaveBeenCalled()                                    // escolher NÃO guarda: só o Confirmar
       expect(screen.queryByText(/Quanto vale 1/)).not.toBeInTheDocument()                // unidades iguais (UN × UN): não pede conversão
@@ -1470,7 +1470,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           expect(campoOpcional('KG')).toHaveAttribute('inputmode', 'decimal')
           expect(screen.queryByLabelText(/Quanto vale 1 KG em UN\?/)).not.toBeInTheDocument()    // não é a pergunta obrigatória
           // 30/10/2026 (pedido do Ivan): a ajuda diz o que digitar e quando deixar vazio, sem o "a lista do app não sabe ao certo" (o robô confere a unidade na frase da entrada, quando há número)
-          expect(pedido).toHaveTextContent('Digite quantas UN tem cada KG da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em KG. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
+          expect(pedido).toHaveTextContent('Digite quantas UN tem cada KG da nota. Deixe vazio só se, no SisChef, este produto também for controlado em KG. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
           expect(pedido).not.toHaveTextContent('não sabe ao certo')
           expect(screen.queryByTestId('abrir-conversao')).not.toBeInTheDocument()                 // o campo já está aberto: não precisa de link
           expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()                // vazio NÃO bloqueia
@@ -1921,7 +1921,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         achados = within(await screen.findByTestId('achados'))
         expect(achados.getAllByRole('button')).toHaveLength(1)
         await userEvent.click(achados.getByRole('button'))
-        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`NUGGETS SUPREME - INSUMOS (KG) cód. ${NUGGETS} · KG · no SisChef: NUGGSTES SUPREME`)
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`NUGGETS SUPREME - INSUMOS (KG) do SisChef cód. ${NUGGETS} · KG · no SisChef: NUGGSTES SUPREME`)
       })
 
       it('nenhum produto com todas as palavras: mostra os que têm alguma (não fica no "nada") e dá para escolher', async () => {

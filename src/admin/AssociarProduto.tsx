@@ -27,6 +27,7 @@ import {
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
+import { Origem } from './Origem'
 
 interface Props {
   item: ItemNotaSefaz
@@ -261,7 +262,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
           <div className="escolhido" data-testid="produto-escolhido">
             <span className="sub rotulo">{eProposta ? 'Produto que eu indiquei no SisChef' : 'Produto escolhido'}</span>
             <div>
-              <b>{atual.nome}</b>{' '}
+              <b>{atual.nome}</b>{!eProposta && <Origem de="sischef" />}{' '}
               <span className="sub">
                 {/* só o curto (código e unidade) não quebra; o "no SisChef: nome" é longo e tem de poder quebrar, senão a caixa estoura a tela */}
                 <span className="sem-quebra">cód. {atual.produto_id}{atual.unidade ? ` · ${rotuloUnidade(atual.unidade)}` : ''}{atual.novo ? ' · novo, ainda fora da lista semanal' : ''}</span>
@@ -308,7 +309,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                     </p>
                   ) : ajudaCurta ? (
                     <p className="sub" data-testid="conversao-ajuda">
-                      Digite quantas {unidadeProduto} tem cada {unidadeNota} da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em {unidadeNota}.
+                      Digite quantas {unidadeProduto} tem cada {unidadeNota} da nota. Deixe vazio só se, no SisChef, este produto também for controlado em {unidadeNota}.
                       {' '}Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
                     </p>
                   ) : (
