@@ -57,6 +57,10 @@ describe('NotaSefaz — "Editar" em todo item associado: embalagem de várias un
     expect(caixa.getByLabelText(ROTULO_UN)).toHaveValue('168')
     expect(m.converterItem).not.toHaveBeenCalled()                                     // sugerir não grava
     expect(caixa.getByTestId('conversao-item-previa')).toHaveTextContent('10 × 168 = 1.680 UN')
+    // 30/10/2026 (pedido do Ivan): a mesma leitura clara da caixa de associação — o total, o produto, o porquê e a conta
+    expect(caixa.getByTestId('conversao-item-entrada')).toHaveTextContent(
+      `Vão entrar 1.680 UN de KETCHUP SACHE 168UN - INSUMOS (cód. ${KETCHUP}) no SisChef, porque o SisChef controla o estoque deste produto por UN. Conta: 10 × 168 = 1.680 UN.`)
+    expect(caixa.getByTestId('conversao-item-eco')).not.toHaveTextContent('Entram no estoque')                // a conta saiu do eco e está só na frase
     expect(caixa.getByTestId('conversao-item-aviso-conta')).toHaveTextContent('quantidade que o SisChef mostra hoje (10)')
     await userEvent.click(caixa.getByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenCalledWith(CHAVE, 3, 168))
@@ -78,6 +82,7 @@ describe('NotaSefaz — "Editar" em todo item associado: embalagem de várias un
     await userEvent.type(item.getByLabelText(ROTULO_UN), '168')
     expect(item.getByTestId('conversao-item-eco')).toHaveTextContent('1 unidade da nota = 168 UN')
     expect(item.queryByTestId('conversao-item-previa')).not.toBeInTheDocument()
+    expect(item.queryByTestId('conversao-item-entrada')).not.toBeInTheDocument()                        // sem a quantidade não há "vão entrar"
     await userEvent.click(item.getByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenCalledWith(CHAVE, 3, 168))
   })

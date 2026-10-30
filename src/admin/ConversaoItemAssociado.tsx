@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, embalagemPeloNome, formatarConversao, formatarQuantidade, parseConversao, quantidadeNoEstoque, rotuloUnidade,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, embalagemPeloNome, formatarConversao, formatarQuantidade, leituraDaEntrada, parseConversao, quantidadeNoEstoque, rotuloUnidade,
 } from './associacaoRegras'
 import type { ItemNotaSefaz, NfeAprendizado } from '../lib/tipos'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
@@ -119,6 +119,8 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
     )
   }
   const previa = conta(conversao)
+  const entra = leituraDaEntrada(item.qtd, null, conversao, item.unidade_sischef)?.entra ?? null                  // o total na unidade do produto ("1.680 UN")
+  const nomeDoProduto = (item.produto_nome ?? '').trim() || (codigoDoProduto != null ? `produto ${codigoDoProduto}` : 'este produto')
   return (
     <div className={`${pendente ? 'amarelo ' : ''}pedir-conversao editar-caixa`} data-testid={pendente ? 'conversao-item-pendente' : 'editar-item-caixa'} role="group" aria-label="Editar este item">
       {pendente && (
@@ -149,7 +151,13 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
       {conversao != null && (
         <p className="sub" data-testid="conversao-item-eco">
           Vai gravar: 1 unidade da nota = {formatarConversao(conversao)}{unidade ? ` ${unidade}` : ''}.
-          {previa && <> Entram no estoque: <b data-testid="conversao-item-previa">{previa}</b>.</>}
+        </p>
+      )}
+      {/* A leitura clara do que ENTRA no SisChef (pedido do Ivan, 30/10/2026), a mesma frase da caixa de associação: o total, o produto, o porquê e a conta. Aqui o produto já está
+          associado no SisChef, então a unidade é a dele (a da "Qtde Conver."). Sem a quantidade da leitura não há conta: nada aparece. */}
+      {conversao != null && previa && entra && (
+        <p className="ok" data-testid="conversao-item-entrada">
+          Vão entrar <b>{entra}</b> de {nomeDoProduto}{codigoDoProduto != null ? ` (cód. ${codigoDoProduto})` : ''} no SisChef{unidade ? `, porque o SisChef controla o estoque deste produto por ${unidade}` : ''}. Conta: <b data-testid="conversao-item-previa">{previa}</b>.
         </p>
       )}
       {conversao != null && previa && (
