@@ -245,6 +245,21 @@ export function quantidadeNoEstoque(qtd: number | null | undefined, conversao: n
 /** Quantidade no jeito brasileiro, com milhar: 1680 → "1.680"; 3,95 → "3,95" (é quantidade de estoque, não o número digitado da conversão — esse não leva ponto). */
 export const formatarQuantidade = (v: number): string => v.toLocaleString('pt-BR', { maximumFractionDigits: CONVERSAO_CASAS })
 
+/**
+ * O que vai ENTRAR no SisChef, dito com todas as letras (pedido do Ivan, 30/10/2026, olhando a NF 000970395 da Oliveira: Guaraná Diet em 10 CX de 12 → "vão entrar 120 UN").
+ * `entra` é o total com a unidade do produto ("120 UN"; sem a unidade quando o produto não a tem na lista, como o produto novo) e `conta` a multiplicação à vista
+ * ("10 CX × 12 = 120 UN"; a unidade da nota só aparece quando a leitura a trouxe). Sem quantidade legível (> 0) ou sem conversão válida: null, a tela não mostra conta que não sabe fazer.
+ */
+export function leituraDaEntrada(
+  qtd: number | null | undefined, unidadeNota: string | null | undefined, conversao: number | null | undefined, unidadeProduto: string | null | undefined,
+): { entra: string; conta: string } | null {
+  const total = quantidadeNoEstoque(qtd, conversao)
+  if (total == null || conversao == null) return null
+  const comUnidade = (valor: string, unidade: string): string => (unidade === '' ? valor : `${valor} ${unidade}`)
+  const entra = comUnidade(formatarQuantidade(total), rotuloUnidade(unidadeProduto))
+  return { entra, conta: `${comUnidade(formatarQuantidade(Number(qtd)), rotuloUnidade(unidadeNota))} × ${formatarConversao(conversao)} = ${entra}` }
+}
+
 /** Unidades de peso e volume: um número no nome ("12UN") de uma nota nesses pesos não diz quantas unidades vêm em cada unidade da nota. */
 const UNIDADES_DE_PESO_OU_VOLUME = ['KG', 'G', 'GR', 'GRS', 'L', 'LT', 'ML', 'M', 'MT']
 /**

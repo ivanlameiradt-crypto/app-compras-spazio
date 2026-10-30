@@ -21,7 +21,7 @@
 import { useMemo, useState } from 'react'
 import type { AssociacaoApp, ItemNotaSefaz, NfeAprendizado, ProdutoCatalogo } from '../lib/tipos'
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, fardoPeloNome, formatarConversao, formatarQuantidade, nomeParaMostrar, parseConversao, pesoPeloNome,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, buscarProdutos, conversaoDaDecisao, fardoPeloNome, formatarConversao, formatarQuantidade, leituraDaEntrada, nomeParaMostrar, parseConversao, pesoPeloNome,
   quantidadeNoEstoque, rotuloUnidade, situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
@@ -115,6 +115,13 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   // produto quando ela é confiável ("(KG)" no nome); nos outros modos a unidade da lista é um chute, e dizer "= 2 UN" quando no SisChef o produto pode
   // estar em PCT enganaria o Ivan — aí fica "na unidade do produto no SisChef". Antes e depois de confirmar, a tela diz a mesma coisa.
   const ecoConversao = conversao != null && atual != null ? textoConversao(item.unidade_sischef, atual.unidade, conversao) : null
+  // A leitura clara do que ENTRA no SisChef (pedido do Ivan, 30/10/2026): "Vão entrar 120 UN de … no SisChef, porque o SisChef controla o estoque deste produto por UN. Conta: 10 CX × 12 = 120 UN."
+  // Só com número válido e com a quantidade da nota lida. A unidade do produto é a da lista do app: quando ela não é certa (conversão "opcional": "un" é palpite pelo nome) a frase avisa
+  // que o robô confere no SisChef antes de lançar; sem unidade (produto novo) a frase não inventa uma.
+  const unidadeProduto = rotuloUnidade(atual?.unidade)
+  const leitura = conversao != null && atual != null ? leituraDaEntrada(item.qtd, item.unidade_sischef, conversao, atual.unidade) : null
+  // Ajuda curta do campo opcional quando o app conhece a unidade do produto: diz o que digitar e quando deixar vazio (o produto novo e o campo aberto pelo link, com unidades iguais, têm o texto deles)
+  const ajudaCurta = atual != null && !atual.novo && situacao === 'opcional' && unidadeProduto !== ''
 
   function limpar() {
     setEscolhido(null); setTexto(''); setConversaoTexto(null); setConversaoAberta(false); setTrocando(false); setDispensou(false)
@@ -299,6 +306,11 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                       O nome da nota diz {fardo.trecho}: cada {unidadeNota} da nota é um fardo com {fardo.fator} unidades, então deixei {formatarConversao(fardo.fator)} aqui. Confira e
                       corrija se precisar. Se o produto do SisChef já é o fardo inteiro, digite 1.
                     </p>
+                  ) : ajudaCurta ? (
+                    <p className="sub" data-testid="conversao-ajuda">
+                      Digite quantas {unidadeProduto} tem cada {unidadeNota} da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em {unidadeNota}.
+                      {' '}Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
+                    </p>
                   ) : (
                     <p className="sub">
                       {atual.novo
@@ -319,6 +331,15 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
               )}
               {/* Eco do que foi entendido: "0,395" e "0.395" são a mesma coisa, "1000" é mil — o Ivan vê o número que vai para o SisChef antes de confirmar */}
               {ecoConversao && <p className="sub" data-testid="conversao-eco">Vai gravar: {ecoConversao}</p>}
+              {leitura != null && atual != null && (
+                <p className="ok" data-testid="conversao-entrada">
+                  Vão entrar <b>{leitura.entra}</b> de {atual.nome} (cód. {atual.produto_id}) no SisChef
+                  {unidadeProduto !== ''
+                    ? `, porque o SisChef controla o estoque deste produto por ${unidadeProduto}${situacao === 'obrigatoria' ? '' : ' (o robô confere isso no SisChef antes de lançar)'}`
+                    : ', na unidade que o produto tem lá'}.
+                  {' '}Conta: {leitura.conta}.
+                </p>
+              )}
             </div>
           )}
           {unidadeNota === '' && (
