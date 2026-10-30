@@ -1,5 +1,5 @@
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, buscarProdutos, conversaoDaDecisao, formatarConversao, nomeParaMostrar, parseConversao, rotuloUnidade,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, buscarProdutos, conversaoDaDecisao, formatarConversao, leituraDaEntrada, nomeParaMostrar, parseConversao, rotuloUnidade,
   situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from '../../src/admin/associacaoRegras'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
@@ -380,6 +380,39 @@ describe('formatarConversao e textoConversao (como a tela mostra a conversão)',
     expect(rotuloUnidade('un')).toBe('UN')
     expect(rotuloUnidade(null)).toBe('')
     expect(rotuloUnidade(undefined)).toBe('')
+  })
+})
+
+// Pedido do Ivan (30/10/2026), olhando a NF 000970395 da Oliveira (Guaraná Diet, 10 caixas de 12): a tela tem de DIZER o que vai entrar no SisChef — "vão entrar 120 UN" —,
+// com a conta, em vez do texto genérico. A frase é montada daqui; a tela só a escreve.
+describe('leituraDaEntrada (o que entra no SisChef: o total na unidade do produto e a conta)', () => {
+  it('Guaraná da Oliveira: 10 CX de 12 UN = 120 UN', () => {
+    expect(leituraDaEntrada(10, 'CX', 12, 'un')).toEqual({ entra: '120 UN', conta: '10 CX × 12 = 120 UN' })
+  })
+
+  it('nota em UN × produto em KG (lata de 395 g): 24 UN × 0,395 = 9,48 KG, com a vírgula brasileira', () => {
+    expect(leituraDaEntrada(24, 'UN', 0.395, 'kg')).toEqual({ entra: '9,48 KG', conta: '24 UN × 0,395 = 9,48 KG' })
+  })
+
+  it('quantidade e total com milhar e casas do jeito brasileiro (10 × 168 = 1.680; 31,995 × 2 = 63,99), sem ruído de ponto flutuante', () => {
+    expect(leituraDaEntrada(10, 'UN', 168, 'un')).toEqual({ entra: '1.680 UN', conta: '10 UN × 168 = 1.680 UN' })
+    expect(leituraDaEntrada(31.995, 'KG', 2, 'kg')).toEqual({ entra: '63,99 KG', conta: '31,995 KG × 2 = 63,99 KG' })
+    expect(leituraDaEntrada(3.18, 'UN', 0.395, 'kg')).toEqual({ entra: '1,2561 KG', conta: '3,18 UN × 0,395 = 1,2561 KG' })
+  })
+
+  it('unidades em minúsculas ou com espaços saem em maiúsculas e sem espaço', () => {
+    expect(leituraDaEntrada(2, ' cx ', 6, ' pct ')).toEqual({ entra: '12 PCT', conta: '2 CX × 6 = 12 PCT' })
+  })
+
+  it('sem a unidade do produto (produto novo) o total sai sem unidade, e sem a da nota a conta também: nunca inventa unidade', () => {
+    expect(leituraDaEntrada(10, 'CX', 12, null)).toEqual({ entra: '120', conta: '10 CX × 12 = 120' })
+    expect(leituraDaEntrada(10, 'CX', 12, '')).toEqual({ entra: '120', conta: '10 CX × 12 = 120' })
+    expect(leituraDaEntrada(10, null, 12, 'un')).toEqual({ entra: '120 UN', conta: '10 × 12 = 120 UN' })
+  })
+
+  it('sem quantidade legível (vazia, zero, negativa, NaN) ou sem conversão válida: nada (a tela não mostra conta que não sabe fazer)', () => {
+    for (const q of [null, undefined, 0, -3, Number.NaN]) expect(leituraDaEntrada(q, 'CX', 12, 'un')).toBeNull()
+    for (const c of [null, undefined, 0, -1, Number.NaN]) expect(leituraDaEntrada(10, 'CX', c, 'un')).toBeNull()
   })
 })
 

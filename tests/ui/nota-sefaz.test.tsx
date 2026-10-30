@@ -1469,7 +1469,9 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
           expect(pedido).not.toHaveClass('amarelo')
           expect(campoOpcional('KG')).toHaveAttribute('inputmode', 'decimal')
           expect(screen.queryByLabelText(/Quanto vale 1 KG em UN\?/)).not.toBeInTheDocument()    // não é a pergunta obrigatória
-          expect(pedido).toHaveTextContent('A lista do app não sabe ao certo a unidade deste produto no SisChef. Se lá ele também for em KG, deixe vazio. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
+          // 30/10/2026 (pedido do Ivan): a ajuda diz o que digitar e quando deixar vazio, sem o "a lista do app não sabe ao certo" (o robô confere a unidade na frase da entrada, quando há número)
+          expect(pedido).toHaveTextContent('Digite quantas UN tem cada KG da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em KG. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
+          expect(pedido).not.toHaveTextContent('não sabe ao certo')
           expect(screen.queryByTestId('abrir-conversao')).not.toBeInTheDocument()                 // o campo já está aberto: não precisa de link
           expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()                // vazio NÃO bloqueia
           await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
