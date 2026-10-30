@@ -309,7 +309,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
                     </p>
                   ) : ajudaCurta ? (
                     <p className="sub" data-testid="conversao-ajuda">
-                      Digite quantas {unidadeProduto} tem cada {unidadeNota} da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em {unidadeNota}.
+                      Digite quantas {unidadeProduto} tem cada {unidadeNota} da nota. Deixe vazio só se, no SisChef, este produto também for controlado em {unidadeNota}.
                       {' '}Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.
                     </p>
                   ) : (

@@ -47,7 +47,7 @@ describe('NotaSefaz — a leitura clara do que entra no SisChef (Oliveira 000970
     await userEvent.click(await p.findByRole('button', { name: 'Editar' }))
     expect(p.queryByTestId('conversao-entrada')).not.toBeInTheDocument()                      // campo vazio: ainda não há o que dizer
     expect(await p.findByTestId('conversao-ajuda')).toHaveTextContent(
-      'Digite quantas UN tem cada CX da nota (caixa, pacote ou fardo). Deixe vazio só se, no SisChef, este produto também for controlado em CX. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
+      'Digite quantas UN tem cada CX da nota. Deixe vazio só se, no SisChef, este produto também for controlado em CX. Se o robô parar pedindo a conversão, volte aqui (Editar) e informe.')
     expect(p.getByTestId('pedir-conversao')).not.toHaveTextContent('não sabe ao certo')         // o texto genérico saiu
     await userEvent.type(p.getByLabelText(CAMPO_OPCIONAL), '12')
     expect(p.getByTestId('conversao-entrada')).toHaveTextContent(
@@ -127,7 +127,7 @@ describe('NotaSefaz — de onde vem cada texto do item: "da nota fiscal" e "do S
     expect(item.getByTestId('origem-sischef')).toHaveTextContent('do SisChef')
     const li = item.getByTestId('origem-nota').closest('li') as HTMLElement
     expect(li).toHaveTextContent('GUARANA CHP ANTARCTICA DIET LATA 350ML SH 32,7000 · 10 CX da nota fiscal')   // o selo vem DEPOIS da quantidade e da embalagem, com espaço de verdade
-    expect(li).toHaveTextContent('GUARANÁ ANTARCTICA S/ AÇÚCAR 350ML do SisChef')
+    await waitFor(() => expect(li).toHaveTextContent('GUARANÁ ANTARCTICA S/ AÇÚCAR 350ML do SisChef'))                // o nome da lista chega depois de o catálogo carregar
   })
 
   it('item que já vem associado do SisChef: os dois selos; item sem produto nenhum: só "da nota fiscal" (não há produto do SisChef para marcar)', async () => {
