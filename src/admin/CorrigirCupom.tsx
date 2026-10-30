@@ -16,6 +16,7 @@ import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQui
 import { ehMilheiro, sugestaoPorMilheiro, unidadesNaEmbalagemDoProduto } from './embalagemContada'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 import AvisoPreco from './AvisoPreco'
+import { Origem } from './Origem'
 import { precoForaDoNormal } from './precoForaDoNormal'
 
 interface Props {
@@ -258,7 +259,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
       {estado.produto && (
         <>
           <div className="escolhido">
-            <b>{estado.produto.nome}</b>{' '}
+            <span><b>{estado.produto.nome}</b><Origem de="sischef" /></span>{' '}
             <span className="sub">
               <span className="sem-quebra">cód. {estado.produto.produto_id}{estado.produto.unidade ? ` · ${unid(estado.produto.unidade)}` : ''}</span>
               {' · '}
@@ -364,7 +365,7 @@ function ItemConfirmadoNoResumo({ it, produto, conf, travado, aoEditar }: {
   return (
     <div className="resumo-detalhe" data-testid="resumo-confirmado">
       <span>
-        <span className="confirmado">✓ {produto.nome}</span>
+        <span className="confirmado">✓ {produto.nome}<Origem de="sischef" /></span>
         <span className="sub"> · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : minusc(it.unidade_cupom)}{conf.entrada != null && <> → entram {qtd(linha.entrada)} {minusc(produto.unidade)}</>}</span>
       </span>
       <button type="button" className="editar-item" disabled={travado} onClick={aoEditar}><span aria-hidden="true">✎</span> Editar</button>
@@ -382,7 +383,7 @@ function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalog
   return (
     <div className="resumo-detalhe" data-testid="item-conhecido">
       <span>
-        <span className="confirmado">✓ {produto ? produto.nome : `produto cód. ${it.sugestao_produto?.id ?? '?'}`}</span>
+        <span className="confirmado">✓ {produto ? produto.nome : `produto cód. ${it.sugestao_produto?.id ?? '?'}`}<Origem de="sischef" /></span>
         {it.entrada_estoque != null && <span className="sub"> · entra {qtd(Number(it.entrada_estoque))} {produto?.unidade ? minusc(produto.unidade) : ''} no estoque</span>}
       </span>
       <AvisoPreco aviso={aviso} testid="preco-fora-do-normal-resumo" />
@@ -488,6 +489,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
               {it.valor_unitario != null && Number.isFinite(Number(it.valor_unitario)) && (
                 <span className="sub">· {formatarReais(Number(it.valor_unitario))}{unid(it.unidade_cupom) !== '' && ` por ${unid(it.unidade_cupom)}`}</span>
               )}
+              <Origem de="cupom" />
             </p>
             <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={estadoDe(i)} mudar={(e) => mudar(i, e)}
               travado={enviando} novos={novos} registrarNovo={registrarNovo} />
@@ -506,7 +508,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
           const conf = pendente ? confirmadas.get(l.indice) : undefined
           return (
             <li key={l.indice} data-testid="resumo-item">
-              <span>{(it?.descricao_cupom ?? '').trim() || 'item'}{pendente ? '' : ' (já confirmado)'}</span>
+              <span>{(it?.descricao_cupom ?? '').trim() || 'item'}{pendente ? '' : ' (já confirmado)'}<Origem de="cupom" /></span>
               <b>{l.valor == null ? 'falta confirmar' : formatarReais(l.valor)}</b>
               {!pendente && it && <ItemConhecidoNoResumo it={it} catalogo={catalogo} />}
               {e?.confirmado && conf && e.produto && (

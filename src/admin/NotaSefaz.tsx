@@ -19,6 +19,7 @@ import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } fr
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
 import AvisoPreco from './AvisoPreco'
+import { Origem } from './Origem'
 import { avisoDePrecoDoItem, itensComPrecoForaDoNormal } from './precoDaNota'
 import { detalheDoPrecoForaDoNormal } from './precoForaDoNormal'
 import {
@@ -116,7 +117,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
     const avisoPreco = avisoDePrecoDoItem(nota, it, catalogo, memoria) // preço por unidade de estoque longe das últimas compras (só avisa)
     return (
       <li key={i} data-testid="conferir-item">
-        <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}</span>
+        <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}<Origem de="nota" /></span>
         {/* ✓ verde na frente do nome: produto já associado no SisChef (sem texto embaixo) ou produto CONFIRMADO no app ("confirmado no app"
             embaixo, com a conversão quando houver). Sem ✓ = falta associar: o aviso fica escrito e, embaixo, a caixa para escolher o produto. */}
         {/* Decisão ainda INCOMPLETA (falta a conversão): sem ✓ e sem repetir o nome aqui — o cartão logo embaixo mostra "Produto que eu indiquei" e o botão Confirmar. */}
@@ -124,7 +125,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
           <b className="produto">
             {ok && <TickOk />}
             {decisao && <TickOk rotulo={rotuloConfirmado} testid="item-confirmado" />}
-            <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}</span>
+            <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}{(ok || decisao) && <Origem de="sischef" />}</span>
           </b>
         )}
         {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}

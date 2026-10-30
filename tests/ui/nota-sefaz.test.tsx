@@ -1206,7 +1206,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
       const achados = within(await screen.findByTestId('achados'))
       expect(achados.getAllByRole('button')).toHaveLength(1)
       await userEvent.click(achados.getByRole('button', { name: /ÓLEO DE SOJA - INSUMOS \(UN\)/ }))
-      expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`ÓLEO DE SOJA - INSUMOS (UN) cód. ${OLEO} · UN`)
+      expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`ÓLEO DE SOJA - INSUMOS (UN) do SisChef cód. ${OLEO} · UN`)
       expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()   // escolhido: o campo dá lugar ao produto
       expect(m.associarItem).not.toHaveBeenCalled()                                    // escolher NÃO guarda: só o Confirmar
       expect(screen.queryByText(/Quanto vale 1/)).not.toBeInTheDocument()                // unidades iguais (UN × UN): não pede conversão
@@ -1921,7 +1921,7 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
         achados = within(await screen.findByTestId('achados'))
         expect(achados.getAllByRole('button')).toHaveLength(1)
         await userEvent.click(achados.getByRole('button'))
-        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`NUGGETS SUPREME - INSUMOS (KG) cód. ${NUGGETS} · KG · no SisChef: NUGGSTES SUPREME`)
+        expect(await screen.findByTestId('produto-escolhido')).toHaveTextContent(`NUGGETS SUPREME - INSUMOS (KG) do SisChef cód. ${NUGGETS} · KG · no SisChef: NUGGSTES SUPREME`)
       })
 
       it('nenhum produto com todas as palavras: mostra os que têm alguma (não fica no "nada") e dá para escolher', async () => {
