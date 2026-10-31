@@ -262,7 +262,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
       {xmlNaoLido && (
         <p className="sub" data-testid="parcelas-xml-nao-lido">
           {soResumo
-            ? 'O robô tentou ler o XML desta nota e não conseguiu (o mais comum: o SisChef só tem o resumo, e o XML completo chega em algumas horas). Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.'
+            ? 'O XML desta nota ainda não foi lido: o robô tentou e não conseguiu (o mais comum: o SisChef só tem o resumo, e o XML completo chega em algumas horas). Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.'
             : 'O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.'}
         </p>
       )}

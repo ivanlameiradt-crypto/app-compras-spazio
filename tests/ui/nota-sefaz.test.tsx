@@ -702,6 +702,8 @@ describe('NotaSefaz', () => {
         expect(linha).toHaveTextContent('Não digite as parcelas ainda')                                  // o quadro de cima (motivoDoRobo)
         const editor = within(linha).getByTestId('editor-parcelas')
         expect(editor).toHaveTextContent('Ainda não dá para saber os boletos desta nota: o XML completo não chegou ao SisChef.')
+        // o aviso começa com a MESMA frase que o quadro de cima manda esperar sumir (“O XML desta nota ainda não foi lido”): quem lê os dois não procura um aviso que não existe
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('O XML desta nota ainda não foi lido: o robô tentou e não conseguiu')
         expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.')
         expect(editor).not.toHaveTextContent('as parcelas que você digitar valem')
         expect(editor).not.toHaveTextContent('Digite as parcelas do boleto')
