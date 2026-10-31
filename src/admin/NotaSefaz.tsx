@@ -20,6 +20,8 @@ import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
 import AvisoPreco from './AvisoPreco'
 import { Origem } from './Origem'
+import { ContaAutomatica } from './ContaAutomatica'
+import { contaDoItem } from './contaDoItem'
 import { avisoDePrecoDoItem, itensComPrecoForaDoNormal } from './precoDaNota'
 import { detalheDoPrecoForaDoNormal } from './precoForaDoNormal'
 import {
@@ -115,6 +117,9 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
       : 'produto confirmado no app'
     const lembrada = memoriaDoItem(memoria, nota, it) // a embalagem que o robô lembra para o código deste item (CNPJ + CÓD. FOR + unidade), se houver
     const avisoPreco = avisoDePrecoDoItem(nota, it, catalogo, memoria) // preço por unidade de estoque longe das últimas compras (só avisa)
+    // A conta que já é AUTOMÁTICA ("48 PC × 15 = 720 UN", pedido do Ivan de 31/10/2026). Some quando o Ivan já informou o número dele neste item (a linha "Conversão informada" já diz tudo)
+    // ou quando o robô lembra a embalagem (a caixa "O robô lembra…" já explica): nunca duas explicações para o mesmo item.
+    const conta = !lembrada && conversaoDeItemAssociado(nota, it) == null ? contaDoItem(it) : null
     return (
       <li key={i} data-testid="conferir-item">
         <span>{semCodFor(it.descricao)} · {qtdBr(it.qtd)} {it.unidade_sischef ?? ''}<Origem de="nota" /></span>
@@ -128,6 +133,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
             <span>{decisao ? nomeParaMostrar(catalogo, decisao.produto_id, decisao.produto_nome).nome : nomeDoProduto(it)}{(ok || decisao) && <Origem de="sischef" />}</span>
           </b>
         )}
+        {conta && <ContaAutomatica conta={conta} />}
         {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
         {!ok && it.n != null && (decisao != null || podeAssociar) && (
           <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} lembrada={lembrada} />
