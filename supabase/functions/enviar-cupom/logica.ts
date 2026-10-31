@@ -50,7 +50,20 @@ const FORMAS_A_VISTA = new Set(['dinheiro', 'tesouraria', 'pix'])
 const AVISO_DISPARO_FALHOU =
   'enviado, mas o disparo automático falhou — o cupom ficou PENDENTE e nada vai lançá-lo sozinho; só depois de uns 60 min o sistema o marca para você conferir'
 
-/** O pagamento vem do botão do Ivan: forma obrigatória; à vista/pix exigem conta (= MAPA_PIX). Nunca assume cartão. */
+/** As contas que o robô sabe achar na tela 'Finalizar compra' (iguais às de src/cupom/formasPagamento.ts, do MAPA_PIX do robô e da compra avulsa). O SisChef RENOMEOU as contas em
+ *  30/10/2026 ('PANG BANK' virou 'PAG BANK - … - À Vista' e o Itaú saiu): um texto velho (app antigo ainda em cache, cupom parado de antes de 30/10 que foi reenviado) só faria o
+ *  robô parar na tela 'Finalizar compra' DEPOIS de o pedido estar gravado no SisChef (cupom pela metade) — por isso é recusado aqui, antes (revisão independente de 31/10/2026, A6). */
+export const CONTAS_PERMITIDAS: Record<'dinheiro' | 'tesouraria' | 'pix', string[]> = {
+  dinheiro: ['DINHEIRO - À Vista'],
+  tesouraria: ['TESOURARIA - À Vista'],
+  pix: [
+    'CONTA BANCÁRIA - PAG BANK - I J LAMEIRA - À Vista', 'CONTA BANCÁRIA - PAG BANK - S P DELIVERY - À Vista',
+    'CONTA BANCÁRIA - BRADESCO - I J LAMEIRA - À Vista', 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY - À Vista',
+    'CONTA BANCÁRIA - CAIXA - I J LAMEIRA - À Vista', 'CONTA BANCÁRIA - CAIXA - S P DELIVERY - À Vista',
+  ],
+}
+
+/** O pagamento vem do botão do Ivan: forma obrigatória; à vista/pix exigem conta (uma das do MAPA_PIX do robô). Nunca assume cartão. */
 export function validarPagamento(pg: unknown): { ok: true; pagamento: Pagamento } | { ok: false; erro: string } {
   if (pg === null || typeof pg !== 'object') return { ok: false, erro: 'pagamento ausente' }
   const p = pg as Record<string, unknown>
@@ -59,6 +72,9 @@ export function validarPagamento(pg: unknown): { ok: true; pagamento: Pagamento 
   if (FORMAS_A_VISTA.has(forma)) {
     const conta = typeof p.conta === 'string' ? p.conta.trim() : ''
     if (!conta) return { ok: false, erro: 'escolha o banco/empresa do pagamento' }
+    if (!CONTAS_PERMITIDAS[forma as 'dinheiro' | 'tesouraria' | 'pix'].includes(conta)) {
+      return { ok: false, erro: 'essa conta não existe mais no SisChef: atualize o app (feche e abra de novo) e escolha o banco/empresa outra vez' }
+    }
     return { ok: true, pagamento: { forma, conta } }
   }
   return { ok: false, erro: 'forma de pagamento inválida' }

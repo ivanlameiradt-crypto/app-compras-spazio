@@ -8,7 +8,7 @@
 export interface Corpo { cnpj?: unknown; razao_social?: unknown; nome_fantasia?: unknown; uf?: unknown; municipio?: unknown; cupom_id?: unknown; nota_chave?: unknown }
 export interface CupomLinha { id: string; estado: string; motivo: string | null; pedido_sischef: string | null }
 /** A nota fiscal (cot_nfe) que o robô devolveu: só o que importa para saber se ela parou por fornecedor não cadastrado. */
-export interface NotaLinha { chave: string; situacao: string; lancamento_estado: string | null; lancamento_motivo: string | null }
+export interface NotaLinha { chave: string; situacao: string; lancamento_estado: string | null; lancamento_motivo: string | null; descartada_em: string | null }
 /** `cupom_id` é null no pedido que vem de uma NOTA fiscal (a coluna aceita null). */
 export interface PedidoNovo { cnpj: string; razao_social: string; nome_fantasia: string | null; uf: string; municipio: string; cupom_id: string | null; criado_por: string }
 export interface Deps {
@@ -18,6 +18,9 @@ export interface Deps {
   lerNota(chave: string): Promise<NotaLinha | null>
   /** Grava a fantasia do app (upsert por CNPJ). Só chamada com fantasia não vazia. */
   salvarFantasia(cnpj: string, razaoSocial: string, fantasia: string): Promise<void>
+  /** Encerra (REVISAR) os pedidos deste CNPJ que ficaram PARADOS: PENDENTE há mais de MINUTOS_PENDENTE_PARADO (o robô nunca pegou: disparo cancelado na fila) ou PROCESSANDO há
+   *  mais de MINUTOS_PROCESSANDO_PARADO (o robô caiu no meio). Sem isso o índice único parcial os deixa bloqueando o CNPJ para sempre (revisão independente de 31/10/2026). */
+  expirarPedidosParados(cnpj: string): Promise<void>
   /** Insere o pedido PENDENTE; `duplicado` = já há um em andamento para este CNPJ (devolve o existente; nada é disparado). */
   criarPedido(p: PedidoNovo): Promise<{ id: string; duplicado?: boolean }>
   dispararCadastro(cadastroId: string): Promise<void>
@@ -26,6 +29,9 @@ export interface Deps {
 }
 export interface Resultado { status: number; corpo: Record<string, unknown> }
 
+/** Há quanto tempo um pedido "em andamento" é dado como PARADO (o cadastro leva uns 2 minutos; o disparo pode esperar na fila do GitHub atrás de outro lançamento). */
+export const MINUTOS_PENDENTE_PARADO = 15
+export const MINUTOS_PROCESSANDO_PARADO = 30
 export const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 /** O motivo que o robô de cupom grava (cupom_navegador.py). */
 export const MOTIVO_FORNECEDOR = /^fornecedor não encontrado no Sischef/i
@@ -71,7 +77,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     if (!/^\d{44}$/.test(notaChave)) return { status: 400, corpo: { erro: 'chave da nota inválida' } }
     const nota = await deps.lerNota(notaChave)
     if (!nota) return { status: 404, corpo: { erro: 'nota não encontrada' } }
-    const parada = nota.situacao === 'na_fila' && (nota.lancamento_estado === 'revisar' || nota.lancamento_estado === 'ensaio_ok')
+    const parada = nota.situacao === 'na_fila' && !nota.descartada_em && (nota.lancamento_estado === 'revisar' || nota.lancamento_estado === 'ensaio_ok')
       && MOTIVO_FORNECEDOR_NOTA.test((nota.lancamento_motivo ?? '').trim())
     if (!parada) return { status: 409, corpo: { erro: 'esta nota não está parada por fornecedor não cadastrado: atualize a tela' } }
     if (cnpj !== notaChave.slice(6, 20)) return { status: 400, corpo: { erro: 'o CNPJ não é o do emitente desta nota: confira os 14 números' } }
@@ -90,6 +96,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
 
   // a fantasia fica SÓ no app (regra do Ivan); o Sischef recebe CNPJ + razão social + estado + município
   if (fantasia !== '') await deps.salvarFantasia(cnpj, razao, fantasia)
+  await deps.expirarPedidosParados(cnpj)           // um pedido que o robô nunca pegou não pode bloquear o CNPJ para sempre
   const pedido = await deps.criarPedido({ cnpj, razao_social: razao, nome_fantasia: fantasia === '' ? null : fantasia, uf, municipio, cupom_id: cupomId, criado_por: chamador.trim().toLowerCase() })
   if (pedido.duplicado) return { status: 200, corpo: { cadastro_id: pedido.id, em_andamento: true, resumo: 'já existe um cadastro em andamento para este CNPJ' } }
   try {

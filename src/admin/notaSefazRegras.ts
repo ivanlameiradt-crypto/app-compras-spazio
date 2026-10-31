@@ -34,7 +34,7 @@ export function formaValida(forma: unknown): string | null {
   return TODAS.some((o) => o.valor === f) ? f : null
 }
 
-/** Texto da forma para o aviso de confirmação ("PIX — Pang Bank — Spazio…", "Boleto"). */
+/** Texto da forma para o aviso de confirmação ("PIX — Pag Bank — Spazio…", "Boleto"). */
 export function rotuloForma(forma: string): string {
   const o = TODAS.find((x) => x.valor === forma)
   if (!o) return forma
@@ -130,12 +130,17 @@ export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<strin
   return podeVirMarcada(f) ? f : null
 }
 
+/** A forma Pix da conta Itaú, que o SisChef NÃO tem mais (30/10/2026): uma nota que ainda a traz gravada fica sem escolha (o Ivan decide) e a tela avisa. */
+export const FORMA_ITAU_EXTINTA = 'pix:itau|ij'
+export const AVISO_ITAU_EXTINTA = 'Esta nota estava com Pix no Itaú, e o SisChef não tem mais essa conta: escolha outra forma de pagamento.'
+
 /** Forma que a tela começa mostrando: a gravada na nota, senão o padrão do fornecedor no banco, senão a lembrada neste celular,
  *  senão Boleto. '' = ainda sem escolha (a nota voltou do robô sem boleto: o robô para e o Ivan escolhe). Bonificação sem cobrança (CFOP 5910/6910 e o XML sem boletos)
  *  vem ANTES de tudo isso: sempre "só estoque" — inclusive quando o robô a devolveu por "sem boletos" ou quando há uma forma gravada de uma tentativa antiga. */
 export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>): string {
   if (bonificacaoSemCobranca(n)) return FORMA_SO_ESTOQUE
   if (precisaEscolherForma(n)) return ''
+  if (n.forma_pagamento === FORMA_ITAU_EXTINTA) return ''           // a conta Itaú não existe mais: não volta calada para Boleto (revisão independente de 31/10/2026, A9)
   return formaValida(n.forma_pagamento) ?? formaPadraoDoFornecedor(n, padroes) ?? formaLembrada(n.emitente) ?? FORMA_PADRAO
 }
 

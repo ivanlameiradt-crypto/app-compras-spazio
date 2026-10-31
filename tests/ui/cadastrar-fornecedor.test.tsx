@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CadastrarFornecedor, { type AcoesFornecedor } from '../../src/admin/CadastrarFornecedor'
@@ -171,5 +172,113 @@ describe('CadastrarFornecedor — dentro da nota fiscal (paraNota)', () => {
     abrir(acoes())
     expect(screen.queryByTestId('intro-nota')).not.toBeInTheDocument()
     expect(screen.getByText(/reenvie o cupom/)).toBeInTheDocument()
+  })
+
+  it('o CNPJ fica TRAVADO na nota (o servidor só aceita o do emitente) — e no cupom continua editável', () => {
+    abrirNota(acoes())
+    expect(screen.getByLabelText('CNPJ')).toBeDisabled()
+    expect(screen.queryByTestId('cnpj-lido-errado')).not.toBeInTheDocument()          // na nota o CNPJ vem da chave, não de uma foto
+    abrir(acoes())
+    expect(screen.getAllByLabelText('CNPJ')[1]).toBeEnabled()
+  })
+
+  it('na nota, sem a consulta do CNPJ (fora do ar), a razão social já vem preenchida com o emitente da nota', async () => {
+    abrirNota(acoes({ consultarCnpj: vi.fn().mockRejectedValue(new Error('consulta fora do ar')) }))
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    expect(await screen.findByLabelText(/Razão social/)).toHaveValue('PLAST MAIS SOCIEDADE UNIPESSOAL LTDA')
+  })
+})
+
+// Revisão independente do PR 63 (31/10/2026), A2/A3/A4: o pedido que o robô nunca pegou não pode deixar a caixa em "Cadastrando…" para sempre, o cadastro velho não pode virar um
+// ✓ sem saída quando o robô recusou a nota DEPOIS dele, e o cadastro não pode disputar a fila do robô com outro lançamento.
+describe('CadastrarFornecedor — nota: pedido parado, cadastro antigo e robô ocupado', () => {
+  const NOTA = { id: 'u-1', motivo: null, emitente_nome: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', emitente_cnpj: '55384032000120' }
+  const PLAST = { cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém' }
+  const minutosAtras = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+  const abrirNotaCom = (a: AcoesFornecedor, extra: Partial<ComponentProps<typeof CadastrarFornecedor>> = {}) =>
+    render(<CadastrarFornecedor paraNota cupom={NOTA} acoes={a} aoReenviar={vi.fn()} intervaloMs={20} {...extra} />)
+
+  it('PENDENTE há mais de 15 min: dado como PARADO — aviso, formulário de novo e nada de "Cadastrando…" sem saída', async () => {
+    abrirNotaCom(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'PENDENTE', motivo: null, criado_em: minutosAtras(20), atualizado_em: minutosAtras(20) }) }))
+    expect(await screen.findByTestId('pedido-parado')).toHaveTextContent('Pode pedir de novo')
+    expect(screen.queryByTestId('cadastrando')).not.toBeInTheDocument()
+    expect(screen.getByTestId('buscar-cnpj')).toBeInTheDocument()
+  })
+
+  it('PENDENTE de 2 minutos: continua "Cadastrando…", sem aviso e sem botão', async () => {
+    abrirNotaCom(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'PENDENTE', motivo: null, criado_em: minutosAtras(2), atualizado_em: minutosAtras(2) }) }))
+    expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
+    expect(screen.queryByTestId('pedido-parado')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('buscar-cnpj')).not.toBeInTheDocument()
+  })
+
+  it('depois do aviso de parado, pedir de novo volta a "Cadastrando…" (o pedido novo não é dado como parado de imediato)', async () => {
+    let pedido = false
+    const a = acoes({
+      consultarCnpj: vi.fn().mockResolvedValue(PLAST),
+      cadastrar: vi.fn(async () => { pedido = true }),
+      statusDoCadastro: vi.fn(async () => (pedido
+        ? { estado: 'PENDENTE' as const, motivo: null, criado_em: minutosAtras(0), atualizado_em: minutosAtras(0) }
+        : { estado: 'PENDENTE' as const, motivo: null, criado_em: minutosAtras(30), atualizado_em: minutosAtras(30) })),
+    })
+    abrirNotaCom(a)
+    await screen.findByTestId('pedido-parado')
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    await screen.findByLabelText(/Razão social/)
+    await userEvent.click(screen.getByTestId('cadastrar'))
+    expect(a.cadastrar).toHaveBeenCalledTimes(1)
+    expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 120))                                       // algumas conferências do robô depois: continua cadastrando
+    expect(screen.queryByTestId('pedido-parado')).not.toBeInTheDocument()
+    expect(screen.getByTestId('cadastrando')).toBeInTheDocument()
+  })
+
+  it('cadastro JA_EXISTIA mais antigo que a recusa da nota: aviso (pode estar sem a marca de fornecedor), formulário de novo e SEM o ✓ nem o "Atualizar a nota"', async () => {
+    abrirNotaCom(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'JA_EXISTIA', motivo: null, criado_em: minutosAtras(120), atualizado_em: minutosAtras(120) }) }),
+      { recusadaEm: minutosAtras(10) })
+    expect(await screen.findByTestId('cadastro-antigo')).toHaveTextContent('marca de fornecedor')
+    expect(screen.queryByTestId('cadastro-pronto')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('reenviar-cupom')).not.toBeInTheDocument()
+    expect(screen.getByTestId('buscar-cnpj')).toBeInTheDocument()
+  })
+
+  it('cadastro CADASTRADO mais antigo que a recusa: mensagem própria (peça de novo)', async () => {
+    abrirNotaCom(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'CADASTRADO', motivo: null, criado_em: minutosAtras(120), atualizado_em: minutosAtras(119) }) }),
+      { recusadaEm: minutosAtras(10) })
+    expect(await screen.findByTestId('cadastro-antigo')).toHaveTextContent('Peça o cadastro de novo')
+    expect(screen.queryByTestId('cadastro-pronto')).not.toBeInTheDocument()
+  })
+
+  it('cadastro concluído DEPOIS da recusa da nota, ou sem a data da recusa (compatibilidade): ✓ normal', async () => {
+    const a = acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'CADASTRADO', motivo: null, criado_em: minutosAtras(5), atualizado_em: minutosAtras(3) }) })
+    abrirNotaCom(a, { recusadaEm: minutosAtras(10) })
+    expect(await screen.findByTestId('cadastro-pronto')).toHaveTextContent('Agora é só tocar em “Lançar” na nota.')
+    expect(screen.queryByTestId('cadastro-antigo')).not.toBeInTheDocument()
+  })
+
+  it('cadastro concluído sem datas no status (resposta antiga do servidor): vale como pronto, nunca como antigo nem como parado', async () => {
+    abrirNotaCom(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'JA_EXISTIA', motivo: null }) }), { recusadaEm: minutosAtras(10) })
+    expect(await screen.findByTestId('cadastro-pronto')).toBeInTheDocument()
+    expect(screen.queryByTestId('cadastro-antigo')).not.toBeInTheDocument()
+  })
+
+  it('robô ocupado com outra nota: o botão Cadastrar espera (o GitHub guarda só um pedido na fila e cancelaria um dos dois)', async () => {
+    const a = acoes({ consultarCnpj: vi.fn().mockResolvedValue(PLAST) })
+    abrirNotaCom(a, { ocupado: true })
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    await screen.findByLabelText(/Razão social/)
+    expect(screen.getByTestId('aguarde-robo')).toHaveTextContent('Aguarde o robô terminar de lançar a outra nota')
+    expect(screen.getByTestId('cadastrar')).toBeDisabled()
+    await userEvent.click(screen.getByTestId('cadastrar'))
+    expect(a.cadastrar).not.toHaveBeenCalled()
+  })
+
+  it('robô livre: o botão Cadastrar funciona e não há aviso de espera', async () => {
+    const a = acoes({ consultarCnpj: vi.fn().mockResolvedValue(PLAST) })
+    abrirNotaCom(a, { ocupado: false })
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    await screen.findByLabelText(/Razão social/)
+    expect(screen.queryByTestId('aguarde-robo')).not.toBeInTheDocument()
+    expect(screen.getByTestId('cadastrar')).toBeEnabled()
   })
 })

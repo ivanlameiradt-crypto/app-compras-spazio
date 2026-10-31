@@ -11,8 +11,8 @@ import {
 export interface AcoesFornecedor {
   consultarCnpj(cnpj: string): Promise<DadosCnpj>
   cadastrar(pedido: PedidoCadastro): Promise<void>
-  /** O pedido de cadastro mais recente deste CNPJ (null = nunca pedido). */
-  statusDoCadastro(cnpj: string): Promise<{ estado: EstadoCadastro; motivo: string | null } | null>
+  /** O pedido de cadastro mais recente deste CNPJ (null = nunca pedido), com as datas (ISO) para saber se ele ficou parado ou é mais antigo que a recusa da nota. */
+  statusDoCadastro(cnpj: string): Promise<{ estado: EstadoCadastro; motivo: string | null; criado_em?: string | null; atualizado_em?: string | null } | null>
   reenviarCupom(cupomId: string): Promise<void>
 }
 
@@ -28,12 +28,19 @@ interface Props {
   /** Nota fiscal (31/10/2026, Plast Mais 8928): o fornecedor da NOTA não está no SisChef. Aqui `cupom.id` é a CHAVE da nota; a razão social já vem da nota (`cupom.emitente_nome`) e,
    *  pronto o cadastro, o Ivan toca em "Lançar" na própria nota: não há cupom para reenviar. O botão só pede à tela de cima que releia a nota (`aoReenviar`). */
   paraNota?: boolean
+  /** (paraNota) Quando o robô RECUSOU a nota por fornecedor novo (ISO, `lancamento_estado_em`). Um cadastro CONCLUÍDO que é mais antigo que a recusa não resolveu a nota: a caixa volta a oferecer o
+   *  pedido (senão ✓ → Lançar → recusa → ✓ seria um laço sem saída; revisão independente de 31/10/2026, A4). */
+  recusadaEm?: string | null
+  /** (paraNota) O robô está lançando outra nota: o GitHub guarda só UM disparo pendente por vez e cancelaria o cadastro (ou o lançamento) que esperasse na fila — o botão espera. */
+  ocupado?: boolean
 }
 
+/** Um pedido "em andamento" há mais que isto é dado como PARADO (o cadastro leva uns 2 minutos; o servidor também o encerra — MINUTOS_PENDENTE_PARADO da função cadastrar-fornecedor). */
+const LIMITE_PARADO_MS = 15 * 60_000
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 const mensagem = (e: unknown, padrao: string): string => (e instanceof Error && e.message ? e.message : padrao)
 
-export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000, aoUsar, paraNota = false }: Props) {
+export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000, aoUsar, paraNota = false, recusadaEm = null, ocupado = false }: Props) {
   const lido = fornecedorNaoEncontrado(cupom.motivo)
   const [cnpj, setCnpj] = useState(formatarCnpj(lido?.cnpj || cupom.emitente_cnpj || ''))
   const [razao, setRazao] = useState(lido?.nome ?? (paraNota ? (cupom.emitente_nome ?? '') : ''))    // a razão social: é ela (e o CNPJ) que vai ao SisChef
@@ -44,6 +51,8 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   const [buscando, setBuscando] = useState(false)
   const [estado, setEstado] = useState<EstadoCadastro | null>(null)
   const [motivoRobo, setMotivoRobo] = useState<string | null>(null)
+  const [criadoEm, setCriadoEm] = useState<string | null>(null)
+  const [atualizadoEm, setAtualizadoEm] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [reenviando, setReenviando] = useState(false)
   const [erro, setErro] = useState('')
@@ -51,19 +60,25 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   const montado = useRef(true)
   useEffect(() => () => { montado.current = false }, [])
 
-  const cadastrando = estado === 'PENDENTE' || estado === 'PROCESSANDO'
-  const pronto = CADASTRO_CONCLUIDO(estado)
+  const emAndamento = estado === 'PENDENTE' || estado === 'PROCESSANDO'
+  const idadeMs = (iso: string | null): number => (iso && Number.isFinite(Date.parse(iso)) ? Date.now() - Date.parse(iso) : 0)
+  // PARADO: em andamento há mais de 15 min (o robô nunca pegou o pedido — disparo cancelado na fila — ou caiu no meio): a caixa volta a oferecer o pedido (o servidor encerra o antigo antes de gravar o novo)
+  const parado = emAndamento && !enviando && idadeMs(criadoEm) > LIMITE_PARADO_MS
+  // ANTIGO (só na nota): o cadastro concluído é mais velho que a recusa da nota — não resolveu; a caixa oferece o pedido de novo e avisa
+  const antigo = paraNota && !!recusadaEm && CADASTRO_CONCLUIDO(estado) && !!atualizadoEm && Date.parse(atualizadoEm) < Date.parse(recusadaEm)
+  const cadastrando = emAndamento && !parado
+  const pronto = CADASTRO_CONCLUIDO(estado) && !antigo
   const problema = problemaDoFormulario({ cnpj, razao, uf, municipio })
   // 29/10: o CNPJ que a leitura da foto trouxe e que NÃO fecha as contas (a leitura trocou algum número). O aviso vale enquanto o campo ainda tem esse número: mexeu no campo, já foi atendido.
   const cnpjLido = soDigitos(lido?.cnpj || cupom.emitente_cnpj || '')
-  const avisoCnpjLido = cnpjLidoSuspeito(cnpjLido) && soDigitos(cnpj) === cnpjLido
+  const avisoCnpjLido = !paraNota && cnpjLidoSuspeito(cnpjLido) && soDigitos(cnpj) === cnpjLido     // (na nota o CNPJ vem da chave, não da leitura de uma foto)
 
   // Se já existe um pedido de cadastro deste CNPJ (a tela foi fechada no meio), retoma de onde parou.
   useEffect(() => {
     const d = soDigitos(cnpj)
     if (d.length !== 14) return
     let vivo = true
-    acoes.statusDoCadastro(d).then((s) => { if (vivo && s) { setEstado(s.estado); setMotivoRobo(s.motivo) } }).catch(() => undefined)
+    acoes.statusDoCadastro(d).then((s) => { if (vivo && s) { setEstado(s.estado); setMotivoRobo(s.motivo); setCriadoEm(s.criado_em ?? null); setAtualizadoEm(s.atualizado_em ?? null) } }).catch(() => undefined)
     return () => { vivo = false }
     // só ao abrir: o CNPJ digitado depois é consultado pelo botão
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,6 +92,8 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
         if (!montado.current || !s) return
         setEstado(s.estado)
         setMotivoRobo(s.motivo)
+        setCriadoEm(s.criado_em ?? criadoEm)
+        setAtualizadoEm(s.atualizado_em ?? null)
       }).catch(() => undefined)
     }, intervaloMs)
     return () => clearInterval(t)
@@ -108,7 +125,7 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
       // na NOTA fiscal o `id` é a chave da nota (o servidor confere que ela parou por fornecedor novo e que o CNPJ é o do emitente); no cupom, o id do cupom
       await acoes.cadastrar({ cnpj: soDigitos(cnpj), razao_social: razao.trim(), nome_fantasia: fantasia.trim(), uf: uf.trim().toUpperCase(), municipio: municipio.trim(),
         ...(paraNota ? { nota_chave: cupom.id } : { cupom_id: cupom.id }) })
-      setEstado('PENDENTE'); setMotivoRobo(null)
+      setEstado('PENDENTE'); setMotivoRobo(null); setCriadoEm(new Date().toISOString()); setAtualizadoEm(null)
     } catch (e) {
       setErro(mensagem(e, 'Não consegui pedir o cadastro agora. Tente de novo.'))
     } finally {
@@ -153,8 +170,21 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
         </p>
       )}
 
+      {parado && (
+        <p className="amarelo" role="status" data-testid="pedido-parado">
+          O pedido de cadastro anterior ficou parado na fila (mais de 15 minutos) e foi dado como perdido. Pode pedir de novo.
+        </p>
+      )}
+      {antigo && (
+        <p className="amarelo" role="status" data-testid="cadastro-antigo">
+          {estado === 'JA_EXISTIA'
+            ? 'O SisChef já tinha este CNPJ, mas o robô ainda recusou a nota depois disso: o cadastro pode estar sem a marca de fornecedor. Se pedir de novo e continuar assim, chame o Claude.'
+            : 'O fornecedor foi cadastrado antes, mas o robô ainda recusou a nota depois disso. Peça o cadastro de novo e, se continuar assim, chame o Claude.'}
+        </p>
+      )}
       <label>CNPJ
-        <input type="text" inputMode="numeric" autoComplete="off" placeholder="00.000.000/0000-00" value={cnpj} disabled={travado}
+        {/* na NOTA o servidor só aceita o CNPJ do emitente (dígitos 7 a 20 da chave): o campo fica travado (revisão independente de 31/10/2026, A10) */}
+        <input type="text" inputMode="numeric" autoComplete="off" placeholder="00.000.000/0000-00" value={cnpj} disabled={travado || paraNota}
           onChange={(e) => { setCnpj(e.target.value); setBuscou(false) }} />
       </label>
       {!travado && (
@@ -186,9 +216,12 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
               <input type="text" autoComplete="off" value={municipio} disabled={travado} onChange={(e) => setMunicipio(e.target.value)} />
             </label>
           </div>
+          {!travado && ocupado && (
+            <p className="amarelo" role="status" data-testid="aguarde-robo">Aguarde o robô terminar de lançar a outra nota para pedir o cadastro: o GitHub guarda só um pedido na fila e cancelaria um dos dois.</p>
+          )}
           {!travado && (
             <div className="acoes">
-              <button type="button" className="botao" disabled={enviando || problema !== null} onClick={() => void cadastrar()} data-testid="cadastrar">
+              <button type="button" className="botao" disabled={enviando || problema !== null || ocupado} onClick={() => void cadastrar()} data-testid="cadastrar">
                 {enviando ? 'Enviando…' : 'Cadastrar no SisChef'}
               </button>
             </div>

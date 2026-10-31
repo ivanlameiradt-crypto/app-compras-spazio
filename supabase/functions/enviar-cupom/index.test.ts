@@ -241,7 +241,7 @@ function pedido(corpo: unknown, o: { token?: string | null; metodo?: string; ori
     method: metodo, headers, body: metodo === 'POST' ? JSON.stringify(corpo) : undefined,
   })
 }
-const PG = { forma: 'pix', conta: 'PIX ITAU IJ' }
+const PG = { forma: 'pix', conta: 'CONTA BANCÁRIA - PAG BANK - I J LAMEIRA - À Vista' }
 const envio = (fotoPath = 'cupom/a.jpg', extra: Linha = {}) => pedido({ foto_path: fotoPath, pagamento: PG, ...extra })
 async function corpoDe(r: Response): Promise<Record<string, unknown>> { return (await r.json()) as Record<string, unknown> }
 /** nada de segredo na resposta nem no log */

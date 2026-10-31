@@ -56,7 +56,10 @@ const RE_FRETE_DESLIGADO = /nota com frete \(R\$ ([\d.,]+)\): o lançamento com 
 const RE_UN_DIFERE = /UN DIFERE sem convers[ãa]o na tela: C[OÓ]D\.? FOR ([^()]+?)\s*\(/i
 // "item CÓD. FOR 17898647163635 (PAPEL HIGIENICO…): o SisChef converteu por conta própria — a tela mostra 8 UN para 1 FD da nota (8 por unidade) — e o painel decidiu 18 por unidade (18 UN). Nada foi gerado: …"
 // (motor.conversoes_do_plano_sem_conferir; a JAMES 128432 parou assim em 31/10/2026: a ficha do produto tinha a linha do mesmo CNPJ para OUTRO código do fornecedor)
-const RE_CONVERTEU_SOZINHO = /item C[OÓ]D\.? FOR (\S+) \(.*?\): o SisChef converteu por conta própria — a tela mostra ([\d.,]+)(?: (\S+))? para ([\d.,]+)(?: (\S+))? da nota \(([\d.,]+) por unidade\) — e o painel decidiu ([\d.,]+) por unidade/i
+// O trecho entre parênteses (o nome do produto) não pode atravessar para o item seguinte ("; item CÓD. FOR …"): o robô junta um motivo por item com "; " e, sem esta trava,
+// o nome de um item sairia com os números de outro (revisão independente de 31/10/2026, A1). E só se explica quando o texto tem UM item: com mais de um, a tela mostra o texto do robô inteiro.
+const RE_CONVERTEU_SOZINHO = /item C[OÓ]D\.? FOR (\S+) \((?:(?!item C[OÓ]D\.? FOR).)*?\): o SisChef converteu por conta própria — a tela mostra ([\d.,]+)(?: (\S+))? para ([\d.,]+)(?: (\S+))? da nota \(([\d.,]+) por unidade\) — e o painel decidiu ([\d.,]+) por unidade/i
+const RE_ITEM_NO_TEXTO = /item C[OÓ]D\.? FOR/gi
 // "não consegui ler o XML da nota (Ações → Baixar documento na lista de não importadas não trouxe o XML desta chave (...))" (motor.motivo_xml). Em 31/10/2026 (De Marchi 113752) a causa
 // era o SisChef só ter o RESUMO da nota (a SEFAZ entrega o XML completo horas depois); digitar as parcelas NÃO resolve (testado 2×), o robô não lança com o resumo.
 const RE_XML_NAO_LIDO = /não consegui ler o XML da nota/i
@@ -113,7 +116,7 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
     }
   }
 
-  const sozinho = RE_CONVERTEU_SOZINHO.exec(t)
+  const sozinho = (t.match(RE_ITEM_NO_TEXTO) ?? []).length === 1 ? RE_CONVERTEU_SOZINHO.exec(t) : null
   if (sozinho) {
     const cod = sozinho[1]
     const tela = numeroDoRobo(sozinho[2]); const noSisChef = numeroDoRobo(sozinho[4]); const porUnidade = numeroDoRobo(sozinho[6]); const noApp = numeroDoRobo(sozinho[7])
@@ -134,7 +137,7 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
   if (RE_XML_NAO_LIDO.test(t)) {
     return {
       porque: 'O robô não conseguiu ler o XML completo desta nota. O motivo mais comum: o SisChef só recebeu da SEFAZ o resumo da nota, e o XML completo (com os itens, os valores e os boletos) costuma levar algumas horas para chegar. Também pode ter sido uma falha passageira na leitura.',
-      fazer: 'Por enquanto não adianta digitar as parcelas aqui embaixo: enquanto só existe o resumo, o robô não lança, nem assim. Espere 1 ou 2 horas e toque em Lançar de novo. Se no dia seguinte continuar assim, chame o Claude.',
+      fazer: 'Não digite as parcelas ainda: enquanto só existe o resumo, o robô não lança, nem assim. O XML completo chega ao SisChef em algumas horas (de 1 hora até quase um dia): quando o aviso “O XML desta nota ainda não foi lido” sumir da nota, ou daqui a umas horas, toque em Lançar de novo. Se passar de um dia, chame o Claude.',
     }
   }
 

@@ -1182,10 +1182,11 @@ export async function statusDoCadastroProduto(q: { id: string } | { chave: strin
   }
 }
 /** O pedido de cadastro mais recente deste CNPJ (RLS de admin); null se nunca pedido ou se a tabela ainda não existe. */
-export async function statusDoCadastroFornecedor(cnpj: string): Promise<{ estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null } | null> {
-  const r = await supabase.from('fornecedor_cadastro').select('estado, motivo').eq('cnpj', cnpj).order('criado_em', { ascending: false }).limit(1)
+export async function statusDoCadastroFornecedor(cnpj: string): Promise<{ estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null; criado_em?: string | null; atualizado_em?: string | null } | null> {
+  // com as datas (ISO): a caixa dá o pedido por PARADO (em andamento há mais de 15 min) e por ANTIGO (concluído antes de o robô recusar a nota) — revisão independente de 31/10/2026
+  const r = await supabase.from('fornecedor_cadastro').select('estado, motivo, criado_em, atualizado_em').eq('cnpj', cnpj).order('criado_em', { ascending: false }).limit(1)
   if (r.error) { if (tabelaInexistente(r.error.code)) return null; throw new ErroApi(r.error.message, r.status, r.error.code) }
-  const linha = ((r.data ?? []) as { estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null }[])[0]
+  const linha = ((r.data ?? []) as { estado: 'PENDENTE' | 'PROCESSANDO' | 'CADASTRADO' | 'JA_EXISTIA' | 'REVISAR'; motivo: string | null; criado_em: string | null; atualizado_em: string | null }[])[0]
   return linha ?? null
 }
 /** Depois do cadastro do fornecedor, o Ivan toca em "Reenviar este cupom": o cupom volta à fila e o robô lança. */

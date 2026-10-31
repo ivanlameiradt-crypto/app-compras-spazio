@@ -6,7 +6,7 @@ const PARADO: CupomLinha = { id: CUPOM, estado: 'REVISAR', pedido_sischef: null,
 const CORPO: Corpo = { cnpj: '63.540.861/0001-82', razao_social: ' A. N. DA SILVA  DESCARTAVEIS LTDA ', nome_fantasia: 'AN DESCARTÁVEIS', uf: 'pa', municipio: 'Abaetetuba', cupom_id: CUPOM }
 
 function fakeDeps(over: Partial<Deps> & { cupom?: CupomLinha | null; usuario?: { papel: string; ativo: boolean } | null } = {}) {
-  const reg = { fantasias: [] as unknown[][], pedidos: [] as PedidoNovo[], disparos: [] as string[], revisar: [] as string[][] }
+  const reg = { fantasias: [] as unknown[][], pedidos: [] as PedidoNovo[], disparos: [] as string[], revisar: [] as string[][], expirados: [] as string[], ordem: [] as string[] }
   const deps: Deps = {
     buscarUsuario: async () => (over.usuario === undefined ? { papel: 'admin', ativo: true } : over.usuario),
     lerCupom: async () => (over.cupom === undefined ? PARADO : over.cupom),
@@ -15,6 +15,7 @@ function fakeDeps(over: Partial<Deps> & { cupom?: CupomLinha | null; usuario?: {
     criarPedido: async (p) => { reg.pedidos.push(p); return { id: 'cad-1' } },
     dispararCadastro: async (id) => { reg.disparos.push(id) },
     marcarRevisar: async (id, m) => { reg.revisar.push([id, m]) },
+    expirarPedidosParados: async (cnpj) => { reg.expirados.push(cnpj); reg.ordem.push('expirar') },
     ...over,
   }
   return { deps, reg }
@@ -90,7 +91,8 @@ describe('cadastrar-fornecedor — tratar', () => {
 describe('cadastrar-fornecedor — tratar (nota fiscal)', () => {
   const CNPJ_PLAST = '55384032000120'
   const CHAVE = `262610${CNPJ_PLAST}55001000008928144282112`.slice(0, 44).padEnd(44, '1')   // UF 26 + AAMM 2610 + CNPJ do emitente + o resto
-  const NOTA_PARADA: NotaLinha = { chave: CHAVE, situacao: 'na_fila', lancamento_estado: 'revisar', lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado' }
+  const NOTA_PARADA: NotaLinha = { chave: CHAVE, situacao: 'na_fila', lancamento_estado: 'revisar', descartada_em: null,
+    lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado' }
   const CORPO_NOTA: Corpo = { cnpj: '55.384.032/0001-20', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'pa', municipio: 'Belém', nota_chave: CHAVE }
   const comNota = (nota: NotaLinha | null, extra: Partial<Deps> = {}) => {
     const cenario = fakeDeps({ lerCupom: async () => { throw new Error('a nota não podia consultar cupom') }, ...extra })
@@ -128,6 +130,7 @@ describe('cadastrar-fornecedor — tratar (nota fiscal)', () => {
     ['robô lançando agora', { lancamento_estado: 'lancando' }],
     ['nota pela metade', { lancamento_estado: 'erro' }],
     ['parou por outro motivo', { lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }],
+    ['nota descartada pelo Ivan', { descartada_em: '2026-10-31T10:00:00Z' }],
     ['sem motivo', { lancamento_motivo: null }],
   ])('nota que não está parada por fornecedor novo (%s): 409 e nada é gravado', async (_n, mudanca) => {
     const { deps, reg } = comNota({ ...NOTA_PARADA, ...mudanca } as NotaLinha)
@@ -150,6 +153,42 @@ describe('cadastrar-fornecedor — tratar (nota fiscal)', () => {
     expect((await tratar({ ...CORPO_NOTA, municipio: '' }, 'ivan@spazio.com', b.deps)).status).toBe(400)
     expect(a.reg.pedidos).toEqual([])
     expect(b.reg.pedidos).toEqual([])
+  })
+  it('chave com MAIS de 44 dígitos é recusada como inválida (400) sem consultar o banco', async () => {
+    let leu = 0
+    const { deps } = comNota(NOTA_PARADA, { lerNota: async () => { leu++; return NOTA_PARADA } })
+    deps.lerNota = async () => { leu++; return NOTA_PARADA }
+    const r = await tratar({ ...CORPO_NOTA, nota_chave: `${CHAVE}9` }, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(400)
+    expect(r.corpo.erro).toBe('chave da nota inválida')
+    expect(leu).toBe(0)
+  })
+  it('nota_chave E cupom_id juntos: vale a NOTA (o cupom nem é lido) e o pedido sai com cupom_id null', async () => {
+    const { deps, reg } = comNota(NOTA_PARADA)            // o lerCupom do cenário estoura se for chamado
+    const r = await tratar({ ...CORPO_NOTA, cupom_id: CUPOM }, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(200)
+    expect(reg.pedidos[0].cupom_id).toBeNull()
+  })
+  it('antes de gravar o pedido o servidor encerra os pedidos PARADOS deste CNPJ (um pedido que o robô nunca pegou não bloqueia o CNPJ para sempre) — na nota e no cupom', async () => {
+    const nota = comNota(NOTA_PARADA)
+    const ordem: string[] = []
+    nota.deps.expirarPedidosParados = async (c) => { ordem.push(`expirar:${c}`) }
+    const criar = nota.deps.criarPedido
+    nota.deps.criarPedido = async (p) => { ordem.push('criar'); return criar(p) }
+    expect((await tratar(CORPO_NOTA, 'ivan@spazio.com', nota.deps)).status).toBe(200)
+    expect(ordem).toEqual([`expirar:${CNPJ_PLAST}`, 'criar'])
+    const cupom = fakeDeps()
+    expect((await tratar(CORPO, 'ivan@spazio.com', cupom.deps)).status).toBe(200)
+    expect(cupom.reg.expirados).toEqual([CNPJ])
+  })
+  it('pedido recusado (403/400/404/409) não encerra nada: a limpeza só roda quando o pedido novo vai ser gravado', async () => {
+    const a = comNota(NOTA_PARADA, { buscarUsuario: async () => ({ papel: 'comprador', ativo: true }) })
+    const b = comNota({ ...NOTA_PARADA, lancamento_estado: 'lancando' })
+    const c = comNota(NOTA_PARADA)
+    await tratar(CORPO_NOTA, 'joao@spazio.com', a.deps)
+    await tratar(CORPO_NOTA, 'ivan@spazio.com', b.deps)
+    await tratar({ ...CORPO_NOTA, cnpj: CNPJ }, 'ivan@spazio.com', c.deps)
+    expect([a.reg.expirados, b.reg.expirados, c.reg.expirados]).toEqual([[], [], []])
   })
   it('a nota com a fantasia: ela vai só para o app (fornecedor_app), como no cupom', async () => {
     const { deps, reg } = comNota(NOTA_PARADA)

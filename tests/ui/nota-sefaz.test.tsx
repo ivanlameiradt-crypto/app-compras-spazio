@@ -437,6 +437,62 @@ describe('NotaSefaz', () => {
       expect(within(c).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
     })
 
+    it('fornecedor novo: a caixa NÃO aparece com a nota "lançando" nem "pela metade", mesmo com o motivo antigo do fornecedor', async () => {
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      const motivo = 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado'
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString(), lancamento_motivo: motivo }),
+        nota({ chave: '2'.repeat(44), emitente: 'B LTDA', lancamento_estado: 'erro', lancamento_motivo: motivo }),
+      )
+      render(<NotaSefaz />)
+      const notas = await screen.findAllByTestId('nota-a-lancar')
+      expect(notas).toHaveLength(2)
+      for (const n of notas) expect(within(n).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
+    })
+
+    it('fornecedor novo + o robô lançando OUTRA nota: o botão Cadastrar espera (o GitHub guarda só um disparo pendente)', async () => {
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      m.consultarCnpj.mockResolvedValue({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém' })
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', numero: '555', lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }),
+        nota({ chave: '26261055384032000120550010000089281442821121', emitente: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', numero: '000008928', lancamento_estado: 'revisar',
+          lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado' }),
+      )
+      render(<NotaSefaz />)
+      const [, plast] = await screen.findAllByTestId('nota-a-lancar')
+      await userEvent.click(within(plast).getByTestId('buscar-cnpj'))
+      await within(plast).findByLabelText(/Razão social/)
+      expect(within(plast).getByTestId('aguarde-robo')).toBeInTheDocument()
+      expect(within(plast).getByTestId('cadastrar')).toBeDisabled()
+    })
+
+    it('fornecedor novo: um cadastro CONCLUÍDO antes de o robô recusar a nota não vira ✓ sem saída — a caixa avisa e oferece pedir de novo', async () => {
+      const recusa = new Date(Date.now() - 10 * 60_000).toISOString()
+      const antes = new Date(Date.now() - 120 * 60_000).toISOString()
+      m.statusDoCadastroFornecedor.mockResolvedValue({ estado: 'JA_EXISTIA', motivo: null, criado_em: antes, atualizado_em: antes })
+      aLancar(nota({
+        chave: '26261055384032000120550010000089281442821121', emitente: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', numero: '000008928', lancamento_estado: 'revisar', lancamento_estado_em: recusa,
+        lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado',
+      }))
+      render(<NotaSefaz />)
+      const caixa = await screen.findByTestId('cadastrar-fornecedor')
+      expect(await within(caixa).findByTestId('cadastro-antigo')).toHaveTextContent('marca de fornecedor')
+      expect(within(caixa).queryByTestId('cadastro-pronto')).not.toBeInTheDocument()
+      expect(within(caixa).getByTestId('buscar-cnpj')).toBeInTheDocument()
+    })
+
+    it('nota que ainda traz a conta Pix do Itaú (extinta em 30/10/2026): NÃO volta calada para Boleto — fica sem forma escolhida, com aviso, e o Lançar espera', async () => {
+      aLancar(nota({ ...LIDA, forma_pagamento: 'pix:itau|ij' }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(comoPagar().value).toBe('')
+      expect(screen.getByTestId('aviso-itau')).toHaveTextContent('O SisChef não tem mais essa conta'.replace('O SisChef', 'o SisChef'))
+      expect(botaoLancar()).toBeDisabled()
+      await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')                        // o Ivan escolhe outra: o aviso some e o Lançar libera
+      expect(screen.queryByTestId('aviso-itau')).not.toBeInTheDocument()
+      expect(botaoLancar()).toBeEnabled()
+    })
+
     it('enquanto um Confirmar está enviando, as outras notas ficam bloqueadas (sem 2 disparos juntos)', async () => {
       let liberar: () => void = () => undefined
       m.lancarNota.mockImplementation(() => new Promise<void>((ok) => { liberar = ok }))

@@ -26,7 +26,7 @@ import { contaDoItem } from './contaDoItem'
 import { avisoDePrecoDoItem, itensComPrecoForaDoNormal } from './precoDaNota'
 import { detalheDoPrecoForaDoNormal } from './precoForaDoNormal'
 import {
-  AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
+  AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_ITAU_EXTINTA, AVISO_PRESA, FORMA_ITAU_EXTINTA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
   TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, devolvidaPorFormaDeBonificacao,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma, quemEstaLancando,
@@ -50,7 +50,7 @@ const ACOES_FORNECEDOR = {
 }
 
 /** emissao vem como AAAA-MM-DD; mostra dd/mm. */
-const ddmm =(iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
+const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
 
 /** Uma nota a lançar: "Como pagar", estado do robô, avisos de bloqueio e o botão Lançar em dois toques. */
 /** emissao e vencimento vêm como AAAA-MM-DD; mostra dd/mm/aaaa (sem data = traço). */
@@ -627,7 +627,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {/* Fornecedor novo (Plast Mais 8928, 31/10/2026): o robô só cadastra com a autorização do Ivan — o toque em "Cadastrar no SisChef" é ela. Depois, é só tocar em Lançar. */}
       {(estado === 'revisar' || estado === 'ensaio_ok') && fornecedorNovoNaNota(nota.lancamento_motivo) && (
         <CadastrarFornecedor paraNota cupom={{ id: nota.chave, motivo: null, emitente_nome: nota.emitente, emitente_cnpj: cnpjDaChave(nota.chave) || nota.cnpj_emitente }}
-          acoes={ACOES_FORNECEDOR} aoReenviar={() => { void recarregar() }} />
+          acoes={ACOES_FORNECEDOR} aoReenviar={() => { void recarregar() }} recusadaEm={nota.lancamento_estado_em ?? null} ocupado={outraOcupando} />
       )}
       {estado === 'lancando' && <VerificarRobo nota={nota} recarregar={recarregar} />}
       {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota{outraLancando ? ` (${outraLancando})` : ''}. Cada nota leva uns 3 minutos.</div>}
@@ -676,6 +676,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <div className="sub" data-testid="padrao-fornecedor">Padrão deste fornecedor: {rotuloForma(padraoDoFornecedor)} (a forma da última nota lançada dele).</div>
       )}
       {formaNaoProvada(forma) && <div className="amarelo" data-testid="aviso-forma">{AVISO_FORMA_NAO_PROVADA}</div>}
+      {nota.forma_pagamento === FORMA_ITAU_EXTINTA && escolha === null && <div className="amarelo" data-testid="aviso-itau">{AVISO_ITAU_EXTINTA}</div>}
 
       {confirmando ? (
         <div className="bloco-envio">

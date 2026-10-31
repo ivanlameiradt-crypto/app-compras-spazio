@@ -4,7 +4,7 @@ import {
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
   AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, AVISO_FALTA_CONVERSAO, bloqueioDeProduto,
   rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo, itemPedeAcao, itensNoMesmoProduto,
-  quemEstaLancando,
+  quemEstaLancando, FORMA_ITAU_EXTINTA,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -42,8 +42,9 @@ describe('notaSefazRegras', () => {
     lembrarForma('ATACADAO S.A.', 'tesouraria')
     expect(formaInicial(nota())).toBe('tesouraria')
     expect(formaInicial(nota({ forma_pagamento: 'pix:caixa|ij' }))).toBe('pix:caixa|ij')
-    // a conta Itaú não existe mais no SisChef (30/10/2026): uma nota que ainda a traz gravada cai na forma lembrada, em vez de levar o robô a uma conta que ele recusa
-    expect(formaInicial(nota({ forma_pagamento: 'pix:itau|ij' }))).toBe('tesouraria')
+    // a conta Itaú não existe mais no SisChef (30/10/2026): uma nota que ainda a traz gravada NÃO volta calada para Boleto nem para a forma lembrada — fica sem escolha ('') e a tela avisa
+    expect(formaInicial(nota({ forma_pagamento: 'pix:itau|ij' }))).toBe('')
+    expect(FORMA_ITAU_EXTINTA).toBe('pix:itau|ij')
     expect(formaInicial(nota({ forma_pagamento: 'invalida' }))).toBe('tesouraria')
   })
 
