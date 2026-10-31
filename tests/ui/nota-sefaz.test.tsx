@@ -417,8 +417,9 @@ describe('NotaSefaz', () => {
       await within(caixa).findByLabelText(/Razão social/)
       await userEvent.click(within(caixa).getByTestId('cadastrar'))
       expect(m.pedirCadastroFornecedor).toHaveBeenCalledTimes(1)
-      expect(m.pedirCadastroFornecedor.mock.calls[0][0]).toMatchObject({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', uf: 'PA', municipio: 'Belém' })
-      expect(m.pedirCadastroFornecedor.mock.calls[0][0].cupom_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+      expect(m.pedirCadastroFornecedor.mock.calls[0][0]).toMatchObject({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', uf: 'PA', municipio: 'Belém',
+        nota_chave: '26261055384032000120550010000089281442821121' })           // a chave da nota: o servidor confere que ela parou por fornecedor novo e que o CNPJ é o do emitente
+      expect(m.pedirCadastroFornecedor.mock.calls[0][0]).not.toHaveProperty('cupom_id')
       expect(m.lancarNota).not.toHaveBeenCalled()          // cadastrar o fornecedor NUNCA lança a nota
     })
 

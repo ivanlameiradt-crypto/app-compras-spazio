@@ -1,4 +1,4 @@
-import { tratar, type Corpo, type CupomLinha, type Deps, type PedidoNovo } from './logica'
+import { tratar, type Corpo, type CupomLinha, type Deps, type NotaLinha, type PedidoNovo } from './logica'
 
 const CNPJ = '63540861000182'
 const CUPOM = 'aaf54e6f-0b1c-4d2e-9f3a-4b5c6d7e8f90'
@@ -10,6 +10,7 @@ function fakeDeps(over: Partial<Deps> & { cupom?: CupomLinha | null; usuario?: {
   const deps: Deps = {
     buscarUsuario: async () => (over.usuario === undefined ? { papel: 'admin', ativo: true } : over.usuario),
     lerCupom: async () => (over.cupom === undefined ? PARADO : over.cupom),
+    lerNota: async () => { throw new Error('o cupom não podia consultar nota') },
     salvarFantasia: async (...a) => { reg.fantasias.push(a) },
     criarPedido: async (p) => { reg.pedidos.push(p); return { id: 'cad-1' } },
     dispararCadastro: async (id) => { reg.disparos.push(id) },
@@ -75,5 +76,85 @@ describe('cadastrar-fornecedor — tratar', () => {
     const r = await tratar(CORPO, 'ivan@spazio.com', deps)
     expect(r.status).toBe(502)
     expect(reg.revisar[0][0]).toBe('cad-1')
+  })
+  it('sem cupom e sem nota: 400 "sem o cupom" e nada é consultado nem gravado', async () => {
+    const { deps, reg } = fakeDeps()
+    const { cupom_id: _c, ...semNada } = CORPO
+    expect((await tratar(semNada, 'ivan@spazio.com', deps)).status).toBe(400)
+    expect(reg.pedidos).toEqual([])
+  })
+})
+
+// 31/10/2026 (Plast Mais 8928): o fornecedor da NOTA FISCAL não está no SisChef. O pedido vem com a chave da nota (nota_chave), sem cupom; só vale para a nota que o robô
+// devolveu por isso e para o CNPJ do EMITENTE dela (dígitos 7 a 20 da chave).
+describe('cadastrar-fornecedor — tratar (nota fiscal)', () => {
+  const CNPJ_PLAST = '55384032000120'
+  const CHAVE = `262610${CNPJ_PLAST}55001000008928144282112`.slice(0, 44).padEnd(44, '1')   // UF 26 + AAMM 2610 + CNPJ do emitente + o resto
+  const NOTA_PARADA: NotaLinha = { chave: CHAVE, situacao: 'na_fila', lancamento_estado: 'revisar', lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado' }
+  const CORPO_NOTA: Corpo = { cnpj: '55.384.032/0001-20', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'pa', municipio: 'Belém', nota_chave: CHAVE }
+  const comNota = (nota: NotaLinha | null, extra: Partial<Deps> = {}) => {
+    const cenario = fakeDeps({ lerCupom: async () => { throw new Error('a nota não podia consultar cupom') }, ...extra })
+    cenario.deps.lerNota = async () => nota
+    return cenario
+  }
+
+  it('a chave de teste tem 44 dígitos e o CNPJ do emitente nas posições 7 a 20', () => {
+    expect(CHAVE).toHaveLength(44)
+    expect(CHAVE.slice(6, 20)).toBe(CNPJ_PLAST)
+  })
+  it('caminho feliz: grava o pedido SEM cupom (cupom_id null) e dispara o robô uma vez', async () => {
+    const { deps, reg } = comNota(NOTA_PARADA)
+    const r = await tratar(CORPO_NOTA, 'Ivan@Spazio.com', deps)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ cadastro_id: 'cad-1' })
+    expect(reg.pedidos).toEqual([{ cnpj: CNPJ_PLAST, razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: null, uf: 'PA', municipio: 'Belém', cupom_id: null, criado_por: 'ivan@spazio.com' }])
+    expect(reg.disparos).toEqual(['cad-1'])
+  })
+  it('o aviso do ensaio ("cadastraria … num clique") e o estado ensaio_ok também valem', async () => {
+    const { deps, reg } = comNota({ ...NOTA_PARADA, lancamento_estado: 'ensaio_ok', lancamento_motivo: 'fornecedor: cadastraria PLAST MAIS SOCIEDADE UNIPESSOAL LTDA CNPJ 55.384.032/0001-20 num clique (cadastra do XML)' })
+    expect((await tratar(CORPO_NOTA, 'ivan@spazio.com', deps)).status).toBe(200)
+    expect(reg.disparos).toEqual(['cad-1'])
+  })
+  it('chave inválida (400) e nota que não existe (404): nada é gravado', async () => {
+    const a = comNota(NOTA_PARADA)
+    expect((await tratar({ ...CORPO_NOTA, nota_chave: '123' }, 'ivan@spazio.com', a.deps)).status).toBe(400)
+    const b = comNota(null)
+    expect((await tratar(CORPO_NOTA, 'ivan@spazio.com', b.deps)).status).toBe(404)
+    expect(a.reg.pedidos).toEqual([])
+    expect(b.reg.pedidos).toEqual([])
+  })
+  it.each([
+    ['nota já lançada', { situacao: 'lancada' }],
+    ['robô lançando agora', { lancamento_estado: 'lancando' }],
+    ['nota pela metade', { lancamento_estado: 'erro' }],
+    ['parou por outro motivo', { lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }],
+    ['sem motivo', { lancamento_motivo: null }],
+  ])('nota que não está parada por fornecedor novo (%s): 409 e nada é gravado', async (_n, mudanca) => {
+    const { deps, reg } = comNota({ ...NOTA_PARADA, ...mudanca } as NotaLinha)
+    expect((await tratar(CORPO_NOTA, 'ivan@spazio.com', deps)).status).toBe(409)
+    expect(reg.pedidos).toEqual([])
+    expect(reg.disparos).toEqual([])
+  })
+  it('o CNPJ tem de ser o do EMITENTE da nota: outro CNPJ (mesmo válido) é recusado (400) e nada é gravado', async () => {
+    const { deps, reg } = comNota(NOTA_PARADA)
+    expect((await tratar({ ...CORPO_NOTA, cnpj: CNPJ }, 'ivan@spazio.com', deps)).status).toBe(400)   // CNPJ válido, mas de outra empresa
+    expect(reg.pedidos).toEqual([])
+    expect(reg.disparos).toEqual([])
+    expect(reg.fantasias).toEqual([])
+  })
+  it('só o admin (403) e os campos do formulário continuam validados também no caminho da nota', async () => {
+    const a = comNota(NOTA_PARADA, { buscarUsuario: async () => ({ papel: 'comprador', ativo: true }) })
+    expect((await tratar(CORPO_NOTA, 'joao@spazio.com', a.deps)).status).toBe(403)
+    const b = comNota(NOTA_PARADA)
+    expect((await tratar({ ...CORPO_NOTA, uf: 'XX' }, 'ivan@spazio.com', b.deps)).status).toBe(400)
+    expect((await tratar({ ...CORPO_NOTA, municipio: '' }, 'ivan@spazio.com', b.deps)).status).toBe(400)
+    expect(a.reg.pedidos).toEqual([])
+    expect(b.reg.pedidos).toEqual([])
+  })
+  it('a nota com a fantasia: ela vai só para o app (fornecedor_app), como no cupom', async () => {
+    const { deps, reg } = comNota(NOTA_PARADA)
+    await tratar({ ...CORPO_NOTA, nome_fantasia: 'PLAST MAIS' }, 'ivan@spazio.com', deps)
+    expect(reg.fantasias).toEqual([[CNPJ_PLAST, 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', 'PLAST MAIS']])
+    expect(reg.pedidos[0].nome_fantasia).toBe('PLAST MAIS')
   })
 })

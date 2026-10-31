@@ -1,7 +1,7 @@
-// Edge Function (Deno) — cadastrar-fornecedor: o Ivan toca em "Cadastrar no SisChef" (cupom parado por fornecedor não cadastrado); grava o pedido, guarda a
+// Edge Function (Deno) — cadastrar-fornecedor: o Ivan toca em "Cadastrar no SisChef" (cupom OU nota fiscal parados por fornecedor não cadastrado); grava o pedido, guarda a
 // fantasia só no app e dispara o workflow cadastrar-fornecedor.yml do robô. Lógica pura em logica.ts (vitest). O GITHUB_PAT fica só no servidor.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { tratar, type Corpo, type CupomLinha, type Deps } from './logica.ts'
+import { tratar, type Corpo, type CupomLinha, type Deps, type NotaLinha } from './logica.ts'
 
 const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'http://localhost:5173', 'http://localhost:4173'])
 const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
@@ -45,6 +45,11 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.from('cupom').select('id, estado, motivo, pedido_sischef').eq('id', id).maybeSingle()
         if (error) throw new Error(error.message)
         return (data as CupomLinha | null) ?? null
+      },
+      async lerNota(chave) {
+        const { data, error } = await admin.from('cot_nfe').select('chave, situacao, lancamento_estado, lancamento_motivo').eq('chave', chave).maybeSingle()
+        if (error) throw new Error(error.message)
+        return (data as NotaLinha | null) ?? null
       },
       async salvarFantasia(cnpj, razao, fantasia) {
         const { error } = await admin.from('fornecedor_app').upsert({ cnpj, razao_social: razao, nome_fantasia: fantasia, atualizado_em: agora() }, { onConflict: 'cnpj' })

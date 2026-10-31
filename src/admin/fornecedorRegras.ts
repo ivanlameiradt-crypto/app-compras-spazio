@@ -72,8 +72,8 @@ export function cnpjDaChave(chave: string | null | undefined): string {
 /** O que a consulta pública do CNPJ devolve (a Edge Function consultar-cnpj). */
 export interface DadosCnpj { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string }
 
-/** O pedido de cadastro como o app o manda ao servidor. */
-export interface PedidoCadastro { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id: string }
+/** O pedido de cadastro como o app o manda ao servidor: ligado a um cupom parado (`cupom_id`) ou, desde 31/10/2026, a uma nota fiscal devolvida (`nota_chave`). */
+export interface PedidoCadastro { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id?: string; nota_chave?: string }
 
 /** Por que o formulário ainda não pode ser enviado (texto para o Ivan), ou null quando está pronto. */
 export function problemaDoFormulario(f: { cnpj: string; razao: string; uf: string; municipio: string }): string | null {

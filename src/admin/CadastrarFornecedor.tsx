@@ -25,8 +25,8 @@ interface Props {
   intervaloMs?: number
   /** Aba "Compras avulsas" (10/10/2026): não há cupom para reenviar. Pronto o cadastro, o botão vira "Usar este fornecedor" e entrega os dados a quem chamou. */
   aoUsar?: (f: { cnpj: string; razao: string; fantasia: string }) => void
-  /** Nota fiscal (31/10/2026, Plast Mais 8928): o fornecedor da NOTA não está no SisChef. A razão social já vem da nota (`cupom.emitente_nome`) e, pronto o cadastro, o Ivan toca em
-   *  "Lançar" na própria nota: não há cupom para reenviar. O botão só pede à tela de cima que releia a nota (`aoReenviar`). */
+  /** Nota fiscal (31/10/2026, Plast Mais 8928): o fornecedor da NOTA não está no SisChef. Aqui `cupom.id` é a CHAVE da nota; a razão social já vem da nota (`cupom.emitente_nome`) e,
+   *  pronto o cadastro, o Ivan toca em "Lançar" na própria nota: não há cupom para reenviar. O botão só pede à tela de cima que releia a nota (`aoReenviar`). */
   paraNota?: boolean
 }
 
@@ -105,7 +105,9 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
     if (problema) { setErro(problema); return }
     setErro(''); setEnviando(true)
     try {
-      await acoes.cadastrar({ cnpj: soDigitos(cnpj), razao_social: razao.trim(), nome_fantasia: fantasia.trim(), uf: uf.trim().toUpperCase(), municipio: municipio.trim(), cupom_id: cupom.id })
+      // na NOTA fiscal o `id` é a chave da nota (o servidor confere que ela parou por fornecedor novo e que o CNPJ é o do emitente); no cupom, o id do cupom
+      await acoes.cadastrar({ cnpj: soDigitos(cnpj), razao_social: razao.trim(), nome_fantasia: fantasia.trim(), uf: uf.trim().toUpperCase(), municipio: municipio.trim(),
+        ...(paraNota ? { nota_chave: cupom.id } : { cupom_id: cupom.id }) })
       setEstado('PENDENTE'); setMotivoRobo(null)
     } catch (e) {
       setErro(mensagem(e, 'Não consegui pedir o cadastro agora. Tente de novo.'))

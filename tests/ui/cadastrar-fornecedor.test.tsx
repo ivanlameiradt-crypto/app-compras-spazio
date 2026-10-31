@@ -131,13 +131,14 @@ describe('CadastrarFornecedor — dentro da nota fiscal (paraNota)', () => {
     expect(screen.queryByText(/reenvie o cupom/)).not.toBeInTheDocument()
   })
 
-  it('a razão social já vem da nota; o pedido de cadastro leva o CNPJ, a razão e o id do pedido', async () => {
+  it('a razão social já vem da nota; o pedido de cadastro leva o CNPJ, a razão e a CHAVE DA NOTA (nota_chave), nunca um cupom_id', async () => {
     const a = acoes({ consultarCnpj: vi.fn().mockResolvedValue(PLAST) })
     abrirNota(a)
     await userEvent.click(screen.getByTestId('buscar-cnpj'))
     expect(await screen.findByLabelText(/Razão social/)).toHaveValue('PLAST MAIS SOCIEDADE UNIPESSOAL LTDA')
     await userEvent.click(screen.getByTestId('cadastrar'))
-    expect(a.cadastrar).toHaveBeenCalledWith({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém', cupom_id: 'u-1' })
+    expect(a.cadastrar).toHaveBeenCalledWith({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém', nota_chave: 'u-1' })
+    expect(vi.mocked(a.cadastrar).mock.calls[0][0]).not.toHaveProperty('cupom_id')
     expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
   })
 

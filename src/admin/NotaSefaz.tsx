@@ -48,9 +48,6 @@ const ACOES_FORNECEDOR = {
   statusDoCadastro: (cnpj: string) => api.statusDoCadastroFornecedor(cnpj),
   reenviarCupom: async () => undefined,
 }
-/** Identificador do pedido de cadastro do fornecedor (a tabela fornecedor_cadastro o guarda; a nota não tem id de cupom). */
-const novoIdDeCadastro = (): string =>
-  globalThis.crypto?.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16))
 
 /** emissao vem como AAAA-MM-DD; mostra dd/mm. */
 const ddmm =(iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
@@ -440,7 +437,6 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
-  const idDoCadastro = useRef(novoIdDeCadastro())
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
   const [descartando, setDescartando] = useState(false) // aberta a pergunta "Descartar a nota?"
@@ -630,7 +626,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo, nota.itens)}</div>}
       {/* Fornecedor novo (Plast Mais 8928, 31/10/2026): o robô só cadastra com a autorização do Ivan — o toque em "Cadastrar no SisChef" é ela. Depois, é só tocar em Lançar. */}
       {(estado === 'revisar' || estado === 'ensaio_ok') && fornecedorNovoNaNota(nota.lancamento_motivo) && (
-        <CadastrarFornecedor paraNota cupom={{ id: idDoCadastro.current, motivo: null, emitente_nome: nota.emitente, emitente_cnpj: nota.cnpj_emitente ?? cnpjDaChave(nota.chave) }}
+        <CadastrarFornecedor paraNota cupom={{ id: nota.chave, motivo: null, emitente_nome: nota.emitente, emitente_cnpj: cnpjDaChave(nota.chave) || nota.cnpj_emitente }}
           acoes={ACOES_FORNECEDOR} aoReenviar={() => { void recarregar() }} />
       )}
       {estado === 'lancando' && <VerificarRobo nota={nota} recarregar={recarregar} />}
