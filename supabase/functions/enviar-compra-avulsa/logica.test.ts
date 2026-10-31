@@ -23,8 +23,10 @@ describe('validarPagamento', () => {
     expect(validarPagamento({ forma: 'sem_cartao' }).ok).toBe(true)
     expect(validarPagamento({ forma: 'dinheiro', conta: 'DINHEIRO - À Vista' }).ok).toBe(true)
     expect(validarPagamento({ forma: 'tesouraria', conta: 'TESOURARIA - À Vista' }).ok).toBe(true)
-    expect(validarPagamento({ forma: 'pix', conta: 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY' }).ok).toBe(true)
-    expect(validarPagamento({ forma: 'pix', conta: 'CONTA BANCÁRIA - PANG ITAU - S P DELIVERY' }).ok).toBe(false) // Itaú só existe para I J
+    expect(validarPagamento({ forma: 'pix', conta: 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY - À Vista' }).ok).toBe(true)
+    expect(validarPagamento({ forma: 'pix', conta: 'CONTA BANCÁRIA - PAG BANK - I J LAMEIRA - À Vista' }).ok).toBe(true)
+    expect(validarPagamento({ forma: 'pix', conta: 'CONTA BANCÁRIA - PANG ITAU - I J LAMEIRA' }).ok).toBe(false) // o SisChef não tem mais Itaú
+    expect(validarPagamento({ forma: 'pix', conta: 'CONTA BANCÁRIA - PANG BANK - I J LAMEIRA' }).ok).toBe(false) // o nome antigo, sem o "- À Vista", é recusado
     expect(validarPagamento({ forma: 'dinheiro', conta: 'TESOURARIA - À Vista' }).ok).toBe(false) // conta de outra forma
     expect(validarPagamento({ forma: 'pix' }).ok).toBe(false)
     expect(validarPagamento({ forma: 'cartao', conta: 'X' }).ok).toBe(false)

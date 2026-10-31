@@ -1,4 +1,4 @@
-import { interpretarIA, montarPedidoIA, tratar, validarPagamento, type Deps, type ModeloResposta } from './logica'
+import { CONTAS_PERMITIDAS, interpretarIA, montarPedidoIA, tratar, validarPagamento, type Deps, type ModeloResposta } from './logica'
 import { ESQUEMA_CUPOM, type LeituraCupomIA } from './esquema'
 import { SISTEMA } from './prompt'
 import type { Aprendizado } from './casamento'
@@ -30,21 +30,35 @@ const CONFIRMADO: Aprendizado = {
 }
 const PG = { forma: 'sem_cartao' } as const
 const IVAN = 'ivan@spazio.com'
+const CONTA_PIX = 'CONTA BANCÁRIA - PAG BANK - I J LAMEIRA - À Vista'
 
 describe('validarPagamento', () => {
   it('sem_cartao ok; à vista exige conta; forma inválida recusa', () => {
     expect(validarPagamento({ forma: 'sem_cartao' }).ok).toBe(true)
-    expect(validarPagamento({ forma: 'pix', conta: 'X' }).ok).toBe(true)
+    expect(validarPagamento({ forma: 'pix', conta: CONTA_PIX }).ok).toBe(true)
     expect(validarPagamento({ forma: 'pix' }).ok).toBe(false)
     expect(validarPagamento({ forma: 'cartao', conta: 'X' }).ok).toBe(false)
     expect(validarPagamento(null).ok).toBe(false)
   })
 
   it('dinheiro/tesouraria também exigem conta; a conta é aparada; sem_cartao descarta a conta', () => {
-    expect(validarPagamento({ forma: 'dinheiro', conta: '  CAIXA  ' })).toEqual({ ok: true, pagamento: { forma: 'dinheiro', conta: 'CAIXA' } })
-    expect(validarPagamento({ forma: 'tesouraria', conta: 'TESOURARIA' }).ok).toBe(true)
+    expect(validarPagamento({ forma: 'dinheiro', conta: '  DINHEIRO - À Vista  ' })).toEqual({ ok: true, pagamento: { forma: 'dinheiro', conta: 'DINHEIRO - À Vista' } })
+    expect(validarPagamento({ forma: 'tesouraria', conta: 'TESOURARIA - À Vista' }).ok).toBe(true)
     expect(validarPagamento({ forma: 'dinheiro', conta: '   ' }).ok).toBe(false)
     expect(validarPagamento({ forma: 'sem_cartao', conta: 'X' })).toEqual({ ok: true, pagamento: { forma: 'sem_cartao' } })
+  })
+
+  it('só aceita as contas que o robô sabe achar (MAPA_PIX de 30/10/2026): o nome antigo, o Itaú e a conta de outra forma são recusados ANTES de o pedido existir no SisChef', () => {
+    for (const conta of CONTAS_PERMITIDAS.pix) expect(validarPagamento({ forma: 'pix', conta }).ok).toBe(true)
+    expect(CONTAS_PERMITIDAS.pix).toHaveLength(6)
+    for (const velha of ['CONTA BANCÁRIA - PANG BANK - I J LAMEIRA', 'CONTA BANCÁRIA - PANG BANK - S P DELIVERY', 'CONTA BANCÁRIA - PANG ITAU - I J LAMEIRA', 'PIX ITAU IJ', 'CAIXA']) {
+      const r = validarPagamento({ forma: 'pix', conta: velha })
+      expect(r.ok).toBe(false)
+      expect(r.ok === false && r.erro).toContain('essa conta não existe mais no SisChef')
+    }
+    expect(validarPagamento({ forma: 'dinheiro', conta: 'TESOURARIA - À Vista' }).ok).toBe(false)           // conta de outra forma
+    expect(validarPagamento({ forma: 'tesouraria', conta: CONTA_PIX }).ok).toBe(false)
+    expect(validarPagamento({ forma: 'pix', conta: 'DINHEIRO - À Vista' }).ok).toBe(false)
   })
 
   it('tipos errados não passam: conta não-texto, forma não-texto, pagamento que não é objeto', () => {
@@ -251,9 +265,9 @@ describe('tratar', () => {
 
   it('a linha PENDENTE sai no formato do contrato do robô (itens, pagamento, total, emitente)', async () => {
     const deps = fakeDeps({ aprendizado: [CONFIRMADO] })
-    await tratar({ foto_path: 'cupom/a.jpg', pagamento: { forma: 'pix', conta: 'PIX ITAU IJ' } }, IVAN, deps)
+    await tratar({ foto_path: 'cupom/a.jpg', pagamento: { forma: 'pix', conta: CONTA_PIX } }, IVAN, deps)
     expect(deps.gravou[0]).toEqual({
-      estado: 'PENDENTE', pagamento: { forma: 'pix', conta: 'PIX ITAU IJ' }, foto_path: 'cupom/a.jpg', teste: false,
+      estado: 'PENDENTE', pagamento: { forma: 'pix', conta: CONTA_PIX }, foto_path: 'cupom/a.jpg', teste: false,
       chave: null, emitente_cnpj: '12345678000190', emitente_nome: 'ATACADAO', valor_a_pagar: 9, motivo: null,
       itens: [{
         sugestao_produto: { id: '333' }, entrada_estoque: 1, valor_unitario: 9, desconto_item: 0,

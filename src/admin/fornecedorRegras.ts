@@ -14,6 +14,11 @@ export function fornecedorNaoEncontrado(motivo: string | null | undefined): Forn
   return { nome, cnpj: m[2].replace(/\D/g, '') }
 }
 
+/** Motivos da NOTA FISCAL (lancar_nfe_nuvem) que dizem "o fornecedor não está no SisChef": a recusa ("fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app)")
+ *  e o aviso do ensaio ("fornecedor: cadastraria NOME CNPJ … num clique"). Nos dois a saída é a caixa "Cadastrar fornecedor" na própria nota (31/10/2026; Plast Mais 8928). */
+const RE_NOTA_FORNECEDOR_NOVO = /fornecedor n[ãa]o cadastrado no Sischef e sem autoriza[çc][ãa]o do Ivan|fornecedor: cadastraria .+ CNPJ/i
+export const fornecedorNovoNaNota = (motivo: string | null | undefined): boolean => RE_NOTA_FORNECEDOR_NOVO.test(motivo ?? '')
+
 /** Só os dígitos do que o Ivan digitou ou colou ("63.540.861/0001-82" → "63540861000182"). */
 export const soDigitos = (v: string): string => v.replace(/\D/g, '')
 
@@ -67,8 +72,8 @@ export function cnpjDaChave(chave: string | null | undefined): string {
 /** O que a consulta pública do CNPJ devolve (a Edge Function consultar-cnpj). */
 export interface DadosCnpj { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string }
 
-/** O pedido de cadastro como o app o manda ao servidor. */
-export interface PedidoCadastro { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id: string }
+/** O pedido de cadastro como o app o manda ao servidor: ligado a um cupom parado (`cupom_id`) ou, desde 31/10/2026, a uma nota fiscal devolvida (`nota_chave`). */
+export interface PedidoCadastro { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id?: string; nota_chave?: string }
 
 /** Por que o formulário ainda não pode ser enviado (texto para o Ivan), ou null quando está pronto. */
 export function problemaDoFormulario(f: { cnpj: string; razao: string; uf: string; municipio: string }): string | null {

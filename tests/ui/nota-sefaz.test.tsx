@@ -139,7 +139,7 @@ describe('NotaSefaz', () => {
   })
 
   describe('Como pagar', () => {
-    it('Boleto já vem marcado por padrão e as opções são as combinadas (7 contas PIX)', async () => {
+    it('Boleto já vem marcado por padrão e as opções são as combinadas (6 contas PIX: o SisChef não tem mais a conta Itaú)', async () => {
       aLancar(nota({}))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
@@ -147,7 +147,7 @@ describe('NotaSefaz', () => {
       const valores = within(comoPagar()).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
       expect(valores).toEqual([
         'boleto', 'dinheiro', 'tesouraria',
-        'pix:pangbank|ij', 'pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:itau|ij', 'pix:caixa|ij', 'pix:caixa|sp',
+        'pix:pangbank|ij', 'pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:caixa|ij', 'pix:caixa|sp',
         'cartao',
       ])
       expect(screen.getByRole('option', { name: 'Caixa — Kūkan (S P Delivery)' })).toBeInTheDocument()
@@ -225,7 +225,7 @@ describe('NotaSefaz', () => {
       await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')
       await userEvent.click(botaoLancar())
       expect(m.lancarNota).not.toHaveBeenCalled()
-      expect(screen.getByText('Vai lançar a NF 123 de ATACADAO S.A. — pagamento: PIX — Pang Bank — Spazio (I J Lameira). Confirmar?')).toBeInTheDocument()
+      expect(screen.getByText('Vai lançar a NF 123 de ATACADAO S.A. — pagamento: PIX — Pag Bank — Spazio (I J Lameira). Confirmar?')).toBeInTheDocument()
       const chamadasAntes = m.notasALancar.mock.calls.length
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       expect(m.lancarNota).toHaveBeenCalledTimes(1)
@@ -384,6 +384,8 @@ describe('NotaSefaz', () => {
       expect(within(lancandoA).getByRole('button', { name: 'Lançar' })).toBeDisabled()
       expect(within(livreB).getByRole('button', { name: 'Lançar' })).toBeDisabled()
       expect(within(livreB).getByTestId('aviso-outra')).toHaveTextContent('o robô está lançando outra nota')
+      // 31/10/2026 (Ivan: "qual nota?"): o aviso diz o fornecedor e o número da nota que o robô está lançando
+      expect(within(livreB).getByTestId('aviso-outra')).toHaveTextContent('Aguarde: o robô está lançando outra nota (A LTDA · NF 123). Cada nota leva uns 3 minutos.')
       expect(within(lancandoA).queryByTestId('aviso-outra')).not.toBeInTheDocument() // a própria nota só mostra "Lançando…"
     })
 
@@ -397,6 +399,98 @@ describe('NotaSefaz', () => {
       const [, livreB] = await screen.findAllByTestId('nota-a-lancar')
       expect(within(livreB).getByRole('button', { name: 'Lançar' })).toBeEnabled()
       expect(within(livreB).queryByTestId('aviso-outra')).not.toBeInTheDocument()
+    })
+
+    it('fornecedor novo (Plast Mais 8928, 31/10/2026): a nota devolvida pelo robô mostra a caixa "Cadastrar fornecedor" com o nome e o CNPJ da nota — o toque em "Cadastrar no SisChef" é a autorização', async () => {
+      aLancar(nota({
+        chave: '26261055384032000120550010000089281442821121', emitente: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', numero: '000008928', cnpj_emitente: '55384032000120',
+        lancamento_estado: 'revisar', lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado',
+      }))
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      m.consultarCnpj.mockResolvedValue({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém' })
+      m.pedirCadastroFornecedor.mockResolvedValue(undefined)
+      render(<NotaSefaz />)
+      const caixa = await screen.findByTestId('cadastrar-fornecedor')
+      expect(within(caixa).getByTestId('intro-nota')).toHaveTextContent('PLAST MAIS SOCIEDADE UNIPESSOAL LTDA (CNPJ 55.384.032/0001-20)')
+      expect(screen.getByTestId('status-nota')).toHaveTextContent('Use a caixa “Fornecedor não cadastrado no SisChef” logo abaixo')
+      await userEvent.click(within(caixa).getByTestId('buscar-cnpj'))
+      await within(caixa).findByLabelText(/Razão social/)
+      await userEvent.click(within(caixa).getByTestId('cadastrar'))
+      expect(m.pedirCadastroFornecedor).toHaveBeenCalledTimes(1)
+      expect(m.pedirCadastroFornecedor.mock.calls[0][0]).toMatchObject({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', uf: 'PA', municipio: 'Belém',
+        nota_chave: '26261055384032000120550010000089281442821121' })           // a chave da nota: o servidor confere que ela parou por fornecedor novo e que o CNPJ é o do emitente
+      expect(m.pedirCadastroFornecedor.mock.calls[0][0]).not.toHaveProperty('cupom_id')
+      expect(m.lancarNota).not.toHaveBeenCalled()          // cadastrar o fornecedor NUNCA lança a nota
+    })
+
+    it('fornecedor novo: o aviso do ensaio ("cadastraria … num clique") também mostra a caixa; outros motivos e nota comum, não', async () => {
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'ensaio_ok', lancamento_motivo: 'fornecedor: cadastraria A LTDA CNPJ 11.111.111/0001-11 num clique (cadastra do XML)' }),
+        nota({ chave: '2'.repeat(44), emitente: 'B LTDA', lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }),
+        nota({ chave: '3'.repeat(44), emitente: 'C LTDA' }),
+      )
+      render(<NotaSefaz />)
+      const [a, b, c] = await screen.findAllByTestId('nota-a-lancar')
+      expect(within(a).getByTestId('cadastrar-fornecedor')).toBeInTheDocument()
+      expect(within(b).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
+      expect(within(c).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
+    })
+
+    it('fornecedor novo: a caixa NÃO aparece com a nota "lançando" nem "pela metade", mesmo com o motivo antigo do fornecedor', async () => {
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      const motivo = 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado'
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString(), lancamento_motivo: motivo }),
+        nota({ chave: '2'.repeat(44), emitente: 'B LTDA', lancamento_estado: 'erro', lancamento_motivo: motivo }),
+      )
+      render(<NotaSefaz />)
+      const notas = await screen.findAllByTestId('nota-a-lancar')
+      expect(notas).toHaveLength(2)
+      for (const n of notas) expect(within(n).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
+    })
+
+    it('fornecedor novo + o robô lançando OUTRA nota: o botão Cadastrar espera (o GitHub guarda só um disparo pendente)', async () => {
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      m.consultarCnpj.mockResolvedValue({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém' })
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', numero: '555', lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }),
+        nota({ chave: '26261055384032000120550010000089281442821121', emitente: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', numero: '000008928', lancamento_estado: 'revisar',
+          lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado' }),
+      )
+      render(<NotaSefaz />)
+      const [, plast] = await screen.findAllByTestId('nota-a-lancar')
+      await userEvent.click(within(plast).getByTestId('buscar-cnpj'))
+      await within(plast).findByLabelText(/Razão social/)
+      expect(within(plast).getByTestId('aguarde-robo')).toBeInTheDocument()
+      expect(within(plast).getByTestId('cadastrar')).toBeDisabled()
+    })
+
+    it('fornecedor novo: um cadastro CONCLUÍDO antes de o robô recusar a nota não vira ✓ sem saída — a caixa avisa e oferece pedir de novo', async () => {
+      const recusa = new Date(Date.now() - 10 * 60_000).toISOString()
+      const antes = new Date(Date.now() - 120 * 60_000).toISOString()
+      m.statusDoCadastroFornecedor.mockResolvedValue({ estado: 'JA_EXISTIA', motivo: null, criado_em: antes, atualizado_em: antes })
+      aLancar(nota({
+        chave: '26261055384032000120550010000089281442821121', emitente: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', numero: '000008928', lancamento_estado: 'revisar', lancamento_estado_em: recusa,
+        lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado',
+      }))
+      render(<NotaSefaz />)
+      const caixa = await screen.findByTestId('cadastrar-fornecedor')
+      expect(await within(caixa).findByTestId('cadastro-antigo')).toHaveTextContent('marca de fornecedor')
+      expect(within(caixa).queryByTestId('cadastro-pronto')).not.toBeInTheDocument()
+      expect(within(caixa).getByTestId('buscar-cnpj')).toBeInTheDocument()
+    })
+
+    it('nota que ainda traz a conta Pix do Itaú (extinta em 30/10/2026): NÃO volta calada para Boleto — fica sem forma escolhida, com aviso, e o Lançar espera', async () => {
+      aLancar(nota({ ...LIDA, forma_pagamento: 'pix:itau|ij' }))
+      render(<NotaSefaz />)
+      await screen.findByTestId('nota-a-lancar')
+      expect(comoPagar().value).toBe('')
+      expect(screen.getByTestId('aviso-itau')).toHaveTextContent('O SisChef não tem mais essa conta'.replace('O SisChef', 'o SisChef'))
+      expect(botaoLancar()).toBeDisabled()
+      await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')                        // o Ivan escolhe outra: o aviso some e o Lançar libera
+      expect(screen.queryByTestId('aviso-itau')).not.toBeInTheDocument()
+      expect(botaoLancar()).toBeEnabled()
     })
 
     it('enquanto um Confirmar está enviando, as outras notas ficam bloqueadas (sem 2 disparos juntos)', async () => {
@@ -597,6 +691,40 @@ describe('NotaSefaz', () => {
         expect(editor).not.toHaveTextContent('O XML desta nota não traz os boletos') // isso ainda não se sabe: o XML nem foi lido
         expect(within(screen.getByTestId('conferir')).getByTestId('fin-nao-lido'))
           .toHaveTextContent('O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.')
+      })
+
+      // De Marchi 113752 (31/10/2026): o robô parou porque o SisChef só tinha o RESUMO da nota e digitar parcelas NÃO o faz lançar. O quadro "O que fazer" manda não digitar e esperar o aviso sumir:
+      // o editor de baixo não pode dizer o contrário ("as parcelas que você digitar valem" / "Digite as parcelas do boleto") — a prévia da versão 3 mostrou os dois textos juntos.
+      it('o robô já tentou e NÃO conseguiu ler o XML: o editor não manda digitar as parcelas (não adianta) e manda esperar o aviso sumir', async () => {
+        aLancar(pronta({ parcelas: null, lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }))
+        render(<NotaSefaz />)
+        const linha = await screen.findByTestId('nota-a-lancar')
+        expect(linha).toHaveTextContent('Não digite as parcelas ainda')                                  // o quadro de cima (motivoDoRobo)
+        const editor = within(linha).getByTestId('editor-parcelas')
+        expect(editor).toHaveTextContent('Ainda não dá para saber os boletos desta nota: o XML completo não chegou ao SisChef.')
+        // o aviso começa com a MESMA frase que o quadro de cima manda esperar sumir (“O XML desta nota ainda não foi lido”): quem lê os dois não procura um aviso que não existe
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('O XML desta nota ainda não foi lido: o robô tentou e não conseguiu')
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.')
+        expect(editor).not.toHaveTextContent('as parcelas que você digitar valem')
+        expect(editor).not.toHaveTextContent('Digite as parcelas do boleto')
+      })
+
+      it('outro motivo do robô com o XML por ler: continua o texto de sempre ("as parcelas que você digitar valem") e o pedido para digitar', async () => {
+        aLancar(pronta({ parcelas: null, lancamento_estado: 'revisar', lancamento_motivo: 'parou antes de gerar o pedido (nada lançado): item sem unidade' }))
+        render(<NotaSefaz />)
+        const editor = await screen.findByTestId('editor-parcelas')
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('as parcelas que você digitar valem')
+        expect(editor).toHaveTextContent('A nota não veio informando os boletos. Digite as parcelas do boleto')
+        expect(editor).not.toHaveTextContent('Digitar as parcelas não adianta')
+      })
+
+      it('o XML já foi lido (sem boletos) e o motivo antigo ainda é "não consegui ler o XML": volta o texto de "não traz os boletos" e o pedido para digitar', async () => {
+        aLancar(pronta({ parcelas: [], lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }))
+        render(<NotaSefaz />)
+        const editor = await screen.findByTestId('editor-parcelas')
+        expect(editor).toHaveTextContent('O XML desta nota não traz os boletos. Digite as parcelas do boleto')
+        expect(within(editor).queryByTestId('parcelas-xml-nao-lido')).not.toBeInTheDocument()
+        expect(editor).not.toHaveTextContent('Ainda não dá para saber os boletos')
       })
 
       it('com Boleto: o Lançar fica apagado até a soma fechar; depois lança com as parcelas digitadas', async () => {

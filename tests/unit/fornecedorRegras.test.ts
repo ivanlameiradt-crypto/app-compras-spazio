@@ -1,4 +1,16 @@
-import { CADASTRO_CONCLUIDO, cnpjDaChave, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor, problemaDoFormulario, soDigitos } from '../../src/admin/fornecedorRegras'
+import { CADASTRO_CONCLUIDO, cnpjDaChave, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, fornecedorNovoNaNota, nomeDoFornecedor, problemaDoFormulario, soDigitos } from '../../src/admin/fornecedorRegras'
+
+describe('fornecedorNovoNaNota — o robô devolveu a nota porque o fornecedor não está no SisChef (Plast Mais 8928, 31/10/2026)', () => {
+  it('a recusa e o aviso do ensaio contam', () => {
+    expect(fornecedorNovoNaNota('fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado')).toBe(true)
+    expect(fornecedorNovoNaNota('parou antes de gerar o pedido (nada lançado): fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app)')).toBe(true)
+    expect(fornecedorNovoNaNota('fornecedor: cadastraria PLAST MAIS SOCIEDADE UNIPESSOAL LTDA CNPJ 55.384.032/0001-20 num clique (cadastra do XML) — conferi Cadastros › Pessoas: 0 com o CNPJ')).toBe(true)
+  })
+  it('outros motivos, vazio e nulo não contam (inclusive o do cupom, que tem a própria caixa)', () => {
+    for (const m of ['', null, undefined, 'fornecedor não encontrado no Sischef (A. N. DA SILVA, CNPJ 63540861000182)', 'não consegui ler o XML da nota (sem XML)',
+      'fornecedor não cadastrado no Sischef (cadastrar antes de lançar)']) expect(fornecedorNovoNaNota(m)).toBe(false)
+  })
+})
 
 describe('fornecedorNaoEncontrado — lê o motivo que o robô grava', () => {
   it('nome e CNPJ do cupom', () => {

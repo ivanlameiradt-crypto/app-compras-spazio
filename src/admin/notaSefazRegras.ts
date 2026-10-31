@@ -2,7 +2,7 @@
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
 import { conversaoDaDecisao, fardoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
-import { explicarMotivoDoRobo, motivoSemPrefixoTecnico } from './motivoDoRobo'
+import { explicarMotivoDoRobo, motivoSemPrefixoTecnico, motivoXmlNaoLido } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
@@ -10,8 +10,9 @@ export const FORMA_PADRAO = 'boleto'
 
 /** Formas já PROVADAS ao vivo no SisChef (OLINDA, boleto; cartão = "só estoque", nota 113301 da De Marchi lançada pelo robô em 27/10/2026, run 40557196249).
  *  As outras têm texto de conta/opção ainda não confirmado na tela e, se errarem, só quebram DEPOIS do pedido criado (nota pela metade).
- *  Quando uma for provada num lançamento real, entra aqui. */
-export const FORMAS_PROVADAS: string[] = ['boleto', 'cartao']
+ *  Quando uma for provada num lançamento real, entra aqui. 'pix:pangbank|ij' (Pag Bank — Spazio) foi PROVADA em 31/10/2026 (JAMES 128432, rodada 41172029712:
+ *  conta 59867, tipo DI, R$ 363,70). As outras contas do Pix seguem com o aviso. */
+export const FORMAS_PROVADAS: string[] = ['boleto', 'cartao', 'pix:pangbank|ij']
 export const AVISO_FORMA_NAO_PROVADA = 'Esta forma ainda não foi testada ao vivo no robô. No 1º lançamento real, use Boleto.'
 export const formaNaoProvada = (forma: string): boolean => forma !== '' && !FORMAS_PROVADAS.includes(forma)
 
@@ -33,7 +34,7 @@ export function formaValida(forma: unknown): string | null {
   return TODAS.some((o) => o.valor === f) ? f : null
 }
 
-/** Texto da forma para o aviso de confirmação ("PIX — Pang Bank — Spazio…", "Boleto"). */
+/** Texto da forma para o aviso de confirmação ("PIX — Pag Bank — Spazio…", "Boleto"). */
 export function rotuloForma(forma: string): string {
   const o = TODAS.find((x) => x.valor === forma)
   if (!o) return forma
@@ -123,11 +124,20 @@ export function traduzirMotivo(motivo: string | null | undefined, itens?: ItemNo
 export const precisaEscolherForma = (n: NotaSefazLista): boolean =>
   n.lancamento_estado === 'revisar' && /sem boletos?/i.test(n.lancamento_motivo ?? '')
 
+/** A nota voltou do robô porque ele NÃO conseguiu ler o XML e a leitura das notas ainda não abriu esse XML (`parcelas` null): o SisChef só tinha o RESUMO e digitar as
+ *  parcelas NÃO faz o robô lançar (De Marchi 113752, 31/10/2026). A tela deixa de mandar digitar e manda esperar o XML chegar. */
+export const parouPorXmlNaoLido = (n: NotaSefazLista): boolean =>
+  n.lancamento_estado === 'revisar' && n.parcelas == null && motivoXmlNaoLido(n.lancamento_motivo)
+
 /** Padrão do fornecedor no banco (a forma da última nota lançada dele; chave = CNPJ), ou null. */
 export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<string, string> | undefined): string | null {
   const f = n.cnpj_emitente && padroes ? formaValida(padroes[n.cnpj_emitente]) : null
   return podeVirMarcada(f) ? f : null
 }
+
+/** A forma Pix da conta Itaú, que o SisChef NÃO tem mais (30/10/2026): uma nota que ainda a traz gravada fica sem escolha (o Ivan decide) e a tela avisa. */
+export const FORMA_ITAU_EXTINTA = 'pix:itau|ij'
+export const AVISO_ITAU_EXTINTA = 'Esta nota estava com Pix no Itaú, e o SisChef não tem mais essa conta: escolha outra forma de pagamento.'
 
 /** Forma que a tela começa mostrando: a gravada na nota, senão o padrão do fornecedor no banco, senão a lembrada neste celular,
  *  senão Boleto. '' = ainda sem escolha (a nota voltou do robô sem boleto: o robô para e o Ivan escolhe). Bonificação sem cobrança (CFOP 5910/6910 e o XML sem boletos)
@@ -135,6 +145,7 @@ export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<strin
 export function formaInicial(n: NotaSefazLista, padroes?: Record<string, string>): string {
   if (bonificacaoSemCobranca(n)) return FORMA_SO_ESTOQUE
   if (precisaEscolherForma(n)) return ''
+  if (n.forma_pagamento === FORMA_ITAU_EXTINTA) return ''           // a conta Itaú não existe mais: não volta calada para Boleto (revisão independente de 31/10/2026, A9)
   return formaValida(n.forma_pagamento) ?? formaPadraoDoFornecedor(n, padroes) ?? formaLembrada(n.emitente) ?? FORMA_PADRAO
 }
 
@@ -368,6 +379,13 @@ export function lancandoPresa(n: NotaSefazLista, agoraMs: number = Date.now()): 
   if (n.lancamento_estado !== 'lancando' || !n.lancamento_estado_em) return false
   const desde = Date.parse(n.lancamento_estado_em)
   return Number.isFinite(desde) && agoraMs - desde > MINUTOS_PRESA * 60_000
+}
+
+/** Quem o robô está lançando agora, vista de OUTRA nota (o aviso "Aguarde" do Ivan, 31/10/2026: "qual nota?"): "A LTDA · NF 000094915", com o nome que a tela
+ *  usa (`nomeDe`). null quando nenhuma outra nota está 'lancando' (a presa, há mais de 30 min, não conta — como no bloqueio do botão). */
+export function quemEstaLancando(notas: NotaSefazLista[], chaveDestaNota: string, nomeDe: (n: NotaSefazLista) => string, agoraMs: number = Date.now()): string | null {
+  const outra = notas.find((o) => o.chave !== chaveDestaNota && o.lancamento_estado === 'lancando' && !lancandoPresa(o, agoraMs))
+  return outra ? `${nomeDe(outra)} · NF ${outra.numero}` : null
 }
 
 /**

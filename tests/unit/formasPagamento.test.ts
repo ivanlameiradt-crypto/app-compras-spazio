@@ -10,18 +10,24 @@ describe('formasPagamento — espelho do MAPA_PIX do robô', () => {
     expect(CONTA_TESOURARIA).toBe('TESOURARIA - À Vista')
   })
 
-  it('as 7 contas PIX (banco|empresa → conta) batem exatamente com o MAPA_PIX', () => {
+  it('as 6 contas PIX (banco|empresa → conta) batem exatamente com o MAPA_PIX (nomes do SisChef de 30/10/2026: PAG BANK, "- À Vista", sem Itaú)', () => {
     const mapa = Object.fromEntries(CONTAS_PIX.map((c) => [`${c.banco}|${c.empresa}`, c.conta]))
     expect(mapa).toEqual({
-      'pangbank|ij': 'CONTA BANCÁRIA - PANG BANK - I J LAMEIRA',
-      'pangbank|sp': 'CONTA BANCÁRIA - PANG BANK - S P DELIVERY',
-      'bradesco|ij': 'CONTA BANCÁRIA - BRADESCO - I J LAMEIRA',
-      'bradesco|sp': 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY',
-      'itau|ij': 'CONTA BANCÁRIA - PANG ITAU - I J LAMEIRA',
-      'caixa|ij': 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA',
-      'caixa|sp': 'CONTA BANCÁRIA - CAIXA - S P DELIVERY',
+      'pangbank|ij': 'CONTA BANCÁRIA - PAG BANK - I J LAMEIRA - À Vista',
+      'pangbank|sp': 'CONTA BANCÁRIA - PAG BANK - S P DELIVERY - À Vista',
+      'bradesco|ij': 'CONTA BANCÁRIA - BRADESCO - I J LAMEIRA - À Vista',
+      'bradesco|sp': 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY - À Vista',
+      'caixa|ij': 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA - À Vista',
+      'caixa|sp': 'CONTA BANCÁRIA - CAIXA - S P DELIVERY - À Vista',
     })
-    expect(CONTAS_PIX).toHaveLength(7)
+    expect(CONTAS_PIX).toHaveLength(6)
+  })
+
+  it('o nome antigo (PANG BANK) e o Itaú, que o SisChef não tem mais, não aparecem em nenhum rótulo nem conta', () => {
+    for (const c of CONTAS_PIX) {
+      expect(`${c.rotulo} ${c.conta}`).not.toMatch(/PANG|ITA[UÚ]/i)
+      expect(c.conta.endsWith(' - À Vista')).toBe(true)
+    }
   })
 })
 

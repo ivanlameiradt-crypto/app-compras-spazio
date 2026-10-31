@@ -16,7 +16,7 @@ const chaveN = (c: string) => c.repeat(44)
 const boleto = [{ numero: '1', vencimento: '2026-11-20', valor: 509.6 }]
 const TODAS_AS_FORMAS = [
   'boleto', 'dinheiro', 'tesouraria',
-  'pix:pangbank|ij', 'pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:itau|ij', 'pix:caixa|ij', 'pix:caixa|sp',
+  'pix:pangbank|ij', 'pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:caixa|ij', 'pix:caixa|sp',
   'cartao',
 ]
 const AVISO_COM_BOLETO = 'Esta nota tem CFOP de bonificação (5910/6910), mas traz boletos. Confira com o fornecedor se há algo a pagar antes de lançar.'

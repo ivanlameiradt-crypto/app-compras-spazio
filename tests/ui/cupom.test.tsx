@@ -180,14 +180,16 @@ describe('Cupom — o botão Enviar só habilita quando está tudo válido', () 
     expect(screen.getByRole('button', { name: 'Sem cartão' })).toBeEnabled()
   })
 
-  it('PIX: as combinações de banco/empresa só aparecem depois de escolher PIX, e são as 7 do robô', async () => {
+  it('PIX: as combinações de banco/empresa só aparecem depois de escolher PIX, e são as 6 do robô (o SisChef não tem mais a conta Itaú)', async () => {
     render(<Cupom />)
     expect(screen.queryByRole('group', { name: 'Banco e empresa do PIX' })).not.toBeInTheDocument()
     await escolher('PIX')
     const grupo = await screen.findByRole('group', { name: 'Banco e empresa do PIX' })
     const rotulos = within(grupo).getAllByRole('button').map((b) => b.textContent)
     expect(rotulos).toEqual(CONTAS_PIX.map((c) => c.rotulo))
-    expect(rotulos).toHaveLength(7)
+    expect(rotulos).toHaveLength(6)
+    expect(rotulos).toContain('Pag Bank — Spazio (I J Lameira)')
+    expect(rotulos.join(' ')).not.toMatch(/Pang|Ita[uú]/)
   })
 
   it('PIX: trocar de forma e voltar ao PIX zera a conta — fica bloqueado de novo (não herda a escolha antiga)', async () => {

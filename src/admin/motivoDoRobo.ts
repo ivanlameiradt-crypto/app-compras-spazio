@@ -3,6 +3,7 @@
 // ser mais clara quando houve o problema por que não foi lançado". Só regras puras (sem rede nem React). O texto original do robô continua guardado na nota e
 // nada é apagado: quando nenhuma regra daqui reconhece o motivo, a tela mostra o texto dele como sempre (só trocando o começo técnico por "nada foi lançado").
 import type { ItemNotaSefaz } from '../lib/tipos'
+import { fornecedorNovoNaNota } from './fornecedorRegras'
 
 export interface ExplicacaoDoRobo {
   /** O que aconteceu, em uma ou duas frases. */
@@ -53,6 +54,15 @@ const RE_CONTA_NAO_BATE = /item C[OÓ]D\.? FOR (\S+) já associado: Qtde Conver\
 const RE_FRETE_DESLIGADO = /nota com frete \(R\$ ([\d.,]+)\): o lançamento com frete ainda não está ligado/i
 // "UN DIFERE sem conversão na tela: CÓD. FOR 17253; 999 (no app, informe a conversão desse item e lance de novo, ou registre no SisChef)" (motor._conferir_na_tela)
 const RE_UN_DIFERE = /UN DIFERE sem convers[ãa]o na tela: C[OÓ]D\.? FOR ([^()]+?)\s*\(/i
+// "item CÓD. FOR 17898647163635 (PAPEL HIGIENICO…): o SisChef converteu por conta própria — a tela mostra 8 UN para 1 FD da nota (8 por unidade) — e o painel decidiu 18 por unidade (18 UN). Nada foi gerado: …"
+// (motor.conversoes_do_plano_sem_conferir; a JAMES 128432 parou assim em 31/10/2026: a ficha do produto tinha a linha do mesmo CNPJ para OUTRO código do fornecedor)
+// O trecho entre parênteses (o nome do produto) não pode atravessar para o item seguinte ("; item CÓD. FOR …"): o robô junta um motivo por item com "; " e, sem esta trava,
+// o nome de um item sairia com os números de outro (revisão independente de 31/10/2026, A1). E só se explica quando o texto tem UM item: com mais de um, a tela mostra o texto do robô inteiro.
+const RE_CONVERTEU_SOZINHO = /item C[OÓ]D\.? FOR (\S+) \((?:(?!item C[OÓ]D\.? FOR).)*?\): o SisChef converteu por conta própria — a tela mostra ([\d.,]+)(?: (\S+))? para ([\d.,]+)(?: (\S+))? da nota \(([\d.,]+) por unidade\) — e o painel decidiu ([\d.,]+) por unidade/i
+const RE_ITEM_NO_TEXTO = /item C[OÓ]D\.? FOR/gi
+// "não consegui ler o XML da nota (Ações → Baixar documento na lista de não importadas não trouxe o XML desta chave (...))" (motor.motivo_xml). Em 31/10/2026 (De Marchi 113752) a causa
+// era o SisChef só ter o RESUMO da nota (a SEFAZ entrega o XML completo horas depois); digitar as parcelas NÃO resolve (testado 2×), o robô não lança com o resumo.
+const RE_XML_NAO_LIDO = /não consegui ler o XML da nota/i
 
 /**
  * O motivo do robô explicado ao Ivan, ou null quando nenhuma regra reconhece o texto (a tela então mostra o texto do robô). Cada explicação diz o produto pelo
@@ -106,8 +116,43 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
     }
   }
 
+  const sozinho = (t.match(RE_ITEM_NO_TEXTO) ?? []).length === 1 ? RE_CONVERTEU_SOZINHO.exec(t) : null
+  if (sozinho) {
+    const cod = sozinho[1]
+    const tela = numeroDoRobo(sozinho[2]); const noSisChef = numeroDoRobo(sozinho[4]); const porUnidade = numeroDoRobo(sozinho[6]); const noApp = numeroDoRobo(sozinho[7])
+    if (tela != null && noSisChef != null && noSisChef > 0 && porUnidade != null && noApp != null) {
+      const nome = rotuloDoItem(itens, cod)
+      const unEstoque = (sozinho[3] ?? '').toLowerCase(); const unNota = (sozinho[5] ?? '').toLowerCase()
+      const doSisChef = `${formatar(porUnidade)}${unEstoque ? ` ${unEstoque}` : ''}`
+      const doApp = `${formatar(noApp)}${unEstoque ? ` ${unEstoque}` : ''}`
+      return {
+        porque: `No ${nome} o SisChef converteu sozinho, pela conversão que ele já tinha guardada: ${formatar(noSisChef)}${unNota ? ` ${unNota}` : ''} da nota viram ${formatar(tela)}${unEstoque ? ` ${unEstoque}` : ''} `
+          + `(${doSisChef} por unidade). Mas no app a conversão está em ${doApp} por unidade.`,
+        fazer: `Veja qual é a certa. Se a do SisChef (${doSisChef}) está certa, toque em Editar no ${nome} e informe ${formatar(porUnidade)}. `
+          + `Se a certa é a do app (${doApp}), o SisChef está com a conversão antiga para este código do fornecedor: peça ao Claude para corrigir no SisChef (ficha do produto, conversão por fornecedor). Depois lance de novo.`,
+      }
+    }
+  }
+
+  if (RE_XML_NAO_LIDO.test(t)) {
+    return {
+      porque: 'O robô não conseguiu ler o XML completo desta nota. O motivo mais comum: o SisChef só recebeu da SEFAZ o resumo da nota, e o XML completo (com os itens, os valores e os boletos) costuma levar algumas horas para chegar. Também pode ter sido uma falha passageira na leitura.',
+      fazer: 'Não digite as parcelas ainda: enquanto só existe o resumo, o robô não lança, nem assim. O XML completo chega ao SisChef em algumas horas (de 1 hora até quase um dia): quando o aviso “O XML desta nota ainda não foi lido” sumir da nota, ou daqui a umas horas, toque em Lançar de novo. Se passar de um dia, chame o Claude.',
+    }
+  }
+
+  if (fornecedorNovoNaNota(t)) {
+    return {
+      porque: 'O fornecedor desta nota ainda não está cadastrado no SisChef, e o robô só cadastra fornecedor novo com a sua autorização.',
+      fazer: 'Use a caixa “Fornecedor não cadastrado no SisChef” logo abaixo: confira o CNPJ, toque em “Buscar dados do CNPJ” e depois em “Cadastrar no SisChef”. Quando aparecer ✓, toque em Lançar.',
+    }
+  }
+
   return null
 }
+
+/** O robô parou porque NÃO conseguiu ler o XML da nota (o SisChef só tinha o resumo): digitar parcelas não o faz lançar (De Marchi 113752, 31/10/2026). */
+export const motivoXmlNaoLido = (motivo: string | null | undefined): boolean => RE_XML_NAO_LIDO.test((motivo ?? '').replace(/\s+/g, ' '))
 
 /** O motivo sem o começo técnico "parou antes de gerar o pedido (nada lançado):" — que vira "Nada foi lançado." na frente do resto. Sem o começo, igual. */
 export function motivoSemPrefixoTecnico(motivo: string): string {
