@@ -32,7 +32,7 @@ import {
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma, quemEstaLancando,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
-  etiquetaDaNota, itensNoMesmoProduto, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
+  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
@@ -216,6 +216,8 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
 }) {
   const fornecedor = nota.cnpj_emitente ? FORNECEDORES_XML_SEM_PAGAMENTO[nota.cnpj_emitente] : undefined
   const xmlNaoLido = nota.parcelas == null // null = a leitura do SisChef ainda não abriu o XML desta nota ([] = leu e não há boletos)
+  // O robô já tentou e só achou o resumo da nota: digitar parcelas não o faz lançar (De Marchi 113752, 31/10/2026). A tela deixa de mandar digitar e manda esperar o XML chegar.
+  const soResumo = parouPorXmlNaoLido(nota)
   const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
   // Linhas "em uso": as que têm alguma coisa digitada (linha totalmente em branco é só uma linha aberta e não conta; se TODAS estão em branco, valem todas).
   const emBranco = (l: LinhaParcela): boolean => l.vencimento.trim() === '' && l.valor.trim() === ''
@@ -249,13 +251,19 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   return (
     <div className="editor-parcelas" data-testid="editor-parcelas">
       <div className="amarelo">
-        {fornecedor
-          ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
-          : xmlNaoLido ? 'A nota não veio informando os boletos.' : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
+        {soResumo ? 'Ainda não dá para saber os boletos desta nota: o XML completo não chegou ao SisChef.' : (
+          <>
+            {fornecedor
+              ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
+              : xmlNaoLido ? 'A nota não veio informando os boletos.' : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
+          </>
+        )}
       </div>
       {xmlNaoLido && (
         <p className="sub" data-testid="parcelas-xml-nao-lido">
-          O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.
+          {soResumo
+            ? 'O robô tentou ler o XML desta nota e não conseguiu (o mais comum: o SisChef só tem o resumo, e o XML completo chega em algumas horas). Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.'
+            : 'O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.'}
         </p>
       )}
       {aguardandoProduto && (

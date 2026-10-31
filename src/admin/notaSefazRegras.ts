@@ -2,7 +2,7 @@
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
 import { conversaoDaDecisao, fardoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
-import { explicarMotivoDoRobo, motivoSemPrefixoTecnico } from './motivoDoRobo'
+import { explicarMotivoDoRobo, motivoSemPrefixoTecnico, motivoXmlNaoLido } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
@@ -123,6 +123,11 @@ export function traduzirMotivo(motivo: string | null | undefined, itens?: ItemNo
 /** A nota voltou do robô porque não tem boleto: a forma "boleto" já tentada não serve, o Ivan tem que escolher. */
 export const precisaEscolherForma = (n: NotaSefazLista): boolean =>
   n.lancamento_estado === 'revisar' && /sem boletos?/i.test(n.lancamento_motivo ?? '')
+
+/** A nota voltou do robô porque ele NÃO conseguiu ler o XML e a leitura das notas ainda não abriu esse XML (`parcelas` null): o SisChef só tinha o RESUMO e digitar as
+ *  parcelas NÃO faz o robô lançar (De Marchi 113752, 31/10/2026). A tela deixa de mandar digitar e manda esperar o XML chegar. */
+export const parouPorXmlNaoLido = (n: NotaSefazLista): boolean =>
+  n.lancamento_estado === 'revisar' && n.parcelas == null && motivoXmlNaoLido(n.lancamento_motivo)
 
 /** Padrão do fornecedor no banco (a forma da última nota lançada dele; chave = CNPJ), ou null. */
 export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<string, string> | undefined): string | null {

@@ -151,6 +151,9 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
   return null
 }
 
+/** O robô parou porque NÃO conseguiu ler o XML da nota (o SisChef só tinha o resumo): digitar parcelas não o faz lançar (De Marchi 113752, 31/10/2026). */
+export const motivoXmlNaoLido = (motivo: string | null | undefined): boolean => RE_XML_NAO_LIDO.test((motivo ?? '').replace(/\s+/g, ' '))
+
 /** O motivo sem o começo técnico "parou antes de gerar o pedido (nada lançado):" — que vira "Nada foi lançado." na frente do resto. Sem o começo, igual. */
 export function motivoSemPrefixoTecnico(motivo: string): string {
   const t = motivo.replace(/\s+/g, ' ').trim()

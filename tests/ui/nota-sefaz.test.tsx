@@ -693,6 +693,38 @@ describe('NotaSefaz', () => {
           .toHaveTextContent('O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.')
       })
 
+      // De Marchi 113752 (31/10/2026): o robô parou porque o SisChef só tinha o RESUMO da nota e digitar parcelas NÃO o faz lançar. O quadro "O que fazer" manda não digitar e esperar o aviso sumir:
+      // o editor de baixo não pode dizer o contrário ("as parcelas que você digitar valem" / "Digite as parcelas do boleto") — a prévia da versão 3 mostrou os dois textos juntos.
+      it('o robô já tentou e NÃO conseguiu ler o XML: o editor não manda digitar as parcelas (não adianta) e manda esperar o aviso sumir', async () => {
+        aLancar(pronta({ parcelas: null, lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }))
+        render(<NotaSefaz />)
+        const linha = await screen.findByTestId('nota-a-lancar')
+        expect(linha).toHaveTextContent('Não digite as parcelas ainda')                                  // o quadro de cima (motivoDoRobo)
+        const editor = within(linha).getByTestId('editor-parcelas')
+        expect(editor).toHaveTextContent('Ainda não dá para saber os boletos desta nota: o XML completo não chegou ao SisChef.')
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.')
+        expect(editor).not.toHaveTextContent('as parcelas que você digitar valem')
+        expect(editor).not.toHaveTextContent('Digite as parcelas do boleto')
+      })
+
+      it('outro motivo do robô com o XML por ler: continua o texto de sempre ("as parcelas que você digitar valem") e o pedido para digitar', async () => {
+        aLancar(pronta({ parcelas: null, lancamento_estado: 'revisar', lancamento_motivo: 'parou antes de gerar o pedido (nada lançado): item sem unidade' }))
+        render(<NotaSefaz />)
+        const editor = await screen.findByTestId('editor-parcelas')
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('as parcelas que você digitar valem')
+        expect(editor).toHaveTextContent('A nota não veio informando os boletos. Digite as parcelas do boleto')
+        expect(editor).not.toHaveTextContent('Digitar as parcelas não adianta')
+      })
+
+      it('o XML já foi lido (sem boletos) e o motivo antigo ainda é "não consegui ler o XML": volta o texto de "não traz os boletos" e o pedido para digitar', async () => {
+        aLancar(pronta({ parcelas: [], lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }))
+        render(<NotaSefaz />)
+        const editor = await screen.findByTestId('editor-parcelas')
+        expect(editor).toHaveTextContent('O XML desta nota não traz os boletos. Digite as parcelas do boleto')
+        expect(within(editor).queryByTestId('parcelas-xml-nao-lido')).not.toBeInTheDocument()
+        expect(editor).not.toHaveTextContent('Ainda não dá para saber os boletos')
+      })
+
       it('com Boleto: o Lançar fica apagado até a soma fechar; depois lança com as parcelas digitadas', async () => {
         aLancar(pronta({ parcelas: null }))
         render(<NotaSefaz />)

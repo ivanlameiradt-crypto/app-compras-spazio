@@ -1,4 +1,4 @@
-import { explicarMotivoDoRobo, motivoSemPrefixoTecnico, nomeDoItem, numeroDoRobo } from '../../src/admin/motivoDoRobo'
+import { explicarMotivoDoRobo, motivoSemPrefixoTecnico, motivoXmlNaoLido, nomeDoItem, numeroDoRobo } from '../../src/admin/motivoDoRobo'
 import { prontidaoDaNota, textoDoEstado, traduzirMotivo } from '../../src/admin/notaSefazRegras'
 import type { ItemNotaSefaz, NotaSefazLista } from '../../src/lib/tipos'
 
@@ -170,6 +170,12 @@ describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão q
       'parou antes de gerar o pedido (nada lançado): não consegui ler o XML da nota (link Ações não clicou (Timeout))']) {
       expect(explicarMotivoDoRobo(m, ITENS)?.fazer).toContain('Não digite as parcelas ainda')
     }
+  })
+
+  it('motivoXmlNaoLido: reconhece o motivo (com espaços e quebras de linha estranhos e com o começo técnico) e só ele', () => {
+    expect(motivoXmlNaoLido(MOTIVO_XML)).toBe(true)
+    expect(motivoXmlNaoLido('parou antes de gerar o pedido (nada lançado): não consegui   ler o XML\nda nota (sem XML)')).toBe(true)
+    for (const m of [null, undefined, '', MOTIVO_FORNECEDOR, MOTIVO_SOZINHO, 'sem boletos na nota — pagamento manual']) expect(motivoXmlNaoLido(m)).toBe(false)
   })
 
   it('XML não lido: o aviso da nota vem em 3 linhas (nada foi lançado, por quê, o que fazer)', () => {

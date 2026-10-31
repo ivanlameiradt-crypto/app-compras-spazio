@@ -4,7 +4,7 @@ import {
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
   AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, AVISO_FALTA_CONVERSAO, bloqueioDeProduto,
   rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo, itemPedeAcao, itensNoMesmoProduto,
-  quemEstaLancando, FORMA_ITAU_EXTINTA,
+  quemEstaLancando, FORMA_ITAU_EXTINTA, parouPorXmlNaoLido,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -52,6 +52,20 @@ describe('notaSefazRegras', () => {
     const n = nota({ forma_pagamento: 'boleto', lancamento_estado: 'revisar', lancamento_motivo: 'sem boletos na nota — pagamento manual' })
     expect(precisaEscolherForma(n)).toBe(true)
     expect(formaInicial(n)).toBe('')
+  })
+
+  it('parouPorXmlNaoLido: só quando o robô devolveu a nota por NÃO ler o XML e a leitura das notas ainda não abriu esse XML (parcelas null)', () => {
+    const base = { lancamento_estado: 'revisar' as const, lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: null }))).toBe(true)
+    expect(parouPorXmlNaoLido(nota({ ...base }))).toBe(true)                                                 // parcelas ausente também é "XML por ler"
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: null, lancamento_motivo: 'parou antes de gerar o pedido (nada lançado): não consegui ler o XML da nota (link Ações não clicou (Timeout))' }))).toBe(true)
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: [] }))).toBe(false)                                  // a leitura já abriu o XML (sem boletos): o editor de sempre
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: [{ numero: '1', vencimento: '2026-11-05', valor: 10 }] }))).toBe(false)
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: null, lancamento_estado: 'erro' }))).toBe(false)     // "pela metade" é outro aviso
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: null, lancamento_estado: 'ensaio_ok' }))).toBe(false)
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: null, lancamento_motivo: 'frete desligado' }))).toBe(false)
+    expect(parouPorXmlNaoLido(nota({ ...base, parcelas: null, lancamento_motivo: null }))).toBe(false)
+    expect(parouPorXmlNaoLido(nota({ parcelas: null }))).toBe(false)                                         // nota nunca disparada
   })
 
   it('traduzirMotivo', () => {
