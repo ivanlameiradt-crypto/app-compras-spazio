@@ -10,7 +10,8 @@ import * as api from '../lib/api'
 import { formatarDataHora, formatarReais } from '../lib/regras'
 import type { ItemNotaSefaz, NfeAprendizado, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { cnpjDaChave, formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
+import { cnpjDaChave, formatarCnpj, fornecedorNovoNaNota, nomeDoFornecedor } from './fornecedorRegras'
+import CadastrarFornecedor from './CadastrarFornecedor'
 import { unidadeDoProduto } from './unidadeEstoque'
 import FreteDaNota, { type FreteConfirmado } from './FreteDaNota'
 import type { ItemParaRateio } from './freteRegras'
@@ -28,7 +29,7 @@ import {
   AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_PRESA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
   TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, devolvidaPorFormaDeBonificacao,
   formaInicial, formaNaoProvada, FORNECEDORES_XML_SEM_PAGAMENTO, bloqueioDeProduto, decisaoDoItem, descartadaVoltouComItens, guardarRascunhoDasParcelas,
-  limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma,
+  limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma, quemEstaLancando,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
   etiquetaDaNota, itensNoMesmoProduto, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
@@ -40,8 +41,19 @@ const INTERVALO_ATUALIZAR = 15_000
 const INTERVALO_RELER = 180_000
 const RELER_MIN_MS = 15_000
 
+/** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom e da compra avulsa. Numa nota fiscal não há cupom para reenviar: a nota segue pelo "Lançar" dela. */
+const ACOES_FORNECEDOR = {
+  consultarCnpj: (cnpj: string) => api.consultarCnpj(cnpj),
+  cadastrar: (p: Parameters<typeof api.pedirCadastroFornecedor>[0]) => api.pedirCadastroFornecedor(p),
+  statusDoCadastro: (cnpj: string) => api.statusDoCadastroFornecedor(cnpj),
+  reenviarCupom: async () => undefined,
+}
+/** Identificador do pedido de cadastro do fornecedor (a tabela fornecedor_cadastro o guarda; a nota não tem id de cupom). */
+const novoIdDeCadastro = (): string =>
+  globalThis.crypto?.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16))
+
 /** emissao vem como AAAA-MM-DD; mostra dd/mm. */
-const ddmm = (iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
+const ddmm =(iso: string): string => { const p = iso.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : iso }
 
 /** Uma nota a lançar: "Como pagar", estado do robô, avisos de bloqueio e o botão Lançar em dois toques. */
 /** emissao e vencimento vêm como AAAA-MM-DD; mostra dd/mm/aaaa (sem data = traço). */
@@ -406,8 +418,8 @@ interface PropsNota {
   recarregar: () => Promise<void>
   /** Mostra já, na lista da tela, a decisão de produto/conversão que acabou de ser gravada (a releitura pode falhar e deixar a tela velha). */
   aplicarDecisao: (chave: string, n: number, produtoId: number | null, conversao: number | null) => void
-  /** Outra nota está 'lancando' (o robô é um por vez: o GitHub guarda só 1 disparo pendente e cancelaria o resto). */
-  outraLancando: boolean
+  /** Outra nota está 'lancando' (o robô é um por vez: o GitHub guarda só 1 disparo pendente e cancelaria o resto): quem é ela ("A LTDA · NF 000094915"); null = nenhuma. */
+  outraLancando: string | null
   /** Algum "Confirmar" está enviando agora (nesta ou em outra nota). */
   emEnvio: boolean
   /** Pede a vez de enviar: false se já há um envio em curso (trava síncrona entre notas). */
@@ -428,6 +440,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const idDoCadastro = useRef(novoIdDeCadastro())
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
   const [descartando, setDescartando] = useState(false) // aberta a pergunta "Descartar a nota?"
@@ -472,7 +485,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   // Só falta produto no SisChef (ou nada trava): dá para escolher a forma de pagamento e digitar as parcelas já; o Lançar segue travado até lá.
   // Conta especial, nota sem itens, robô lançando e nota pela metade continuam sem nada para preparar.
   const podePreparar = !robotOuMetade && bloqueios.every(bloqueioDeProduto)
-  const outraOcupando = outraLancando || (emEnvio && !enviando)
+  const outraOcupando = outraLancando !== null || (emEnvio && !enviando)
   // Boleto cujo XML não traz as duplicatas (ou ainda não foi lido — regra do Ivan, 07/10: o que ele digitar vale): o Ivan digita as parcelas e o
   // Lançar só destrava quando a soma fecha com o valor da nota.
   const exigeParcelas = precisaDigitarParcelas(nota, forma)
@@ -615,8 +628,13 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo, nota.itens)}</div>}
+      {/* Fornecedor novo (Plast Mais 8928, 31/10/2026): o robô só cadastra com a autorização do Ivan — o toque em "Cadastrar no SisChef" é ela. Depois, é só tocar em Lançar. */}
+      {(estado === 'revisar' || estado === 'ensaio_ok') && fornecedorNovoNaNota(nota.lancamento_motivo) && (
+        <CadastrarFornecedor paraNota cupom={{ id: idDoCadastro.current, motivo: null, emitente_nome: nota.emitente, emitente_cnpj: nota.cnpj_emitente ?? cnpjDaChave(nota.chave) }}
+          acoes={ACOES_FORNECEDOR} aoReenviar={() => { void recarregar() }} />
+      )}
       {estado === 'lancando' && <VerificarRobo nota={nota} recarregar={recarregar} />}
-      {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota. Cada nota leva uns 3 minutos.</div>}
+      {outraOcupando && !travada && <div className="amarelo" data-testid="aviso-outra">Aguarde: o robô está lançando outra nota{outraLancando ? ` (${outraLancando})` : ''}. Cada nota leva uns 3 minutos.</div>}
       {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}
       {bloqueios.map((b) => <div key={b} className={b === AVISO_FALTA_CONVERSAO ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
 
@@ -928,7 +946,7 @@ export default function NotaSefaz() {
           <>
             <ul className="recentes">
               {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} nomeExibido={nomeDe(n)} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)} aplicarDecisao={aplicarDecisao}
-                outraLancando={aLancar.some((o) => o.chave !== n.chave && o.lancamento_estado === 'lancando' && !lancandoPresa(o))}
+                outraLancando={quemEstaLancando(aLancar, n.chave, nomeDe)}
                 emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou}
                 recarregarCatalogo={recarregarCatalogo} memoria={memoria} esquecerEmbalagem={esquecerEmbalagem} recarregarMemoria={recarregarMemoria} />)}
             </ul>

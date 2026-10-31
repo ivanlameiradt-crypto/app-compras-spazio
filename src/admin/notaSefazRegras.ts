@@ -10,8 +10,9 @@ export const FORMA_PADRAO = 'boleto'
 
 /** Formas já PROVADAS ao vivo no SisChef (OLINDA, boleto; cartão = "só estoque", nota 113301 da De Marchi lançada pelo robô em 27/10/2026, run 40557196249).
  *  As outras têm texto de conta/opção ainda não confirmado na tela e, se errarem, só quebram DEPOIS do pedido criado (nota pela metade).
- *  Quando uma for provada num lançamento real, entra aqui. */
-export const FORMAS_PROVADAS: string[] = ['boleto', 'cartao']
+ *  Quando uma for provada num lançamento real, entra aqui. 'pix:pangbank|ij' (Pag Bank — Spazio) foi PROVADA em 31/10/2026 (JAMES 128432, rodada 41172029712:
+ *  conta 59867, tipo DI, R$ 363,70). As outras contas do Pix seguem com o aviso. */
+export const FORMAS_PROVADAS: string[] = ['boleto', 'cartao', 'pix:pangbank|ij']
 export const AVISO_FORMA_NAO_PROVADA = 'Esta forma ainda não foi testada ao vivo no robô. No 1º lançamento real, use Boleto.'
 export const formaNaoProvada = (forma: string): boolean => forma !== '' && !FORMAS_PROVADAS.includes(forma)
 
@@ -368,6 +369,13 @@ export function lancandoPresa(n: NotaSefazLista, agoraMs: number = Date.now()): 
   if (n.lancamento_estado !== 'lancando' || !n.lancamento_estado_em) return false
   const desde = Date.parse(n.lancamento_estado_em)
   return Number.isFinite(desde) && agoraMs - desde > MINUTOS_PRESA * 60_000
+}
+
+/** Quem o robô está lançando agora, vista de OUTRA nota (o aviso "Aguarde" do Ivan, 31/10/2026: "qual nota?"): "A LTDA · NF 000094915", com o nome que a tela
+ *  usa (`nomeDe`). null quando nenhuma outra nota está 'lancando' (a presa, há mais de 30 min, não conta — como no bloqueio do botão). */
+export function quemEstaLancando(notas: NotaSefazLista[], chaveDestaNota: string, nomeDe: (n: NotaSefazLista) => string, agoraMs: number = Date.now()): string | null {
+  const outra = notas.find((o) => o.chave !== chaveDestaNota && o.lancamento_estado === 'lancando' && !lancandoPresa(o, agoraMs))
+  return outra ? `${nomeDe(outra)} · NF ${outra.numero}` : null
 }
 
 /**

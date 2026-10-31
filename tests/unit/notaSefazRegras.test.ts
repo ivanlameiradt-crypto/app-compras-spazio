@@ -4,6 +4,7 @@ import {
   podeDescartar, motivoDoDescarte, descartadaVoltouComItens, MOTIVO_SEM_ITENS, itemAssociado, decisaoDoItem,
   AVISO_ITEM_SEM_PRODUTO, AVISO_CONTA_ESPECIAL, AVISO_SEM_ITENS, AVISO_FALTA_CONVERSAO, bloqueioDeProduto,
   rascunhoDasParcelas, guardarRascunhoDasParcelas, limparRascunhoDasParcelas, pendenciasNoSischef, pendenciasParaLancar, associacoesPeloRobo, itemPedeAcao, itensNoMesmoProduto,
+  quemEstaLancando,
 } from '../../src/admin/notaSefazRegras'
 import { CONTAS_PIX } from '../../src/cupom/formasPagamento'
 import type { NotaSefazLista } from '../../src/lib/tipos'
@@ -17,7 +18,8 @@ describe('notaSefazRegras', () => {
   it('as formas do app são exatamente as que a Edge Function lancar-nfe aceita', () => {
     expect(formaValida('Boleto ')).toBe('boleto')
     for (const c of CONTAS_PIX) expect(formaValida(`pix:${c.banco}|${c.empresa}`)).toBe(`pix:${c.banco}|${c.empresa}`)
-    for (const ruim of ['pix', 'pix:itau|sp', 'dinheiro à vista', '', null, undefined, 3]) expect(formaValida(ruim)).toBeNull()
+    // 'pix:itau|ij' era válida até 30/10/2026: o SisChef não tem mais a conta Itaú e o robô a recusaria
+    for (const ruim of ['pix', 'pix:itau|sp', 'pix:itau|ij', 'dinheiro à vista', '', null, undefined, 3]) expect(formaValida(ruim)).toBeNull()
   })
 
   it('rotuloForma: PIX leva o nome da conta; desconhecida volta como veio', () => {
@@ -39,7 +41,9 @@ describe('notaSefazRegras', () => {
     expect(formaInicial(nota())).toBe(FORMA_PADRAO)
     lembrarForma('ATACADAO S.A.', 'tesouraria')
     expect(formaInicial(nota())).toBe('tesouraria')
-    expect(formaInicial(nota({ forma_pagamento: 'pix:itau|ij' }))).toBe('pix:itau|ij')
+    expect(formaInicial(nota({ forma_pagamento: 'pix:caixa|ij' }))).toBe('pix:caixa|ij')
+    // a conta Itaú não existe mais no SisChef (30/10/2026): uma nota que ainda a traz gravada cai na forma lembrada, em vez de levar o robô a uma conta que ele recusa
+    expect(formaInicial(nota({ forma_pagamento: 'pix:itau|ij' }))).toBe('tesouraria')
     expect(formaInicial(nota({ forma_pagamento: 'invalida' }))).toBe('tesouraria')
   })
 
@@ -402,6 +406,22 @@ describe('notaSefazRegras', () => {
     expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: null }), agora)).toBe(false)
     expect(lancandoPresa(nota({ lancamento_estado: 'lancando', lancamento_estado_em: 'lixo' }), agora)).toBe(false)
     expect(lancandoPresa(nota({ lancamento_estado: 'erro', lancamento_estado_em: em(120) }), agora)).toBe(false)
+  })
+
+  it('quemEstaLancando: o nome e a NF da OUTRA nota que o robô está lançando (o "Aguarde" diz qual); a própria, a presa e as demais não contam', () => {
+    const agora = Date.parse('2026-10-31T12:00:00Z')
+    const em = (min: number) => new Date(agora - min * 60_000).toISOString()
+    const nome = (n: NotaSefazLista) => `Fantasia ${n.emitente}`
+    const a = nota({ chave: 'a'.repeat(44), emitente: 'A LTDA', numero: '000094915', lancamento_estado: 'lancando', lancamento_estado_em: em(1) })
+    const b = nota({ chave: 'b'.repeat(44), emitente: 'B LTDA', numero: '000008928' })
+    expect(quemEstaLancando([a, b], b.chave, nome, agora)).toBe('Fantasia A LTDA · NF 000094915')
+    expect(quemEstaLancando([a, b], a.chave, nome, agora)).toBeNull()                       // a própria nota só mostra "Lançando…"
+    expect(quemEstaLancando([b], b.chave, nome, agora)).toBeNull()                          // ninguém lançando
+    const presa = nota({ chave: 'c'.repeat(44), emitente: 'C LTDA', numero: '1', lancamento_estado: 'lancando', lancamento_estado_em: em(31) })
+    expect(quemEstaLancando([presa, b], b.chave, nome, agora)).toBeNull()                   // presa há mais de 30 min não bloqueia
+    const outroEstado = nota({ chave: 'd'.repeat(44), emitente: 'D LTDA', numero: '2', lancamento_estado: 'revisar', lancamento_estado_em: em(1) })
+    expect(quemEstaLancando([outroEstado, b], b.chave, nome, agora)).toBeNull()
+    expect(quemEstaLancando([], b.chave, nome, agora)).toBeNull()
   })
 
   it('formaInicial: gravada na nota > padrão do banco > lembrada no celular > Boleto', () => {

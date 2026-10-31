@@ -33,11 +33,16 @@ describe('CFOPS_BONIFICACAO e a forma "só estoque"', () => {
   })
 
   it('"cartao" foi PROVADA ao vivo em 27/10/2026 (nota 113301 da De Marchi, run 40557196249): já não leva o aviso de forma não testada', () => {
-    expect(FORMAS_PROVADAS).toEqual(['boleto', 'cartao'])
+    expect(FORMAS_PROVADAS).toEqual(['boleto', 'cartao', 'pix:pangbank|ij'])
     expect(formaNaoProvada('cartao')).toBe(false)
     expect(formaNaoProvada('boleto')).toBe(false)
     expect(formaNaoProvada('')).toBe(false)
     for (const f of ['dinheiro', 'tesouraria', 'pix:bradesco|ij']) expect(formaNaoProvada(f)).toBe(true)
+  })
+
+  it('"pix:pangbank|ij" (Pag Bank — Spazio) foi PROVADA ao vivo em 31/10/2026 (JAMES 128432, rodada 41172029712); as outras contas do Pix seguem com o aviso', () => {
+    expect(formaNaoProvada('pix:pangbank|ij')).toBe(false)
+    for (const f of ['pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:caixa|ij', 'pix:caixa|sp']) expect(formaNaoProvada(f)).toBe(true)
   })
 })
 

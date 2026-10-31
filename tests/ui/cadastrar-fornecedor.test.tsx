@@ -115,3 +115,60 @@ describe('CadastrarFornecedor', () => {
     expect(screen.queryByTestId('cadastrando')).not.toBeInTheDocument()
   })
 })
+
+// 31/10/2026 (Plast Mais 8928): o fornecedor da NOTA FISCAL não está no SisChef. A caixa é a mesma; o texto fala da nota e, pronto o cadastro, o Ivan toca em "Lançar" na própria nota.
+describe('CadastrarFornecedor — dentro da nota fiscal (paraNota)', () => {
+  const NOTA = { id: 'u-1', motivo: null, emitente_nome: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', emitente_cnpj: '55384032000120' }
+  const PLAST = { cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém' }
+  const abrirNota = (a: AcoesFornecedor, aoReenviar = vi.fn()) => render(<CadastrarFornecedor paraNota cupom={NOTA} acoes={a} aoReenviar={aoReenviar} intervaloMs={20} />)
+
+  it('abre com o CNPJ e o nome da nota, e o texto diz que depois é só tocar em Lançar', () => {
+    abrirNota(acoes())
+    expect(screen.getByLabelText('CNPJ')).toHaveValue('55.384.032/0001-20')
+    expect(screen.getByTestId('intro-nota')).toHaveTextContent('O robô não achou PLAST MAIS SOCIEDADE UNIPESSOAL LTDA (CNPJ 55.384.032/0001-20) no SisChef.')
+    expect(screen.getByTestId('intro-nota')).toHaveTextContent('Cadastre aqui e depois toque em “Lançar” na nota.')
+    expect(screen.getByTestId('intro-nota')).toHaveTextContent('só cadastra quando você tocar em “Cadastrar no SisChef”')
+    expect(screen.queryByText(/reenvie o cupom/)).not.toBeInTheDocument()
+  })
+
+  it('a razão social já vem da nota; o pedido de cadastro leva o CNPJ, a razão e o id do pedido', async () => {
+    const a = acoes({ consultarCnpj: vi.fn().mockResolvedValue(PLAST) })
+    abrirNota(a)
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    expect(await screen.findByLabelText(/Razão social/)).toHaveValue('PLAST MAIS SOCIEDADE UNIPESSOAL LTDA')
+    await userEvent.click(screen.getByTestId('cadastrar'))
+    expect(a.cadastrar).toHaveBeenCalledWith({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém', cupom_id: 'u-1' })
+    expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
+  })
+
+  it('pronto o cadastro: diz para tocar em Lançar; o botão só pede a releitura da nota e NUNCA reenvia cupom', async () => {
+    let pedido = false
+    const a = acoes({
+      consultarCnpj: vi.fn().mockResolvedValue(PLAST),
+      cadastrar: vi.fn(async () => { pedido = true }),
+      statusDoCadastro: vi.fn(async () => (pedido ? { estado: 'CADASTRADO' as const, motivo: null } : null)),
+    })
+    const aoReenviar = vi.fn()
+    abrirNota(a, aoReenviar)
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    await screen.findByLabelText(/Razão social/)
+    await userEvent.click(screen.getByTestId('cadastrar'))
+    expect(await screen.findByTestId('cadastro-pronto')).toHaveTextContent('Agora é só tocar em “Lançar” na nota.')
+    expect(screen.getByTestId('reenviar-cupom')).toHaveTextContent('Atualizar a nota')
+    await userEvent.click(screen.getByTestId('reenviar-cupom'))
+    expect(aoReenviar).toHaveBeenCalledTimes(1)
+    expect(a.reenviarCupom).not.toHaveBeenCalled()
+  })
+
+  it('CNPJ que já estava no SisChef (JA_EXISTIA): diz isso e oferece atualizar a nota', async () => {
+    abrirNota(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'JA_EXISTIA', motivo: null }) }))
+    expect(await screen.findByTestId('cadastro-pronto')).toHaveTextContent('já estava cadastrado')
+    expect(screen.getByTestId('reenviar-cupom')).toHaveTextContent('Atualizar a nota')
+  })
+
+  it('sem o paraNota nada muda: o cupom continua com o texto e o botão de sempre', () => {
+    abrir(acoes())
+    expect(screen.queryByTestId('intro-nota')).not.toBeInTheDocument()
+    expect(screen.getByText(/reenvie o cupom/)).toBeInTheDocument()
+  })
+})

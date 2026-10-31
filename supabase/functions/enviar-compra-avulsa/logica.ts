@@ -23,11 +23,11 @@ export type Pagamento = { forma: 'sem_cartao' } | { forma: 'dinheiro' | 'tesoura
 export const CONTAS_PERMITIDAS: Record<'dinheiro' | 'tesouraria' | 'pix', string[]> = {
   dinheiro: ['DINHEIRO - À Vista'],
   tesouraria: ['TESOURARIA - À Vista'],
+  // Nomes do SisChef de 30/10/2026 (robô PR 79): 'PAG BANK', sufixo '- À Vista' e sem Itaú. O texto tem de ser IGUAL ao do MAPA_PIX do robô.
   pix: [
-    'CONTA BANCÁRIA - PANG BANK - I J LAMEIRA', 'CONTA BANCÁRIA - PANG BANK - S P DELIVERY',
-    'CONTA BANCÁRIA - BRADESCO - I J LAMEIRA', 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY',
-    'CONTA BANCÁRIA - PANG ITAU - I J LAMEIRA',
-    'CONTA BANCÁRIA - CAIXA - I J LAMEIRA', 'CONTA BANCÁRIA - CAIXA - S P DELIVERY',
+    'CONTA BANCÁRIA - PAG BANK - I J LAMEIRA - À Vista', 'CONTA BANCÁRIA - PAG BANK - S P DELIVERY - À Vista',
+    'CONTA BANCÁRIA - BRADESCO - I J LAMEIRA - À Vista', 'CONTA BANCÁRIA - BRADESCO - S P DELIVERY - À Vista',
+    'CONTA BANCÁRIA - CAIXA - I J LAMEIRA - À Vista', 'CONTA BANCÁRIA - CAIXA - S P DELIVERY - À Vista',
   ],
 }
 

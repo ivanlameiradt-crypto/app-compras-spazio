@@ -25,15 +25,18 @@ interface Props {
   intervaloMs?: number
   /** Aba "Compras avulsas" (10/10/2026): não há cupom para reenviar. Pronto o cadastro, o botão vira "Usar este fornecedor" e entrega os dados a quem chamou. */
   aoUsar?: (f: { cnpj: string; razao: string; fantasia: string }) => void
+  /** Nota fiscal (31/10/2026, Plast Mais 8928): o fornecedor da NOTA não está no SisChef. A razão social já vem da nota (`cupom.emitente_nome`) e, pronto o cadastro, o Ivan toca em
+   *  "Lançar" na própria nota: não há cupom para reenviar. O botão só pede à tela de cima que releia a nota (`aoReenviar`). */
+  paraNota?: boolean
 }
 
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 const mensagem = (e: unknown, padrao: string): string => (e instanceof Error && e.message ? e.message : padrao)
 
-export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000, aoUsar }: Props) {
+export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000, aoUsar, paraNota = false }: Props) {
   const lido = fornecedorNaoEncontrado(cupom.motivo)
   const [cnpj, setCnpj] = useState(formatarCnpj(lido?.cnpj || cupom.emitente_cnpj || ''))
-  const [razao, setRazao] = useState(lido?.nome ?? '')    // a razão social: é ela (e o CNPJ) que vai ao SisChef
+  const [razao, setRazao] = useState(lido?.nome ?? (paraNota ? (cupom.emitente_nome ?? '') : ''))    // a razão social: é ela (e o CNPJ) que vai ao SisChef
   const [fantasia, setFantasia] = useState('')
   const [uf, setUf] = useState('')
   const [municipio, setMunicipio] = useState('')
@@ -112,6 +115,7 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
   }
 
   async function reenviar() {
+    if (paraNota) { aoReenviar(); return }           // a nota segue pelo "Lançar" dela: aqui só se pede a releitura
     if (aoUsar) { aoUsar({ cnpj: soDigitos(cnpj), razao: razao.trim(), fantasia: fantasia.trim() }); return }
     setErro(''); setReenviando(true)
     try {
@@ -133,7 +137,12 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
           O CNPJ que li na foto ({formatarCnpj(cnpjLido)}) parece errado: é provável que seja só um número trocado. Olhe a foto, digite o CNPJ certo no campo abaixo e toque em “Buscar dados do CNPJ”.
         </p>
       )}
-      {aoUsar ? (
+      {paraNota ? (
+        <p className="sub" data-testid="intro-nota">
+          O robô não achou{cupom.emitente_nome ? <> <b>{cupom.emitente_nome}</b></> : ' o fornecedor desta nota'}{cnpj ? <> (CNPJ {formatarCnpj(cnpj)})</> : ''} no SisChef.
+          Cadastre aqui e depois toque em “Lançar” na nota. O robô só cadastra quando você tocar em “Cadastrar no SisChef”.
+        </p>
+      ) : aoUsar ? (
         <p className="sub">Esse fornecedor ainda não está no app nem no SisChef. Digite o CNPJ: o app busca os dados e você confere. O robô só cadastra quando você tocar em “Cadastrar no SisChef”.</p>
       ) : (
         <p className="sub">
@@ -194,11 +203,11 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
       {pronto && (
         <>
           <p className="ok" role="status" data-testid="cadastro-pronto">
-            {estado === 'JA_EXISTIA' ? '✓ Esse CNPJ já estava cadastrado no SisChef.' : '✓ Fornecedor cadastrado no SisChef.'} {aoUsar ? 'Agora é só usar este fornecedor na compra.' : 'Agora é só reenviar o cupom.'}
+            {estado === 'JA_EXISTIA' ? '✓ Esse CNPJ já estava cadastrado no SisChef.' : '✓ Fornecedor cadastrado no SisChef.'} {paraNota ? 'Agora é só tocar em “Lançar” na nota.' : aoUsar ? 'Agora é só usar este fornecedor na compra.' : 'Agora é só reenviar o cupom.'}
           </p>
           <div className="acoes">
             <button type="button" className="botao" disabled={reenviando} onClick={() => void reenviar()} data-testid="reenviar-cupom">
-              {aoUsar ? 'Usar este fornecedor' : reenviando ? 'Reenviando…' : 'Reenviar este cupom'}
+              {paraNota ? 'Atualizar a nota' : aoUsar ? 'Usar este fornecedor' : reenviando ? 'Reenviando…' : 'Reenviar este cupom'}
             </button>
           </div>
         </>

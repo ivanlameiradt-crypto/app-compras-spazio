@@ -14,6 +14,11 @@ export function fornecedorNaoEncontrado(motivo: string | null | undefined): Forn
   return { nome, cnpj: m[2].replace(/\D/g, '') }
 }
 
+/** Motivos da NOTA FISCAL (lancar_nfe_nuvem) que dizem "o fornecedor não está no SisChef": a recusa ("fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app)")
+ *  e o aviso do ensaio ("fornecedor: cadastraria NOME CNPJ … num clique"). Nos dois a saída é a caixa "Cadastrar fornecedor" na própria nota (31/10/2026; Plast Mais 8928). */
+const RE_NOTA_FORNECEDOR_NOVO = /fornecedor n[ãa]o cadastrado no Sischef e sem autoriza[çc][ãa]o do Ivan|fornecedor: cadastraria .+ CNPJ/i
+export const fornecedorNovoNaNota = (motivo: string | null | undefined): boolean => RE_NOTA_FORNECEDOR_NOVO.test(motivo ?? '')
+
 /** Só os dígitos do que o Ivan digitou ou colou ("63.540.861/0001-82" → "63540861000182"). */
 export const soDigitos = (v: string): string => v.replace(/\D/g, '')
 

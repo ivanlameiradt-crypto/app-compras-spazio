@@ -139,7 +139,7 @@ describe('NotaSefaz', () => {
   })
 
   describe('Como pagar', () => {
-    it('Boleto já vem marcado por padrão e as opções são as combinadas (7 contas PIX)', async () => {
+    it('Boleto já vem marcado por padrão e as opções são as combinadas (6 contas PIX: o SisChef não tem mais a conta Itaú)', async () => {
       aLancar(nota({}))
       render(<NotaSefaz />)
       await screen.findByTestId('nota-a-lancar')
@@ -147,7 +147,7 @@ describe('NotaSefaz', () => {
       const valores = within(comoPagar()).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
       expect(valores).toEqual([
         'boleto', 'dinheiro', 'tesouraria',
-        'pix:pangbank|ij', 'pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:itau|ij', 'pix:caixa|ij', 'pix:caixa|sp',
+        'pix:pangbank|ij', 'pix:pangbank|sp', 'pix:bradesco|ij', 'pix:bradesco|sp', 'pix:caixa|ij', 'pix:caixa|sp',
         'cartao',
       ])
       expect(screen.getByRole('option', { name: 'Caixa — Kūkan (S P Delivery)' })).toBeInTheDocument()
@@ -225,7 +225,7 @@ describe('NotaSefaz', () => {
       await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')
       await userEvent.click(botaoLancar())
       expect(m.lancarNota).not.toHaveBeenCalled()
-      expect(screen.getByText('Vai lançar a NF 123 de ATACADAO S.A. — pagamento: PIX — Pang Bank — Spazio (I J Lameira). Confirmar?')).toBeInTheDocument()
+      expect(screen.getByText('Vai lançar a NF 123 de ATACADAO S.A. — pagamento: PIX — Pag Bank — Spazio (I J Lameira). Confirmar?')).toBeInTheDocument()
       const chamadasAntes = m.notasALancar.mock.calls.length
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       expect(m.lancarNota).toHaveBeenCalledTimes(1)
@@ -384,6 +384,8 @@ describe('NotaSefaz', () => {
       expect(within(lancandoA).getByRole('button', { name: 'Lançar' })).toBeDisabled()
       expect(within(livreB).getByRole('button', { name: 'Lançar' })).toBeDisabled()
       expect(within(livreB).getByTestId('aviso-outra')).toHaveTextContent('o robô está lançando outra nota')
+      // 31/10/2026 (Ivan: "qual nota?"): o aviso diz o fornecedor e o número da nota que o robô está lançando
+      expect(within(livreB).getByTestId('aviso-outra')).toHaveTextContent('Aguarde: o robô está lançando outra nota (A LTDA · NF 123). Cada nota leva uns 3 minutos.')
       expect(within(lancandoA).queryByTestId('aviso-outra')).not.toBeInTheDocument() // a própria nota só mostra "Lançando…"
     })
 
@@ -397,6 +399,41 @@ describe('NotaSefaz', () => {
       const [, livreB] = await screen.findAllByTestId('nota-a-lancar')
       expect(within(livreB).getByRole('button', { name: 'Lançar' })).toBeEnabled()
       expect(within(livreB).queryByTestId('aviso-outra')).not.toBeInTheDocument()
+    })
+
+    it('fornecedor novo (Plast Mais 8928, 31/10/2026): a nota devolvida pelo robô mostra a caixa "Cadastrar fornecedor" com o nome e o CNPJ da nota — o toque em "Cadastrar no SisChef" é a autorização', async () => {
+      aLancar(nota({
+        chave: '26261055384032000120550010000089281442821121', emitente: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', numero: '000008928', cnpj_emitente: '55384032000120',
+        lancamento_estado: 'revisar', lancamento_motivo: 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado',
+      }))
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      m.consultarCnpj.mockResolvedValue({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Belém' })
+      m.pedirCadastroFornecedor.mockResolvedValue(undefined)
+      render(<NotaSefaz />)
+      const caixa = await screen.findByTestId('cadastrar-fornecedor')
+      expect(within(caixa).getByTestId('intro-nota')).toHaveTextContent('PLAST MAIS SOCIEDADE UNIPESSOAL LTDA (CNPJ 55.384.032/0001-20)')
+      expect(screen.getByTestId('status-nota')).toHaveTextContent('Use a caixa “Fornecedor não cadastrado no SisChef” logo abaixo')
+      await userEvent.click(within(caixa).getByTestId('buscar-cnpj'))
+      await within(caixa).findByLabelText(/Razão social/)
+      await userEvent.click(within(caixa).getByTestId('cadastrar'))
+      expect(m.pedirCadastroFornecedor).toHaveBeenCalledTimes(1)
+      expect(m.pedirCadastroFornecedor.mock.calls[0][0]).toMatchObject({ cnpj: '55384032000120', razao_social: 'PLAST MAIS SOCIEDADE UNIPESSOAL LTDA', uf: 'PA', municipio: 'Belém' })
+      expect(m.pedirCadastroFornecedor.mock.calls[0][0].cupom_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+      expect(m.lancarNota).not.toHaveBeenCalled()          // cadastrar o fornecedor NUNCA lança a nota
+    })
+
+    it('fornecedor novo: o aviso do ensaio ("cadastraria … num clique") também mostra a caixa; outros motivos e nota comum, não', async () => {
+      m.statusDoCadastroFornecedor.mockResolvedValue(null)
+      aLancar(
+        nota({ chave: '1'.repeat(44), emitente: 'A LTDA', lancamento_estado: 'ensaio_ok', lancamento_motivo: 'fornecedor: cadastraria A LTDA CNPJ 11.111.111/0001-11 num clique (cadastra do XML)' }),
+        nota({ chave: '2'.repeat(44), emitente: 'B LTDA', lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }),
+        nota({ chave: '3'.repeat(44), emitente: 'C LTDA' }),
+      )
+      render(<NotaSefaz />)
+      const [a, b, c] = await screen.findAllByTestId('nota-a-lancar')
+      expect(within(a).getByTestId('cadastrar-fornecedor')).toBeInTheDocument()
+      expect(within(b).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
+      expect(within(c).queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
     })
 
     it('enquanto um Confirmar está enviando, as outras notas ficam bloqueadas (sem 2 disparos juntos)', async () => {

@@ -145,3 +145,73 @@ describe('traduzirMotivo e textoDoEstado com os itens da nota', () => {
     expect(traduzirMotivo('sem boletos na nota — pagamento manual', ITENS)).toBe('A nota não tem boleto: escolha como pagar')
   })
 })
+
+// 31/10/2026: três paradas do robô que o Ivan via com o texto técnico (De Marchi 113752, Plast Mais 8928 e James 128432).
+const MOTIVO_XML = 'não consegui ler o XML da nota (Ações → Baixar documento na lista de não importadas não trouxe o XML desta chave (o popup trouxe o XML de outra nota ou um XML ilegível))'
+const MOTIVO_FORNECEDOR = 'fornecedor não cadastrado no Sischef e sem autorização do Ivan (autorize no app) — nada lançado'
+const MOTIVO_SOZINHO = 'item CÓD. FOR 17898647163635 (PAPEL HIGIENICO FOLHA DUPLA FD C/18): o SisChef converteu por conta própria — a tela mostra 8 UN para 1 FD da nota (8 por unidade) — e o painel decidiu 18 por unidade (18 UN). Nada foi gerado: acerte essa conversão (no painel, se o fator do SisChef for o certo; senão no SisChef) e lance de novo'
+const ITENS_JAMES: ItemNotaSefaz[] = [
+  { n: 3, descricao: 'CÓD. FOR: 17898647163635 PAPEL HIGIENICO FOLHA DUPLA FD C/18', qtd: 1, unidade_sischef: 'FD', produto_id: 3476456, associacao: 'sischef', produto_nome: 'PAPEL HIGIENICO - INSUMOS' },
+]
+
+describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão que o SisChef fez sozinho (31/10/2026)', () => {
+  it('XML não lido: o SisChef pode só ter o resumo; diz que digitar as parcelas não adianta e manda esperar e lançar de novo', () => {
+    const e = explicarMotivoDoRobo(MOTIVO_XML, ITENS)
+    expect(e?.porque).toContain('o SisChef só recebeu da SEFAZ o resumo da nota')
+    expect(e?.porque).toContain('algumas horas')
+    expect(e?.fazer).toContain('não adianta digitar as parcelas aqui embaixo')
+    expect(e?.fazer).toContain('toque em Lançar de novo')
+    expect(e?.fazer).toContain('chame o Claude')
+  })
+
+  it('XML não lido: reconhece também as outras causas da leitura (sem vProd/vNF, link que não clicou) e o começo técnico', () => {
+    for (const m of ['não consegui ler o XML da nota (sem vProd/vNF)', 'não consegui ler o XML da nota (sem XML)',
+      'parou antes de gerar o pedido (nada lançado): não consegui ler o XML da nota (link Ações não clicou (Timeout))']) {
+      expect(explicarMotivoDoRobo(m, ITENS)?.fazer).toContain('não adianta digitar as parcelas aqui embaixo')
+    }
+  })
+
+  it('XML não lido: o aviso da nota vem em 3 linhas (nada foi lançado, por quê, o que fazer)', () => {
+    const texto = textoDoEstado('revisar', MOTIVO_XML, ITENS) ?? ''
+    expect(texto.startsWith('Precisa de você — nada foi lançado.\nPor quê: O robô não conseguiu ler o XML completo desta nota.')).toBe(true)
+    expect(texto).toContain('\nO que fazer: Por enquanto não adianta digitar as parcelas aqui embaixo')
+  })
+
+  it('fornecedor sem autorização: manda usar a caixa "Cadastrar no SisChef" da própria nota e depois tocar em Lançar', () => {
+    const e = explicarMotivoDoRobo(MOTIVO_FORNECEDOR, ITENS)
+    expect(e?.porque).toBe('O fornecedor desta nota ainda não está cadastrado no SisChef, e o robô só cadastra fornecedor novo com a sua autorização.')
+    expect(e?.fazer).toContain('Use a caixa “Fornecedor não cadastrado no SisChef” logo abaixo')
+    expect(e?.fazer).toContain('“Buscar dados do CNPJ”')
+    expect(e?.fazer).toContain('“Cadastrar no SisChef”')
+    expect(e?.fazer).toContain('toque em Lançar')
+  })
+
+  it('fornecedor novo: o aviso do ensaio ("cadastraria … num clique") também é explicado do mesmo jeito', () => {
+    const ensaio = 'fornecedor: cadastraria PLAST MAIS SOCIEDADE UNIPESSOAL LTDA CNPJ 55.384.032/0001-20 num clique (cadastra do XML) — conferi Cadastros › Pessoas: 0 com o CNPJ'
+    expect(explicarMotivoDoRobo(ensaio, ITENS)?.fazer).toContain('Use a caixa “Fornecedor não cadastrado no SisChef” logo abaixo')
+  })
+
+  it('o SisChef converteu por conta própria (James 128432): o produto pelo nome, as duas contas e os dois caminhos', () => {
+    const e = explicarMotivoDoRobo(MOTIVO_SOZINHO, ITENS_JAMES)
+    expect(e?.porque).toBe('No PAPEL HIGIENICO o SisChef converteu sozinho, pela conversão que ele já tinha guardada: 1 fd da nota viram 8 un (8 un por unidade). '
+      + 'Mas no app a conversão está em 18 un por unidade.')
+    expect(e?.fazer).toContain('Se a do SisChef (8 un) está certa, toque em Editar no PAPEL HIGIENICO e informe 8.')
+    expect(e?.fazer).toContain('Se a certa é a do app (18 un), o SisChef está com a conversão antiga para este código do fornecedor: peça ao Claude')
+  })
+
+  it('o SisChef converteu por conta própria: sem o item na nota chama de "item <código>"; sem unidades escreve só os números', () => {
+    const sem = explicarMotivoDoRobo(MOTIVO_SOZINHO.replace('8 UN para 1 FD', '8 para 1'), [])
+    expect(sem?.porque).toContain('No item 17898647163635 o SisChef converteu sozinho')
+    expect(sem?.porque).toContain('1 da nota viram 8 (8 por unidade). Mas no app a conversão está em 18 por unidade.')
+  })
+
+  it('o SisChef converteu por conta própria: número ilegível ou nota com quantidade zero não é explicado (a tela mostra o texto do robô)', () => {
+    expect(explicarMotivoDoRobo(MOTIVO_SOZINHO.replace('para 1 FD', 'para 0 FD'), ITENS_JAMES)).toBeNull()
+    expect(explicarMotivoDoRobo(MOTIVO_SOZINHO.replace('decidiu 18 por', 'decidiu 1.8 por'), ITENS_JAMES)).toBeNull()
+  })
+
+  it('texto parecido que nenhuma regra conhece segue como antes', () => {
+    expect(explicarMotivoDoRobo('não consegui ler o cadastro de produtos do SisChef (catálogo vivo vazio)', ITENS)).toBeNull()
+    expect(explicarMotivoDoRobo('fornecedor não cadastrado no Sischef (cadastrar antes de lançar)', ITENS)).toBeNull()
+  })
+})
