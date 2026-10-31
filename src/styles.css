@@ -212,6 +212,14 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
   color: var(--suave); white-space: nowrap; vertical-align: middle; }
 .origem-sischef { border-color: transparent; background: var(--ok-fundo); color: var(--ok-texto); }
 
+/* A conta do item que já é automática (pedido do Ivan, 31/10/2026): "48 PC × 15 = 720 UN" + a etiqueta "automático" + uma frase calma de quem faz a conta. Só as cores do tema (claro e escuro).
+   Nos itens confirmados (grade de 2 colunas, com o Editar à direita) a linha ocupa a largura toda, embaixo do nome do produto. */
+.automatico { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--ok-fundo); color: var(--ok-texto); font-size: 11px; font-weight: 600; line-height: 17px; white-space: nowrap; }
+.cupom .conta-item { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 13px; }
+.cupom .conta-item .conta-formula { font-weight: 600; }
+.cupom .conta-item .conta-quem { flex: 1 0 100%; font-size: 12px; font-weight: 400; color: var(--suave); }
+.cupom .conferir-itens li > .conta-item { grid-column: 1 / -1; }
+
 /* Aba "Lançamento de nota SEFAZ": painel "Conferir itens e financeiro" (regra 2 do Ivan) */
 .cupom details.conferir { border: 1px solid var(--linha); border-radius: 10px; padding: 8px 10px; background: var(--fundo-cartao, transparent); }
 .cupom details.conferir summary { cursor: pointer; font-weight: 600; font-size: 14px; }

@@ -399,6 +399,13 @@ export interface ItemNotaSefaz {
   /** O total da linha em reais (o robô de leitura o manda desde 29/10/2026; notas lidas antes não o têm): dividido pela quantidade que entra no estoque dá o preço por
    *  unidade do aviso de "preço fora do normal". Sem ele o app não avisa nada neste item. */
   valor?: number | null
+  /** A quantidade ORIGINAL da nota ("Qtde. XML": 48 PC), antes de o SisChef converter; `qtd`/`unidade_sischef` são as CONVERTIDAS (720 UN). O robô de leitura as manda desde 31/10/2026;
+   *  notas lidas antes não as têm e o app se comporta como sempre. Com elas a tela mostra a conta do item ("48 PC × 15 = 720 UN") e o marca "automático" (contaDoItem). */
+  qtd_nota?: number | null
+  unidade_nota?: string | null
+  /** A regra FIXA de embalagem do robô (tabela do Ivan: o pão australiano da De Marchi = pacote de 15, os fardos de 6 da Mateus) que vale para este item: {fator, unidade, produto_id}.
+   *  O robô só a manda quando o item JÁ está ligado ao produto da regra e a nota está na unidade dela; ao lançar, ele mesmo multiplica a linha do pedido. */
+  regra_embalagem?: { fator: number; unidade: string; produto_id: number | string } | null
 }
 /** Produto que o Ivan escolheu e CONFIRMOU no app para um item sem produto no SisChef (cot_nfe.associacoes_app; migração 20261210000001).
  *  O nome e a unidade vêm do servidor (lista de insumos do app). Etapa 2 (migração 20261212000001): o robô aplica a decisão na tela do SisChef
