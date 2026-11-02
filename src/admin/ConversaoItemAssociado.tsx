@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, embalagemPeloNome, formatarConversao, formatarQuantidade, leituraDaEntrada, parseConversao, quantidadeNoEstoque, rotuloUnidade,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, avisoDoUm, embalagemPeloNome, formatarConversao, formatarQuantidade, leituraDaEntrada, parseConversao, quantidadeNoEstoque, rotuloUnidade,
 } from './associacaoRegras'
 import type { ItemNotaSefaz, NfeAprendizado } from '../lib/tipos'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
@@ -63,6 +63,8 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const unidadeDoProduto = lida != null && lida.produto === codigoDoProduto ? lida.unidade : undefined
   const lendoUnidade = aberta && !!buscarUnidade && codigoDoProduto != null && unidadeDoProduto === undefined
   const sugestao = lendoUnidade || ehEmbalagemContada(unidadeDoProduto) ? null : embalagemPeloNome(item.descricao, item.unidade_sischef)
+  // O "1" quando o robô disse UN DIFERE (02/11/2026): aqui `item.unidade_sischef` é a unidade do PRODUTO no SisChef; a da nota não vem. Aviso amarelo, sem bloquear (associacaoRegras.avisoDoUm)
+  const avisoUm = avisoDoUm(conversao, null, item.unidade_sischef, pede)
 
   async function guardar(valor: number | null) {
     if (enviando) return
@@ -153,6 +155,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
           Vai gravar: 1 unidade da nota = {formatarConversao(conversao)}{unidade ? ` ${unidade}` : ''}.
         </p>
       )}
+      {avisoUm && <p className="amarelo" role="status" data-testid="conversao-item-um-aviso">{avisoUm}</p>}
       {/* A leitura clara do que ENTRA no SisChef (pedido do Ivan, 30/10/2026), a mesma frase da caixa de associação: o total, o produto, o porquê e a conta. Aqui o produto já está
           associado no SisChef, então a unidade é a dele (a da "Qtde Conver."). Sem a quantidade da leitura não há conta: nada aparece. */}
       {conversao != null && previa && entra && (

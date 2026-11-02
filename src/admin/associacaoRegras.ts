@@ -209,6 +209,22 @@ export function textoConversao(unidadeNota: string | null | undefined, unidadePr
   return `1 ${a} = ${v} na unidade do produto no SisChef`
 }
 /**
+ * O "1" digitado entre unidades que se SABE serem diferentes (pedido do Ivan, 02/11/2026: "quero o aviso do 1"). Nota em UN e produto em KG: o "1" grava "1 UN = 1 KG" no SisChef, e esse
+ * de-para fica valendo para as próximas notas do produto. Digitar 1 é hábito; por isso, e só nesse caso, a tela pergunta "é isso mesmo?" — aviso amarelo que NÃO bloqueia (pode ser mesmo
+ * 1: uma peça de 1 kg). `diferem` = quem chama SABE que as unidades diferem: na caixa de associação é situacaoConversao "obrigatoria" (produto em KG, CT ou PCT e nota em outra
+ * unidade); na caixa do item já associado é o robô ter dito UN DIFERE (aí a unidade que a tela tem é a do produto; a da nota não vem, e o texto diz "unidade da nota").
+ * Devolve o texto do aviso, ou null quando não há o que avisar (só o número 1 exato avisa; 1,5 ou 15 não).
+ */
+export function avisoDoUm(conversao: number | null | undefined, unidadeNota: string | null | undefined, unidadeProduto: string | null | undefined, diferem: boolean): string | null {
+  if (conversao !== 1 || !diferem) return null
+  const nota = rotuloUnidade(unidadeNota) || 'unidade da nota'
+  const produto = rotuloUnidade(unidadeProduto)
+  const grava = produto !== '' ? `1 ${nota} = 1 ${produto}` : `1 ${nota} = 1 na unidade do produto no SisChef`
+  const quanto = produto !== '' ? `quanto vale 1 ${nota} em ${produto}` : `quanto vale 1 ${nota} na unidade do produto no SisChef`
+  const exemplo = produto === 'KG' ? ' (ex.: lata de 395 g = 0,395)' : ''
+  return `Você digitou 1: isso grava “${grava}” no SisChef, e vale também para as próximas notas deste produto. É isso mesmo? Se não for, digite ${quanto}${exemplo}.`
+}
+/**
  * Sugestão de conversão tirada do NOME da nota: "LEITE COND TIROL SEMIDES TP 395G" em UN → 1 UN = 0,395 KG. O Ivan só confere e corrige (a caixa mostra
  * o número já preenchido); nunca vai ao SisChef sem o Confirmar dele. Só sugere quando há UM peso claro no nome (g ou kg) e a nota está em UN: nota em
  * CX/PCT não vale (a caixa pode ter vários pacotes: a "2,5KG" da SEARA é o pacote, não a caixa) e nome com "12X395G" (embalagem múltipla) também não.

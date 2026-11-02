@@ -1,5 +1,5 @@
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, buscarProdutos, conversaoDaDecisao, formatarConversao, leituraDaEntrada, nomeParaMostrar, parseConversao, rotuloUnidade,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, avisoDoUm, buscarProdutos, conversaoDaDecisao, formatarConversao, leituraDaEntrada, nomeParaMostrar, parseConversao, rotuloUnidade,
   situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from '../../src/admin/associacaoRegras'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
@@ -429,5 +429,40 @@ describe('conversaoDaDecisao (o que está gravado em cot_nfe.associacoes_app)', 
     expect(conversaoDaDecisao(dec({ conversao: '0,5' as unknown as number }))).toBeNull()   // texto vindo de um banco velho: não é número
     expect(conversaoDaDecisao(null)).toBeNull()
     expect(conversaoDaDecisao(undefined)).toBeNull()
+  })
+})
+
+// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"): digitar 1 entre unidades diferentes grava "1 UN = 1 KG" no SisChef para as próximas notas; a tela só pergunta, não bloqueia.
+describe('avisoDoUm (o "1" entre unidades diferentes)', () => {
+  it('1 com unidades que se sabe diferentes: diz o que será gravado, pergunta, e KG ganha o exemplo da lata', () => {
+    const t = avisoDoUm(1, 'UN', 'kg', true)
+    expect(t).toContain('Você digitou 1: isso grava “1 UN = 1 KG” no SisChef')
+    expect(t).toContain('vale também para as próximas notas deste produto')
+    expect(t).toContain('É isso mesmo?')
+    expect(t).toContain('digite quanto vale 1 UN em KG (ex.: lata de 395 g = 0,395).')
+  })
+  it('produto em CT ou PCT: o texto vale, mas sem o exemplo do peso', () => {
+    const t = avisoDoUm(1, 'UN', 'pct', true)
+    expect(t).toContain('“1 UN = 1 PCT”')
+    expect(t).toContain('digite quanto vale 1 UN em PCT.')
+    expect(t).not.toContain('lata')
+  })
+  it('só o número 1 exato avisa: 0,395, 1,5, 15, nulo e indefinido não', () => {
+    for (const v of [0.395, 1.5, 15, 0, null, undefined]) expect(avisoDoUm(v, 'UN', 'kg', true)).toBeNull()
+  })
+  it('sem certeza de que as unidades diferem: nada (unidades iguais, ou o app só desconfia)', () => {
+    expect(avisoDoUm(1, 'KG', 'kg', false)).toBeNull()
+    expect(avisoDoUm(1, 'UN', 'un', false)).toBeNull()
+  })
+  it('sem a unidade da nota (caixa do item já associado) ou sem a do produto: a frase geral, sem inventar unidade', () => {
+    expect(avisoDoUm(1, null, 'kg', true)).toContain('“1 unidade da nota = 1 KG”')
+    const sem = avisoDoUm(1, 'UN', null, true)
+    expect(sem).toContain('“1 UN = 1 na unidade do produto no SisChef”')
+    expect(sem).toContain('digite quanto vale 1 UN na unidade do produto no SisChef.')
+    expect(avisoDoUm(1, '  ', '  ', true)).toContain('“1 unidade da nota = 1 na unidade do produto no SisChef”')
+  })
+  it('as formas de digitar 1 que a caixa entende (1, 1,0, 1.000, 1,0000) viram 1 e avisam; 1,0001 não', () => {
+    for (const digitado of ['1', '1,0', '1.000', '1,0000']) expect(avisoDoUm(parseConversao(digitado), 'UN', 'kg', true)).not.toBeNull()
+    expect(avisoDoUm(parseConversao('1,0001'), 'UN', 'kg', true)).toBeNull()
   })
 })
