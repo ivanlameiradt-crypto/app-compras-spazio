@@ -278,3 +278,36 @@ describe('NotaSefaz — produto em CT ou PCT: conversão obrigatória, sem suges
     expect(await saco.findByTestId('associacao-confirmada')).toHaveTextContent('1 UN = 1 CT · entram 10 × 1 = 10 CT')
   })
 })
+
+// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"): o "1" digitado entre unidades que se sabe diferentes (nota em CX, produto em KG) grava "1 CX = 1 KG" no SisChef para as próximas notas.
+// A caixa pergunta "é isso mesmo?" em amarelo e NÃO bloqueia o Confirmar (pode ser 1 de verdade).
+describe('NotaSefaz — aviso amarelo do "1" entre unidades diferentes (02/11)', () => {
+  it('SEARA (nota em CX, produto em KG): digitar 1 mostra o aviso e a pergunta; o Confirmar segue aceso; digitar 5 faz o aviso sumir', async () => {
+    m.notasALancar.mockResolvedValue([seara()])
+    render(<NotaSefaz />)
+    const campo = await screen.findByLabelText('Quanto vale 1 CX em KG?')
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+    await userEvent.type(campo, '1')
+    const aviso = await screen.findByTestId('conversao-um-aviso')
+    expect(aviso).toHaveTextContent('Você digitou 1: isso grava “1 CX = 1 KG” no SisChef, e vale também para as próximas notas deste produto.')
+    expect(aviso).toHaveTextContent('É isso mesmo?')
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()   // só avisa: não bloqueia
+    await userEvent.clear(campo)
+    await userEvent.type(campo, '5')
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+  })
+
+  it('1,0 também é o 1; 1,5 não é; e confirmar o 1 mesmo assim grava 1 (o aviso não muda o que o Ivan decidiu)', async () => {
+    m.notasALancar.mockResolvedValue([seara()])
+    m.associarItem.mockImplementation(async () => { m.notasALancar.mockResolvedValue([seara(1)]) })
+    render(<NotaSefaz />)
+    const campo = await screen.findByLabelText('Quanto vale 1 CX em KG?')
+    await userEvent.type(campo, '1,5')
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+    await userEvent.clear(campo)
+    await userEvent.type(campo, '1,0')
+    expect(await screen.findByTestId('conversao-um-aviso')).toHaveTextContent('“1 CX = 1 KG”')
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, NUGGETS, 1))
+  })
+})

@@ -132,3 +132,34 @@ describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o I
     expect(screen.queryByTestId('conversao-item-informada')).not.toBeInTheDocument()
   })
 })
+
+// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"): o robô disse UN DIFERE e o Ivan digita 1 — grava "1 unidade da nota = 1 KG" no SisChef para as próximas notas. A caixa pergunta
+// "é isso mesmo?" em amarelo e NÃO bloqueia o Confirmar. Sem UN DIFERE (o Ivan só tocou em Editar num item certo) o 1 não avisa.
+describe('NotaSefaz — aviso amarelo do "1" no item com UN DIFERE (02/11)', () => {
+  it('digita 1: aparece o aviso (com o KG do produto); o Confirmar segue aceso; digita 0,395: o aviso some', async () => {
+    m.notasALancar.mockResolvedValue([mateus()])
+    render(<NotaSefaz />)
+    const creme = within(await screen.findByTestId('conferir-faltam')).getByTestId('conferir-item')
+    const caixa = within(creme).getByTestId('conversao-item-pendente')
+    const campo = within(caixa).getByLabelText(ROTULO)
+    expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+    await userEvent.type(campo, '1')
+    const aviso = await within(caixa).findByTestId('conversao-item-um-aviso')
+    expect(aviso).toHaveTextContent('Você digitou 1: isso grava “1 unidade da nota = 1 KG” no SisChef, e vale também para as próximas notas deste produto.')
+    expect(aviso).toHaveTextContent('É isso mesmo?')
+    expect(within(caixa).getByRole('button', { name: 'Confirmar' })).toBeEnabled()   // só avisa: não bloqueia
+    await userEvent.clear(campo)
+    await userEvent.type(campo, '0,395')
+    expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+  })
+
+  it('item que o robô NÃO apontou (só o botão Editar): digitar 1 não avisa, porque as unidades batem', async () => {
+    m.notasALancar.mockResolvedValue([mateus({ lancamento_estado: null, lancamento_motivo: null })])
+    render(<NotaSefaz />)
+    const itens = await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item')
+    await userEvent.click(within(itens[0]).getByRole('button', { name: 'Editar' }))
+    const caixa = await screen.findByTestId('editar-item-caixa')
+    await userEvent.type(within(caixa).getByRole('textbox'), '1')
+    expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+  })
+})
