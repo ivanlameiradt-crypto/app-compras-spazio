@@ -3,13 +3,14 @@
 // "fornecedor não encontrado". Aqui: autoriza o admin, valida o pedido, guarda o NOME FANTASIA só no app (fornecedor_app; o Sischef nunca o recebe), grava o pedido em
 // fornecedor_cadastro (PENDENTE) e dispara o robô (cadastrar-fornecedor.yml). O cadastro em si é do robô, que confere de novo no Sischef se o CNPJ já existe.
 // Só vale para um cupom que de fato parou por "fornecedor não encontrado" — ou (31/10/2026) para uma NOTA fiscal que o robô devolveu por fornecedor não cadastrado, e então
-// só para o CNPJ do emitente dela. Sem globais do Deno nem rede: tudo entra por `deps`.
+// só para o CNPJ do emitente dela — ou (02/11/2026) para uma COMPRA AVULSA (sem cupom e sem nota: não há documento que "pare" por isso; o identificador da compra, que o app gera, e o toque
+// do Ivan em "Cadastrar no SisChef" são a autorização, e só o admin chega aqui). Sem globais do Deno nem rede: tudo entra por `deps`.
 
-export interface Corpo { cnpj?: unknown; razao_social?: unknown; nome_fantasia?: unknown; uf?: unknown; municipio?: unknown; cupom_id?: unknown; nota_chave?: unknown }
+export interface Corpo { cnpj?: unknown; razao_social?: unknown; nome_fantasia?: unknown; uf?: unknown; municipio?: unknown; cupom_id?: unknown; nota_chave?: unknown; avulsa_id?: unknown }
 export interface CupomLinha { id: string; estado: string; motivo: string | null; pedido_sischef: string | null }
 /** A nota fiscal (cot_nfe) que o robô devolveu: só o que importa para saber se ela parou por fornecedor não cadastrado. */
 export interface NotaLinha { chave: string; situacao: string; lancamento_estado: string | null; lancamento_motivo: string | null; descartada_em: string | null }
-/** `cupom_id` é null no pedido que vem de uma NOTA fiscal (a coluna aceita null). */
+/** `cupom_id` é null no pedido que vem de uma NOTA fiscal ou de uma COMPRA AVULSA (a coluna aceita null). */
 export interface PedidoNovo { cnpj: string; razao_social: string; nome_fantasia: string | null; uf: string; municipio: string; cupom_id: string | null; criado_por: string }
 export interface Deps {
   buscarUsuario(email: string): Promise<{ papel: string; ativo: boolean } | null>
@@ -70,6 +71,7 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   const municipio = texto(c.municipio)
   if (municipio === '' || municipio.length > 120) return { status: 400, corpo: { erro: 'falta o município' } }
   const notaChave = typeof c.nota_chave === 'string' ? c.nota_chave.trim() : ''
+  const avulsaId = typeof c.avulsa_id === 'string' ? c.avulsa_id.trim() : ''
   let cupomId: string | null = null
   if (notaChave !== '') {
     // NOTA FISCAL (31/10/2026, Plast Mais 8928): o robô devolveu a nota porque o fornecedor não está no SisChef. O cadastro só vale para a nota que de fato parou por isso
@@ -81,6 +83,12 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
       && MOTIVO_FORNECEDOR_NOTA.test((nota.lancamento_motivo ?? '').trim())
     if (!parada) return { status: 409, corpo: { erro: 'esta nota não está parada por fornecedor não cadastrado: atualize a tela' } }
     if (cnpj !== notaChave.slice(6, 20)) return { status: 400, corpo: { erro: 'o CNPJ não é o do emitente desta nota: confira os 14 números' } }
+  } else if (avulsaId !== '') {
+    // COMPRA AVULSA (02/11/2026): compra feita sem cupom e sem nota — não existe documento que tenha "parado" por fornecedor novo, então não há o que conferir no banco além do formato do
+    // identificador da compra (um UUID que o app gera para cada compra). O toque do Ivan em "Cadastrar no SisChef" é a autorização; só o admin chega aqui, o CNPJ e a razão social já foram
+    // validados acima e o robô confere de novo no SisChef se o CNPJ já existe. O pedido sai com cupom_id nulo, como o da nota. (Antes a caixa mandava o id da compra como se fosse de um
+    // cupom e recebia 404 "cupom não encontrado".)
+    if (!/^[0-9a-f-]{36}$/i.test(avulsaId)) return { status: 400, corpo: { erro: 'sem a compra' } }
   } else {
     const id = typeof c.cupom_id === 'string' ? c.cupom_id.trim() : ''
     if (!/^[0-9a-f-]{36}$/i.test(id)) return { status: 400, corpo: { erro: 'sem o cupom' } }

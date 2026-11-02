@@ -197,3 +197,84 @@ describe('cadastrar-fornecedor — tratar (nota fiscal)', () => {
     expect(reg.pedidos[0].nome_fantasia).toBe('PLAST MAIS')
   })
 })
+
+// 02/11/2026: COMPRA AVULSA (sem cupom e sem nota). A caixa "Cadastrar fornecedor" da aba mandava o identificador da compra como se fosse de um cupom e recebia 404 (cupom não encontrado).
+// Agora manda `avulsa_id`: não há documento para conferir; valem o admin, o CNPJ/razão/UF/município e o formato do identificador. nota_chave continua mandando mais que ele.
+describe('cadastrar-fornecedor — tratar (compra avulsa)', () => {
+  const AVULSA = '3f2b8c1e-7d4a-4e5b-9a60-1c2d3e4f5a6b'
+  const CORPO_AVULSA: Corpo = { cnpj: '63.540.861/0001-82', razao_social: ' A. N. DA SILVA  DESCARTAVEIS LTDA ', nome_fantasia: 'AN DESCARTÁVEIS', uf: 'pa', municipio: 'Abaetetuba', avulsa_id: AVULSA }
+  const semDocumento = (extra: Parameters<typeof fakeDeps>[0] = {}) =>
+    fakeDeps({ lerCupom: async () => { throw new Error('a compra avulsa não podia consultar cupom') }, ...extra })   // o lerNota do cenário também estoura
+
+  it('caminho feliz: não lê cupom nem nota, guarda a fantasia só no app, grava o pedido SEM cupom (cupom_id null) e dispara o robô uma vez', async () => {
+    const { deps, reg } = semDocumento()
+    const r = await tratar(CORPO_AVULSA, 'Ivan@Spazio.com', deps)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ cadastro_id: 'cad-1' })
+    expect(reg.fantasias).toEqual([[CNPJ, 'A. N. DA SILVA DESCARTAVEIS LTDA', 'AN DESCARTÁVEIS']])
+    expect(reg.expirados).toEqual([CNPJ])
+    expect(reg.pedidos).toEqual([{ cnpj: CNPJ, razao_social: 'A. N. DA SILVA DESCARTAVEIS LTDA', nome_fantasia: 'AN DESCARTÁVEIS', uf: 'PA', municipio: 'Abaetetuba', cupom_id: null, criado_por: 'ivan@spazio.com' }])
+    expect(reg.disparos).toEqual(['cad-1'])
+  })
+  it('sem fantasia: não grava fornecedor_app', async () => {
+    const { deps, reg } = semDocumento()
+    await tratar({ ...CORPO_AVULSA, nome_fantasia: '  ' }, 'ivan@spazio.com', deps)
+    expect(reg.fantasias).toEqual([])
+    expect(reg.pedidos[0].nome_fantasia).toBeNull()
+  })
+  it.each([
+    ['identificador curto', 'x'],
+    ['36 caracteres que não são de UUID', 'z'.repeat(36)],
+    ['identificador com mais de 36 caracteres', `${AVULSA}0`],
+    ['identificador com espaço no meio', '3f2b8c1e 7d4a-4e5b-9a60-1c2d3e4f5a6b'],
+  ])('recusa %s (400 "sem a compra") sem gravar, encerrar nem disparar nada', async (_n, avulsa) => {
+    const { deps, reg } = semDocumento()
+    const r = await tratar({ ...CORPO_AVULSA, avulsa_id: avulsa }, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(400)
+    expect(r.corpo.erro).toBe('sem a compra')
+    expect([reg.pedidos, reg.disparos, reg.fantasias, reg.expirados]).toEqual([[], [], [], []])
+  })
+  it('só o admin cadastra (403) e nada é gravado nem disparado', async () => {
+    const { deps, reg } = semDocumento({ usuario: { papel: 'comprador', ativo: true } })
+    expect((await tratar(CORPO_AVULSA, 'joao@spazio.com', deps)).status).toBe(403)
+    expect([reg.pedidos, reg.disparos, reg.fantasias, reg.expirados]).toEqual([[], [], [], []])
+  })
+  it.each([
+    ['CNPJ com dígito errado', { cnpj: '63540861000183' }],
+    ['razão vazia', { razao_social: '  ' }],
+    ['UF desconhecida', { uf: 'XX' }],
+    ['município vazio', { municipio: '' }],
+    ['fantasia gigante', { nome_fantasia: 'x'.repeat(201) }],
+  ])('os campos do formulário continuam validados no caminho da compra avulsa: %s (400)', async (_n, mudanca) => {
+    const { deps, reg } = semDocumento()
+    expect((await tratar({ ...CORPO_AVULSA, ...mudanca } as Corpo, 'ivan@spazio.com', deps)).status).toBe(400)
+    expect([reg.pedidos, reg.disparos, reg.fantasias, reg.expirados]).toEqual([[], [], [], []])
+  })
+  it('avulsa_id E cupom_id juntos: vale a compra avulsa (o cupom nem é lido) e o pedido sai com cupom_id null', async () => {
+    const { deps, reg } = semDocumento()            // o lerCupom do cenário estoura se for chamado
+    const r = await tratar({ ...CORPO_AVULSA, cupom_id: CUPOM }, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(200)
+    expect(reg.pedidos[0].cupom_id).toBeNull()
+  })
+  it('nota_chave E avulsa_id juntos: vale a NOTA — a conferência da nota (parou por fornecedor novo) não é contornada pelo avulsa_id', async () => {
+    const lancada: NotaLinha = { chave: '1'.repeat(44), situacao: 'lancada', lancamento_estado: null, lancamento_motivo: null, descartada_em: null }
+    const { deps, reg } = semDocumento()
+    deps.lerNota = async () => lancada
+    const r = await tratar({ ...CORPO_AVULSA, nota_chave: '1'.repeat(44) }, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(409)
+    expect([reg.pedidos, reg.disparos, reg.fantasias, reg.expirados]).toEqual([[], [], [], []])
+  })
+  it('o robô não foi chamado (502): o pedido é encerrado como REVISAR, igual ao cupom e à nota', async () => {
+    const { deps, reg } = semDocumento({ dispararCadastro: async () => { throw new Error('sem GITHUB_PAT') } })
+    const r = await tratar(CORPO_AVULSA, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(502)
+    expect(reg.revisar).toEqual([['cad-1', 'o pedido foi gravado, mas não consegui chamar o robô agora: tente de novo em instantes']])
+  })
+  it('já há um cadastro em andamento para este CNPJ: devolve o existente e não dispara de novo', async () => {
+    const { deps, reg } = semDocumento({ criarPedido: async () => ({ id: 'cad-0', duplicado: true }) })
+    const r = await tratar(CORPO_AVULSA, 'ivan@spazio.com', deps)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ cadastro_id: 'cad-0', em_andamento: true })
+    expect(reg.disparos).toEqual([])
+  })
+})

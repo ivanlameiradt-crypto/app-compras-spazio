@@ -1113,8 +1113,9 @@ export async function consultarCnpj(cnpj: string): Promise<{ cnpj: string; razao
   return data as { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string }
 }
 /** Pede o cadastro do fornecedor (o robô cadastra no SisChef só CNPJ + razão social + estado + município; a fantasia fica no app). Vem ligado a um CUPOM parado (`cupom_id`)
- *  ou a uma NOTA fiscal devolvida por fornecedor novo (`nota_chave`, a chave de 44 dígitos): a função só aceita o que de fato parou por isso. */
-export async function pedirCadastroFornecedor(pedido: { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id?: string; nota_chave?: string }): Promise<void> {
+ *  ou a uma NOTA fiscal devolvida por fornecedor novo (`nota_chave`, a chave de 44 dígitos): a função só aceita o que de fato parou por isso. Na COMPRA AVULSA (sem cupom e sem
+ *  nota) vai o identificador da compra (`avulsa_id`, um UUID): não há documento para conferir. */
+export async function pedirCadastroFornecedor(pedido: { cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string; cupom_id?: string; nota_chave?: string; avulsa_id?: string }): Promise<void> {
   const { error } = await supabase.functions.invoke('cadastrar-fornecedor', { body: pedido })
   if (error) throw new Error(await mensagemDaFuncao(error))
 }
