@@ -133,24 +133,39 @@ describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o I
   })
 })
 
-// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"): o robô disse UN DIFERE e o Ivan digita 1 — grava "1 unidade da nota = 1 KG" no SisChef para as próximas notas. A caixa pergunta
-// "é isso mesmo?" em amarelo e NÃO bloqueia o Confirmar. Sem UN DIFERE (o Ivan só tocou em Editar num item certo) o 1 não avisa.
+// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"; ajustes depois da revisão independente do mesmo dia): o robô disse UN DIFERE e o Ivan DIGITA 1 — grava "1 unidade da nota = 1 KG" no SisChef
+// para as próximas notas. A caixa pergunta "é isso mesmo?" em amarelo, com estilo próprio, depois de uma pausa na digitação, e NÃO bloqueia o Confirmar. Sem UN DIFERE (o Ivan só tocou em Editar
+// num item certo) o 1 não avisa; o número que já estava gravado e reaparece no Editar também não é "você digitou".
+const esperarPausa = (ms = 900) => new Promise<void>((r) => setTimeout(r, ms))   // o aviso só aparece depois de 600 ms sem digitar
 describe('NotaSefaz — aviso amarelo do "1" no item com UN DIFERE (02/11)', () => {
-  it('digita 1: aparece o aviso (com o KG do produto); o Confirmar segue aceso; digita 0,395: o aviso some', async () => {
+  it('digita 1 e para: aparece o aviso (com o KG do produto, depois de uma pausa); o Confirmar segue aceso; digita 0,395: o aviso some', async () => {
     m.notasALancar.mockResolvedValue([mateus()])
     render(<NotaSefaz />)
     const creme = within(await screen.findByTestId('conferir-faltam')).getByTestId('conferir-item')
     const caixa = within(creme).getByTestId('conversao-item-pendente')
     const campo = within(caixa).getByLabelText(ROTULO)
     expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+    expect(within(caixa).getByTestId('conversao-item-um-regiao')).toHaveAttribute('role', 'status')
     await userEvent.type(campo, '1')
-    const aviso = await within(caixa).findByTestId('conversao-item-um-aviso')
+    expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()   // ainda "digitando": não pisca
+    const aviso = await within(caixa).findByTestId('conversao-item-um-aviso', {}, { timeout: 4000 })
     expect(aviso).toHaveTextContent('Você digitou 1: isso grava “1 unidade da nota = 1 KG” no SisChef, e vale também para as próximas notas deste produto.')
     expect(aviso).toHaveTextContent('É isso mesmo?')
-    expect(within(caixa).getByRole('button', { name: 'Confirmar' })).toBeEnabled()   // só avisa: não bloqueia
+    expect(aviso).toHaveClass('amarelo', 'aviso-um')
+    expect(within(caixa).getByRole('button', { name: 'Confirmar' })).toBeEnabled()          // só avisa: não bloqueia
     await userEvent.clear(campo)
     await userEvent.type(campo, '0,395')
     expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+  })
+
+  it('a leitura nova traz a unidade da nota (unidade_nota): o aviso diz “1 UN = 1 KG”', async () => {
+    const base = mateus()
+    const itens = (base.itens as unknown as Array<{ n: number }>).map((i) => (i.n === 3 ? { ...i, unidade_nota: 'UN' } : i))
+    m.notasALancar.mockResolvedValue([mateus({ itens } as unknown as Partial<NotaSefazLista>)])
+    render(<NotaSefaz />)
+    const caixa = within(within(await screen.findByTestId('conferir-faltam')).getByTestId('conferir-item')).getByTestId('conversao-item-pendente')
+    await userEvent.type(within(caixa).getByLabelText(ROTULO), '1')
+    expect(await within(caixa).findByTestId('conversao-item-um-aviso', {}, { timeout: 4000 })).toHaveTextContent('isso grava “1 UN = 1 KG”')
   })
 
   it('item que o robô NÃO apontou (só o botão Editar): digitar 1 não avisa, porque as unidades batem', async () => {
@@ -160,6 +175,22 @@ describe('NotaSefaz — aviso amarelo do "1" no item com UN DIFERE (02/11)', () 
     await userEvent.click(within(itens[0]).getByRole('button', { name: 'Editar' }))
     const caixa = await screen.findByTestId('editar-item-caixa')
     await userEvent.type(within(caixa).getByRole('textbox'), '1')
+    await esperarPausa()
     expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+  })
+
+  it('o 1 que já estava gravado e reaparece ao tocar em Editar NÃO é "você digitou": só avisa quando o Ivan digita de novo', async () => {
+    m.notasALancar.mockResolvedValue([mateus({ associacoes_app: conversaoGravada(1) })])
+    render(<NotaSefaz />)
+    const itens = await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item')
+    const creme = itens.find((i) => /CREME DE LEITE/.test(i.textContent ?? ''))!
+    await userEvent.click(within(creme).getByRole('button', { name: 'Editar' }))
+    const caixa = await screen.findByTestId('editar-item-caixa')
+    const campo = within(caixa).getByRole('textbox')
+    expect(campo).toHaveValue('1')
+    await esperarPausa()
+    expect(within(caixa).queryByTestId('conversao-item-um-aviso')).not.toBeInTheDocument()
+    await userEvent.type(campo, ',0')
+    expect(await within(caixa).findByTestId('conversao-item-um-aviso', {}, { timeout: 4000 })).toHaveTextContent('Você digitou 1')
   })
 })

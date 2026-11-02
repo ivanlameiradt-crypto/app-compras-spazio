@@ -28,6 +28,7 @@ import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 import { Origem } from './Origem'
+import { useValorEstavel } from './useValorEstavel'
 
 interface Props {
   item: ItemNotaSefaz
@@ -116,8 +117,11 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
   // produto quando ela é confiável ("(KG)" no nome); nos outros modos a unidade da lista é um chute, e dizer "= 2 UN" quando no SisChef o produto pode
   // estar em PCT enganaria o Ivan — aí fica "na unidade do produto no SisChef". Antes e depois de confirmar, a tela diz a mesma coisa.
   const ecoConversao = conversao != null && atual != null ? textoConversao(item.unidade_sischef, atual.unidade, conversao) : null
-  // O "1" entre unidades que se sabe serem diferentes (nota em CX/UN, produto em KG/CT/PCT) é quase sempre hábito: aviso amarelo, sem bloquear (associacaoRegras.avisoDoUm)
-  const avisoUm = avisoDoUm(conversao, item.unidade_sischef, atual?.unidade, situacao === 'obrigatoria')
+  // O "1" entre unidades que se sabe serem diferentes (nota em CX/UN, produto em KG/CT/PCT) é quase sempre hábito: aviso amarelo, sem bloquear (associacaoRegras.avisoDoUm).
+  // Só quando o Ivan DIGITOU o número (`conversaoTexto !== null`: o 1 da sugestão do nome, ex. "AÇÚCAR 1KG", ou o já gravado não é "você digitou") e só depois de uma pausa na
+  // digitação (senão o "1" de "15" piscava e a caixa pulava no celular).
+  const conversaoEstavel = useValorEstavel(valorConversao)
+  const avisoUm = conversaoTexto !== null && conversaoEstavel === valorConversao ? avisoDoUm(conversao, item.unidade_sischef, atual?.unidade, situacao === 'obrigatoria') : null
   // A leitura clara do que ENTRA no SisChef (pedido do Ivan, 30/10/2026): "Vão entrar 120 UN de … no SisChef, porque o SisChef controla o estoque deste produto por UN. Conta: 10 CX × 12 = 120 UN."
   // Só com número válido e com a quantidade da nota lida. A unidade do produto é a da lista do app: quando ela não é certa (conversão "opcional": "un" é palpite pelo nome) a frase avisa
   // que o robô confere no SisChef antes de lançar; sem unidade (produto novo) a frase não inventa uma.
@@ -334,7 +338,10 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
               )}
               {/* Eco do que foi entendido: "0,395" e "0.395" são a mesma coisa, "1000" é mil — o Ivan vê o número que vai para o SisChef antes de confirmar */}
               {ecoConversao && <p className="sub" data-testid="conversao-eco">Vai gravar: {ecoConversao}</p>}
-              {avisoUm && <p className="amarelo" role="status" data-testid="conversao-um-aviso">{avisoUm}</p>}
+              {/* a região existe ANTES do texto (leitor de tela só anuncia o que muda numa região já montada) e o aviso tem estilo próprio, senão se perde dentro da caixa amarela */}
+              <div role="status" data-testid="conversao-um-regiao">
+                {avisoUm && <p className="amarelo aviso-um" data-testid="conversao-um-aviso"><span aria-hidden="true">⚠ </span>{avisoUm}</p>}
+              </div>
               {leitura != null && atual != null && (
                 <p className="ok" data-testid="conversao-entrada">
                   Vão entrar <b>{leitura.entra}</b> de {atual.nome} (cód. {atual.produto_id}) no SisChef

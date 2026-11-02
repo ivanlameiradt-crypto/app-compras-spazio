@@ -432,20 +432,21 @@ describe('conversaoDaDecisao (o que está gravado em cot_nfe.associacoes_app)', 
   })
 })
 
-// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"): digitar 1 entre unidades diferentes grava "1 UN = 1 KG" no SisChef para as próximas notas; a tela só pergunta, não bloqueia.
+// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"; ajustes depois da revisão independente do mesmo dia): digitar 1 entre unidades diferentes grava "1 UN = 1 KG" no SisChef para as
+// próximas notas; a tela só pergunta, não bloqueia. A frase não repete o exemplo da lata (já está na ajuda da caixa).
 describe('avisoDoUm (o "1" entre unidades diferentes)', () => {
-  it('1 com unidades que se sabe diferentes: diz o que será gravado, pergunta, e KG ganha o exemplo da lata', () => {
+  it('1 com unidades que se sabe diferentes: diz o que será gravado e pergunta', () => {
     const t = avisoDoUm(1, 'UN', 'kg', true)
     expect(t).toContain('Você digitou 1: isso grava “1 UN = 1 KG” no SisChef')
     expect(t).toContain('vale também para as próximas notas deste produto')
     expect(t).toContain('É isso mesmo?')
-    expect(t).toContain('digite quanto vale 1 UN em KG (ex.: lata de 395 g = 0,395).')
+    expect(t).toContain('digite quanto vale 1 UN em KG.')
+    expect(t).not.toContain('lata')
   })
-  it('produto em CT ou PCT: o texto vale, mas sem o exemplo do peso', () => {
+  it('produto em CT ou PCT: a mesma frase com a unidade dele', () => {
     const t = avisoDoUm(1, 'UN', 'pct', true)
     expect(t).toContain('“1 UN = 1 PCT”')
     expect(t).toContain('digite quanto vale 1 UN em PCT.')
-    expect(t).not.toContain('lata')
   })
   it('só o número 1 exato avisa: 0,395, 1,5, 15, nulo e indefinido não', () => {
     for (const v of [0.395, 1.5, 15, 0, null, undefined]) expect(avisoDoUm(v, 'UN', 'kg', true)).toBeNull()
@@ -454,7 +455,7 @@ describe('avisoDoUm (o "1" entre unidades diferentes)', () => {
     expect(avisoDoUm(1, 'KG', 'kg', false)).toBeNull()
     expect(avisoDoUm(1, 'UN', 'un', false)).toBeNull()
   })
-  it('sem a unidade da nota (caixa do item já associado) ou sem a do produto: a frase geral, sem inventar unidade', () => {
+  it('sem a unidade da nota (nota antiga) ou sem a do produto: a frase geral, sem inventar unidade', () => {
     expect(avisoDoUm(1, null, 'kg', true)).toContain('“1 unidade da nota = 1 KG”')
     const sem = avisoDoUm(1, 'UN', null, true)
     expect(sem).toContain('“1 UN = 1 na unidade do produto no SisChef”')

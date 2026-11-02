@@ -131,6 +131,8 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .chave.on { background: var(--ok-fundo); color: var(--ok-texto); border-color: var(--ok-texto); font-weight: 700; }
 .mapa-pedido tr.cinza td { color: var(--suave); }
 .linha-form .amarelo { margin-top: 6px; }
+/* Aviso do "1" (02/11/2026): dentro da caixa amarela da conversão ele precisa se destacar — cartão da cor do tema, barra grossa à esquerda e negrito (claro e escuro). */
+.aviso-um { background: var(--cartao); color: var(--texto); border: 2px solid var(--aviso-texto); border-left-width: 6px; font-weight: 600; }
 .campo-entrega { margin-top: 8px; }
 
 /* Fase 2, Bloco E1 — painel de economia (segue a skill dataviz: cores por token, legível em claro e escuro) */
