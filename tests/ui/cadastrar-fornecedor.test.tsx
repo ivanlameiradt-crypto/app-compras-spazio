@@ -282,3 +282,43 @@ describe('CadastrarFornecedor — nota: pedido parado, cadastro antigo e robô o
     expect(screen.getByTestId('cadastrar')).toBeEnabled()
   })
 })
+
+// 02/11/2026: aba "Compras avulsas". Não há cupom nem nota: `cupom.id` é o identificador da compra e o pedido de cadastro leva `avulsa_id` (antes ia como `cupom_id` e o servidor respondia 404).
+describe('CadastrarFornecedor — dentro da compra avulsa (aoUsar)', () => {
+  const COMPRA = { id: '3f2b8c1e-7d4a-4e5b-9a60-1c2d3e4f5a6b', motivo: null }
+  const abrirAvulsa = (a: AcoesFornecedor, aoUsar = vi.fn()) =>
+    render(<CadastrarFornecedor cupom={COMPRA} acoes={a} aoReenviar={vi.fn()} aoUsar={aoUsar} intervaloMs={20} />)
+
+  it('o pedido de cadastro leva o identificador da compra como avulsa_id, nunca como cupom_id nem nota_chave', async () => {
+    const a = acoes()
+    abrirAvulsa(a)
+    await userEvent.type(screen.getByLabelText('CNPJ'), '63540861000182')
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    await screen.findByLabelText(/Razão social/)
+    await userEvent.click(screen.getByTestId('cadastrar'))
+    expect(a.cadastrar).toHaveBeenCalledWith({ cnpj: '63540861000182', razao_social: 'A. N. DA SILVA DESCARTAVEIS LTDA', nome_fantasia: '', uf: 'PA', municipio: 'Abaetetuba', avulsa_id: COMPRA.id })
+    const pedido = vi.mocked(a.cadastrar).mock.calls[0][0]
+    expect(pedido).not.toHaveProperty('cupom_id')
+    expect(pedido).not.toHaveProperty('nota_chave')
+    expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
+  })
+
+  it('pronto o cadastro: o botão vira "Usar este fornecedor", entrega os dados a quem chamou e NUNCA reenvia cupom', async () => {
+    let pedido = false
+    const a = acoes({
+      cadastrar: vi.fn(async () => { pedido = true }),
+      statusDoCadastro: vi.fn(async () => (pedido ? { estado: 'CADASTRADO' as const, motivo: null } : null)),
+    })
+    const aoUsar = vi.fn()
+    abrirAvulsa(a, aoUsar)
+    await userEvent.type(screen.getByLabelText('CNPJ'), '63540861000182')
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    await screen.findByLabelText(/Razão social/)
+    await userEvent.click(screen.getByTestId('cadastrar'))
+    expect(await screen.findByTestId('cadastro-pronto')).toHaveTextContent('Agora é só usar este fornecedor na compra.')
+    expect(screen.getByTestId('reenviar-cupom')).toHaveTextContent('Usar este fornecedor')
+    await userEvent.click(screen.getByTestId('reenviar-cupom'))
+    expect(aoUsar).toHaveBeenCalledWith({ cnpj: '63540861000182', razao: 'A. N. DA SILVA DESCARTAVEIS LTDA', fantasia: '' })
+    expect(a.reenviarCupom).not.toHaveBeenCalled()
+  })
+})
