@@ -6,6 +6,7 @@ import type { ItemNotaSefaz, NfeAprendizado } from '../lib/tipos'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 import { EmbalagemLembradaDoItem } from './CaixaEmbalagemLembrada'
 import { situacaoDaMemoria } from './embalagemLembrada'
+import { useValorEstavel } from './useValorEstavel'
 
 /**
  * "Editar" de um item que JÁ vem associado no SisChef (pedido do Ivan, 21/10/2026: todo item tem o botão, mesmo o que está certo). O que se edita aqui é a
@@ -39,6 +40,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const [editando, setEditando] = useState(false)
   const [salvo, setSalvo] = useState<number | null | undefined>(undefined) // o que acabou de gravar (vale até a releitura trazer o do servidor)
   const [enviando, setEnviando] = useState(false)
+  const [digitado, setDigitado] = useState(false) // o Ivan DIGITOU no campo desde que abriu (o número que a tela pôs, do gravado ou do "Corrigir", não conta para o aviso do 1)
   const [erro, setErro] = useState('')
   const [esqueceu, setEsqueceu] = useState(false) // o Ivan acabou de mandar o robô esquecer o número lembrado: fica o aviso "Pronto" no lugar da caixa, até ele mexer no item
   const [lida, setLida] = useState<{ produto: string; unidade: string | null } | null>(null) // a última unidade lida e DE QUAL produto (a caixa pode trocar de item)
@@ -63,15 +65,17 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   const unidadeDoProduto = lida != null && lida.produto === codigoDoProduto ? lida.unidade : undefined
   const lendoUnidade = aberta && !!buscarUnidade && codigoDoProduto != null && unidadeDoProduto === undefined
   const sugestao = lendoUnidade || ehEmbalagemContada(unidadeDoProduto) ? null : embalagemPeloNome(item.descricao, item.unidade_sischef)
-  // O "1" quando o robô disse UN DIFERE (02/11/2026): aqui `item.unidade_sischef` é a unidade do PRODUTO no SisChef; a da nota não vem. Aviso amarelo, sem bloquear (associacaoRegras.avisoDoUm)
-  const avisoUm = avisoDoUm(conversao, null, item.unidade_sischef, pede)
+  // O "1" quando o robô disse UN DIFERE (02/11/2026): aqui `item.unidade_sischef` é a unidade do PRODUTO no SisChef; a da nota vem em `item.unidade_nota` (leitura de 31/10 em diante;
+  // notas antigas não têm e a frase diz "unidade da nota"). Aviso amarelo, sem bloquear (associacaoRegras.avisoDoUm), só para o que o Ivan DIGITOU e depois de uma pausa na digitação.
+  const textoEstavel = useValorEstavel(texto)
+  const avisoUm = digitado && textoEstavel === texto ? avisoDoUm(conversao, item.unidade_nota, item.unidade_sischef, pede) : null
 
   async function guardar(valor: number | null) {
     if (enviando) return
     setEnviando(true); setErro('')
     try {
       await salvar(item.n, valor)
-      setSalvo(valor); setEditando(false); setTexto('')
+      setSalvo(valor); setEditando(false); setTexto(''); setDigitado(false)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui guardar a conversão agora. Confira a internet e tente de novo.')
     } finally {
@@ -82,6 +86,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
   function abrir(inicial?: number) {
     setErro(''); setEsqueceu(false)
     setTexto(inicial != null ? formatarConversao(inicial) : valorAtual != null ? formatarConversao(valorAtual) : '')
+    setDigitado(false)
     setEditando(true)
   }
   /** "Esquecer" da memória: a função de fora lança Error se falhar (a caixa mostra); se der certo, fica o aviso de que o robô esqueceu. */
@@ -133,7 +138,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
       <label>Quanto vale 1 unidade da nota{unidade ? ` em ${unidade}` : ' na unidade do produto no SisChef'}?
         {/* autoFocus só quando o Ivan tocou em Editar (o campo acabou de abrir e o teclado do celular já aparece); a caixa que o robô pediu e abre sozinha não rouba o cursor */}
         <input type="text" inputMode="decimal" autoComplete="off" placeholder="0,000" value={texto} disabled={desabilitado || enviando} autoFocus={editando}
-          onChange={(e) => { setTexto(e.target.value); setErro('') }} />
+          onChange={(e) => { setTexto(e.target.value); setDigitado(true); setErro('') }} />
       </label>
       <p className="sub">
         Ex.: a nota traz 10 UN e cada UN é uma caixa com 168 sachês → <b>168</b> (entram 1.680). Lata de 395 g, estoque em KG → <b>0,395</b>.
@@ -155,7 +160,9 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
           Vai gravar: 1 unidade da nota = {formatarConversao(conversao)}{unidade ? ` ${unidade}` : ''}.
         </p>
       )}
-      {avisoUm && <p className="amarelo" role="status" data-testid="conversao-item-um-aviso">{avisoUm}</p>}
+      <div role="status" data-testid="conversao-item-um-regiao">
+        {avisoUm && <p className="amarelo aviso-um" data-testid="conversao-item-um-aviso"><span aria-hidden="true">⚠ </span>{avisoUm}</p>}
+      </div>
       {/* A leitura clara do que ENTRA no SisChef (pedido do Ivan, 30/10/2026), a mesma frase da caixa de associação: o total, o produto, o porquê e a conta. Aqui o produto já está
           associado no SisChef, então a unidade é a dele (a da "Qtde Conver."). Sem a quantidade da leitura não há conta: nada aparece. */}
       {conversao != null && previa && entra && (
@@ -172,7 +179,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
         <button type="button" className="botao" disabled={conversao == null || desabilitado || enviando} onClick={() => void guardar(conversao)}>
           {enviando ? 'Confirmando…' : 'Confirmar'}
         </button>
-        {editando && <button type="button" className="link" disabled={enviando} onClick={() => { setEditando(false); setTexto(''); setErro('') }}>Cancelar</button>}
+        {editando && <button type="button" className="link" disabled={enviando} onClick={() => { setEditando(false); setTexto(''); setDigitado(false); setErro('') }}>Cancelar</button>}
         {editando && valorAtual != null && (
           <button type="button" className="link perigo" disabled={desabilitado || enviando} onClick={() => void guardar(null)}>Desfazer a conversão</button>
         )}

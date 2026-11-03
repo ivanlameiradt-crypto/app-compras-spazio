@@ -279,35 +279,70 @@ describe('NotaSefaz — produto em CT ou PCT: conversão obrigatória, sem suges
   })
 })
 
-// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"): o "1" digitado entre unidades que se sabe diferentes (nota em CX, produto em KG) grava "1 CX = 1 KG" no SisChef para as próximas notas.
-// A caixa pergunta "é isso mesmo?" em amarelo e NÃO bloqueia o Confirmar (pode ser 1 de verdade).
+// 02/11/2026 (pedido do Ivan: "quero o aviso do 1"; ajustes depois da revisão independente do mesmo dia): o "1" DIGITADO entre unidades que se sabe diferentes (nota em CX, produto em KG) grava
+// "1 CX = 1 KG" no SisChef para as próximas notas. A caixa pergunta "é isso mesmo?" em amarelo, com estilo próprio, SÓ depois de uma pausa na digitação e SÓ para o número que o Ivan digitou;
+// NÃO bloqueia o Confirmar (pode ser 1 de verdade).
+const esperarPausa = (ms = 900) => new Promise<void>((r) => setTimeout(r, ms))   // o aviso só aparece depois de 600 ms sem digitar: para provar que NÃO aparece, espere mais que isso
 describe('NotaSefaz — aviso amarelo do "1" entre unidades diferentes (02/11)', () => {
-  it('SEARA (nota em CX, produto em KG): digitar 1 mostra o aviso e a pergunta; o Confirmar segue aceso; digitar 5 faz o aviso sumir', async () => {
+  it('SEARA (nota em CX, produto em KG): digitar 1 e parar mostra o aviso e a pergunta (depois de uma pausa); o Confirmar segue aceso; digitar 5 faz o aviso sumir na hora', async () => {
     m.notasALancar.mockResolvedValue([seara()])
     render(<NotaSefaz />)
     const campo = await screen.findByLabelText('Quanto vale 1 CX em KG?')
     expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+    expect(screen.getByTestId('conversao-um-regiao')).toHaveAttribute('role', 'status')   // a região existe ANTES do texto: o leitor de tela anuncia quando ele aparece
     await userEvent.type(campo, '1')
-    const aviso = await screen.findByTestId('conversao-um-aviso')
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()            // ainda "digitando": não pisca
+    const aviso = await screen.findByTestId('conversao-um-aviso', {}, { timeout: 4000 })
     expect(aviso).toHaveTextContent('Você digitou 1: isso grava “1 CX = 1 KG” no SisChef, e vale também para as próximas notas deste produto.')
     expect(aviso).toHaveTextContent('É isso mesmo?')
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()   // só avisa: não bloqueia
+    expect(aviso).toHaveClass('amarelo', 'aviso-um')                                      // estilo próprio: dentro da caixa amarela ele precisa se destacar
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()               // só avisa: não bloqueia
     await userEvent.clear(campo)
     await userEvent.type(campo, '5')
     expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
   })
 
-  it('1,0 também é o 1; 1,5 não é; e confirmar o 1 mesmo assim grava 1 (o aviso não muda o que o Ivan decidiu)', async () => {
+  it('1,5 não avisa; 1,0 também é o 1 e avisa; confirmar o 1 mesmo assim grava 1 (o aviso não muda o que o Ivan decidiu)', async () => {
     m.notasALancar.mockResolvedValue([seara()])
     m.associarItem.mockImplementation(async () => { m.notasALancar.mockResolvedValue([seara(1)]) })
     render(<NotaSefaz />)
     const campo = await screen.findByLabelText('Quanto vale 1 CX em KG?')
     await userEvent.type(campo, '1,5')
+    await esperarPausa()
     expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
     await userEvent.clear(campo)
     await userEvent.type(campo, '1,0')
-    expect(await screen.findByTestId('conversao-um-aviso')).toHaveTextContent('“1 CX = 1 KG”')
+    expect(await screen.findByTestId('conversao-um-aviso', {}, { timeout: 4000 })).toHaveTextContent('“1 CX = 1 KG”')
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, NUGGETS, 1))
+  })
+
+  it('digitar 15 sem pausa (o 1 sozinho dura um instante) não mostra o aviso em momento nenhum', async () => {
+    m.notasALancar.mockResolvedValue([seara()])
+    render(<NotaSefaz />)
+    await userEvent.type(await screen.findByLabelText('Quanto vale 1 CX em KG?'), '15')
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+    await esperarPausa()
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+  })
+
+  it('pacote de 1 kg no nome ("AÇÚCAR … 1KG"): o 1 que o app mesmo sugere NÃO é "você digitou" — nenhum aviso, só a sugestão', async () => {
+    const acucar = { ...seara(), itens: [{ n: 1, descricao: 'CÓD. FOR: 000321 AÇÚCAR REFINADO 1KG', qtd: 10, unidade_sischef: 'UN', produto_id: null }] } as unknown as NotaSefazLista
+    m.notasALancar.mockResolvedValue([acucar])
+    render(<NotaSefaz />)
+    expect(await screen.findByLabelText('Quanto vale 1 UN em KG?')).toHaveValue('1')
+    expect(screen.getByTestId('conversao-sugerida')).toHaveTextContent('1KG = 1')
+    await esperarPausa()
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
+  })
+
+  it('produto "un" (o app só desconfia da unidade): digitar 1 não avisa', async () => {
+    const opcional = { ...seara(), associacoes_app: { '1': { ...decisao(), unidade: 'un' } } } as unknown as NotaSefazLista
+    m.notasALancar.mockResolvedValue([opcional]); m.catalogoProdutos.mockResolvedValue([{ ...CATALOGO[0], unidade: 'un' }])   // a unidade da lista do app manda: "un" é só palpite pelo nome
+    render(<NotaSefaz />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    await userEvent.type(await screen.findByLabelText(/^Quanto vale 1 CX na unidade do produto no SisChef\?/), '1')
+    await esperarPausa()
+    expect(screen.queryByTestId('conversao-um-aviso')).not.toBeInTheDocument()
   })
 })
