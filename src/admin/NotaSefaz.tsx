@@ -787,7 +787,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
           </div>
         </div>
       ) : (
-        <div><button type="button" className="link perigo" data-testid="descartar-nota" onClick={() => { setErro(''); setMotivoDito(''); setDescartando(true) }}>Excluir nota</button></div>
+        <div><button type="button" className="link perigo" data-testid="descartar-nota" onClick={() => { setErro(''); setDescartando(true) }}>Excluir nota</button></div>
       ))}
       {erro && <p className="erro" role="alert">{erro}</p>}
       </div>

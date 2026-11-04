@@ -765,7 +765,7 @@ export async function verificarRobo(chave: string): Promise<VerificacaoRobo> {
  * O Ivan chama de "excluir" (pedido de 03/11/2026) o que o banco chama de "descartar": troca a palavra nas mensagens do banco que passam
  * para a tela ("esta nota foi descartada" vira "esta nota foi excluída"). As mensagens do banco vêm em minúsculas.
  */
-const comoExcluir = (texto: string): string => texto.replace(/descartadas/g, 'excluídas').replace(/descartada/g, 'excluída').replace(/descartar/g, 'excluir')
+const comoExcluir = (texto: string): string => texto.replace(/descartada/g, 'excluída').replace(/descartar/g, 'excluir')
 
 /**
  * Texto claro para o erro de excluir (descartar) / restaurar. As mensagens do banco (cot_nfe_descartar) já são em português e dizem o motivo

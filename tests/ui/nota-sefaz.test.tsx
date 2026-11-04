@@ -1256,10 +1256,14 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
     render(<NotaSefaz />)
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), 'devolvida')
     await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
     expect(await within(linha).findByRole('alert')).toHaveTextContent('ficou pela metade')
     expect(within(linha).queryByTestId('confirmar-descarte')).not.toBeInTheDocument()
     expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
+    // o que ele escreveu continua lá para tentar de novo
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    expect(within(linha).getByLabelText('Motivo (opcional)')).toHaveValue('devolvida')
   })
 
   it('Notas excluídas: lista com o motivo; "Voltar para a fila" desfaz e a nota volta para "Notas a lançar"', async () => {
