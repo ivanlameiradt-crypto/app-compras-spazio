@@ -1148,66 +1148,108 @@ describe('NotaSefaz', () => {
   })
 })
 
-describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do Ivan)', () => {
+describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03/11/2026)', () => {
   const semItens = (extra: Partial<NotaSefazLista> = {}) =>
     nota({ emitente: 'MC CONTENTE LTDA', numero: '2278', valor_nf: 1275, itens: [], parcelas: null, ...extra })
   const k = (c: string) => c.repeat(44)
 
-  it('"Descartar nota" aparece só na nota que não dá para lançar (sem itens, item sem produto, conta especial, robô parou)', async () => {
+  it('"Excluir nota" aparece em TODA nota da lista: a que não dá para lançar e também a que está em ordem (a De Marchi devolvida só mostrava "Falta as parcelas")', async () => {
     aLancar(
       semItens({ chave: k('1') }),
       nota({ chave: k('2'), itens: [item({ produto_id: null })] }),
       nota({ chave: k('3'), emitente: 'KONDO COMERCIO' }),
       nota({ chave: k('4'), lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' }),
-      nota({ chave: k('5') }),
+      nota({ chave: k('5') }),                    // em ordem, só falta digitar as parcelas
+      nota({ chave: k('6'), ...LIDA }),           // em ordem e pronta para lançar
     )
     render(<NotaSefaz />)
     const linhas = await screen.findAllByTestId('nota-a-lancar')
-    expect(linhas.map((l) => within(l).queryByTestId('descartar-nota') !== null)).toEqual([true, true, true, true, false])
+    expect(linhas.map((l) => within(l).queryByTestId('descartar-nota') !== null)).toEqual([true, true, true, true, true, true])
+    expect(within(linhas[4]).getByTestId('descartar-nota')).toHaveTextContent('Excluir nota')
+    expect(screen.queryByText('Descartar nota')).not.toBeInTheDocument()
   })
 
-  it('nunca na nota pela metade (erro) nem na que o robô está lançando agora', async () => {
+  it('nunca na nota pela metade (erro) nem na que o robô está lançando agora, com ou sem problema', async () => {
     aLancar(
       semItens({ chave: k('1'), lancamento_estado: 'erro', lancamento_motivo: 'pedido gerado' }),
       semItens({ chave: k('2'), lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }),
+      nota({ chave: k('3'), ...LIDA, lancamento_estado: 'erro', lancamento_motivo: 'pedido gerado' }),
+      nota({ chave: k('4'), ...LIDA, lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }),
     )
     render(<NotaSefaz />)
     const linhas = await screen.findAllByTestId('nota-a-lancar')
+    expect(linhas).toHaveLength(4)
     for (const l of linhas) expect(within(l).queryByTestId('descartar-nota')).not.toBeInTheDocument()
   })
 
-  it('descartar em 2 toques: a pergunta diz o que muda e o que NÃO muda, manda ao banco com o motivo e a nota passa para "Notas descartadas"', async () => {
-    const n = semItens({ chave: k('1') })
+  it('enquanto o "Lançar" pede a confirmação o botão de excluir some (não se oferece lançar e excluir ao mesmo tempo) e volta no "Cancelar"', async () => {
+    aLancar(nota({ chave: k('1'), ...LIDA }))
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    expect(within(linha).getByTestId('descartar-nota')).toBeInTheDocument()
+    await userEvent.click(within(linha).getByRole('button', { name: 'Lançar' }))
+    expect(within(linha).getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
+    expect(within(linha).queryByTestId('descartar-nota')).not.toBeInTheDocument()
+    await userEvent.click(within(linha).getByRole('button', { name: 'Cancelar' }))
+    expect(within(linha).getByTestId('descartar-nota')).toBeInTheDocument()
+  })
+
+  it('excluir em 2 toques a nota em ordem (a De Marchi devolvida): a pergunta diz o que muda e o que NÃO muda, o motivo escrito vai ao banco e a nota passa para "Notas excluídas"', async () => {
+    const n = nota({ chave: k('1'), emitente: 'DE MARCHI BELEM COMERCIO DE ALIMENTOS LTDA', numero: '000113871', valor_nf: 2639.44 })
     m.notasALancar.mockResolvedValueOnce([n]).mockResolvedValue([])
-    m.notasDescartadas.mockResolvedValueOnce([]).mockResolvedValue([{ ...n, descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Sem itens (XML resumido)' }])
+    m.notasDescartadas.mockResolvedValueOnce([]).mockResolvedValue([{ ...n, descartada_em: '2026-11-03T21:00:00Z', descartada_motivo: 'devolvida' }])
     render(<NotaSefaz />)
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
     const pergunta = within(linha).getByTestId('confirmar-descarte')
-    expect(pergunta).toHaveTextContent('Descartar a NF 2278 de MC CONTENTE LTDA?')
+    expect(pergunta).toHaveTextContent('Excluir a NF 000113871 de DE MARCHI BELEM COMERCIO DE ALIMENTOS LTDA?')
     expect(pergunta).toHaveTextContent('nada é lançado')
     expect(pergunta).toHaveTextContent('Não muda nada no SisChef nem na SEFAZ')
-    expect(pergunta).toHaveTextContent('Dá para desfazer em “Notas descartadas”')
-    expect(pergunta).toHaveTextContent('Se o XML completo chegar depois')
-    expect(m.descartarNota).not.toHaveBeenCalled() // o 1º toque só pergunta
-    await userEvent.click(within(pergunta).getByRole('button', { name: 'Descartar' }))
-    expect(m.descartarNota).toHaveBeenCalledWith(k('1'), 'Sem itens (XML resumido)')
+    expect(pergunta).toHaveTextContent('Dá para desfazer em “Notas excluídas”')
+    expect(pergunta).not.toHaveTextContent('Se o XML completo chegar depois')   // esta nota tem itens
+    expect(m.descartarNota).not.toHaveBeenCalled()                             // o 1º toque só pergunta
+    await userEvent.type(within(pergunta).getByLabelText('Motivo (opcional)'), 'devolvida')
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Excluir' }))
+    expect(m.descartarNota).toHaveBeenCalledWith(k('1'), 'devolvida')
     await waitFor(() => expect(screen.queryByTestId('nota-a-lancar')).not.toBeInTheDocument())
     const secao = await screen.findByTestId('descartadas')
-    expect(secao).toHaveTextContent('Notas descartadas (1)')
-    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('MC CONTENTE LTDA · NF 2278')
-    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('Motivo: Sem itens (XML resumido)')
+    expect(secao).toHaveTextContent('Notas excluídas (1)')
+    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('DE MARCHI BELEM COMERCIO DE ALIMENTOS LTDA · NF 000113871')
+    expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('Motivo: devolvida')
   })
 
-  it('"Cancelar" fecha a pergunta sem descartar nada', async () => {
+  it('nota em ordem e sem nada escrito: o motivo vai vazio (o banco guarda nulo)', async () => {
+    aLancar(nota({ chave: k('1'), ...LIDA }))
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
+    expect(m.descartarNota).toHaveBeenCalledWith(k('1'), '')
+  })
+
+  it('nota que não dá para lançar: o motivo do app vem primeiro e o que o Ivan escreveu depois (espaços sobrando somem)', async () => {
+    aLancar(semItens({ chave: k('1') }))
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    expect(within(linha).getByTestId('confirmar-descarte')).toHaveTextContent('Se o XML completo chegar depois, você vê um aviso lá')
+    await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), '  devolvida   ao fornecedor ')
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
+    expect(m.descartarNota).toHaveBeenCalledWith(k('1'), 'Sem itens (XML resumido); devolvida ao fornecedor')
+  })
+
+  it('"Cancelar" fecha a pergunta sem excluir nada e o que foi escrito no motivo não volta na próxima vez', async () => {
     aLancar(semItens())
     render(<NotaSefaz />)
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), 'engano')
     await userEvent.click(within(linha).getByRole('button', { name: 'Cancelar' }))
     expect(within(linha).queryByTestId('confirmar-descarte')).not.toBeInTheDocument()
     expect(within(linha).getByTestId('descartar-nota')).toBeInTheDocument()
     expect(m.descartarNota).not.toHaveBeenCalled()
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    expect(within(linha).getByLabelText('Motivo (opcional)')).toHaveValue('')
   })
 
   it('motivo guardado para item sem produto não fala em "XML completo" (só a nota sem itens fala)', async () => {
@@ -1216,29 +1258,33 @@ describe('NotaSefaz — descartar a nota que não dá para lançar (regra 3 do I
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
     expect(within(linha).getByTestId('confirmar-descarte')).not.toHaveTextContent('XML completo')
-    await userEvent.click(within(linha).getByRole('button', { name: 'Descartar' }))
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
     expect(m.descartarNota).toHaveBeenCalledWith(CHAVE, 'Item sem produto no SisChef')
   })
 
   it('se o banco recusar, mostra o motivo em português, fecha a pergunta e a nota continua na lista', async () => {
     aLancar(semItens())
-    m.descartarNota.mockRejectedValue(new Error('Esta nota ficou pela metade: confira no SisChef antes de descartar.'))
+    m.descartarNota.mockRejectedValue(new Error('Esta nota ficou pela metade: confira no SisChef antes de excluir.'))
     render(<NotaSefaz />)
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
-    await userEvent.click(within(linha).getByRole('button', { name: 'Descartar' }))
+    await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), 'devolvida')
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
     expect(await within(linha).findByRole('alert')).toHaveTextContent('ficou pela metade')
     expect(within(linha).queryByTestId('confirmar-descarte')).not.toBeInTheDocument()
     expect(screen.getByTestId('nota-a-lancar')).toBeInTheDocument()
+    // o que ele escreveu continua lá para tentar de novo
+    await userEvent.click(within(linha).getByTestId('descartar-nota'))
+    expect(within(linha).getByLabelText('Motivo (opcional)')).toHaveValue('devolvida')
   })
 
-  it('Notas descartadas: lista com o motivo; "Voltar para a fila" desfaz e a nota volta para "Notas a lançar"', async () => {
+  it('Notas excluídas: lista com o motivo; "Voltar para a fila" desfaz e a nota volta para "Notas a lançar"', async () => {
     const d = semItens({ chave: k('1'), itens: [item({ produto_id: null })], descartada_em: '2026-10-06T20:00:00Z', descartada_motivo: 'Item sem produto no SisChef' })
     m.notasDescartadas.mockResolvedValueOnce([d]).mockResolvedValue([])
     m.notasALancar.mockResolvedValueOnce([]).mockResolvedValue([{ ...d, descartada_em: null, descartada_motivo: null }])
     render(<NotaSefaz />)
     const secao = await screen.findByTestId('descartadas')
-    expect(secao).toHaveTextContent('Notas descartadas (1)')
+    expect(secao).toHaveTextContent('Notas excluídas (1)')
     expect(within(secao).getByTestId('nota-descartada')).toHaveTextContent('Motivo: Item sem produto no SisChef')
     expect(screen.queryByTestId('descartadas-aviso')).not.toBeInTheDocument()
     await userEvent.click(within(secao).getByRole('button', { name: 'Voltar para a fila' }))

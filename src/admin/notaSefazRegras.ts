@@ -334,25 +334,30 @@ export function bloqueiosDaNota(n: NotaSefazLista): string[] {
   return b
 }
 
-// ---------- descartar nota que não dá para lançar (regra 3 do Ivan)
-/** Início do motivo guardado quando a nota foi descartada por não ter itens (a lista de descartadas o reconhece por ele). */
+// ---------- excluir (descartar) nota: regra 3 do Ivan (06/10), ampliada em 03/11/2026
+/** Início do motivo guardado quando a nota foi excluída por não ter itens (a lista de excluídas o reconhece por ele). */
 export const MOTIVO_SEM_ITENS = 'Sem itens (XML resumido)'
 
 /**
- * Regra 3 do Ivan (06/10): nota que NÃO dá para lançar do jeito que está — o app a trava (sem itens/"XML resumido", item sem produto,
- * conta especial) ou o robô parou nela ('revisar') — pode ser DESCARTADA: sai da lista e o robô nunca a lança; nada muda no SisChef nem
- * na SEFAZ e dá para desfazer. Nunca a pela metade ('erro': o pedido já existe no SisChef, a nota fica à vista até alguém conferir) nem a
- * que o robô está lançando agora. O banco confere tudo de novo (cot_nfe_descartar).
+ * Regra 3 do Ivan (06/10): só a nota que NÃO dava para lançar podia ser descartada. Em 03/11/2026 ele pediu "um botão excluir" para a nota que
+ * não quer lançar mesmo estando em ordem (a De Marchi 113871, devolvida, só mostrava "Falta as parcelas" e ficou sem o botão): agora QUALQUER
+ * nota da lista pode ser EXCLUÍDA (no banco, "descartada"): sai da lista e o robô nunca a lança; nada muda no SisChef nem na SEFAZ e dá para
+ * desfazer. Nunca a pela metade ('erro': o pedido já existe no SisChef, a nota fica à vista até alguém conferir) nem a que o robô está
+ * lançando agora. O banco confere tudo de novo (cot_nfe_descartar): a tela só esconde o botão onde o banco recusaria.
  */
 export function podeDescartar(n: NotaSefazLista): boolean {
   const estado = n.lancamento_estado ?? null
   if (estado === 'erro') return false
   if (estado === 'lancando' && !lancandoPresa(n)) return false
-  return bloqueiosDaNota(n).length > 0 || estado === 'revisar'
+  return true
 }
 
-/** Por que a nota está sendo descartada (guardado na nota, até 300 letras): o(s) motivo(s) pelos quais ela não dá para lançar. */
-export function motivoDoDescarte(n: NotaSefazLista): string {
+/**
+ * Por que a nota está sendo excluída (guardado na nota, até 300 letras): o(s) motivo(s) pelos quais ela não dá para lançar, se houver, e o que o
+ * Ivan escreveu (`dito`, opcional: "devolvida"). Os motivos do app vêm primeiro (a lista de excluídas reconhece o "Sem itens" pelo começo).
+ * Sem motivo nenhum devolve '' (o banco guarda nulo).
+ */
+export function motivoDoDescarte(n: NotaSefazLista, dito = ''): string {
   const partes: string[] = []
   if (n.itens.length === 0) partes.push(MOTIVO_SEM_ITENS)
   // o motivo gravado diz o que de fato travou: item ainda sem produto escolhido, ou produto já confirmado no app ao qual só faltava a conversão
@@ -361,6 +366,8 @@ export function motivoDoDescarte(n: NotaSefazLista): string {
   if (pendencias.some((p) => p.codigo != null)) partes.push('Item confirmado no app sem a conversão de unidade')
   if (contaEspecial(n.emitente)) partes.push('Conta especial')
   if (n.lancamento_estado === 'revisar') partes.push(`O robô parou: ${traduzirMotivo(n.lancamento_motivo, n.itens) || 'confira a nota'}`)
+  const escrito = dito.replace(/\s+/g, ' ').trim()
+  if (escrito) partes.push(escrito)
   return partes.join('; ').slice(0, 300)
 }
 

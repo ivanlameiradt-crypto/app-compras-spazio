@@ -202,7 +202,7 @@ describe('notaSefazRegras', () => {
         // nota "pronta" (regra 2): a decisão opcional sem conversão também conta como completa
         const boleto = { valor_nf: 10, parcelas: [{ numero: '1', vencimento: '2026-11-01', valor: 10 }] }
         expect(prontidaoDaNota(nota({ ...semConv, ...boleto })).pronta).toBe(true)
-        expect(podeDescartar(nota({ ...semConv }))).toBe(false)                                            // nada trava: não há o que descartar
+        expect(podeDescartar(nota({ ...semConv }))).toBe(true)  // 03/11/2026: qualquer nota da lista pode ser excluída, mesmo sem nada travando
       })
 
       it('unidade do produto desconhecida (null: produto novo, fora da lista) → opcional: não trava, robô avisado da dúvida; unidade da nota ausente → nada a comparar', () => {
@@ -340,36 +340,35 @@ describe('notaSefazRegras', () => {
     expect(b[0]).toContain('chegou sem itens')
   })
 
-  describe('descartar nota que não dá para lançar (regra 3)', () => {
+  describe('excluir (descartar) nota: regra 3, ampliada em 03/11/2026', () => {
     const semProduto = { descricao: 'Y', qtd: 1, unidade_sischef: 'KG', produto_id: null }
 
-    it('pode descartar quando o app a trava (sem itens, item sem produto, conta especial) ou o robô parou nela (revisar)', () => {
+    it('QUALQUER nota da lista pode ser excluída: a que não dá para lançar e também a que está em ordem (pedido do Ivan, 03/11/2026)', () => {
+      // a que o app trava ou em que o robô parou
       expect(podeDescartar(nota({ itens: [] }))).toBe(true)
       expect(podeDescartar(nota({ itens: [semProduto] }))).toBe(true)
-      // etapa 2: com a decisão completa do app o item não trava mais, então a nota em ordem não tem o descartar (nem o motivo "sem produto")
-      const decidido = nota({ itens: [{ ...semProduto, n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } })
-      expect(podeDescartar(decidido)).toBe(false)
-      expect(motivoDoDescarte({ ...decidido, emitente: 'KONDO' })).toBe('Conta especial')
-      // nota em UN e produto "(KG)" sem a conversão: é certo que falta (obrigatória) → trava → dá para descartar
-      expect(podeDescartar(nota({ itens: [{ ...semProduto, unidade_sischef: 'UN', n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } }))).toBe(true)
-      // nota em KG e produto "un" (palpite da lista): a conversão é só opcional → nada trava → sem descartar (o robô confere no SisChef)
-      expect(podeDescartar(nota({ itens: [{ ...semProduto, n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'un' } } }))).toBe(false)
       expect(podeDescartar(nota({ emitente: 'KONDO COMERCIO' }))).toBe(true)
       expect(podeDescartar(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'total diferente' }))).toBe(true)
+      // nota em UN e produto "(KG)" sem a conversão: trava (obrigatória)
+      expect(podeDescartar(nota({ itens: [{ ...semProduto, unidade_sischef: 'UN', n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } }))).toBe(true)
+      // a que está em ordem (antes ficava sem o botão: a De Marchi 113871, devolvida, só mostrava "Falta as parcelas")
+      const decidido = nota({ itens: [{ ...semProduto, n: 1 }], associacoes_app: { '1': { produto_id: 5, produto_nome: 'P', unidade: 'kg' } } })
+      expect(podeDescartar(decidido)).toBe(true)
+      expect(podeDescartar(nota())).toBe(true)
+      expect(podeDescartar(nota({ parcelas: [] }))).toBe(true)
+      expect(podeDescartar(nota({ parcelas: null }))).toBe(true)                  // XML por ler: só falta digitar as parcelas
+      expect(podeDescartar(nota({ lancamento_estado: 'ensaio_ok' }))).toBe(true)
     })
 
-    it('nota em ordem (pronta, com a forma de pagamento a escolher, ensaio ok) NÃO tem o descartar', () => {
-      expect(podeDescartar(nota())).toBe(false)
-      expect(podeDescartar(nota({ parcelas: [] }))).toBe(false)
-      expect(podeDescartar(nota({ lancamento_estado: 'ensaio_ok' }))).toBe(false)
-    })
-
-    it('NUNCA a pela metade (erro) nem a que o robô está lançando agora; a reserva presa (> 30 min) pode', () => {
-      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'erro' }))).toBe(false)
-      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }))).toBe(false)
+    it('NUNCA a pela metade (erro) nem a que o robô está lançando agora (com ou sem problema); a reserva presa (> 30 min) pode', () => {
       const minAtras = (min: number) => new Date(Date.now() - min * 60_000).toISOString() // relógio real: podeDescartar usa Date.now()
-      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'lancando', lancamento_estado_em: minAtras(5) }))).toBe(false)
-      expect(podeDescartar(nota({ itens: [], lancamento_estado: 'lancando', lancamento_estado_em: minAtras(31) }))).toBe(true) // reserva presa
+      for (const itens of [[], undefined]) {
+        const base = itens ? { itens } : {}                                      // sem itens e também a que está em ordem
+        expect(podeDescartar(nota({ ...base, lancamento_estado: 'erro' }))).toBe(false)
+        expect(podeDescartar(nota({ ...base, lancamento_estado: 'lancando', lancamento_estado_em: new Date().toISOString() }))).toBe(false)
+        expect(podeDescartar(nota({ ...base, lancamento_estado: 'lancando', lancamento_estado_em: minAtras(5) }))).toBe(false)
+        expect(podeDescartar(nota({ ...base, lancamento_estado: 'lancando', lancamento_estado_em: minAtras(31) }))).toBe(true) // reserva presa
+      }
     })
 
     it('motivoDoDescarte: diz o que impede de lançar (e cabe nos 300 do banco)', () => {
@@ -386,6 +385,17 @@ describe('notaSefazRegras', () => {
         .toBe('O robô parou: A nota não tem boleto: escolha como pagar')
       expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: null }))).toBe('O robô parou: confira a nota')
       expect(motivoDoDescarte(nota({ lancamento_estado: 'revisar', lancamento_motivo: 'x'.repeat(900) })).length).toBe(300)
+    })
+
+    it('motivoDoDescarte: o que o Ivan escreveu vai DEPOIS dos motivos do app; sem motivo nenhum fica vazio; espaços sobrando somem; cabe nos 300', () => {
+      expect(motivoDoDescarte(nota(), 'devolvida')).toBe('devolvida')
+      expect(motivoDoDescarte(nota())).toBe('')
+      expect(motivoDoDescarte(nota(), '   ')).toBe('')
+      expect(motivoDoDescarte(nota({ itens: [] }), 'devolvida')).toBe('Sem itens (XML resumido); devolvida')
+      expect(motivoDoDescarte(nota({ itens: [] }), ' devolvida \n ao  fornecedor ')).toBe('Sem itens (XML resumido); devolvida ao fornecedor')
+      expect(motivoDoDescarte(nota({ itens: [] }), 'x'.repeat(900)).length).toBe(300)
+      // a lista de excluídas reconhece "Sem itens" pelo começo do motivo: com o texto do Ivan junto ainda reconhece
+      expect(descartadaVoltouComItens(nota({ descartada_motivo: motivoDoDescarte(nota({ itens: [] }), 'devolvida') }))).toBe(true)
     })
 
     it('descartadaVoltouComItens: só a descartada por falta de itens que agora tem itens', () => {

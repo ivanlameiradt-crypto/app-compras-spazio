@@ -701,7 +701,7 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
   const t = texto.toLowerCase()
   if (status === 403 || t.includes('administrador')) return 'Só o administrador pode lançar notas.'
   if (t.includes('outra nota')) return 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'
-  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi descartada. Atualize a tela e confira.'
+  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi excluída. Atualize a tela e confira.'
   if (t.includes('parcelas digitadas')) {
     if (t.includes('não fecham')) return 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'
     if (t.includes('já tem boletos')) return 'Esta nota já tem boletos no XML. Atualize a tela e confira.'
@@ -762,24 +762,30 @@ export async function verificarRobo(chave: string): Promise<VerificacaoRobo> {
 }
 
 /**
- * Texto claro para o erro de descartar/restaurar. As mensagens do banco (cot_nfe_descartar) já são em português e dizem o motivo
- * (pela metade, robô lançando…): passam como vieram; falha de rede ou erro desconhecido vira um texto genérico.
+ * O Ivan chama de "excluir" (pedido de 03/11/2026) o que o banco chama de "descartar": troca a palavra nas mensagens do banco que passam
+ * para a tela ("esta nota foi descartada" vira "esta nota foi excluída"). As mensagens do banco vêm em minúsculas.
+ */
+const comoExcluir = (texto: string): string => texto.replace(/descartada/g, 'excluída').replace(/descartar/g, 'excluir')
+
+/**
+ * Texto claro para o erro de excluir (descartar) / restaurar. As mensagens do banco (cot_nfe_descartar) já são em português e dizem o motivo
+ * (pela metade, robô lançando…): passam como vieram (com "excluir" no lugar de "descartar"); falha de rede ou erro desconhecido vira um texto genérico.
  */
 function mensagemDoDescarte(e: unknown, acao: string): string {
   const texto = e instanceof Error ? e.message : ''
   if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
-  if (/nota não encontrada|não está mais na fila|pela metade|lançando esta nota/i.test(texto)) return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
+  if (/nota não encontrada|não está mais na fila|pela metade|lançando esta nota/i.test(texto)) { const t = comoExcluir(texto); return t.charAt(0).toUpperCase() + t.slice(1) + '.' }
   return `Não consegui ${acao} agora. Confira a internet e tente de novo.`
 }
 /**
- * Descarta UMA nota da fila (cot_nfe_descartar, admin): ela sai de "Notas a lançar" e o robô não a lança. NADA muda no SisChef nem na
+ * Exclui (no banco, descarta) UMA nota da fila (cot_nfe_descartar, admin): ela sai de "Notas a lançar" e o robô não a lança. NADA muda no SisChef nem na
  * SEFAZ. Não vale para nota pela metade nem para a que o robô está lançando (o banco recusa). `motivo` fica guardado (até 300 letras).
  */
 export async function descartarNota(chave: string, motivo: string): Promise<void> {
   try { await chamar('cot_nfe_descartar', { p_chave: chave, p_motivo: motivo }) }
-  catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'descartar a nota'), e instanceof ErroApi ? e.status : undefined) }
+  catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'excluir a nota'), e instanceof ErroApi ? e.status : undefined) }
 }
-/** Desfaz o descarte: a nota volta para "Notas a lançar". */
+/** Desfaz a exclusão: a nota volta para "Notas a lançar". */
 export async function restaurarNota(chave: string): Promise<void> {
   try { await chamar('cot_nfe_restaurar', { p_chave: chave }) }
   catch (e) { throw new ErroApi(mensagemDoDescarte(e, 'voltar a nota para a fila'), e instanceof ErroApi ? e.status : undefined) }
@@ -935,7 +941,8 @@ function mensagemDaAssociacao(e: unknown): string {
   const texto = e instanceof Error ? e.message : ''
   if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
   if (/nota não encontrada|não está mais na fila|descartada|pela metade|lançando esta nota|item não encontrado|já está associado|ainda não está associado|código do produto|fora da lista|a conversão/i.test(texto)) {
-    return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
+    const t = comoExcluir(texto)
+    return t.charAt(0).toUpperCase() + t.slice(1) + '.'
   }
   return 'Não consegui guardar a escolha agora. Confira a internet e tente de novo.'
 }
