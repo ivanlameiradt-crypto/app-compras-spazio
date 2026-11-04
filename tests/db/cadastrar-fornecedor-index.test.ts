@@ -26,9 +26,9 @@ const disparos: string[] = []
 beforeAll(async () => {
   db = await novoBanco()
   await semear(db)
-  // a tabela `cupom` NÃO está nas migrações deste repositório (vem do outro projeto): uma versão mínima, só com o que a função lê
-  await db.exec(`create table public.cupom (id uuid primary key, estado text, motivo text, pedido_sischef text);
-                 grant all on public.cupom to service_role;`)
+  // a tabela `cupom` vem do outro projeto (o robô do cupom): o shim dos testes (shim-supabase.sql) tem uma cópia no formato de produção, com os privilégios padrão do Supabase
+  // (service_role lê e escreve), porque as migrações do app que mexem nela (cupom_excluir / cupom_restaurar, 03/11/2026) precisam dela. Criar outra aqui dá
+  // "relation cupom already exists" (visto no CI do PR 68). A função só lê id, estado, motivo e pedido_sischef; este teste só esvazia a tabela.
   h.cliente = clienteSobrePglite(db, { 'tok-ivan': 'ivan@spazio.com', 'tok-joao': 'joao@spazio.com' }, log)
   ;(globalThis as unknown as { Deno: unknown }).Deno = {
     env: { get: (k: string) => ({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'srv', GITHUB_PAT: 'pat' } as Record<string, string>)[k] },
