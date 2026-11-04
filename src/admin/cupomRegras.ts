@@ -186,7 +186,9 @@ const NO_MEIO_DO_SISCHEF = /^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_
 const PENDENTE_PARADO_DO_REAPER = /^CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de \d+ min$/
 export function parouNoMeioDoSischef(c: CupomRecente): boolean {
   const motivo = (c.motivo ?? '').trim()
-  return c.estado === 'REVISAR' && NO_MEIO_DO_SISCHEF.test(motivo) && !PENDENTE_PARADO_DO_REAPER.test(motivo)
+  // a exceção só vale se o robô NUNCA reivindicou o cupom (processando_desde nulo; ausente = não se sabe, continua travado): a escrita atrasada do reaper pode pôr essa frase num cupom que o robô já tocou
+  const nuncaPegoPeloRobo = c.processando_desde === null
+  return c.estado === 'REVISAR' && NO_MEIO_DO_SISCHEF.test(motivo) && !(nuncaPegoPeloRobo && PENDENTE_PARADO_DO_REAPER.test(motivo))
 }
 
 /**

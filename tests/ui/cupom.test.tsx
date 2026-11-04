@@ -1365,12 +1365,13 @@ describe('Cupom — excluir o envio que não vai lançar (pedido do Ivan, 03/11/
       envio({ id: 'a4', estado: 'LANCADO', motivo: null, pedido_sischef: '164200001' }),
       envio({ id: 'a5', estado: 'PROCESSANDO', motivo: null }),
       envio({ id: 'a6', motivo: 'CONFERIR NO SISCHEF: o pedido foi aberto e o robô parou' }),
-      envio({ id: 'a7', motivo: 'CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de 60 min' }),
+      envio({ id: 'a7', motivo: 'CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de 60 min', processando_desde: null }),              // o robô nunca pegou
+      envio({ id: 'a8', motivo: 'CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de 60 min', processando_desde: '2026-11-03T20:00:00Z' }),  // o robô já pegou (corrida do reaper)
     ])
     render(<Cupom />)
     const linhas = await screen.findAllByTestId('cupom-recente')
-    expect(linhas).toHaveLength(7)
-    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([false, true, true, false, false, false, true])
+    expect(linhas).toHaveLength(8)
+    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([false, true, true, false, false, false, true, false])
     expect(within(linhas[1]).getByTestId('excluir-cupom')).toHaveTextContent('Excluir cupom')
   })
 

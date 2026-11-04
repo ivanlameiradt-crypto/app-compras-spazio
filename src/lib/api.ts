@@ -1229,7 +1229,7 @@ export async function fornecedoresConhecidos(): Promise<FornecedorConhecido[]> {
   )
 }
 
-const COLUNAS_CUPOM = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path'
+const COLUNAS_CUPOM = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path, processando_desde'
 const lerCupom = (c: CupomRecente): CupomRecente => ({
   ...c,
   valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar),

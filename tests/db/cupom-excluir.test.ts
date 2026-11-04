@@ -16,12 +16,12 @@ const AVISO = 'CONFERIR NO SISCHEF antes de repetir'                      // o A
 const PAROU_NO_MEIO = 'o robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir'
 
 /** Insere uma linha de cupom como o robô/as funções do servidor a deixariam (o teste entra como dono do banco). */
-async function criar(db: PGlite, estado: string, extra: { id?: string; motivo?: string | null; pedido?: string | null; origem?: string; teste?: boolean } = {}): Promise<string> {
+async function criar(db: PGlite, estado: string, extra: { id?: string; motivo?: string | null; pedido?: string | null; origem?: string; teste?: boolean; processando?: string | null } = {}): Promise<string> {
   const id = extra.id ?? ID
   await db.query(
-    `insert into cupom (id, estado, motivo, pedido_sischef, teste, origem, valor_a_pagar, itens, pagamento)
-     values ($1, $2, $3, $4, $5, $6, 12.5, '[]'::jsonb, '{}'::jsonb)`,
-    [id, estado, extra.motivo ?? null, extra.pedido ?? null, extra.teste ?? false, extra.origem ?? 'cupom'])
+    `insert into cupom (id, estado, motivo, pedido_sischef, teste, origem, valor_a_pagar, itens, pagamento, processando_desde)
+     values ($1, $2, $3, $4, $5, $6, 12.5, '[]'::jsonb, '{}'::jsonb, $7)`,
+    [id, estado, extra.motivo ?? null, extra.pedido ?? null, extra.teste ?? false, extra.origem ?? 'cupom', extra.processando ?? null])
   return id
 }
 const excluir = (db: PGlite, quem: string, id = ID, motivo: string | null = 'devolvido') => como(db, quem, 'select cupom_excluir($1, $2)', [id, motivo])
@@ -129,6 +129,7 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
       'parou depois de FINALIZAR_COMPRA_CLICADO',
       'falha ao preencher o pagamento no Sischef: campo não achado',
       'conferir no sischef: tudo em minúsculas',                       // a tela e o banco ignoram maiúsculas (flag i / ~*)
+      '\nCONFERIR NO SISCHEF: erro inesperado',   // a quebra de linha também é tirada nas pontas (o banco tira espaço, tab, CR e LF, como o .trim() da tela)
       '   CONFERIR NO SISCHEF com espaços antes',                       // a tela e o banco tiram os espaços das pontas
     ]
     for (const [i, motivo] of noMeio.entries()) {
@@ -154,7 +155,7 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
 
   it('o REVISAR que o reaper deixou num PENDENTE parado ("PENDENTE nunca lançado há mais de N min") PODE ser excluído (o robô nunca o pegou); o do PROCESSANDO preso e as variações da frase NÃO', async () => {
     const db = await banco()
-    const livres = [`${AVISO}: PENDENTE nunca lançado há mais de 60 min`, `  ${AVISO}: PENDENTE nunca lançado há mais de 120 min  `]
+    const livres = [`${AVISO}: PENDENTE nunca lançado há mais de 60 min`, `  ${AVISO}: PENDENTE nunca lançado há mais de 120 min  `, `${AVISO}: PENDENTE nunca lançado há mais de 90 min\n`]
     for (const [i, motivo] of livres.entries()) {
       const id = `00000000-0000-0000-0000-00000000050${i}`
       await criar(db, 'REVISAR', { id, motivo })
@@ -172,6 +173,21 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
       await criar(db, 'REVISAR', { id, motivo })
       expect([motivo, await erroDe(excluir(db, ADMIN, id))]).toEqual([motivo, PAROU_NO_MEIO])
     }
+  })
+
+  it('a corrida do reaper atrasado (re-revisão de 04/11): o robô reivindicou o PENDENTE e a escrita atrasada do reaper pôs a frase "PENDENTE nunca lançado": NÃO se exclui (o robô já tocou no SisChef)', async () => {
+    const db = await banco()
+    await criar(db, 'PENDENTE', { id: ID })
+    expect(await robôReivindica(db, ID)).toBe(true)                                    // o robô reivindicou (a reivindicação grava processando_desde)
+    // ... e o reaper, com a leitura velha (PENDENTE há mais de 60 min), grava por cima, só por id (marcar_estado)
+    await db.query(`update cupom set estado = 'REVISAR', motivo = $2 where id = $1`, [ID, `${AVISO}: PENDENTE nunca lançado há mais de 60 min`])
+    expect((await linha(db, ID)).estado).toBe('REVISAR')
+    expect(await erroDe(excluir(db, ADMIN, ID))).toBe(PAROU_NO_MEIO)
+    expect((await linha(db, ID)).excluido_em).toBeNull()
+    // o mesmo cupom que o robô NUNCA pegou (a frase do reaper sem a reivindicação) continua podendo ser excluído
+    await criar(db, 'REVISAR', { id: ID2, motivo: `${AVISO}: PENDENTE nunca lançado há mais de 60 min` })
+    await excluir(db, ADMIN, ID2)
+    expect((await linha(db, ID2)).estado).toBe('EXCLUIDO')
   })
 
   it('o robô só pega o PENDENTE sem pedido: o PENDENTE que ele pegou não se exclui, e o cupom excluído nunca é pego', async () => {

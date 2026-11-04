@@ -190,7 +190,7 @@ describe('podeExcluirCupom (pedido do Ivan, 03/11/2026: botão "Excluir")', () =
 
   it('o REVISAR que o reaper deixou num PENDENTE parado ("PENDENTE nunca lançado") PODE ser excluído (o robô nunca o pegou); o do PROCESSANDO preso e as variações da frase NÃO', () => {
     const aviso = 'CONFERIR NO SISCHEF antes de repetir'
-    const revisar = (motivo: string, extra: Partial<CupomRecente> = {}) => cupom({ estado: 'REVISAR', motivo, ...extra })
+    const revisar = (motivo: string, extra: Partial<CupomRecente> = {}) => cupom({ estado: 'REVISAR', motivo, processando_desde: null, ...extra })   // null = o robô nunca reivindicou
     expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min`))).toBe(true)
     expect(podeExcluirCupom(revisar(`  ${aviso}: PENDENTE nunca lançado há mais de 120 min  `))).toBe(true)
     expect(parouNoMeioDoSischef(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min`))).toBe(false)
@@ -201,6 +201,12 @@ describe('podeExcluirCupom (pedido do Ivan, 03/11/2026: botão "Excluir")', () =
     expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min; o pedido 123 foi aberto`))).toBe(false)
     expect(podeExcluirCupom(revisar('GERAR_COMPRA_CLICADO: PENDENTE nunca lançado há mais de 60 min'))).toBe(false)
     expect(podeExcluirCupom(revisar(`${aviso}: pendente nunca lançado há mais de 60 min`))).toBe(false)
+    // a corrida do reaper atrasado (re-revisão de 04/11): o robô JÁ reivindicou o cupom (processando_desde preenchido) e a escrita atrasada do reaper pôs a frase: o robô tocou no SisChef, continua travado
+    expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min`, { processando_desde: '2026-11-03T20:00:00Z' }))).toBe(false)
+    expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min`, { processando_desde: undefined }))).toBe(false)   // não se sabe se o robô pegou: travado
+    // quebra de linha nas pontas é tirada, como no banco
+    expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min\n`))).toBe(true)
+    expect(podeExcluirCupom(revisar('\nCONFERIR NO SISCHEF: erro inesperado'))).toBe(false)
   })
 
   it('motivoEscrito: junta os espaços, tira as pontas e cabe nos 300 do banco', () => {

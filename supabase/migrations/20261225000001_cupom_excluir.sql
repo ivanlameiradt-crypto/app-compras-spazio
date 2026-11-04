@@ -18,7 +18,8 @@
 -- disparo e o reaper o marcaria "confira no SisChef" por engano, e uma escrita atrasada do reaper deixaria um excluído incoerente). Nem o REVISAR que parou no meio do SisChef (a compra
 -- PODE existir lá e o aviso tem de continuar à vista até alguém conferir — as mesmas palavras que a tela usa em cupomRegras.diagnosticoDoCupom). UMA exceção, a frase EXATA que o reaper
 -- grava num PENDENTE parado ("CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de N min"): nesse caso o robô nunca pegou o cupom, não há nada a conferir no SisChef e
--- o Ivan pode excluir. Idempotente. cupom_restaurar (admin): desfaz. Os dois gravam o antes/depois em historico_alteracoes.
+-- o Ivan pode excluir. SÓ SE `processando_desde` for nulo: a reivindicação do robô o grava e nada o limpa (a re-revisão de 04/11 mostrou a corrida: o reaper lê o PENDENTE velho, o robô o
+-- reivindica e clica no SisChef, e a escrita atrasada do reaper põe essa frase num cupom que o robô JÁ tocou). Idempotente. cupom_restaurar (admin): desfaz. Os dois gravam o antes/depois em historico_alteracoes.
 
 alter table public.cupom drop constraint if exists cupom_estado_check;
 alter table public.cupom add constraint cupom_estado_check
@@ -49,10 +50,11 @@ begin
   if c.estado = 'PENDENTE' then
     raise exception 'este cupom está na fila e o robô vai lançá-lo: se ele travar, o app o mostra como "precisa de você" depois de cerca de 1 hora, e aí dá para excluir';
   end if;
-  v_robo := btrim(coalesce(c.motivo, ''));
+  v_robo := btrim(coalesce(c.motivo, ''), E' \t\r\n');   -- as mesmas pontas que o .trim() da tela tira
   if c.estado = 'REVISAR'
      and v_robo ~* '^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_COMPRA_CLICADO|^falha ao preencher o pagamento no Sischef'
-     and v_robo !~ '^CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de [0-9]+ min$' then
+     and not (c.processando_desde is null   -- o robô NUNCA reivindicou este cupom (a reivindicação grava processando_desde e nada a limpa)
+              and v_robo ~ '^CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de [0-9]+ min$') then
     raise exception 'o robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir';
   end if;
   v_motivo := left(nullif(btrim(coalesce(p_motivo, '')), ''), 300);

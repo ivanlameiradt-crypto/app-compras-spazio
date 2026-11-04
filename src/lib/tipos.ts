@@ -589,6 +589,8 @@ export interface CupomRecente {
   /** Só no envio EXCLUÍDO pelo Ivan (estado 'EXCLUIDO'; migração 20261225000001): por quê (até 300 letras) e quando. */
   excluido_motivo?: string | null
   excluido_em?: string | null
+  /** Quando o robô REIVINDICOU o cupom (a reivindicação grava e nada limpa): preenchido = o robô já pegou e pode ter tocado no SisChef; null = nunca pegou; ausente = não se sabe. */
+  processando_desde?: string | null
 }
 /** Uma confirmação do Ivan para um item do cupom parado (corpo da Edge Function confirmar-cupom). */
 export interface ConfirmacaoItemCupom {
