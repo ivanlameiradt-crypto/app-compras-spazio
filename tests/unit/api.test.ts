@@ -629,6 +629,9 @@ describe('Sub-fase 3: cupom', () => {
     await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
     rpc.mockResolvedValue({ data: null, error: { message: 'Could not find the function public.cupom_restaurar(p_id) in the schema cache' }, status: 400 })  // só pela mensagem
     await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
+    rpc.mockResolvedValue({ data: null, error: { message: 'schema cache', code: 'PGRST202' }, status: 400 })                                           // só pelo código (sem 404 e sem o texto)
+    await expect(excluirCupom('c-1', 'x')).rejects.toThrow(FALTA)
+    await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
   })
 
   it('restaurarCupom: falha vira texto claro em português', async () => {
