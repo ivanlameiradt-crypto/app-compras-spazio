@@ -642,7 +642,7 @@ describe('Sub-fase 3: cupom', () => {
     await cuponsRecentes()
     const colunas = String(q.select.mock.calls[0][0]).split(',').map((c) => c.trim())
     expect(colunas).toEqual(expect.arrayContaining([
-      'id', 'estado', 'emitente_nome', 'emitente_cnpj', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens', 'foto_path',
+      'id', 'estado', 'emitente_nome', 'emitente_cnpj', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens', 'foto_path', 'processando_desde',
     ]))
   })
 
