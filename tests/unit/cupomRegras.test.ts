@@ -1,4 +1,4 @@
-import { diagnosticoDoCupom, envioRepetido } from '../../src/admin/cupomRegras'
+import { diagnosticoDoCupom, envioRepetido, motivoEscrito, parouNoMeioDoSischef, podeExcluirCupom } from '../../src/admin/cupomRegras'
 import type { CupomRecente, ItemCupomRecente } from '../../src/lib/tipos'
 
 // O cupom do ATACADAO de 06/10/2026 (R$ 35,27) como está no banco: 2 itens sem produto confirmado (só com proposta) e 1 já aprendido.
@@ -156,5 +156,40 @@ describe('diagnosticoDoCupom — fornecedor não cadastrado no SisChef (pedido d
     expect(d.problema).toMatch(/não tem este fornecedor/)
     expect(d.solucao).toMatch(/Cadastrar no SisChef/)
     expect(d.corrigivel).toBe(false)
+  })
+})
+
+describe('podeExcluirCupom (pedido do Ivan, 03/11/2026: botão "Excluir")', () => {
+  it('pode: o que ainda não foi lançado, ou seja, PENDENTE, REVISAR (qualquer motivo comum, até sem motivo) e TESTE', () => {
+    for (const estado of ['PENDENTE', 'REVISAR', 'TESTE'] as const) expect([estado, podeExcluirCupom(cupom({ estado }))]).toEqual([estado, true])
+    for (const motivo of ['fornecedor não encontrado no Sischef (X, CNPJ 1)', 'CONFIRMAR: 2 item(ns)', 'não consegui ler a foto', 'já lançado em outro envio',
+      '2 item(ns) sem casamento confirmado — confira no Code', null]) {
+      expect([motivo, podeExcluirCupom(cupom({ estado: 'REVISAR', motivo }))]).toEqual([motivo, true])
+    }
+  })
+
+  it('NUNCA o já lançado (LANCADO), o que o robô está lançando (PROCESSANDO), o que já tem pedido no SisChef nem o que já está excluído', () => {
+    expect(podeExcluirCupom(cupom({ estado: 'LANCADO', pedido_sischef: '164200001' }))).toBe(false)
+    expect(podeExcluirCupom(cupom({ estado: 'LANCADO' }))).toBe(false)
+    expect(podeExcluirCupom(cupom({ estado: 'PROCESSANDO' }))).toBe(false)
+    expect(podeExcluirCupom(cupom({ estado: 'REVISAR', pedido_sischef: '123', motivo: 'CONFIRMAR: 1 item(ns)' }))).toBe(false)
+    expect(podeExcluirCupom(cupom({ estado: 'PENDENTE', pedido_sischef: '123' }))).toBe(false)
+    expect(podeExcluirCupom(cupom({ estado: 'EXCLUIDO' }))).toBe(false)
+  })
+
+  it('NUNCA o REVISAR que parou no meio do SisChef (a compra PODE existir lá): as mesmas palavras do diagnóstico e da função do banco', () => {
+    for (const motivo of ['CONFERIR NO SISCHEF: pedido aberto', 'parou em GERAR_COMPRA_CLICADO', 'FINALIZAR_COMPRA_CLICADO sem confirmação',
+      'falha ao preencher o pagamento no Sischef: campo', '  CONFERIR NO SISCHEF (com espaço antes)']) {
+      expect([motivo, podeExcluirCupom(cupom({ estado: 'REVISAR', motivo })), parouNoMeioDoSischef(cupom({ estado: 'REVISAR', motivo }))]).toEqual([motivo, false, true])
+    }
+    // o aviso só vale para REVISAR (é nele que a tela mostra o problema), e o texto solto de um motivo comum não conta
+    expect(parouNoMeioDoSischef(cupom({ estado: 'PENDENTE', motivo: 'GERAR_COMPRA_CLICADO' }))).toBe(false)
+    expect(parouNoMeioDoSischef(cupom({ estado: 'REVISAR', motivo: 'não consegui ler a foto' }))).toBe(false)
+  })
+
+  it('motivoEscrito: junta os espaços, tira as pontas e cabe nos 300 do banco', () => {
+    expect(motivoEscrito('  devolvido   ao \n fornecedor ')).toBe('devolvido ao fornecedor')
+    expect(motivoEscrito('   ')).toBe('')
+    expect(motivoEscrito('x'.repeat(900))).toHaveLength(300)
   })
 })

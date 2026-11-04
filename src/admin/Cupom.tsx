@@ -9,14 +9,16 @@ import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
 } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { diagnosticoDoCupom, envioRepetido } from './cupomRegras'
+import { diagnosticoDoCupom, envioRepetido, podeExcluirCupom } from './cupomRegras'
+import ExcluirCupom from './ExcluirCupom'
+import CuponsExcluidos from './CuponsExcluidos'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
 import { unidadeDoProduto } from './unidadeEstoque'
 import { cnpjLidoSuspeito, formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor } from './fornecedorRegras'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
-  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
+  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓', EXCLUIDO: 'excluído',
 }
 
 /** Monta o pagamento a partir dos botões; null = ainda incompleto (PIX sem banco/empresa). */
@@ -214,6 +216,7 @@ export default function Cupom() {
   const [resultado, setResultado] = useState<ResumoEnvioCupom | null>(null)
   const [erro, setErro] = useState('')
   const [recentes, setRecentes] = useState<CupomRecente[]>([])
+  const [excluidos, setExcluidos] = useState<CupomRecente[]>([]) // os que o Ivan excluiu (a lista de onde ele desfaz)
   // a última carga dos "Últimos envios" falhou? (não pode aparecer como lista vazia: esconderia migração/coluna faltando ou RLS errada)
   const [falhaRecentes, setFalhaRecentes] = useState(false)
   const [expandido, setExpandido] = useState<string | null>(null) // qual "Últimos envios" está aberto mostrando o detalhe
@@ -229,6 +232,8 @@ export default function Cupom() {
     api.cuponsRecentes()
       .then((r) => { setRecentes(r); setFalhaRecentes(false) })
       .catch(() => setFalhaRecentes(true))
+    // os excluídos são só um complemento: se a leitura deles falhar, a lista de envios segue normal
+    Promise.resolve(api.cuponsExcluidos('cupom')).then((l) => setExcluidos(l ?? [])).catch(() => undefined)
   }
   useEffect(() => { carregarRecentes() }, [])
   // Nome fantasia (só existe no app): aparece junto da razão social nos fornecedores que o Ivan cadastrou por aqui.
@@ -397,11 +402,18 @@ export default function Cupom() {
                     fornecedor={c.emitente_nome ? `${c.emitente_nome}${c.emitente_cnpj ? ` · CNPJ ${formatarCnpj(c.emitente_cnpj)}` : ''}` : null}
                     quando={c.estado === 'LANCADO' && c.atualizado_em ? formatarDataHora(c.atualizado_em) : null} />
                 )}
+                {/* Excluir (03/11/2026): só o envio que ainda não foi lançado nem parou no meio do SisChef */}
+                {podeExcluirCupom(c) && (
+                  <ExcluirCupom id={c.id} rotulo="cupom" aoExcluir={carregarRecentes}
+                    nome={c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : ''} />
+                )}
               </li>
             )
           })}
         </ul>
       )}
+      <CuponsExcluidos lista={excluidos} titulo="Cupons excluídos" aoMudar={carregarRecentes}
+        nomeDe={(c) => (c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom')} />
     </section>
   )
 }

@@ -200,3 +200,60 @@ describe('CompraAvulsa', () => {
     })
   })
 })
+
+describe('CompraAvulsa — excluir a compra que não vai lançar (pedido do Ivan, 03/11/2026)', () => {
+  it('"Excluir compra" aparece só na compra que ainda não foi lançada nem parou no meio do SisChef', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValue([
+      recente({ id: 'p1', estado: 'PENDENTE', pedido_sischef: null }),
+      recente({ id: 'p2', estado: 'REVISAR', pedido_sischef: null, motivo: 'fornecedor não encontrado no Sischef' }),
+      recente({ id: 'p3' }),                                                                 // LANCADO com pedido
+      recente({ id: 'p4', estado: 'PROCESSANDO', pedido_sischef: null }),
+      recente({ id: 'p5', estado: 'REVISAR', pedido_sischef: null, motivo: 'falha ao preencher o pagamento no Sischef: campo não achado' }),
+    ])
+    render(<CompraAvulsa />)
+    const linhas = await screen.findAllByTestId('compra-recente')
+    expect(linhas).toHaveLength(5)
+    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([true, true, false, false, false])
+    expect(within(linhas[0]).getByTestId('excluir-cupom')).toHaveTextContent('Excluir compra')
+  })
+
+  it('excluir em 2 toques: a pergunta fala em compra avulsa, o motivo vai ao banco, a compra vai para "Compras excluídas" e "Voltar para a lista" a devolve', async () => {
+    const c = recente({ id: 'p2', estado: 'REVISAR', pedido_sischef: null, motivo: 'fornecedor não encontrado no Sischef' })
+    m.comprasAvulsasRecentes.mockResolvedValueOnce([c]).mockResolvedValueOnce([]).mockResolvedValue([c])
+    m.cuponsExcluidos.mockResolvedValueOnce([]).mockResolvedValueOnce([{ ...c, estado: 'EXCLUIDO', excluido_motivo: 'compra errada', excluido_em: '2026-11-03T13:00:00Z' }]).mockResolvedValue([])
+    m.excluirCupom.mockResolvedValue(undefined)
+    m.restaurarCupom.mockResolvedValue(undefined)
+    render(<CompraAvulsa />)
+    const linha = await screen.findByTestId('compra-recente')
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    const pergunta = within(linha).getByTestId('confirmar-exclusao-cupom')
+    expect(pergunta).toHaveTextContent('Excluir esta compra avulsa de ATACADÃO?')
+    expect(pergunta).toHaveTextContent('Não muda nada no SisChef')
+    expect(pergunta).toHaveTextContent('Dá para desfazer em “Compras excluídas”')
+    await userEvent.type(within(pergunta).getByLabelText('Motivo (opcional)'), 'compra errada')
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Excluir' }))
+    expect(m.excluirCupom).toHaveBeenCalledWith('p2', 'compra errada')
+    expect(m.cuponsExcluidos).toHaveBeenCalledWith('avulsa')                              // a lista das excluídas é a das compras avulsas
+    await waitFor(() => expect(screen.queryByTestId('compra-recente')).not.toBeInTheDocument())
+    const secao = await screen.findByTestId('cupons-excluidos')
+    expect(secao).toHaveTextContent('Compras excluídas (1)')
+    expect(within(secao).getByTestId('cupom-excluido')).toHaveTextContent('ATACADÃO')
+    expect(within(secao).getByTestId('cupom-excluido')).toHaveTextContent('Motivo: compra errada')
+    await userEvent.click(within(secao).getByRole('button', { name: 'Voltar para a lista' }))
+    expect(m.restaurarCupom).toHaveBeenCalledWith('p2')
+    expect(await screen.findByTestId('compra-recente')).toBeInTheDocument()
+  })
+
+  it('o banco recusa: a mensagem aparece e a compra continua na lista; falha ao ler as excluídas não derruba a lista', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ id: 'p2', estado: 'REVISAR', pedido_sischef: null, motivo: 'fornecedor não encontrado no Sischef' })])
+    m.cuponsExcluidos.mockRejectedValue(new Error('sem rede'))
+    m.excluirCupom.mockRejectedValue(new Error('Este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá.'))
+    render(<CompraAvulsa />)
+    const linha = await screen.findByTestId('compra-recente')
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
+    expect(await within(linha).findByRole('alert')).toHaveTextContent('já foi lançado no SisChef')
+    expect(screen.getByTestId('compra-recente')).toBeInTheDocument()
+    expect(screen.queryByTestId('cupons-excluidos')).not.toBeInTheDocument()
+  })
+})
