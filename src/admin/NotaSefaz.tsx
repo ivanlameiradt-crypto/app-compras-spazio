@@ -447,7 +447,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
-  const [descartando, setDescartando] = useState(false) // aberta a pergunta "Descartar a nota?"
+  const [descartando, setDescartando] = useState(false) // aberta a pergunta "Excluir a nota?"
+  const [motivoDito, setMotivoDito] = useState('') // o que o Ivan escreveu em "Motivo (opcional)" da exclusão
   const [descartandoEnvio, setDescartandoEnvio] = useState(false)
   // parcelas digitadas (boleto sem duplicatas no XML): o rascunho deste aparelho (se houver) vale mais que o que o robô devolveu
   const [linhas, setLinhas] = useState<LinhaParcela[]>(() => rascunhoDasParcelas(nota.chave) ?? linhasIniciais(nota))
@@ -551,16 +552,16 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     }
   }
 
-  // Regra 3: nota que não dá para lançar pode ser descartada (sai da lista; nada muda no SisChef). Nunca a pela metade nem a lançando agora.
+  // Regra 3 (ampliada em 03/11/2026): qualquer nota da lista pode ser excluída (sai da lista; nada muda no SisChef). Nunca a pela metade nem a lançando agora.
   const descartavel = podeDescartar(nota) && !enviando
   async function descartar() {
     if (descartandoEnvio) return
     setDescartandoEnvio(true); setErro('')
     try {
-      await api.descartarNota(nota.chave, motivoDoDescarte(nota))
-      await recarregar() // a nota sai de "Notas a lançar" e passa a aparecer em "Notas descartadas"
+      await api.descartarNota(nota.chave, motivoDoDescarte(nota, motivoDito))
+      await recarregar() // a nota sai de "Notas a lançar" e passa a aparecer em "Notas excluídas"
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Não consegui descartar agora. Tente de novo.')
+      setErro(e instanceof Error ? e.message : 'Não consegui excluir agora. Tente de novo.')
       setDescartando(false)
     } finally {
       setDescartandoEnvio(false)
@@ -769,20 +770,24 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       )}
       {descartavel && !confirmando && (descartando ? (
         <div className="bloco-envio" data-testid="confirmar-descarte">
-          <p>Descartar a NF {nota.numero} de {nota.emitente}?</p>
+          <p>Excluir a NF {nota.numero} de {nota.emitente}?</p>
           <p className="sub">
             Ela sai desta lista e nada é lançado. Não muda nada no SisChef nem na SEFAZ: a compra continua pendente lá, sem entrada no estoque nem no
-            financeiro. Dá para desfazer em “Notas descartadas”.{nota.itens.length === 0 && ' Se o XML completo chegar depois, você vê um aviso lá.'}
+            financeiro. Dá para desfazer em “Notas excluídas”.{nota.itens.length === 0 && ' Se o XML completo chegar depois, você vê um aviso lá.'}
           </p>
+          <label>Motivo (opcional)
+            <input type="text" value={motivoDito} maxLength={200} placeholder="ex.: devolvida" disabled={descartandoEnvio}
+              data-testid="motivo-exclusao" onChange={(e) => setMotivoDito(e.target.value)} />
+          </label>
           <div className="acoes">
             <button type="button" className="botao perigo" disabled={descartandoEnvio} onClick={() => void descartar()}>
-              {descartandoEnvio ? 'Descartando…' : 'Descartar'}
+              {descartandoEnvio ? 'Excluindo…' : 'Excluir'}
             </button>
-            <button type="button" className="botao secundario" disabled={descartandoEnvio} onClick={() => setDescartando(false)}>Cancelar</button>
+            <button type="button" className="botao secundario" disabled={descartandoEnvio} onClick={() => { setDescartando(false); setMotivoDito('') }}>Cancelar</button>
           </div>
         </div>
       ) : (
-        <div><button type="button" className="link perigo" data-testid="descartar-nota" onClick={() => { setErro(''); setDescartando(true) }}>Descartar nota</button></div>
+        <div><button type="button" className="link perigo" data-testid="descartar-nota" onClick={() => { setErro(''); setMotivoDito(''); setDescartando(true) }}>Excluir nota</button></div>
       ))}
       {erro && <p className="erro" role="alert">{erro}</p>}
       </div>
@@ -962,7 +967,7 @@ export default function NotaSefaz() {
       {!falha && descartadas.length > 0 && (
         <details className="conferir descartadas" data-testid="descartadas">
           <summary>
-            Notas descartadas ({descartadas.length})
+            Notas excluídas ({descartadas.length})
             {descartadas.some(descartadaVoltouComItens) && <b data-testid="descartadas-aviso"> · uma delas agora veio com itens</b>}
           </summary>
           <p className="sub">Estas notas saíram de “Notas a lançar” e o robô não as lança. Nada foi mudado no SisChef nem na SEFAZ.</p>

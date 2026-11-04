@@ -731,7 +731,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   }
   it.each([
     [403, { erro: 'apenas o administrador pode fazer isso' }, 'Só o administrador pode lançar notas.'],
-    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' }, 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi descartada. Atualize a tela e confira.'],
+    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' }, 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi excluída. Atualize a tela e confira.'],
     [409, { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' }, 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'],
     [400, { erro: 'escolha como pagar (forma de pagamento inválida)' }, 'Escolha como pagar: a forma de pagamento não é válida.'],
     [400, { erro: 'as parcelas digitadas não fecham com o valor da nota' }, 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'],
@@ -801,11 +801,11 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
 
   it.each([
     ['apenas o administrador pode fazer isso', 'Só o administrador pode fazer isso.'],
-    ['esta nota ficou pela metade: confira no SisChef antes de descartar', 'Esta nota ficou pela metade: confira no SisChef antes de descartar.'],
+    ['esta nota ficou pela metade: confira no SisChef antes de descartar', 'Esta nota ficou pela metade: confira no SisChef antes de excluir.'],
     ['o robô está lançando esta nota agora: aguarde terminar', 'O robô está lançando esta nota agora: aguarde terminar.'],
-    ['esta nota não está mais na fila: não dá para descartar', 'Esta nota não está mais na fila: não dá para descartar.'],
+    ['esta nota não está mais na fila: não dá para descartar', 'Esta nota não está mais na fila: não dá para excluir.'],
     ['nota não encontrada', 'Nota não encontrada.'],
-    ['TypeError: Failed to fetch', 'Não consegui descartar a nota agora. Confira a internet e tente de novo.'],
+    ['TypeError: Failed to fetch', 'Não consegui excluir a nota agora. Confira a internet e tente de novo.'],
   ])('descartarNota: erro do banco "%s" vira texto claro', async (msg, esperado) => {
     rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })
     await expect(descartarNota('d'.repeat(44), 'x')).rejects.toThrow(esperado)
@@ -1096,7 +1096,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
 
   it.each([
     ['apenas o administrador pode fazer isso', 'Só o administrador pode fazer isso.'],
-    ['esta nota foi descartada: volte-a para a fila antes de associar', 'Esta nota foi descartada: volte-a para a fila antes de associar.'],
+    ['esta nota foi descartada: volte-a para a fila antes de associar', 'Esta nota foi excluída: volte-a para a fila antes de associar.'],
     ['este item já está associado no SisChef', 'Este item já está associado no SisChef.'],
     ['produto fora da lista de insumos', 'Produto fora da lista de insumos.'],
     ['o robô está lançando esta nota agora: aguarde terminar', 'O robô está lançando esta nota agora: aguarde terminar.'],
