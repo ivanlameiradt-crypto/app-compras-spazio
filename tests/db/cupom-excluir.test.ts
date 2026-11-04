@@ -97,6 +97,10 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
     expect((await linha(db)).estado).toBe('REVISAR')
     expect(await erroDe(excluir(db, ADMIN, ID2))).toBe('cupom não encontrado')
     expect(await erroDe(restaurar(db, ADMIN, ID2))).toBe('cupom não encontrado')
+    await criar(db, 'PENDENTE', { id: ID3 })
+    await restaurar(db, ADMIN, ID3)                                           // nunca foi excluído: continua PENDENTE (não vira REVISAR) e não gera histórico
+    expect((await linha(db, ID3)).estado).toBe('PENDENTE')
+    expect(await como(db, ADMIN, `select 1 from historico_alteracoes where tabela = 'cupom' and registro = $1`, [ID3])).toHaveLength(0)
   })
 
   it('NUNCA o cupom já lançado (LANCADO ou com pedido no SisChef) nem o que o robô está lançando agora (PROCESSANDO)', async () => {

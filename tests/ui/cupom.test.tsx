@@ -1400,6 +1400,7 @@ describe('Cupom — excluir o envio que não vai lançar (pedido do Ivan, 03/11/
     expect(m.restaurarCupom).toHaveBeenCalledWith('c9')
     expect(await screen.findByTestId('cupom-recente')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByTestId('cupons-excluidos')).not.toBeInTheDocument())
+    expect(m.cuponsExcluidos).toHaveBeenCalledWith('cupom')                               // a lista das excluídas é a dos cupons (a das compras avulsas é outra)
   })
 
   it('sem escrever nada o motivo vai vazio; "Cancelar" fecha a pergunta sem excluir e limpa o que foi escrito', async () => {
