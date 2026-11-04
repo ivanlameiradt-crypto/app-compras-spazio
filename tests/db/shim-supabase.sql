@@ -23,3 +23,29 @@ create table if not exists vault.decrypted_secrets (
   name text,
   decrypted_secret text
 );
+-- Tabela do robô do cupom (em produção vem das migrations do repositório sischef-monitor-notas: db/migrations/20260930090000_cupom.sql, 20261001120000_cupom_subfase3.sql
+-- e 20261219000001_cupom_origem.sql). Copiada AQUI, no formato de produção, para as migrations do app que mexem nela (cupom_excluir / cupom_restaurar, 03/11/2026) serem testadas.
+-- Os privilégios seguem o modelo dos testes de permissão (anon nada; authenticated só lê); em produção quem limita a leitura ao admin é a RLS cupom_sel_admin.
+create table public.cupom (
+  id uuid primary key default gen_random_uuid(),
+  chave text,
+  emitente_cnpj text,
+  emitente_nome text,
+  itens jsonb not null,
+  pagamento jsonb not null,
+  valor_a_pagar numeric(12,2) not null,
+  estado text not null default 'PENDENTE'
+    constraint cupom_estado_check check (estado in ('PENDENTE', 'PROCESSANDO', 'LANCADO', 'REVISAR', 'TESTE')),
+  pedido_sischef text,
+  motivo text,
+  processando_desde timestamptz,
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  foto_path text,
+  teste boolean not null default false,
+  origem text not null default 'cupom' check (origem in ('cupom', 'avulsa'))
+);
+create unique index cupom_chave_uniq on public.cupom (chave) where chave is not null;
+create unique index cupom_foto_path_uniq on public.cupom (foto_path) where foto_path is not null;
+revoke all on public.cupom from anon, authenticated;
+grant select on public.cupom to authenticated;

@@ -1350,3 +1350,106 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(reenviar()).toBeDisabled()
   })
 })
+
+describe('Cupom — excluir o envio que não vai lançar (pedido do Ivan, 03/11/2026)', () => {
+  const envio = (o: Partial<CupomRecente> = {}): CupomRecente => ({
+    id: 'c9', estado: 'REVISAR', emitente_nome: 'ATACADAO', emitente_cnpj: '75315333032655', valor_a_pagar: 42.9, pedido_sischef: null, criado_em: '2026-11-03T12:00:00Z',
+    motivo: 'não consegui ler a foto', teste: false, itens: [], ...o,
+  })
+
+  it('"Excluir cupom" aparece no envio que precisa de você ou é de teste, e NÃO no que está na fila, no lançado, no que o robô está lançando nem no que parou no meio do SisChef (a exceção é o PENDENTE parado que o reaper marcou)', async () => {
+    m.cuponsRecentes.mockResolvedValue([
+      envio({ id: 'a1', estado: 'PENDENTE', motivo: null }),
+      envio({ id: 'a2' }),
+      envio({ id: 'a3', estado: 'TESTE', motivo: null }),
+      envio({ id: 'a4', estado: 'LANCADO', motivo: null, pedido_sischef: '164200001' }),
+      envio({ id: 'a5', estado: 'PROCESSANDO', motivo: null }),
+      envio({ id: 'a6', motivo: 'CONFERIR NO SISCHEF: o pedido foi aberto e o robô parou' }),
+      envio({ id: 'a7', motivo: 'CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de 60 min', processando_desde: null }),              // o robô nunca pegou
+      envio({ id: 'a8', motivo: 'CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de 60 min', processando_desde: '2026-11-03T20:00:00Z' }),  // o robô já pegou (corrida do reaper)
+    ])
+    render(<Cupom />)
+    const linhas = await screen.findAllByTestId('cupom-recente')
+    expect(linhas).toHaveLength(8)
+    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([false, true, true, false, false, false, true, false])
+    expect(within(linhas[1]).getByTestId('excluir-cupom')).toHaveTextContent('Excluir cupom')
+  })
+
+  it('excluir em 2 toques: a pergunta diz o que muda e o que NÃO muda, o motivo escrito vai ao banco, o envio vai para "Cupons excluídos" e "Voltar para a lista" o devolve', async () => {
+    const e = envio()
+    m.cuponsRecentes.mockResolvedValueOnce([e]).mockResolvedValueOnce([]).mockResolvedValue([e])
+    m.cuponsExcluidos.mockResolvedValueOnce([]).mockResolvedValueOnce([envio({ estado: 'EXCLUIDO', excluido_motivo: 'devolvido', excluido_em: '2026-11-03T13:00:00Z' })]).mockResolvedValue([])
+    m.excluirCupom.mockResolvedValue(undefined)
+    m.restaurarCupom.mockResolvedValue(undefined)
+    render(<Cupom />)
+    const linha = await screen.findByTestId('cupom-recente')
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    const pergunta = within(linha).getByTestId('confirmar-exclusao-cupom')
+    expect(pergunta).toHaveTextContent('Excluir este cupom de ATACADAO?')
+    expect(pergunta).toHaveTextContent('o robô não o lança')
+    expect(pergunta).toHaveTextContent('Não muda nada no SisChef')
+    expect(pergunta).toHaveTextContent('Dá para desfazer em “Cupons excluídos”')
+    expect(m.excluirCupom).not.toHaveBeenCalled()                                       // o 1º toque só pergunta
+    await userEvent.type(within(pergunta).getByLabelText('Motivo (opcional)'), '  devolvido   ao fornecedor ')
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Excluir' }))
+    expect(m.excluirCupom).toHaveBeenCalledWith('c9', 'devolvido ao fornecedor')
+    await waitFor(() => expect(screen.queryByTestId('cupom-recente')).not.toBeInTheDocument())
+    const secao = await screen.findByTestId('cupons-excluidos')
+    expect(secao).toHaveTextContent('Cupons excluídos (1)')
+    expect(within(secao).getByTestId('cupom-excluido')).toHaveTextContent('ATACADAO')
+    expect(within(secao).getByTestId('cupom-excluido')).toHaveTextContent('Motivo: devolvido')
+    await userEvent.click(within(secao).getByRole('button', { name: 'Voltar para a lista' }))
+    expect(m.restaurarCupom).toHaveBeenCalledWith('c9')
+    expect(await screen.findByTestId('cupom-recente')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('cupons-excluidos')).not.toBeInTheDocument())
+    expect(m.cuponsExcluidos).toHaveBeenCalledWith('cupom')                               // a lista das excluídas é a dos cupons (a das compras avulsas é outra)
+  })
+
+  it('sem escrever nada o motivo vai vazio; "Cancelar" fecha a pergunta sem excluir e limpa o que foi escrito', async () => {
+    m.cuponsRecentes.mockResolvedValue([envio()])
+    m.excluirCupom.mockResolvedValue(undefined)
+    render(<Cupom />)
+    const linha = await screen.findByTestId('cupom-recente')
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), 'engano')
+    await userEvent.click(within(linha).getByRole('button', { name: 'Cancelar' }))
+    expect(within(linha).queryByTestId('confirmar-exclusao-cupom')).not.toBeInTheDocument()
+    expect(m.excluirCupom).not.toHaveBeenCalled()
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    expect(within(linha).getByLabelText('Motivo (opcional)')).toHaveValue('')
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
+    expect(m.excluirCupom).toHaveBeenCalledWith('c9', '')
+  })
+
+  it('se o banco recusar, mostra o motivo em português, fecha a pergunta (o texto escrito fica para tentar de novo) e o envio continua na lista', async () => {
+    m.cuponsRecentes.mockResolvedValue([envio()])
+    m.excluirCupom.mockRejectedValue(new Error('O robô está lançando este cupom agora: aguarde terminar.'))
+    render(<Cupom />)
+    const linha = await screen.findByTestId('cupom-recente')
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), 'devolvido')
+    await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
+    expect(await within(linha).findByRole('alert')).toHaveTextContent('O robô está lançando este cupom agora')
+    expect(within(linha).queryByTestId('confirmar-exclusao-cupom')).not.toBeInTheDocument()
+    expect(screen.getByTestId('cupom-recente')).toBeInTheDocument()
+    await userEvent.click(within(linha).getByTestId('excluir-cupom'))
+    expect(within(linha).getByLabelText('Motivo (opcional)')).toHaveValue('devolvido')
+  })
+
+  it('erro ao voltar para a lista mostra a mensagem e o envio continua excluído; falha ao ler os excluídos não derruba a lista de envios', async () => {
+    m.cuponsRecentes.mockResolvedValue([envio({ id: 'z1' })])
+    m.cuponsExcluidos.mockResolvedValue([envio({ id: 'z9', estado: 'EXCLUIDO', excluido_motivo: 'repetido' })])
+    m.restaurarCupom.mockRejectedValue(new Error('Não consegui voltar para a lista agora. Confira a internet e tente de novo.'))
+    const { unmount } = render(<Cupom />)
+    const secao = await screen.findByTestId('cupons-excluidos')
+    await userEvent.click(within(secao).getByRole('button', { name: 'Voltar para a lista' }))
+    expect(await within(secao).findByRole('alert')).toHaveTextContent('Não consegui voltar para a lista')
+    expect(screen.getByTestId('cupons-excluidos')).toBeInTheDocument()
+    unmount()
+    m.cuponsExcluidos.mockRejectedValue(new Error('sem rede'))
+    render(<Cupom />)
+    expect(await screen.findByTestId('cupom-recente')).toBeInTheDocument()
+    expect(screen.queryByText('Não consegui carregar os últimos envios.')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('cupons-excluidos')).not.toBeInTheDocument()
+  })
+})

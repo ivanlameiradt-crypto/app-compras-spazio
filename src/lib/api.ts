@@ -1229,7 +1229,7 @@ export async function fornecedoresConhecidos(): Promise<FornecedorConhecido[]> {
   )
 }
 
-const COLUNAS_CUPOM = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path'
+const COLUNAS_CUPOM = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path, processando_desde'
 const lerCupom = (c: CupomRecente): CupomRecente => ({
   ...c,
   valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar),
@@ -1238,16 +1238,53 @@ const lerCupom = (c: CupomRecente): CupomRecente => ({
 
 /** "Últimos envios" do cupom: só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. As compras AVULSAS (origem 'avulsa') têm a lista própria. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
-  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).neq('origem', 'avulsa')
+  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).neq('origem', 'avulsa').neq('estado', 'EXCLUIDO')
     .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
   return r.map(lerCupom)
 }
 
 /** "Últimas compras avulsas" (10/10/2026): as linhas `cupom` de origem 'avulsa' (compra sem cupom e sem nota), mais novas primeiro. */
 export async function comprasAvulsasRecentes(limite = 10): Promise<CupomRecente[]> {
-  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).eq('origem', 'avulsa')
+  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).eq('origem', 'avulsa').neq('estado', 'EXCLUIDO')
     .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
   return r.map(lerCupom)
+}
+
+/** As colunas de "excluídos" (migração 20261225000001): o motivo e quando o Ivan excluiu. */
+const COLUNAS_CUPOM_EXCLUIDO = `${COLUNAS_CUPOM}, excluido_motivo, excluido_em`
+
+/**
+ * Os envios que o Ivan EXCLUIU (estado 'EXCLUIDO'), do cupom ou da compra avulsa conforme `origem`, o mais novo primeiro: é a lista de onde ele desfaz. Só leitura, por RLS de admin.
+ * Antes da migração (coluna ou tabela ausente) a lista é vazia: a aba não quebra.
+ */
+export async function cuponsExcluidos(origem: 'cupom' | 'avulsa', limite = 20): Promise<CupomRecente[]> {
+  const r = await supabase.from('cupom').select(COLUNAS_CUPOM_EXCLUIDO).eq('estado', 'EXCLUIDO').eq('origem', origem)
+    .order('excluido_em', { ascending: false }).limit(limite)
+  if (r.error) {
+    if (colunaInexistente(r.error) || tabelaInexistente(r.error.code)) return [] // migração do excluir ainda não aplicada
+    throw new ErroApi(r.error.message, r.status, r.error.code)
+  }
+  return ((r.data ?? []) as unknown as CupomRecente[]).map(lerCupom)
+}
+
+/** Texto claro para o erro de excluir/voltar um envio: as mensagens do banco (cupom_excluir) já são em português e dizem o motivo; o resto vira um texto genérico. */
+function mensagemDoExcluirCupom(e: unknown, acao: string): string {
+  const texto = e instanceof Error ? e.message : ''
+  if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
+  // o app novo entrou antes da migração: a função ainda não existe no banco (PGRST202, 404). Não é problema de internet
+  if ((e instanceof ErroApi && (e.code === 'PGRST202' || e.status === 404)) || /could not find the function/i.test(texto)) return 'O banco ainda não recebeu a atualização do “Excluir”. Fale com o Claude.'
+  if (/cupom não encontrado|já foi lançado|lançando este cupom|parou no meio|está na fila/i.test(texto)) return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
+  return `Não consegui ${acao} agora. Confira a internet e tente de novo.`
+}
+/** Exclui UM envio (cupom_excluir, admin): sai da lista e o robô não o lança; NADA muda no SisChef. O banco recusa o já lançado, o que o robô está lançando e o que parou no meio do SisChef. */
+export async function excluirCupom(id: string, motivo: string): Promise<void> {
+  try { await chamar('cupom_excluir', { p_id: id, p_motivo: motivo }) }
+  catch (e) { throw new ErroApi(mensagemDoExcluirCupom(e, 'excluir'), e instanceof ErroApi ? e.status : undefined) }
+}
+/** Desfaz a exclusão (cupom_restaurar, admin): o envio volta EXATAMENTE como estava. */
+export async function restaurarCupom(id: string): Promise<void> {
+  try { await chamar('cupom_restaurar', { p_id: id }) }
+  catch (e) { throw new ErroApi(mensagemDoExcluirCupom(e, 'voltar para a lista'), e instanceof ErroApi ? e.status : undefined) }
 }
 
 /** O que a tela manda ao enviar uma compra avulsa (a quantidade é na unidade do produto no banco; o preço, por essa unidade). */

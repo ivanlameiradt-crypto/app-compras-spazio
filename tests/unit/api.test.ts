@@ -28,8 +28,8 @@ vi.mock('../../src/lib/supabase', () => ({
 }))
 import {
   ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
-  comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
-  associarItem, catalogoProdutos, lembrarDescricao, descartarNota, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
+  comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsExcluidos, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
+  associarItem, catalogoProdutos, lembrarDescricao, descartarNota, excluirCupom, restaurarCupom, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, pedirCadastroProduto, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha, unidadeDoProdutoNaPlanilha,
 } from '../../src/lib/api'
@@ -561,13 +561,91 @@ describe('Sub-fase 3: cupom', () => {
     await expect(enviarCompraAvulsa(envio)).rejects.toThrow(/preço inválido|falhou/)
   })
 
+  it('as duas listas deixam de fora os envios EXCLUÍDOS (eles têm a lista própria)', async () => {
+    const a = consulta({ data: [], error: null })
+    from.mockReturnValueOnce(a)
+    await cuponsRecentes()
+    expect(a.neq).toHaveBeenCalledWith('estado', 'EXCLUIDO')
+    const b = consulta({ data: [], error: null })
+    from.mockReturnValueOnce(b)
+    await comprasAvulsasRecentes()
+    expect(b.neq).toHaveBeenCalledWith('estado', 'EXCLUIDO')
+  })
+
+  it('cuponsExcluidos: só EXCLUIDO da origem pedida, o mais novo primeiro, com o motivo e a data; valor_a_pagar vira número', async () => {
+    const q = consulta({ data: [
+      { id: 'x1', estado: 'EXCLUIDO', emitente_nome: 'ATACADAO', valor_a_pagar: '35.27', criado_em: '2026-11-03T12:00:00Z', motivo: 'não consegui ler a foto', teste: false, itens: null,
+        excluido_motivo: 'devolvido', excluido_em: '2026-11-03T13:00:00Z' },
+    ], error: null })
+    from.mockReturnValue(q)
+    const r = await cuponsExcluidos('avulsa', 7)
+    expect(from).toHaveBeenCalledWith('cupom')
+    expect(q.eq).toHaveBeenCalledWith('estado', 'EXCLUIDO')
+    expect(q.eq).toHaveBeenCalledWith('origem', 'avulsa')
+    expect(q.order).toHaveBeenCalledWith('excluido_em', { ascending: false })
+    expect(q.limit).toHaveBeenCalledWith(7)
+    expect(String(q.select.mock.calls[0][0])).toContain('excluido_motivo, excluido_em')
+    expect(r[0]).toMatchObject({ id: 'x1', valor_a_pagar: 35.27, itens: [], excluido_motivo: 'devolvido' })
+    await cuponsExcluidos('cupom')
+    expect(q.eq).toHaveBeenCalledWith('origem', 'cupom')
+  })
+
+  it('cuponsExcluidos: antes da migração (coluna ou tabela ausente) a lista é vazia e a aba não quebra; outro erro sobe', async () => {
+    type Resp = Parameters<typeof consulta>[0]
+    from.mockReturnValue(consulta({ data: null, error: { message: 'column cupom.excluido_motivo does not exist', code: '42703' }, status: 400 } as unknown as Resp))
+    expect(await cuponsExcluidos('cupom')).toEqual([])
+    from.mockReturnValue(consulta({ data: null, error: { message: 'relation cupom does not exist', code: '42P01' }, status: 404 } as unknown as Resp))
+    expect(await cuponsExcluidos('cupom')).toEqual([])
+    from.mockReturnValue(consulta({ data: null, error: { message: 'JWT expired', code: 'PGRST301' }, status: 401 } as unknown as Resp))
+    await expect(cuponsExcluidos('cupom')).rejects.toBeInstanceOf(ErroApi)
+  })
+
+  it('excluirCupom e restaurarCupom chamam as funções do banco com o id (e o motivo)', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await excluirCupom('c-1', 'devolvido')
+    expect(rpc).toHaveBeenLastCalledWith('cupom_excluir', { p_id: 'c-1', p_motivo: 'devolvido' })
+    await restaurarCupom('c-1')
+    expect(rpc).toHaveBeenLastCalledWith('cupom_restaurar', { p_id: 'c-1' })
+  })
+
+  it.each([
+    ['apenas o administrador pode fazer isso', 'Só o administrador pode fazer isso.'],
+    ['cupom não encontrado', 'Cupom não encontrado.'],
+    ['este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá', 'Este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá.'],
+    ['o robô está lançando este cupom agora: aguarde terminar', 'O robô está lançando este cupom agora: aguarde terminar.'],
+    ['o robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir', 'O robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir.'],
+    ['este cupom está na fila e o robô vai lançá-lo: se ele travar, o app o mostra como "precisa de você" depois de cerca de 1 hora, e aí dá para excluir', 'Este cupom está na fila e o robô vai lançá-lo: se ele travar, o app o mostra como "precisa de você" depois de cerca de 1 hora, e aí dá para excluir.'],
+    ['TypeError: Failed to fetch', 'Não consegui excluir agora. Confira a internet e tente de novo.'],
+  ])('excluirCupom: erro do banco "%s" vira texto claro', async (msg, esperado) => {
+    rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })
+    await expect(excluirCupom('c-1', 'x')).rejects.toThrow(esperado)
+  })
+
+  it('com o app novo e o banco ainda sem a função (PGRST202 ou 404), a mensagem diz que falta a atualização do banco, não "confira a internet"', async () => {
+    const FALTA = 'O banco ainda não recebeu a atualização do “Excluir”. Fale com o Claude.'
+    rpc.mockResolvedValue({ data: null, error: { message: 'Could not find the function public.cupom_excluir(p_id, p_motivo) in the schema cache', code: 'PGRST202' }, status: 404 })
+    await expect(excluirCupom('c-1', 'x')).rejects.toThrow(FALTA)
+    rpc.mockResolvedValue({ data: null, error: { message: 'Not Found' }, status: 404 })                         // só pelo 404
+    await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
+    rpc.mockResolvedValue({ data: null, error: { message: 'Could not find the function public.cupom_restaurar(p_id) in the schema cache' }, status: 400 })  // só pela mensagem
+    await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
+    rpc.mockResolvedValue({ data: null, error: { message: 'schema cache', code: 'PGRST202' }, status: 400 })                                           // só pelo código (sem 404 e sem o texto)
+    await expect(excluirCupom('c-1', 'x')).rejects.toThrow(FALTA)
+    await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
+  })
+
+  it('restaurarCupom: falha vira texto claro em português', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'qualquer coisa', code: 'XX000' }, status: 500 })
+    await expect(restaurarCupom('c-1')).rejects.toThrow('Não consegui voltar para a lista agora. Confira a internet e tente de novo.')
+  })
+
   it('cuponsRecentes pede TODAS as colunas que a tela lê (o PostgREST devolve só as pedidas: coluna esquecida = campo undefined)', async () => {
     const q = consulta({ data: [], error: null })
     from.mockReturnValue(q)
     await cuponsRecentes()
     const colunas = String(q.select.mock.calls[0][0]).split(',').map((c) => c.trim())
     expect(colunas).toEqual(expect.arrayContaining([
-      'id', 'estado', 'emitente_nome', 'emitente_cnpj', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens', 'foto_path',
+      'id', 'estado', 'emitente_nome', 'emitente_cnpj', 'valor_a_pagar', 'pedido_sischef', 'criado_em', 'motivo', 'teste', 'itens', 'foto_path', 'processando_desde',
     ]))
   })
 

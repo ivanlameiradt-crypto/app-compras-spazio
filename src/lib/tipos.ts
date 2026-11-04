@@ -541,7 +541,7 @@ export type FormaCupom = 'dinheiro' | 'tesouraria' | 'pix' | 'sem_cartao'
 export type PagamentoCupom =
   | { forma: 'dinheiro' | 'tesouraria' | 'pix'; conta: string }
   | { forma: 'sem_cartao' }
-export type EstadoCupom = 'PENDENTE' | 'PROCESSANDO' | 'LANCADO' | 'REVISAR' | 'TESTE'
+export type EstadoCupom = 'PENDENTE' | 'PROCESSANDO' | 'LANCADO' | 'REVISAR' | 'TESTE' | 'EXCLUIDO' // EXCLUIDO: o Ivan tirou da lista (03/11/2026, migração 20261225000001)
 /** Resposta da Edge Function enviar-cupom. */
 export interface ResumoEnvioCupom {
   cupom_id: string
@@ -586,6 +586,11 @@ export interface CupomRecente {
   itens: ItemCupomRecente[]
   /** Caminho da foto no bucket privado `cupons` (null nos cupons semeados à mão): é o que o botão "Ver a foto do cupom" abre. */
   foto_path?: string | null
+  /** Só no envio EXCLUÍDO pelo Ivan (estado 'EXCLUIDO'; migração 20261225000001): por quê (até 300 letras) e quando. */
+  excluido_motivo?: string | null
+  excluido_em?: string | null
+  /** Quando o robô REIVINDICOU o cupom (a reivindicação grava e nada limpa): preenchido = o robô já pegou e pode ter tocado no SisChef; null = nunca pegou; ausente = não se sabe. */
+  processando_desde?: string | null
 }
 /** Uma confirmação do Ivan para um item do cupom parado (corpo da Edge Function confirmar-cupom). */
 export interface ConfirmacaoItemCupom {

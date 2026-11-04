@@ -17,6 +17,7 @@ import { semear, importar, idSemana, ADMIN, JOAO, PAYLOAD } from './fixture'
 // as outras 5; a migration NÃO reaplica a lista completa: só cria, revoga e concede as duas); a tabela nfe_aprendizado entra na leitura do admin,
 // sem nenhuma escrita direta para anon ou authenticated.
 // Fase 2 da memória (29/10/2026, 20261224000001): +1 função de admin para authenticated (nfe_aprendizado_esquecer, a única porta para apagar uma linha); anon não a executa.
+// Excluir cupom e compra avulsa (03/11/2026, 20261225000001): +2 funções de admin para authenticated (cupom_excluir, cupom_restaurar); a tabela cupom (do robô; copiada no shim) entra na leitura do admin.
 const atual = bancoPorArquivo(semear)
 const banco = async () => atual()
 
@@ -117,6 +118,9 @@ const DO_APP = [
   'cot_produto_lembrar(bigint,text)',
   // Memória de embalagem das NF-e, fase 2 (20261224000001): "Esquecer" no item da nota apaga UMA linha de nfe_aprendizado (admin; a tabela não aceita escrita direta)
   'nfe_aprendizado_esquecer(text,text,text)',
+  // Excluir cupom e compra avulsa (03/11/2026, 20261225000001): o admin tira da lista o que não vai lançar e desfaz; só cria as 2 funções (mexe no CHECK e em colunas da tabela do robô)
+  'cupom_excluir(uuid,text)',
+  'cupom_restaurar(uuid)',
 ]
 
 /** A página do vendedor (chave anônima): estas duas + as 7 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,

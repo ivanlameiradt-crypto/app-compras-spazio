@@ -16,6 +16,9 @@ import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from '.
 import { formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { faltaNaLinha, lerPreco, lerQuantidade, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
 import { unidadeDoProduto } from './unidadeEstoque'
+import { podeExcluirCupom } from './cupomRegras'
+import ExcluirCupom from './ExcluirCupom'
+import CuponsExcluidos from './CuponsExcluidos'
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
 const ACOES_FORNECEDOR = {
@@ -29,7 +32,7 @@ const novoId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16))
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
-  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançada ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓',
+  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançada ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓', EXCLUIDO: 'excluída',
 }
 const INTERVALO_RECENTES_MS = 30_000
 
@@ -65,11 +68,14 @@ export default function CompraAvulsa() {
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<{ classe: 'ok' | 'amarelo'; texto: string } | null>(null)
   const [recentes, setRecentes] = useState<CupomRecente[]>([])
+  const [excluidos, setExcluidos] = useState<CupomRecente[]>([]) // as que o Ivan excluiu (a lista de onde ele desfaz)
   const [falhaRecentes, setFalhaRecentes] = useState(false)
   const [expandido, setExpandido] = useState<string | null>(null)
 
   const carregarRecentes = useCallback(() => {
     api.comprasAvulsasRecentes(10).then((r) => { setRecentes(r); setFalhaRecentes(false) }).catch(() => setFalhaRecentes(true))
+    // as excluídas são só um complemento: se a leitura delas falhar, a lista de compras segue normal
+    Promise.resolve(api.cuponsExcluidos('avulsa')).then((l) => setExcluidos(l ?? [])).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -309,11 +315,14 @@ export default function CompraAvulsa() {
                       }
                     })} />
                 )}
+                {/* Excluir (03/11/2026): só a compra que ainda não foi lançada nem parou no meio do SisChef */}
+                {podeExcluirCupom(c) && <ExcluirCupom id={c.id} rotulo="compra avulsa" aoExcluir={carregarRecentes} nome={nome} />}
               </li>
             )
           })}
         </ul>
       )}
+      <CuponsExcluidos lista={excluidos} titulo="Compras excluídas" aoMudar={carregarRecentes} nomeDe={(c) => nomeNaLista(c.emitente_cnpj, c.emitente_nome)} />
     </section>
   )
 }
