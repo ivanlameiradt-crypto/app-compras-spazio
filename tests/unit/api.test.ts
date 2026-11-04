@@ -614,10 +614,21 @@ describe('Sub-fase 3: cupom', () => {
     ['este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá', 'Este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá.'],
     ['o robô está lançando este cupom agora: aguarde terminar', 'O robô está lançando este cupom agora: aguarde terminar.'],
     ['o robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir', 'O robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir.'],
+    ['este cupom está na fila e o robô vai lançá-lo: se ele travar, o app o mostra como "precisa de você" depois de cerca de 1 hora, e aí dá para excluir', 'Este cupom está na fila e o robô vai lançá-lo: se ele travar, o app o mostra como "precisa de você" depois de cerca de 1 hora, e aí dá para excluir.'],
     ['TypeError: Failed to fetch', 'Não consegui excluir agora. Confira a internet e tente de novo.'],
   ])('excluirCupom: erro do banco "%s" vira texto claro', async (msg, esperado) => {
     rpc.mockResolvedValue({ data: null, error: { message: msg, code: 'P0001' }, status: 400 })
     await expect(excluirCupom('c-1', 'x')).rejects.toThrow(esperado)
+  })
+
+  it('com o app novo e o banco ainda sem a função (PGRST202 ou 404), a mensagem diz que falta a atualização do banco, não "confira a internet"', async () => {
+    const FALTA = 'O banco ainda não recebeu a atualização do “Excluir”. Fale com o Claude.'
+    rpc.mockResolvedValue({ data: null, error: { message: 'Could not find the function public.cupom_excluir(p_id, p_motivo) in the schema cache', code: 'PGRST202' }, status: 404 })
+    await expect(excluirCupom('c-1', 'x')).rejects.toThrow(FALTA)
+    rpc.mockResolvedValue({ data: null, error: { message: 'Not Found' }, status: 404 })                         // só pelo 404
+    await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
+    rpc.mockResolvedValue({ data: null, error: { message: 'Could not find the function public.cupom_restaurar(p_id) in the schema cache' }, status: 400 })  // só pela mensagem
+    await expect(restaurarCupom('c-1')).rejects.toThrow(FALTA)
   })
 
   it('restaurarCupom: falha vira texto claro em português', async () => {

@@ -182,14 +182,20 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
 // ---------- excluir um envio (pedido do Ivan, 03/11/2026)
 /** O robô começou a lançar no SisChef e parou no meio (a compra PODE existir lá, ou ficou um pedido aberto): as mesmas palavras da diagnosticoDoCupom e da função cupom_excluir do banco. */
 const NO_MEIO_DO_SISCHEF = /^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_COMPRA_CLICADO|^falha ao preencher o pagamento no Sischef/i
-export const parouNoMeioDoSischef = (c: CupomRecente): boolean => c.estado === 'REVISAR' && NO_MEIO_DO_SISCHEF.test((c.motivo ?? '').trim())
+/** A frase EXATA que o reaper grava num PENDENTE parado: o robô nunca pegou o cupom, então não há nada a conferir no SisChef (a exceção da trava, que o banco também tem). */
+const PENDENTE_PARADO_DO_REAPER = /^CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de \d+ min$/
+export function parouNoMeioDoSischef(c: CupomRecente): boolean {
+  const motivo = (c.motivo ?? '').trim()
+  return c.estado === 'REVISAR' && NO_MEIO_DO_SISCHEF.test(motivo) && !PENDENTE_PARADO_DO_REAPER.test(motivo)
+}
 
 /**
- * O envio pode ser EXCLUÍDO (botão "Excluir"): ainda não foi lançado (PENDENTE, REVISAR ou TESTE), sem pedido no SisChef e sem ter parado no meio dele — aí o aviso tem de ficar
- * à vista até alguém conferir lá. Nunca o LANCADO (a compra já está no SisChef: quem cancela é o Ivan lá) nem o PROCESSANDO (o robô está lançando). O banco (cupom_excluir) confere tudo de novo.
+ * O envio pode ser EXCLUÍDO (botão "Excluir"): ainda não foi lançado e precisa do Ivan (REVISAR) ou é de teste (TESTE), sem pedido no SisChef e sem ter parado no meio dele — aí o aviso tem
+ * de ficar à vista até alguém conferir lá. Nunca o LANCADO (a compra já está no SisChef: quem cancela é o Ivan lá), nem o PROCESSANDO (o robô está lançando), nem o PENDENTE (na fila: o robô
+ * vai lançá-lo; se travar, o reaper o põe em REVISAR em 60 min e aí pode — a revisão de 04/11 mostrou que excluir um PENDENTE só traz problema). O banco (cupom_excluir) confere tudo de novo.
  */
 export function podeExcluirCupom(c: CupomRecente): boolean {
-  if (c.estado !== 'PENDENTE' && c.estado !== 'REVISAR' && c.estado !== 'TESTE') return false
+  if (c.estado !== 'REVISAR' && c.estado !== 'TESTE') return false
   if (c.pedido_sischef != null) return false
   return !parouNoMeioDoSischef(c)
 }

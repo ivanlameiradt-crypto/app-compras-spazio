@@ -5,12 +5,15 @@ import { erroDe } from './fixture-cotacao'
 
 // Excluir cupom e compra avulsa (pedido do Ivan, 03/11/2026): cupom_excluir / cupom_restaurar (20261225000001_cupom_excluir.sql).
 // A tabela `cupom` é do robô do cupom (copiada no shim); o estado novo 'EXCLUIDO' faz o robô ignorar a linha (ele só reivindica PENDENTE).
+// Revisão independente de 04/11: o que está na fila (PENDENTE) NÃO se exclui; a frase que o reaper grava num PENDENTE parado é a única exceção da trava do "parou no meio do SisChef".
 const atual = bancoPorArquivo(semear)
 const banco = async () => atual()
 
 const ID = '00000000-0000-0000-0000-0000000000c1'
 const ID2 = '00000000-0000-0000-0000-0000000000c2'
 const ID3 = '00000000-0000-0000-0000-0000000000c3'
+const AVISO = 'CONFERIR NO SISCHEF antes de repetir'                      // o AVISO_CONFERIR do robô (cupom_lancar.py)
+const PAROU_NO_MEIO = 'o robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir'
 
 /** Insere uma linha de cupom como o robô/as funções do servidor a deixariam (o teste entra como dono do banco). */
 async function criar(db: PGlite, estado: string, extra: { id?: string; motivo?: string | null; pedido?: string | null; origem?: string; teste?: boolean } = {}): Promise<string> {
@@ -35,9 +38,9 @@ async function robôReivindica(db: PGlite, id = ID): Promise<boolean> {
 }
 
 describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () => {
-  it('o admin exclui o cupom que ainda não foi lançado (PENDENTE, REVISAR ou TESTE): guarda de onde veio, quem, quando e por quê', async () => {
+  it('o admin exclui o cupom que precisa dele (REVISAR) ou o de teste (TESTE): guarda de onde veio, quem, quando e por quê', async () => {
     const db = await banco()
-    for (const [i, estado] of (['PENDENTE', 'REVISAR', 'TESTE'] as const).entries()) {
+    for (const [i, estado] of (['REVISAR', 'TESTE'] as const).entries()) {
       const id = `00000000-0000-0000-0000-00000000010${i}`
       await criar(db, estado, { id, motivo: estado === 'REVISAR' ? 'fornecedor não encontrado no Sischef' : null })
       await excluir(db, ADMIN, id, 'devolvido ao fornecedor')
@@ -71,9 +74,9 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
     expect((await linha(db)).estado).toBe('REVISAR')
   })
 
-  it('restaurar devolve EXATAMENTE como estava (REVISAR com o motivo do robô intacto, PENDENTE, TESTE) e limpa as marcas', async () => {
+  it('restaurar devolve EXATAMENTE como estava (REVISAR com o motivo do robô intacto, ou TESTE) e limpa as marcas', async () => {
     const db = await banco()
-    const casos = [['REVISAR', 'CONFIRMAR:3 itens'], ['PENDENTE', null], ['TESTE', null]] as const
+    const casos = [['REVISAR', 'CONFIRMAR:3 itens'], ['TESTE', null]] as const
     for (const [i, [estado, motivo]] of casos.entries()) {
       const id = `00000000-0000-0000-0000-00000000020${i}`
       await criar(db, estado, { id, motivo })
@@ -103,7 +106,7 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
     expect(await como(db, ADMIN, `select 1 from historico_alteracoes where tabela = 'cupom' and registro = $1`, [ID3])).toHaveLength(0)
   })
 
-  it('NUNCA o cupom já lançado (LANCADO ou com pedido no SisChef) nem o que o robô está lançando agora (PROCESSANDO)', async () => {
+  it('NUNCA o cupom já lançado (LANCADO ou com pedido no SisChef), o que o robô está lançando agora (PROCESSANDO) nem o que está na fila (PENDENTE)', async () => {
     const db = await banco()
     await criar(db, 'LANCADO', { id: ID, pedido: '987654' })
     expect(await erroDe(excluir(db, ADMIN, ID))).toBe('este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá')
@@ -111,21 +114,27 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
     expect(await erroDe(excluir(db, ADMIN, ID2))).toBe('este cupom já foi lançado no SisChef: para desfazer, cancele a entrada lá')
     await criar(db, 'PROCESSANDO', { id: ID3 })
     expect(await erroDe(excluir(db, ADMIN, ID3))).toBe('o robô está lançando este cupom agora: aguarde terminar')
-    for (const id of [ID, ID2, ID3]) expect((await linha(db, id)).excluido_em).toBeNull()
+    const NA_FILA = '00000000-0000-0000-0000-0000000000c4'
+    await criar(db, 'PENDENTE', { id: NA_FILA })                                                 // revisão de 04/11: na fila o robô vai lançar; não se exclui
+    expect(await erroDe(excluir(db, ADMIN, NA_FILA))).toBe('este cupom está na fila e o robô vai lançá-lo: se ele travar, o app o mostra como "precisa de você" depois de cerca de 1 hora, e aí dá para excluir')
+    for (const id of [ID, ID2, ID3, NA_FILA]) expect((await linha(db, id)).excluido_em).toBeNull()
+    expect((await linha(db, NA_FILA)).estado).toBe('PENDENTE')
   })
 
-  it('NUNCA o REVISAR que o robô deixou no meio do SisChef (a compra PODE existir lá): as mesmas palavras que a tela usa; os outros motivos de REVISAR podem', async () => {
+  it('NUNCA o REVISAR que o robô deixou no meio do SisChef (a compra PODE existir lá): as mesmas palavras que a tela usa, sem ligar para maiúsculas nem espaços; os outros motivos de REVISAR podem', async () => {
     const db = await banco()
     const noMeio = [
       'CONFERIR NO SISCHEF: o pedido foi aberto e o robô parou',
       'parou depois de GERAR_COMPRA_CLICADO',
       'parou depois de FINALIZAR_COMPRA_CLICADO',
       'falha ao preencher o pagamento no Sischef: campo não achado',
+      'conferir no sischef: tudo em minúsculas',                       // a tela e o banco ignoram maiúsculas (flag i / ~*)
+      '   CONFERIR NO SISCHEF com espaços antes',                       // a tela e o banco tiram os espaços das pontas
     ]
     for (const [i, motivo] of noMeio.entries()) {
       const id = `00000000-0000-0000-0000-00000000030${i}`
       await criar(db, 'REVISAR', { id, motivo })
-      expect(await erroDe(excluir(db, ADMIN, id))).toBe('o robô começou a lançar este cupom e parou no meio: confira no SisChef antes de excluir')
+      expect([motivo, await erroDe(excluir(db, ADMIN, id))]).toEqual([motivo, PAROU_NO_MEIO])
       expect((await linha(db, id)).estado).toBe('REVISAR')
     }
     const livres = [
@@ -143,25 +152,54 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
     }
   })
 
-  it('o robô não pega o cupom excluído (reivindicar só vence PENDENTE); excluído e restaurado, volta a ser dele; se o robô pegou primeiro, a exclusão é recusada', async () => {
+  it('o REVISAR que o reaper deixou num PENDENTE parado ("PENDENTE nunca lançado há mais de N min") PODE ser excluído (o robô nunca o pegou); o do PROCESSANDO preso e as variações da frase NÃO', async () => {
     const db = await banco()
-    await criar(db, 'PENDENTE', { id: ID })
-    await excluir(db, ADMIN, ID)
-    expect(await robôReivindica(db, ID)).toBe(false)
-    expect((await linha(db, ID)).estado).toBe('EXCLUIDO')
-    await restaurar(db, ADMIN, ID)
-    expect(await robôReivindica(db, ID)).toBe(true)                                    // voltou PENDENTE e o robô o pega
-    await criar(db, 'PENDENTE', { id: ID2 })
-    expect(await robôReivindica(db, ID2)).toBe(true)                                   // o robô chegou primeiro...
-    expect(await erroDe(excluir(db, ADMIN, ID2))).toBe('o robô está lançando este cupom agora: aguarde terminar')
+    const livres = [`${AVISO}: PENDENTE nunca lançado há mais de 60 min`, `  ${AVISO}: PENDENTE nunca lançado há mais de 120 min  `]
+    for (const [i, motivo] of livres.entries()) {
+      const id = `00000000-0000-0000-0000-00000000050${i}`
+      await criar(db, 'REVISAR', { id, motivo })
+      await excluir(db, ADMIN, id)
+      expect([motivo, (await linha(db, id)).estado]).toEqual([motivo, 'EXCLUIDO'])
+    }
+    const travados = [
+      `${AVISO}: PROCESSANDO preso há mais de 40 min`,                                         // o run morreu depois de reivindicar: a compra PODE existir
+      `${AVISO}: PENDENTE nunca lançado há mais de 60 min; o pedido 123 foi aberto`,           // só a frase exata do reaper
+      'GERAR_COMPRA_CLICADO: PENDENTE nunca lançado há mais de 60 min',
+      `${AVISO}: pendente nunca lançado há mais de 60 min`,                                    // minúsculas: não é a frase do reaper
+    ]
+    for (const [i, motivo] of travados.entries()) {
+      const id = `00000000-0000-0000-0000-00000000060${i}`
+      await criar(db, 'REVISAR', { id, motivo })
+      expect([motivo, await erroDe(excluir(db, ADMIN, id))]).toEqual([motivo, PAROU_NO_MEIO])
+    }
   })
 
-  it('o CHECK do estado aceita EXCLUIDO e continua recusando estado desconhecido; o estado de antes só aceita PENDENTE, REVISAR ou TESTE', async () => {
+  it('o robô só pega o PENDENTE sem pedido: o PENDENTE que ele pegou não se exclui, e o cupom excluído nunca é pego', async () => {
+    const db = await banco()
+    await criar(db, 'PENDENTE', { id: ID })
+    expect(await robôReivindica(db, ID)).toBe(true)                                    // o robô pega o que está na fila
+    expect(await erroDe(excluir(db, ADMIN, ID))).toBe('o robô está lançando este cupom agora: aguarde terminar')
+    await criar(db, 'REVISAR', { id: ID2, motivo: 'não consegui ler a foto' })
+    await excluir(db, ADMIN, ID2)
+    expect(await robôReivindica(db, ID2)).toBe(false)                                  // o excluído não é PENDENTE: o robô nunca o pega
+    expect((await linha(db, ID2)).estado).toBe('EXCLUIDO')
+  })
+
+  it('as duas funções travam a linha (for update): a exclusão e a reivindicação do robô nunca passam juntas (o pglite tem uma conexão só: o teste confere o texto)', async () => {
+    const db = await banco()
+    for (const f of ['cupom_excluir', 'cupom_restaurar']) {
+      const r = await db.query<{ s: string }>(`select prosrc as s from pg_proc where pronamespace = 'public'::regnamespace and proname = $1`, [f])
+      expect([f, /select \* into c from cupom where id = p_id for update/.test(r.rows[0].s)]).toEqual([f, true])
+    }
+  })
+
+  it('o CHECK do estado aceita EXCLUIDO e continua recusando estado desconhecido; o estado de antes só aceita REVISAR ou TESTE', async () => {
     const db = await banco()
     await criar(db, 'REVISAR')
     await db.query(`update cupom set estado = 'EXCLUIDO' where id = $1`, [ID])
     await expect(db.query(`update cupom set estado = 'APAGADO' where id = $1`, [ID])).rejects.toThrow(/cupom_estado_check/)
     await expect(db.query(`update cupom set estado_antes_de_excluir = 'LANCADO' where id = $1`, [ID])).rejects.toThrow(/check/)
+    await expect(db.query(`update cupom set estado_antes_de_excluir = 'PENDENTE' where id = $1`, [ID])).rejects.toThrow(/check/)
   })
 
   it('só o admin exclui e restaura (comprador é recusado) e a anon nem executa; cada mudança fica no histórico', async () => {

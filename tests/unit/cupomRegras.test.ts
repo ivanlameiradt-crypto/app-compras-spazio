@@ -160,18 +160,19 @@ describe('diagnosticoDoCupom — fornecedor não cadastrado no SisChef (pedido d
 })
 
 describe('podeExcluirCupom (pedido do Ivan, 03/11/2026: botão "Excluir")', () => {
-  it('pode: o que ainda não foi lançado, ou seja, PENDENTE, REVISAR (qualquer motivo comum, até sem motivo) e TESTE', () => {
-    for (const estado of ['PENDENTE', 'REVISAR', 'TESTE'] as const) expect([estado, podeExcluirCupom(cupom({ estado }))]).toEqual([estado, true])
+  it('pode: o que precisa do Ivan (REVISAR, qualquer motivo comum, até sem motivo) e o de teste (TESTE)', () => {
+    for (const estado of ['REVISAR', 'TESTE'] as const) expect([estado, podeExcluirCupom(cupom({ estado }))]).toEqual([estado, true])
     for (const motivo of ['fornecedor não encontrado no Sischef (X, CNPJ 1)', 'CONFIRMAR: 2 item(ns)', 'não consegui ler a foto', 'já lançado em outro envio',
       '2 item(ns) sem casamento confirmado — confira no Code', null]) {
       expect([motivo, podeExcluirCupom(cupom({ estado: 'REVISAR', motivo }))]).toEqual([motivo, true])
     }
   })
 
-  it('NUNCA o já lançado (LANCADO), o que o robô está lançando (PROCESSANDO), o que já tem pedido no SisChef nem o que já está excluído', () => {
+  it('NUNCA o já lançado (LANCADO), o que o robô está lançando (PROCESSANDO), o que está na fila (PENDENTE), o que já tem pedido no SisChef nem o que já está excluído', () => {
     expect(podeExcluirCupom(cupom({ estado: 'LANCADO', pedido_sischef: '164200001' }))).toBe(false)
     expect(podeExcluirCupom(cupom({ estado: 'LANCADO' }))).toBe(false)
     expect(podeExcluirCupom(cupom({ estado: 'PROCESSANDO' }))).toBe(false)
+    expect(podeExcluirCupom(cupom({ estado: 'PENDENTE' }))).toBe(false)                    // na fila o robô vai lançar (revisão independente de 04/11)
     expect(podeExcluirCupom(cupom({ estado: 'REVISAR', pedido_sischef: '123', motivo: 'CONFIRMAR: 1 item(ns)' }))).toBe(false)
     expect(podeExcluirCupom(cupom({ estado: 'PENDENTE', pedido_sischef: '123' }))).toBe(false)
     expect(podeExcluirCupom(cupom({ estado: 'EXCLUIDO' }))).toBe(false)
@@ -185,6 +186,21 @@ describe('podeExcluirCupom (pedido do Ivan, 03/11/2026: botão "Excluir")', () =
     // o aviso só vale para REVISAR (é nele que a tela mostra o problema), e o texto solto de um motivo comum não conta
     expect(parouNoMeioDoSischef(cupom({ estado: 'PENDENTE', motivo: 'GERAR_COMPRA_CLICADO' }))).toBe(false)
     expect(parouNoMeioDoSischef(cupom({ estado: 'REVISAR', motivo: 'não consegui ler a foto' }))).toBe(false)
+  })
+
+  it('o REVISAR que o reaper deixou num PENDENTE parado ("PENDENTE nunca lançado") PODE ser excluído (o robô nunca o pegou); o do PROCESSANDO preso e as variações da frase NÃO', () => {
+    const aviso = 'CONFERIR NO SISCHEF antes de repetir'
+    const revisar = (motivo: string, extra: Partial<CupomRecente> = {}) => cupom({ estado: 'REVISAR', motivo, ...extra })
+    expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min`))).toBe(true)
+    expect(podeExcluirCupom(revisar(`  ${aviso}: PENDENTE nunca lançado há mais de 120 min  `))).toBe(true)
+    expect(parouNoMeioDoSischef(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min`))).toBe(false)
+    // o cupom de teste que o reaper marca não leva o aviso: nunca foi "parou no meio"
+    expect(podeExcluirCupom(revisar('PENDENTE nunca lançado há mais de 60 min (cupom de teste: o dry-run nunca cria compra)', { teste: true }))).toBe(true)
+    // o que continua travado: o run que morreu depois de reivindicar, e qualquer variação da frase exata
+    expect(podeExcluirCupom(revisar(`${aviso}: PROCESSANDO preso há mais de 40 min`))).toBe(false)
+    expect(podeExcluirCupom(revisar(`${aviso}: PENDENTE nunca lançado há mais de 60 min; o pedido 123 foi aberto`))).toBe(false)
+    expect(podeExcluirCupom(revisar('GERAR_COMPRA_CLICADO: PENDENTE nunca lançado há mais de 60 min'))).toBe(false)
+    expect(podeExcluirCupom(revisar(`${aviso}: pendente nunca lançado há mais de 60 min`))).toBe(false)
   })
 
   it('motivoEscrito: junta os espaços, tira as pontas e cabe nos 300 do banco', () => {

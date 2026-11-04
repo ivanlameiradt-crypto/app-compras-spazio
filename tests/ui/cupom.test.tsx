@@ -1357,7 +1357,7 @@ describe('Cupom — excluir o envio que não vai lançar (pedido do Ivan, 03/11/
     motivo: 'não consegui ler a foto', teste: false, itens: [], ...o,
   })
 
-  it('"Excluir cupom" aparece no envio que ainda não foi lançado (na fila, precisa de você, teste) e NÃO no lançado, no que o robô está lançando nem no que parou no meio do SisChef', async () => {
+  it('"Excluir cupom" aparece no envio que precisa de você ou é de teste, e NÃO no que está na fila, no lançado, no que o robô está lançando nem no que parou no meio do SisChef (a exceção é o PENDENTE parado que o reaper marcou)', async () => {
     m.cuponsRecentes.mockResolvedValue([
       envio({ id: 'a1', estado: 'PENDENTE', motivo: null }),
       envio({ id: 'a2' }),
@@ -1365,11 +1365,12 @@ describe('Cupom — excluir o envio que não vai lançar (pedido do Ivan, 03/11/
       envio({ id: 'a4', estado: 'LANCADO', motivo: null, pedido_sischef: '164200001' }),
       envio({ id: 'a5', estado: 'PROCESSANDO', motivo: null }),
       envio({ id: 'a6', motivo: 'CONFERIR NO SISCHEF: o pedido foi aberto e o robô parou' }),
+      envio({ id: 'a7', motivo: 'CONFERIR NO SISCHEF antes de repetir: PENDENTE nunca lançado há mais de 60 min' }),
     ])
     render(<Cupom />)
     const linhas = await screen.findAllByTestId('cupom-recente')
-    expect(linhas).toHaveLength(6)
-    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([true, true, true, false, false, false])
+    expect(linhas).toHaveLength(7)
+    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([false, true, true, false, false, false, true])
     expect(within(linhas[1]).getByTestId('excluir-cupom')).toHaveTextContent('Excluir cupom')
   })
 

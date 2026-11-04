@@ -1271,7 +1271,9 @@ export async function cuponsExcluidos(origem: 'cupom' | 'avulsa', limite = 20): 
 function mensagemDoExcluirCupom(e: unknown, acao: string): string {
   const texto = e instanceof Error ? e.message : ''
   if (/administrador/i.test(texto)) return 'Só o administrador pode fazer isso.'
-  if (/cupom não encontrado|já foi lançado|lançando este cupom|parou no meio/i.test(texto)) return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
+  // o app novo entrou antes da migração: a função ainda não existe no banco (PGRST202, 404). Não é problema de internet
+  if ((e instanceof ErroApi && (e.code === 'PGRST202' || e.status === 404)) || /could not find the function/i.test(texto)) return 'O banco ainda não recebeu a atualização do “Excluir”. Fale com o Claude.'
+  if (/cupom não encontrado|já foi lançado|lançando este cupom|parou no meio|está na fila/i.test(texto)) return texto.charAt(0).toUpperCase() + texto.slice(1) + '.'
   return `Não consegui ${acao} agora. Confira a internet e tente de novo.`
 }
 /** Exclui UM envio (cupom_excluir, admin): sai da lista e o robô não o lança; NADA muda no SisChef. O banco recusa o já lançado, o que o robô está lançando e o que parou no meio do SisChef. */

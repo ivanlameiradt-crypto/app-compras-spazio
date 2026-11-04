@@ -202,7 +202,7 @@ describe('CompraAvulsa', () => {
 })
 
 describe('CompraAvulsa — excluir a compra que não vai lançar (pedido do Ivan, 03/11/2026)', () => {
-  it('"Excluir compra" aparece só na compra que ainda não foi lançada nem parou no meio do SisChef', async () => {
+  it('"Excluir compra" aparece só na compra que precisa de você (não na que está na fila, nem na lançada, nem na que parou no meio do SisChef)', async () => {
     m.comprasAvulsasRecentes.mockResolvedValue([
       recente({ id: 'p1', estado: 'PENDENTE', pedido_sischef: null }),
       recente({ id: 'p2', estado: 'REVISAR', pedido_sischef: null, motivo: 'fornecedor não encontrado no Sischef' }),
@@ -213,8 +213,8 @@ describe('CompraAvulsa — excluir a compra que não vai lançar (pedido do Ivan
     render(<CompraAvulsa />)
     const linhas = await screen.findAllByTestId('compra-recente')
     expect(linhas).toHaveLength(5)
-    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([true, true, false, false, false])
-    expect(within(linhas[0]).getByTestId('excluir-cupom')).toHaveTextContent('Excluir compra')
+    expect(linhas.map((l) => within(l).queryByTestId('excluir-cupom') !== null)).toEqual([false, true, false, false, false])
+    expect(within(linhas[1]).getByTestId('excluir-cupom')).toHaveTextContent('Excluir compra')
   })
 
   it('excluir em 2 toques: a pergunta fala em compra avulsa, o motivo vai ao banco, a compra vai para "Compras excluídas" e "Voltar para a lista" a devolve', async () => {
