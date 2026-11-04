@@ -1182,6 +1182,18 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
     for (const l of linhas) expect(within(l).queryByTestId('descartar-nota')).not.toBeInTheDocument()
   })
 
+  it('enquanto o "Lançar" pede a confirmação o botão de excluir some (não se oferece lançar e excluir ao mesmo tempo) e volta no "Cancelar"', async () => {
+    aLancar(nota({ chave: k('1'), ...LIDA }))
+    render(<NotaSefaz />)
+    const linha = await screen.findByTestId('nota-a-lancar')
+    expect(within(linha).getByTestId('descartar-nota')).toBeInTheDocument()
+    await userEvent.click(within(linha).getByRole('button', { name: 'Lançar' }))
+    expect(within(linha).getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
+    expect(within(linha).queryByTestId('descartar-nota')).not.toBeInTheDocument()
+    await userEvent.click(within(linha).getByRole('button', { name: 'Cancelar' }))
+    expect(within(linha).getByTestId('descartar-nota')).toBeInTheDocument()
+  })
+
   it('excluir em 2 toques a nota em ordem (a De Marchi devolvida): a pergunta diz o que muda e o que NÃO muda, o motivo escrito vai ao banco e a nota passa para "Notas excluídas"', async () => {
     const n = nota({ chave: k('1'), emitente: 'DE MARCHI BELEM COMERCIO DE ALIMENTOS LTDA', numero: '000113871', valor_nf: 2639.44 })
     m.notasALancar.mockResolvedValueOnce([n]).mockResolvedValue([])
