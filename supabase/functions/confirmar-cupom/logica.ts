@@ -5,8 +5,10 @@
 // cupom a PENDENTE, guarda o aprendizado confirmado (cupom_aprendizado) e dispara o robô. Sem foto nova nem leitura nova.
 // Sem globais do Deno nem rede: banco e GitHub entram por `deps` (molde enviar-cupom/logica.ts). index.ts monta `deps` e chama `tratar`.
 import { normalizar } from './normalizar.ts'
+import { fraseDaRepetida, impressaoDaCompra, semTrechoDaRepetida, trechoDaRepetida, type Impressao, type Parecida } from './parecida.ts'
 
-export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown }
+/** `outra_compra: true` (E5) = o Ivan viu o aviso "POSSÍVEL REPETIDA" deste cupom e disse que É outra compra: modo próprio, sem itens (ver `tratar`). */
+export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown; outra_compra?: unknown }
 /** O cupom está todo casado e só espera o Ivan conferir e confirmar (o mesmo texto de enviar-cupom/logica.ts e de src/admin/cupomRegras.ts). */
 export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
 /** O motivo que o robô de cupom grava quando o fornecedor não está no Sischef (cupom_navegador.py) — o app deixa cadastrá-lo e reenviar o cupom. */
@@ -24,6 +26,8 @@ export interface CupomLinha {
   valor_a_pagar: number | string | null
   emitente_cnpj: string | null
   teste: boolean | null
+  /** E5: preenchida = o Ivan já decidiu que esta compra NÃO é repetida (migração 20261226000001); nenhum portão a confere de novo. Ausente/nula = ainda não decidiu. */
+  outra_compra_ok_em?: string | null
 }
 /** Um produto da lista de insumos do app (itens_semana). */
 export interface Produto { id: string; nome: string | null; unidade: string | null }
@@ -51,6 +55,15 @@ export interface Deps {
   cadastroDoFornecedor(cupomId: string): Promise<CadastroLinha | null>
   gravarAprendizado(linha: LinhaAprendizado): Promise<void>
   dispararLancamento(cupomId: string): Promise<void>
+  /**
+   * E5 (pedido do Ivan, 04/11/2026): as compras PARECIDAS (mesmo CNPJ e total) que já existem, sem contar a própria (`ignorarId`). É o PORTÃO: antes de soltar o cupom para o robô, achou e o Ivan ainda
+   * não disse que é outra compra ⇒ 409 com a frase. Erro da consulta ⇒ 503 (nunca solta às cegas). Ausente = nada muda (testes antigos).
+   */
+  buscarParecidas?(imp: Impressao, ignorarId: string): Promise<Parecida[]>
+  /** Grava a frase no FIM do motivo (UPDATE condicionado: REVISAR, sem pedido, motivo igual ao lido) para o cartão do cupom mostrar os dois botões depois do 409. Melhor esforço: o 409 sai mesmo se falhar. */
+  anotarRepetida?(id: string, motivoLido: string | null, frase: string): Promise<void>
+  /** "É outra compra" com motivo que sobra: grava a marca (quando e quem) e troca o motivo por `motivoNovo` (UPDATE condicionado como acima). true se trocou exatamente a linha. */
+  anotarOutraCompra?(id: string, motivoLido: string | null, motivoNovo: string, por: string): Promise<boolean>
 }
 
 export interface Resultado { status: number; corpo: Record<string, unknown> }
@@ -165,6 +178,24 @@ export function linhaDeAprendizado(item: Item, c: Confirmacao, produto: Produto,
 
 const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
 
+const ERRO_CONFERIR_REPETIDA = 'Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.'
+/**
+ * E5 — o PORTÃO antes de soltar o cupom para o robô (autoridade; o aviso do `enviar-cupom` na criação só informa). Procura compra parecida (mesmo CNPJ FINAL e mesmo total) já lançada, na fila ou
+ * esperando. null = pode seguir: sem a dependência (testes antigos), cupom de teste, o Ivan já decidiu ("é outra compra"), sem impressão digital (CNPJ ou total inválidos) ou nada parecido.
+ * Achou: grava a frase no motivo (para o cartão mostrar os botões; melhor esforço) e devolve o 409 com a mesma frase. A consulta que falha NUNCA solta às cegas: 503 em texto simples.
+ */
+async function conferirRepetida(cupom: CupomLinha, cnpjFinal: string | null, deps: Deps): Promise<Resultado | null> {
+  if (!deps.buscarParecidas || cupom.teste === true || cupom.outra_compra_ok_em) return null
+  const imp = impressaoDaCompra(cnpjFinal, cupom.valor_a_pagar)
+  if (!imp) return null
+  let achadas: Parecida[]
+  try { achadas = await deps.buscarParecidas(imp, cupom.id) } catch { return { status: 503, corpo: { erro: ERRO_CONFERIR_REPETIDA } } }
+  if (achadas.length === 0) return null
+  const frase = fraseDaRepetida(achadas, imp.centavos)
+  try { await deps.anotarRepetida?.(cupom.id, cupom.motivo, frase) } catch { /* só ajuda o cartão a mostrar os botões: o 409 sai do mesmo jeito */ }
+  return { status: 409, corpo: { erro: frase } }
+}
+
 export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promise<Resultado> {
   // 1. autoriza (admin ativo) — a RLS é a trava real; isto é defesa em profundidade, como nas outras funções.
   const u = await deps.buscarUsuario(chamador.trim().toLowerCase())
@@ -178,8 +209,11 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   const soConfirmar = c.so_confirmar === true
   // "Reenviar este cupom" depois de cadastrar o fornecedor (pedido do Ivan, 08/10): também sem itens a confirmar
   const reenviarFornecedor = c.reenviar_fornecedor === true
+  // "É outra compra" (E5, pedido do Ivan de 04/11): ele viu o aviso POSSÍVEL REPETIDA deste cupom e decidiu. Modo próprio: sem itens e sem os outros modos. Só o booleano true liga.
+  const outraCompra = c.outra_compra === true
+  if (outraCompra && (soConfirmar || reenviarFornecedor || (Array.isArray(c.itens) && c.itens.length > 0))) return { status: 400, corpo: { erro: 'a decisão de "outra compra" não leva itens nem outro modo' } }
   if ((soConfirmar || reenviarFornecedor) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'confirmar o cupom inteiro não leva itens: confirme os itens um a um ou o cupom todo' } }
-  const conf = soConfirmar || reenviarFornecedor ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
+  const conf = soConfirmar || reenviarFornecedor || outraCompra ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
   if (!conf.ok) return { status: 400, corpo: { erro: conf.erro } }
 
   // 3. o cupom tem de estar parado por item sem produto, e nada pode ter chegado ao SisChef.
@@ -195,6 +229,34 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!(total > 0)) return { status: 409, corpo: { erro: 'o total deste cupom não foi lido: sem ele não dá para conferir a soma; peça ao Claude' } }
   const originais = Array.isArray(cupom.itens) ? (cupom.itens as Item[]) : []
   const pendentes = originais.map((it, i) => (semProduto(it) ? i : -1)).filter((i) => i >= 0)
+  if (outraCompra) {
+    // só vale para o cupom que carrega o aviso (o trecho POSSÍVEL REPETIDA no motivo); o que "pode já estar no SisChef" já foi barrado acima (NAO_REENVIAVEL) e nunca passa por aqui
+    if (trechoDaRepetida(cupom.motivo) === null) {
+      return { status: 409, corpo: { erro: 'este cupom não está esperando a sua decisão de "outra compra" (já foi decidido, ou nunca houve aviso): atualize a tela' } }
+    }
+    const resto = semTrechoDaRepetida(cupom.motivo)
+    const por = chamador.trim().toLowerCase()
+    if (resto === '') {
+      // o aviso era o ÚNICO motivo (o robô o grava assim, antes de abrir o SisChef): se tudo está casado e a soma fecha, a marca vai junto e o cupom volta à fila
+      if (pendentes.length > 0) return { status: 409, corpo: { erro: 'este cupom ainda tem item sem produto: atualize a tela' } }
+      const soma = conferirSoma(originais, total)
+      if (!soma.bate) {
+        return { status: 400, corpo: { erro: `a soma dos itens (${brl(soma.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(soma.diferenca))}.`, soma: soma.soma, total } }
+      }
+      if (!(await deps.atualizarCupom(cupomId, originais, { outra_compra_ok_em: new Date().toISOString(), outra_compra_ok_por: por }))) {
+        return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
+      }
+      let disparou = false
+      try { await deps.dispararLancamento(cupomId); disparou = true } catch { /* quem registra o motivo é o index.ts */ }
+      return { status: 200, corpo: { cupom_id: cupomId, estado: PENDENTE, resumo: disparou ? 'confirmado como outra compra e enviado para lançar' : AVISO_DISPARO_FALHOU, disparo_ok: disparou, lembrados: 0, nao_lembrados: 0 } }
+    }
+    // sobra motivo (CONFIRMAR:, itens sem produto…): só anota a decisão (a marca faz os portões deixarem passar) e tira o aviso; o cupom continua parado e o Ivan segue pelos botões de sempre
+    if (!deps.anotarOutraCompra) return { status: 500, corpo: { erro: 'função sem a gravação da decisão' } }
+    if (!(await deps.anotarOutraCompra(cupomId, cupom.motivo, resto, por))) {
+      return { status: 409, corpo: { erro: 'este cupom mudou enquanto você decidia: atualize a tela' } }
+    }
+    return { status: 200, corpo: { cupom_id: cupomId, estado: REVISAR, resumo: 'anotado: você disse que é outra compra. Siga com o cupom como de costume.', disparo_ok: false, lembrados: 0, nao_lembrados: 0 } }
+  }
   if (reenviarFornecedor) {
     // só vale para o cupom parado por fornecedor não cadastrado, com todos os itens já com produto, depois de o cadastro do fornecedor ter dado certo
     if (!FORNECEDOR_PREFIXO.test((cupom.motivo ?? '').trim()) || pendentes.length > 0) {
@@ -210,6 +272,9 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     }
     // o robô acha o fornecedor pelo CNPJ do cupom: se o Ivan corrigiu o CNPJ ao cadastrar, o cupom passa a trazer o cadastrado
     const extras = cadastro.cnpj !== cupom.emitente_cnpj ? { emitente_cnpj: cadastro.cnpj, emitente_nome: cadastro.razao_social } : undefined
+    // E5: o portão confere com o CNPJ FINAL (o do cadastro), não com o que a leitura da foto trouxe torto
+    const barradoF = await conferirRepetida(cupom, extras?.emitente_cnpj ?? cupom.emitente_cnpj, deps)
+    if (barradoF) return barradoF
     if (!(await deps.atualizarCupom(cupomId, originais, extras))) {
       return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
     }
@@ -226,6 +291,8 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     if (!soma.bate) {
       return { status: 400, corpo: { erro: `a soma dos itens (${brl(soma.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(soma.diferenca))}.`, soma: soma.soma, total } }
     }
+    const barradoS = await conferirRepetida(cupom, cupom.emitente_cnpj, deps)   // E5: o portão
+    if (barradoS) return barradoS
     if (!(await deps.atualizarCupom(cupomId, originais))) {
       return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
     }
@@ -284,6 +351,10 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (!soma.bate) {
     return { status: 400, corpo: { erro: `a soma dos itens (${brl(soma.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(soma.diferenca))}. Confira os pesos.`, soma: soma.soma, total } }
   }
+
+  // 5b. E5: o portão (compra parecida já lançada/na fila/esperando): antes de gravar o que quer que seja (nem o aprendizado), só avisa; o Ivan responde "é outra compra" ou exclui.
+  const barrado = await conferirRepetida(cupom, cupom.emitente_cnpj, deps)
+  if (barrado) return barrado
 
   // 6. grava os itens e volta a PENDENTE — só se o cupom AINDA estiver REVISAR sem pedido (compara-e-troca contra uma tela velha).
   if (!(await deps.atualizarCupom(cupomId, itens))) {

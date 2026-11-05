@@ -9,7 +9,7 @@ type Linha = Record<string, unknown>
 
 const h = vi.hoisted(() => {
   type L = Record<string, unknown>
-  type Filtro = [op: 'eq' | 'is', coluna: string, valor: unknown]
+  type Filtro = [op: 'eq' | 'is' | 'in' | 'gte', coluna: string, valor: unknown]
   type Erro = { code?: string; message: string }
   const banco = {
     usuarios: [] as L[],
@@ -20,13 +20,15 @@ const h = vi.hoisted(() => {
     planilha: [] as L[],
     /** fornecedor_cadastro: os pedidos de cadastro de fornecedor feitos pelo app */
     cadastros: [] as L[],
+    /** cot_nfe: as notas fiscais (E5: a procura de compras parecidas) */
+    notas: [] as L[],
     tokens: {} as Record<string, string>,
     /** toda operação pedida ao banco, na ordem: prova o que foi filtrado e que o UPDATE do cupom vem antes do aprendizado */
     operacoes: [] as { tabela: string; tipo: 'select' | 'insert' | 'update'; filtros: Filtro[]; dados?: L }[],
     /** simula a corrida: entre o SELECT e o UPDATE outro processo lançou o cupom (o UPDATE condicionado não pode achar a linha) */
     lancarAntesDoUpdate: false,
     /** leitura que falha (rede/permissão): o select devolve erro em vez de dados */
-    falharLeitura: { cupom: false },
+    falharLeitura: { cupom: false, cot_nfe: false } as Record<string, boolean>,
     proximoId: 1,
   }
   const clientes = { criacoes: [] as unknown[][] }
@@ -45,6 +47,8 @@ const h = vi.hoisted(() => {
     }
     eq(coluna: string, valor: unknown) { this.filtros.push(['eq', coluna, valor]); return this }
     is(coluna: string, valor: unknown) { this.filtros.push(['is', coluna, valor]); return this }
+    in(coluna: string, valor: unknown) { this.filtros.push(['in', coluna, valor]); return this }
+    gte(coluna: string, valor: unknown) { this.filtros.push(['gte', coluna, valor]); return this }
     order(coluna: string, o?: { ascending?: boolean }) { this.ordem = { coluna, ascending: o?.ascending ?? true }; return this }
     limit(n: number) { this.limite = n; return this }
     insert(linha: L) { this.linhaNova = linha; return this }
@@ -57,18 +61,26 @@ const h = vi.hoisted(() => {
       if (this.tabela === 'cupom_aprendizado') return banco.aprendizado
       if (this.tabela === 'produto_planilha') return banco.planilha
       if (this.tabela === 'fornecedor_cadastro') return banco.cadastros
+      if (this.tabela === 'cot_nfe') return banco.notas
       throw new Error(`tabela ${this.tabela} não prevista no banco falso`)
     }
     private filtrar(linhas: L[]): L[] {
       let r = linhas
-      for (const [op, c, v] of this.filtros) r = r.filter((l) => (op === 'is' && v === null ? l[c] == null : l[c] === v))
+      for (const [op, c, v] of this.filtros) {
+        r = r.filter((l) => {
+          if (op === 'is') return v === null ? l[c] == null : l[c] === v
+          if (op === 'in') return (v as unknown[]).map(String).includes(String(l[c]))
+          if (op === 'gte') return String(l[c]) >= String(v)
+          return l[c] === v
+        })
+      }
       return r
     }
     private executar(): { data: L[] | null; error: Erro | null } {
       if (this.linhaNova) return this.inserir(this.linhaNova)
       if (this.mudancas) return this.atualizar(this.mudancas)
       banco.operacoes.push({ tabela: this.tabela, tipo: 'select', filtros: this.filtros })
-      if (this.tabela === 'cupom' && banco.falharLeitura.cupom) return { data: null, error: { message: 'connection reset' } }
+      if (banco.falharLeitura[this.tabela]) return { data: null, error: { message: 'connection reset' } }
       let linhas = this.filtrar(this.lista())
       if (this.ordem) {
         const { coluna, ascending } = this.ordem
@@ -202,7 +214,8 @@ beforeEach(() => {
   h.banco.tokens = { 'tok-ivan': 'ivan@spazio.com', 'tok-joao': 'joao@spazio.com' }
   h.banco.operacoes = []
   h.banco.lancarAntesDoUpdate = false
-  h.banco.falharLeitura = { cupom: false }
+  h.banco.falharLeitura = { cupom: false, cot_nfe: false }
+  h.banco.notas = []
   h.banco.proximoId = 1
   h.clientes.criacoes = []
   fetchFalso.mockReset()
@@ -697,5 +710,116 @@ describe('confirmar-cupom/index.ts — falhas de infraestrutura e entrada ruim',
     expect(r.status).toBe(400)
     expect(r.headers.get('access-control-allow-origin')).toBe(ORIGEM)
     expect(r.headers.get('content-type')).toBe('application/json')
+  })
+})
+
+// ---------- E5: compra repetida (pedido do Ivan, 04/11/2026). A LIGAÇÃO: as consultas que o index.ts monta, o aviso gravado no motivo, a marca "outra compra" e o fluxo inteiro (409 → "é outra compra" → segue).
+const AGORA_E5 = new Date('2026-11-05T05:00:00Z')   // o index usa `new Date()`: fixo, senão a janela de 45 dias deixaria de pegar o cupom de 03/10 daqui a umas semanas
+const FRASE_E5 = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 35,27): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+const MOTIVO_ATACADAO = '2 item(ns) sem casamento confirmado — confira no Code'
+const jaLancadoE5 = (over: Linha = {}): Linha => ({
+  id: 'c-lancado', estado: 'LANCADO', origem: 'cupom', emitente_cnpj: CNPJ_ATACADAO, valor_a_pagar: '35.27', pedido_sischef: '163377089', motivo: null,
+  criado_em: '2026-10-03T18:04:00Z', teste: false, foto_path: 'cupom/outro.jpg', ...over,
+})
+const decisaoOutraCompra = (o: Parameters<typeof pedido>[1] = {}) => pedido({ cupom_id: CUPOM_ID, outra_compra: true }, o)
+const leiturasDe = (tabela: string) => h.banco.operacoes.filter((op) => op.tipo === 'select' && op.tabela === tabela)
+
+describe('confirmar-cupom/index.ts — compra repetida (E5)', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(AGORA_E5) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('nada parecido: o confirmar de sempre (200, PENDENTE, disparo); a linha do próprio cupom (mesmo CNPJ e total) não conta contra ele', async () => {
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(200)
+    expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null })
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+
+  it('as consultas que o index.ts monta: cupom (CNPJ, sem teste, 4 estados, janela) e cot_nfe (CNPJ, sem descartadas, janela)', async () => {
+    h.banco.cupons = [cupomAtacadao(), jaLancadoE5()]
+    await handler(confirmacao())
+    const cupons = leiturasDe('cupom').find((o) => o.filtros.some(([, c]) => c === 'emitente_cnpj'))!
+    expect(cupons.filtros).toEqual(expect.arrayContaining([['eq', 'emitente_cnpj', CNPJ_ATACADAO], ['eq', 'teste', false], ['in', 'estado', ['LANCADO', 'PENDENTE', 'PROCESSANDO', 'REVISAR']]]))
+    expect(cupons.filtros).toContainEqual(['gte', 'criado_em', '2026-09-21T05:00:00.000Z'])
+    const notas = leiturasDe('cot_nfe')[0]
+    expect(notas.filtros).toEqual(expect.arrayContaining([['eq', 'cnpj_emitente', CNPJ_ATACADAO], ['is', 'descartada_em', null], ['gte', 'emissao', '2026-09-21']]))
+  })
+
+  it('o ATACADAO repetido: já há cupom LANCADO igual ⇒ 409 com a frase; o cupom NÃO sai da revisão, não aprende nada, o GitHub NÃO é chamado; o aviso fica gravado no motivo', async () => {
+    h.banco.cupons = [cupomAtacadao(), jaLancadoE5()]
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(409)
+    expect(await corpoDe(r)).toEqual({ erro: FRASE_E5 })
+    expect(cupomNoBanco()).toMatchObject({ estado: 'REVISAR', motivo: `${MOTIVO_ATACADAO}; ${FRASE_E5}` })
+    expect((cupomNoBanco().itens as Linha[])[0].sugestao_produto).toBeNull()
+    expect(h.banco.aprendizado).toHaveLength(0)
+    expect(fetchFalso).not.toHaveBeenCalled()
+    // o aviso é gravado com a mesma trava do resto: REVISAR, sem pedido, motivo igual ao que foi lido
+    const gravacao = h.banco.operacoes.find((o) => o.tipo === 'update')!
+    expect(gravacao.filtros).toEqual(expect.arrayContaining([['eq', 'id', CUPOM_ID], ['eq', 'estado', 'REVISAR'], ['is', 'pedido_sischef', null], ['eq', 'motivo', MOTIVO_ATACADAO]]))
+  })
+
+  it('nota fiscal lançada do mesmo CNPJ e total também barra (a compra já entrou pela nota)', async () => {
+    h.banco.notas = [{ chave: '3'.repeat(44), cnpj_emitente: CNPJ_ATACADAO, numero: '000112786', emissao: '2026-10-16', valor_nf: '35.27', situacao: 'lancada', lancamento_estado: null, nf_sischef: '4410', descartada_em: null }]
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(409)
+    expect(String((await corpoDe(r)).erro)).toContain('nota fiscal nº 000112786 de 16/10, lançada no SisChef')
+    expect(fetchFalso).not.toHaveBeenCalled()
+  })
+
+  it('O FLUXO INTEIRO: 409 → o Ivan diz "é outra compra" (o aviso sai do motivo e a marca fica na linha, ainda REVISAR) → confirma os itens de novo → 200, PENDENTE e disparo', async () => {
+    h.banco.cupons = [cupomAtacadao(), jaLancadoE5()]
+    expect((await handler(confirmacao())).status).toBe(409)
+    const decisao = await handler(decisaoOutraCompra())
+    expect(decisao.status).toBe(200)
+    expect(await corpoDe(decisao)).toMatchObject({ cupom_id: CUPOM_ID, estado: 'REVISAR', disparo_ok: false })
+    expect(cupomNoBanco()).toMatchObject({ estado: 'REVISAR', motivo: MOTIVO_ATACADAO, outra_compra_ok_por: 'ivan@spazio.com' })
+    expect(String(cupomNoBanco().outra_compra_ok_em)).toBe('2026-11-05T05:00:00.000Z')
+    expect(fetchFalso).not.toHaveBeenCalled()
+    const confirmou = await handler(confirmacao())
+    expect(confirmou.status).toBe(200)
+    expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null })
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+
+  it('o cupom parado SÓ pelo aviso (o do robô), todo casado e fechando: "é outra compra" grava a marca, volta a PENDENTE e dispara de uma vez', async () => {
+    const itens = structuredClone(ITENS_ATACADAO)
+    itens[0] = { ...itens[0], sugestao_produto: { id: '3484974' }, entrada_estoque: 0.5, casado_por: 'descricao', proposta: null }
+    itens[1] = { ...itens[1], sugestao_produto: { id: '3484991' }, entrada_estoque: 0.912, casado_por: 'descricao', proposta: null }
+    h.banco.cupons = [cupomAtacadao({ itens, motivo: FRASE_E5 }), jaLancadoE5()]
+    const r = await handler(decisaoOutraCompra())
+    expect(r.status).toBe(200)
+    expect(await corpoDe(r)).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null, outra_compra_ok_por: 'ivan@spazio.com' })
+    expect(String(cupomNoBanco().outra_compra_ok_em)).toBe('2026-11-05T05:00:00.000Z')
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+    expect(leiturasDe('cot_nfe')).toEqual([])   // a decisão do Ivan não consulta de novo
+  })
+
+  it('a leitura do cupom traz a marca (senão o portão não a veria e perguntaria de novo): o SELECT pede outra_compra_ok_em', async () => {
+    h.banco.cupons = [cupomAtacadao({ outra_compra_ok_em: '2026-11-05T04:00:00.000Z' }), jaLancadoE5()]
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(200)
+    expect(leiturasDe('cot_nfe')).toEqual([])   // com a marca na linha o portão nem consulta (o banco falso só devolve as colunas pedidas: sem a coluna no SELECT a marca sumiria e viria 409)
+  })
+
+  it('a consulta falhou (cot_nfe): 503 em texto simples, o cupom segue REVISAR, nada aprendido nem disparado; sem segredo no log', async () => {
+    h.banco.falharLeitura = { cupom: false, cot_nfe: true }
+    const r = await handler(confirmacao())
+    expect(r.status).toBe(503)
+    const corpo = await corpoDe(r)
+    expect(corpo).toEqual({ erro: 'Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.' })
+    cupomIntocado()
+    expect(fetchFalso).not.toHaveBeenCalled()
+    semVazamento(JSON.stringify(corpo))
+  })
+
+  it('"é outra compra" num cupom sem o aviso: 409, nada gravado; e só o administrador decide', async () => {
+    const r = await handler(decisaoOutraCompra())
+    expect(r.status).toBe(409)
+    expect(escritas()).toHaveLength(0)
+    const nao = await handler(decisaoOutraCompra({ token: 'tok-joao' }))
+    expect(nao.status).toBe(403)
+    expect(escritas()).toHaveLength(0)
   })
 })

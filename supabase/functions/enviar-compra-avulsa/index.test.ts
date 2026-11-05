@@ -118,6 +118,9 @@ beforeAll(async () => {
 })
 afterAll(() => { delete (globalThis as unknown as { Deno?: unknown }).Deno; vi.unstubAllGlobals() })
 beforeEach(() => {
+  // o index usa `new Date()` (a janela de 45 dias): relógio fixo, senão os cupons de 03/10 destes testes saem da janela daqui a umas semanas e o teste passa a falhar sozinho
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-05T05:00:00Z'))
   env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-role-SEGREDO_NAO_VAZAR', GITHUB_PAT: PAT }
   h.banco.usuarios = [{ email: 'ivan@spazio.com', papel: 'admin', ativo: true }]
   h.banco.cupons = []
@@ -133,7 +136,7 @@ beforeEach(() => {
   errosNoLog = []
   vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errosNoLog.push(args.map(String).join(' ')) })
 })
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
 const pedido = (corpo: unknown) => new Request('https://x.supabase.co/functions/v1/enviar-compra-avulsa', {
   method: 'POST', headers: { origin: ORIGEM, 'content-type': 'application/json', authorization: 'Bearer tok-ivan' }, body: JSON.stringify(corpo),
