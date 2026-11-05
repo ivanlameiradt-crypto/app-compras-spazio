@@ -7,14 +7,16 @@ const PARADAS = new Set(['insumos', 'insumo', 'kg', 'un', 'und', 'unid', 'pct', 
 const APELIDOS: Record<string, string> = {
   iog: 'iogurte', cond: 'condensado', mussarela: 'mucarela', intregal: 'integral', intrego: 'integral', lactea: 'lacta', qjo: 'queijo', q: 'queijo',
   far: 'farinha', choc: 'chocolate', ref: 'refrigerante', acuc: 'acucar',
+  // 04/11/2026: o SisChef do Ivan escreve AMENDOIN e MEZINHA (erro de digitação dele) e o fornecedor escreve AMENDOIM e MESINHA: é a mesma palavra
+  amendoin: 'amendoim', mezinha: 'mesinha',
 }
 
 const semAcento = (t: unknown): string => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
-/** As palavras que identificam o produto/item: sem acento, sem as de embalagem, com as abreviações trocadas, e "350 ML" / "1X1L" vistos como "350ml" / "1l". */
+/** As palavras que identificam o produto/item: sem acento, sem as de embalagem, com as abreviações trocadas, e "350 ML" / "1X1L" vistos como "350ml" / "1l" ("10K" do cupom = "10kg"). */
 export function palavrasDe(texto: unknown): string[] {
   const t = semAcento(texto)
-    .replace(/(\d+)\s*(ml|l|g|kg)\b/g, '$1$2')
+    .replace(/(\d+)\s*(ml|l|g|kg|k)\b/g, (_m, n: string, u: string) => `${n}${u === 'k' ? 'kg' : u}`)
     .replace(/\dx(\d+(?:,\d+)?(?:ml|l|g|kg))/g, ' $1 ')
   const saida: string[] = []
   for (let w of t.match(/[a-z0-9]+/g) ?? []) {

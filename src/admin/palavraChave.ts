@@ -41,9 +41,14 @@ export function sugerirPorPalavras(catalogo: ProdutoCatalogo[], descricaoCupom: 
     let cheio = 0
     let parcial = 0
     for (const c of conjuntosDe(p)) {
-      const achadas = c.filter((w) => doItem.includes(w)).length
-      if (achadas === c.length) cheio = Math.max(cheio, c.length)
-      else if (achadas > 0) parcial = Math.max(parcial, achadas)
+      const achadas = c.filter((w) => doItem.includes(w))
+      if (achadas.length === c.length) cheio = Math.max(cheio, c.length)
+      else {
+        // Número SOZINHO não é parecido (04/11/2026: o grampo 26/6 sugeria CAMARÃO 34/40 só porque as palavras-chave do camarão têm "26/30"): no "parcial" só conta palavra
+        // com letra ("2kg", "sacola"). No "cheio" os números seguem valendo, porque é por eles que 26/30 se separa de 34/40.
+        const comLetra = achadas.filter((w) => !/^\d+$/.test(w)).length
+        if (comLetra > 0) parcial = Math.max(parcial, comLetra)
+      }
     }
     if (cheio > 0) completos.push({ p, n: cheio })
     else if (parcial > 0) parciais.push({ p, n: parcial })
