@@ -217,6 +217,9 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 /* A conta do item que já é automática (pedido do Ivan, 31/10/2026): "48 PC × 15 = 720 UN" + a etiqueta "automático" + uma frase calma de quem faz a conta. Só as cores do tema (claro e escuro).
    Nos itens confirmados (grade de 2 colunas, com o Editar à direita) a linha ocupa a largura toda, embaixo do nome do produto. */
 .automatico { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--ok-fundo); color: var(--ok-texto); font-size: 11px; font-weight: 600; line-height: 17px; white-space: nowrap; }
+/* O tique da linha (pedido do Ivan, 05/11/2026): o valor da linha bate com o que o robô leu no cupom. Verde do tema (claro e escuro), uma peça só (não quebra no meio no celular). */
+.tique-linha { display: inline-block; padding: 1px 10px; border-radius: 999px; background: var(--ok-fundo); color: var(--ok-texto); font-size: 13px; font-weight: 700; line-height: 20px; white-space: nowrap; }
+.tique-linha::before { content: '✓'; margin-right: 5px; }
 .cupom .conta-item { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 13px; }
 .cupom .conta-item .conta-formula { font-weight: 600; }
 .cupom .conta-item .conta-quem { flex: 1 0 100%; font-size: 12px; font-weight: 400; color: var(--suave); }

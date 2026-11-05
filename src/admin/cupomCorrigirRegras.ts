@@ -126,6 +126,55 @@ export function somaDoCupom(
   return { soma, total, diferenca, bate, faltam, linhas }
 }
 
+// ---------- o tique da linha (pedido do Ivan, 05/11/2026)
+// O app não guarda o valor que o cupom imprime em cada linha: só a quantidade, o preço de 1 unidade e o desconto lidos da foto, mais o total do cupom. A régua é o TOTAL:
+// se a leitura do cupom INTEIRO fecha o total impresso, cada linha lida merece confiança, e o tique diz que o valor que o Ivan confirmou para esta linha é o que o robô leu.
+
+/**
+ * O valor da linha como o robô o LEU na foto, a 2 casas: item sem produto = quantidade lida × preço do cupom − desconto; item que o servidor já casou = entrada × preço por unidade do estoque
+ * − desconto (o mesmo valor da linha, já convertido). null quando falta a quantidade (cupom enviado antes da v2 não a guardou) ou o preço: sem eles não há o que dizer.
+ */
+export function valorLidoDaLinha(it: ItemCupomRecente): number | null {
+  const preco = it.valor_unitario == null ? NaN : Number(it.valor_unitario)
+  if (!Number.isFinite(preco)) return null
+  if (!semProduto(it)) return linhaJaConfirmada(it)
+  const q = it.quantidade_cupom == null ? NaN : Number(it.quantidade_cupom)
+  if (!Number.isFinite(q) || !(q > 0)) return null
+  return round2(q * preco - num(it.desconto_item))
+}
+
+/**
+ * A leitura do cupom inteiro fecha o total impresso (mesma tolerância de 2 centavos do robô)? true/false; null quando não dá para saber: sem total lido, sem itens, ou algum item sem a quantidade
+ * lida (uma leitura incompleta não serve de régua).
+ */
+export function leituraFechaComOTotal(c: CupomRecente): boolean | null {
+  const lido = c.valor_a_pagar == null ? NaN : Number(c.valor_a_pagar)
+  if (!Number.isFinite(lido) || !(lido > 0)) return null
+  const itens = Array.isArray(c.itens) ? c.itens : []
+  if (itens.length === 0) return null
+  let soma = 0
+  for (const it of itens) {
+    const v = valorLidoDaLinha(it)
+    if (v === null) return null
+    soma += v
+  }
+  return Math.abs(round2(soma) - round2(lido)) <= TOLERANCIA + 1e-9
+}
+
+/** O que o tique diz de uma linha: 'confere' (o valor confirmado é o que o robô leu) ou 'diferente' (não é: com os dois valores, para a frase). */
+export type ConferenciaDaLinha = { tipo: 'confere'; valor: number; total: number } | { tipo: 'diferente'; lido: number; valor: number }
+
+/**
+ * O tique ao lado de "entra N no estoque": compara o valor da linha como o Ivan a confirmou (`valorDaLinha`, depois da conversão de unidade, que PRESERVA o valor) com o que o robô leu na foto.
+ * Só fala quando a leitura do cupom inteiro fecha o total (senão a leitura não serve de régua) e a linha tem a quantidade lida; igualdade no centavo. null = nada a dizer.
+ */
+export function conferenciaDaLinha(c: CupomRecente, it: ItemCupomRecente, valorDaLinha: number): ConferenciaDaLinha | null {
+  const lido = valorLidoDaLinha(it)
+  if (lido === null || leituraFechaComOTotal(c) !== true) return null
+  if (Math.abs(round2(valorDaLinha) - lido) < 0.005) return { tipo: 'confere', valor: round2(valorDaLinha), total: round2(Number(c.valor_a_pagar)) }
+  return { tipo: 'diferente', lido, valor: round2(valorDaLinha) }
+}
+
 /**
  * Código de barras que o servidor aceita como chave GLOBAL de aprendizado — igual à `ehGtin` de logica.ts: EAN-8, UPC-12, EAN-13 ou GTIN-14
  * com o dígito verificador certo (módulo 10 do GS1) e não só zeros. Código interno do mercado, EAN cortado na foto ou "0000000000000" não
