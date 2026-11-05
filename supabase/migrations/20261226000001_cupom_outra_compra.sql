@@ -11,7 +11,7 @@
 -- `select *` (pegam as colunas sozinhos).
 --
 -- ORDEM DE PUBLICAÇÃO (cada passo com a frase do Ivan): ESTA migração primeiro, depois as funções enviar-cupom/confirmar-cupom/enviar-compra-avulsa, depois o app, por último o robô.
--- Função nova sem estas colunas quebraria no UPDATE. Depois de aplicar, recarregar o cache do PostgREST: `notify pgrst, 'reload schema';` (o Supabase já o faz sozinho a cada alteração de tabela).
+-- Função nova sem estas colunas quebra TODA confirmação de cupom (o `lerCupom` do confirmar-cupom já pede `outra_compra_ok_em`), não só o UPDATE: antes de publicar as funções, CONFERIR no banco que as colunas existem. Depois de aplicar, recarregar o cache do PostgREST: `notify pgrst, 'reload schema';` (o Supabase já o faz sozinho a cada alteração de tabela).
 -- Idempotente. Para desfazer (só se nenhuma função nova estiver no ar): alter table public.cupom drop column outra_compra_ok_em, drop column outra_compra_ok_por;
 
 alter table public.cupom

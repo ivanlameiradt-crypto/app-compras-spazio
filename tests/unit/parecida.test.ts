@@ -64,10 +64,22 @@ describe('acharParecidas (o que já existe do mesmo fornecedor, com o mesmo tota
     const { io } = falso([cupomLinha({ valor_a_pagar: 119.91 }), cupomLinha({ id: 'c3', valor_a_pagar: 119.89 })])
     expect(await acharParecidas(io, IMP, { agora: AGORA })).toEqual([])
   })
-  it('estados que contam: LANCADO, PENDENTE, PROCESSANDO e REVISAR; nunca EXCLUIDO nem TESTE', async () => {
+  it('estados que contam: LANCADO, PENDENTE, PROCESSANDO e REVISAR que PODE já estar no SisChef (o cupomLinha de teste traz pedido); nunca EXCLUIDO nem TESTE', async () => {
     const linhas = ['LANCADO', 'PENDENTE', 'PROCESSANDO', 'REVISAR', 'EXCLUIDO', 'TESTE'].map((estado, i) => cupomLinha({ id: `c${i}`, estado }))
     const r = await acharParecidas(falso(linhas).io, IMP, { agora: AGORA })
     expect(r.map((x) => x.estado).sort()).toEqual(['LANCADO', 'PENDENTE', 'PROCESSANDO', 'REVISAR'])
+  })
+  it('REVISAR comum ("esperando você": sem pedido e sem "parou no meio") NÃO conta: duas cópias esperando o Ivan não se acusam; REVISAR com pedido ou parado no meio do SisChef conta', async () => {
+    const linhas = [
+      cupomLinha({ id: 'comum', estado: 'REVISAR', pedido_sischef: null, motivo: '3 item(ns) sem casamento confirmado — confira no Code' }),
+      cupomLinha({ id: 'sem-motivo', estado: 'REVISAR', pedido_sischef: null, motivo: null }),
+      cupomLinha({ id: 'aviso', estado: 'REVISAR', pedido_sischef: null, motivo: 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 1,00): x' }),
+      cupomLinha({ id: 'pedido', estado: 'REVISAR', pedido_sischef: '99', motivo: null }),
+      cupomLinha({ id: 'meio', estado: 'REVISAR', pedido_sischef: null, motivo: 'CONFERIR NO SISCHEF antes de repetir: GERAR_COMPRA_CLICADO' }),
+      cupomLinha({ id: 'pagto', estado: 'REVISAR', pedido_sischef: null, motivo: 'falha ao preencher o pagamento no Sischef: x' }),
+    ]
+    const r = await acharParecidas(falso(linhas).io, IMP, { agora: AGORA })
+    expect(r.map((x) => x.id).sort()).toEqual(['meio', 'pagto', 'pedido'])
   })
   it('cupom de teste (teste = true), a própria linha (ignorarId) e CNPJ diferente nunca contam', async () => {
     const linhas = [cupomLinha({ id: 'teste', teste: true }), cupomLinha({ id: 'eu' }), cupomLinha({ id: 'outro-cnpj', emitente_cnpj: '63540861000182' }), cupomLinha({ id: 'vale' })]
@@ -129,9 +141,8 @@ describe('fraseDaRepetida (em português simples, sempre com o prefixo que o app
     expect(await frase([cupomLinha({ criado_em: '2026-10-04T02:30:00Z' })])).toBe(   // 02h30 UTC = 23h30 de 03/10 em Belém
       'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 119,90): cupom de 03/10, lançado no SisChef (pedido 163377089).')
   })
-  it('compra avulsa na fila, cupom esperando o Ivan e cupom que parou no meio do SisChef', async () => {
+  it('compra avulsa na fila e cupom que parou no meio do SisChef (o REVISAR "esperando você" não entra mais: ver o teste de estados)', async () => {
     expect(await frase([cupomLinha({ origem: 'avulsa', estado: 'PENDENTE', pedido_sischef: null, criado_em: '2026-11-04T15:00:00Z' })])).toContain('compra avulsa de 04/11, na fila para lançar.')
-    expect(await frase([cupomLinha({ estado: 'REVISAR', pedido_sischef: null, motivo: '3 item(ns) sem casamento confirmado — confira no Code' })])).toContain('cupom de 03/10, esperando você.')
     expect(await frase([cupomLinha({ estado: 'REVISAR', pedido_sischef: null, motivo: 'CONFERIR NO SISCHEF antes de repetir: GERAR_COMPRA_CLICADO' })])).toContain('parou no meio e pode já estar no SisChef.')
     expect(await frase([cupomLinha({ estado: 'REVISAR', pedido_sischef: '99', motivo: null })])).toContain('parou no meio e pode já estar no SisChef.')
   })

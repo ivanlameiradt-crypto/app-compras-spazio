@@ -31,9 +31,12 @@ export interface IoParecidas {
   notas(cnpj: string, desdeDia: string): Promise<LinhaNota[]>
 }
 
-const ESTADOS_QUE_CONTAM = ['LANCADO', 'PENDENTE', 'PROCESSANDO', 'REVISAR']
+const ESTADOS_QUE_CONTAM = ['LANCADO', 'PENDENTE', 'PROCESSANDO', 'REVISAR']   // REVISAR: só o que "parou no meio" (ver podeExistirNoSischef)
 /** O robô parou no meio do SisChef: a compra PODE já existir lá (as mesmas palavras da tela, do robô e da função cupom_excluir). */
 const NO_MEIO_DO_SISCHEF = /^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_COMPRA_CLICADO|^falha ao preencher o pagamento no Sischef/i
+/** O cupom/avulsa em REVISAR só conta como "a mesma compra" quando PODE já estar no SisChef (pedido preenchido ou parou no meio). O REVISAR comum ("esperando você") NÃO conta: duas cópias esperando o Ivan se acusariam uma à outra
+ *  e, excluída uma, o aviso morto ficaria na outra (revisão independente do código, 05/11). A cópia solta DEPOIS da original continua barrada: a original já estará na fila ou lançada. */
+const podeExistirNoSischef = (c: LinhaCupom): boolean => !!c.pedido_sischef || NO_MEIO_DO_SISCHEF.test((c.motivo ?? '').trim())
 const BELEM_MS = 3 * 3600 * 1000   // UTC−3 fixo (o Brasil não tem horário de verão desde 2019)
 
 const soDigitos = (v: unknown): string => String(v ?? '').replace(/\D/g, '')
@@ -67,7 +70,7 @@ export async function acharParecidas(
   const desdeDia = diaBelem(desdeIso)
   const cupons = (await io.cupons(imp.cnpj, desdeIso)).filter((c) =>
     c.teste !== true && c.id !== opcoes.ignorarId && ESTADOS_QUE_CONTAM.includes(c.estado) && soDigitos(c.emitente_cnpj) === imp.cnpj
-    && centavosDe(c.valor_a_pagar) === imp.centavos && Date.parse(c.criado_em) >= desde.getTime())
+    && centavosDe(c.valor_a_pagar) === imp.centavos && Date.parse(c.criado_em) >= desde.getTime() && (c.estado !== 'REVISAR' || podeExistirNoSischef(c)))
   const notas = opcoes.comNotas === false ? [] : (await io.notas(imp.cnpj, desdeDia)).filter((n) =>
     n.descartada_em == null && soDigitos(n.cnpj_emitente) === imp.cnpj && centavosDe(n.valor_nf) === imp.centavos && n.emissao >= desdeDia
     && (n.situacao === 'lancada' || n.situacao === 'saiu_da_fila' || n.lancamento_estado === 'lancando' || n.lancamento_estado === 'erro'))
@@ -95,7 +98,7 @@ function situacao(p: Parecida): string {
   }
   if (p.estado === 'LANCADO') return `lançado no SisChef${p.pedido ? ` (pedido ${p.pedido})` : ''}`
   if (p.estado === 'PENDENTE' || p.estado === 'PROCESSANDO') return 'na fila para lançar'
-  return p.pedido || NO_MEIO_DO_SISCHEF.test((p.motivo ?? '').trim()) ? 'parou no meio e pode já estar no SisChef' : 'esperando você'
+  return 'parou no meio e pode já estar no SisChef'   // REVISAR só chega aqui quando pode já estar no SisChef (podeExistirNoSischef)
 }
 function umaCompra(p: Parecida): string {
   const o = p.tipo === 'nota' ? `nota fiscal${p.numero ? ` nº ${p.numero}` : ''} de ${ddmm(p.quando)}` : `${p.tipo === 'avulsa' ? 'compra avulsa' : 'cupom'} de ${ddmm(diaBelem(p.quando))}`
