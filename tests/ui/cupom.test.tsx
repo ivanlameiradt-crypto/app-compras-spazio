@@ -461,7 +461,7 @@ describe('Cupom — "precisa de você" diz o que está errado e como resolver (p
     expect(bloco).toHaveTextContent('Como resolver: Confirme cada item abaixo (o produto do SisChef e o peso que está no cupom) e toque em “Reenviar para lançar”.')
     expect(screen.getByText('2 item(ns) sem casamento confirmado — confira no Code')).toBeInTheDocument()   // o motivo técnico continua à mostra (pequeno)
     expect(bloco).toHaveClass('amarelo')
-    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()            // o detalhe dos itens segue fechado
+    expect(screen.getByTestId('cupom-recente').querySelector('button.recente-linha')).toHaveAttribute('aria-expanded', 'false')   // o detalhe dos itens segue fechado (os itens da caixa de correção também começam fechados)
   })
 
   it('envio repetido de um cupom já lançado: aparece como "já lançado ✓", sem bloco amarelo, sem foto e sem caixa (pedido do Ivan, 07/10)', async () => {
@@ -610,8 +610,16 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     m.confirmarCupom.mockResolvedValue(ACEITO)
   })
 
-  /** Os blocos de item pendente da caixa de correção (um por item sem produto). */
-  const itensDaCaixa = async () => within(await screen.findByTestId('corrigir-cupom')).getAllByTestId('corrigir-item')
+  /** Os blocos de item pendente da caixa de correção (um por item sem produto). Desde 04/11/2026 cada item começa FECHADO (pedido do Ivan: botão de abrir e fechar em cada item):
+   *  o ajudante abre os que ainda estão fechados, para os testes seguirem direto às caixas. */
+  const itensDaCaixa = async () => {
+    const blocos = within(await screen.findByTestId('corrigir-cupom')).getAllByTestId('corrigir-item')
+    for (const b of blocos) {
+      const cab = within(b).getByTestId('item-cabecalho')
+      if (cab.getAttribute('aria-expanded') === 'false') await userEvent.click(cab)
+    }
+    return blocos
+  }
   const reenviar = () => screen.getByTestId('reenviar')
   const soma = () => screen.getByTestId('corrigir-soma')
   /** O resumo do fim ("Conferência da soma"): uma linha por item do cupom; o item confirmado SAI da lista (pedido do Ivan, 22/10) e passa a morar aqui, com o ✓ e o "Editar". */

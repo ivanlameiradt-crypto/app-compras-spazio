@@ -306,7 +306,15 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .corrigir-cupom { margin-top: 8px; }
 .cupom .corrigir-cupom > .grupo { margin-top: 4px; }
 .cupom .corrigir-cupom .corrigir-item { display: flex; flex-direction: column; gap: 4px; }
-.cupom .corrigir-cupom .corrigir-item > p { font-size: 14px; }
+/* Abrir e fechar cada item (04/11/2026, pedido do Ivan): o cabeçalho fica sempre à vista, com o andamento do item; a caixa de preencher mora no corpo, que se esconde.
+   Alvo de toque de pelo menos 44 px; o corpo escondido continua montado (só `hidden`), para fechar não apagar o que foi digitado. */
+.cupom .corrigir-cupom .item-cab { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; font: inherit; font-size: 14px;
+  color: var(--texto); text-align: left; background: var(--cartao); border: 1px solid var(--linha); border-radius: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cupom .corrigir-cupom .item-cab-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.cupom .corrigir-cupom .item-cab .seta { flex: none; color: var(--suave); font-size: 14px; }
+.cupom .corrigir-cupom .item-cab[aria-expanded='true'] { border-color: var(--marca); }
+.cupom .corrigir-cupom .item-cab:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+.cupom .corrigir-cupom .item-corpo[hidden] { display: none; }
 .cupom .corrigir-cupom .associar { margin-top: 0; }
 /* Frase pronta para o Ivan mandar ao Claude (04/11/2026): o produto JÁ existe no SisChef em CX/RL e a unidade precisa virar UN. Um toque na frase seleciona tudo (celular sem "Copiar"). */
 .frase-claude { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
