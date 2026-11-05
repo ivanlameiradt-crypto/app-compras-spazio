@@ -171,7 +171,8 @@ describe('motivoSemConselho / mensagemDoRevisar', () => {
   const CX = 'a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT — confira o produto 3476468 no SisChef'
   it('unidade fora das 4 do app (CX): diz que o produto JÁ EXISTE, em qual unidade está, e a ORDEM (trocar a unidade primeiro, depois "Tentar de novo")', () => {
     const t = mensagemDoRevisar(CX, 3476468)
-    expect(t).toBe('Este produto JÁ EXISTE no SisChef (código 3476468), mas está em CX e o app só trabalha com KG, UN, CT e PCT. Primeiro troque a unidade dele para UN (peça ao Claude com a frase abaixo, ou troque você mesmo no SisChef); depois toque em “Tentar de novo”. Antes disso ele repete este aviso.')
+    // "UN" é a saída comum (caixa, rolo), mas a revisão independente lembrou que nem todo produto fora da lista é contagem (litro, metro): a decisão é do Ivan
+    expect(t).toBe('Este produto JÁ EXISTE no SisChef (código 3476468), mas está em CX e o app só trabalha com KG, UN, CT e PCT. Primeiro troque a unidade dele para UN, ou para outra dessas 4 se UN não servir (peça ao Claude com a frase abaixo, ou troque você mesmo no SisChef); depois toque em “Tentar de novo”. Antes disso ele repete este aviso.')
     expect(t).not.toMatch(/pode ter sido criado/i)
     expect(vezes(t)).toBe(0)
   })

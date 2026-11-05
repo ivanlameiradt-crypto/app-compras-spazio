@@ -87,6 +87,17 @@ describe('número sozinho não vira "parecido" (o grampo 26/6 não pode sugerir 
     const sem = sugerirPorPalavras(dois, 'CAMARAO 41/50', 'KG')
     expect(sem?.forca).toBe('fraca')
   })
+  // Revisão independente do PR 69 (04/11): tirar o número da CONTA fez "CAMARAO 34/40" sugerir o 51/60 em 1º (empate em "camarao" e o nome mais curto ganhava). O número continua
+  // desempatando quando uma palavra com letra TAMBÉM bateu; só não vale sozinho.
+  it('o número desempata entre candidatos parecidos: "CAMARAO 34/40" sugere o 34/40 em 1º (e não o 51/60, de nome mais curto)', () => {
+    const rosa: ProdutoCatalogo[] = [
+      { produto_id: 1, nome: 'CAMARÃO ROSA 51/60 - INSUMO', unidade: 'kg' }, { produto_id: 2, nome: 'CAMARÃO ROSA 34/40 - INSUMOS', unidade: 'kg' },
+      { produto_id: 3, nome: 'CAMARÃO ROSA 26/30 - INSUMOS', unidade: 'kg' },
+    ]
+    const s = sugerirPorPalavras(rosa, 'CAMARAO 34/40', 'KG')
+    expect(s?.forca).toBe('fraca')
+    expect(s?.produto.produto_id).toBe(2)
+  })
   it('palavra com letra junto do número ("2KG", "10kg", "600g") continua valendo como parecida', () => {
     const saco: ProdutoCatalogo = { produto_id: 3476484, nome: 'SACO 2KG - C/ 100 UND', unidade: 'un' }
     const s = sugerirPorPalavras([saco], 'SACO 19X37 2KG AD FONTEPLAST', 'ML')

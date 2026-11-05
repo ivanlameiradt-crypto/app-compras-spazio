@@ -132,7 +132,7 @@ export function mensagemDoRevisar(motivo: string | null | undefined, produtoId: 
   const troca = trocaDeUnidade(motivo, produtoId)
   if (troca) {
     const saida = produtoId !== null ? 'toque em “Tentar de novo”' : 'toque de novo em “Cadastrar no SisChef e no app”'
-    return `Este produto JÁ EXISTE no SisChef (código ${troca.produtoId}), mas está em ${troca.unidade} e o app só trabalha com KG, UN, CT e PCT. Primeiro troque a unidade dele para UN (peça ao Claude com a frase abaixo, ou troque você mesmo no SisChef); depois ${saida}. Antes disso ele repete este aviso.`
+    return `Este produto JÁ EXISTE no SisChef (código ${troca.produtoId}), mas está em ${troca.unidade} e o app só trabalha com KG, UN, CT e PCT. Primeiro troque a unidade dele para UN, ou para outra dessas 4 se UN não servir (peça ao Claude com a frase abaixo, ou troque você mesmo no SisChef); depois ${saida}. Antes disso ele repete este aviso.`
   }
   if (produtoId === null && RE_SALVOU_SEM_CODIGO.test(String(motivo ?? ''))) {
     return 'O robô clicou em Salvar no SisChef, mas não conseguiu ler o código do produto: ele provavelmente foi criado. Toque de novo em “Cadastrar no SisChef e no app”: o robô procura o produto pelo nome e traz o código para a sua lista. Se ele não aparecer, confira em Produtos no SisChef antes de tentar outra vez, para não criar dois.'

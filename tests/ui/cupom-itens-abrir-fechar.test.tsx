@@ -66,6 +66,32 @@ describe('CorrigirCupom — abrir e fechar cada item (E1)', () => {
     expect((within(itens()[0]).getByTestId('palavras-produto') as HTMLInputElement).value).toContain('teste')   // o que ele digitou no cadastro continua lá
   })
 
+  // Revisão independente do PR 69: o REVISAR NÃO é retomado pela tela (o pedido de cadastro só volta se não estiver em REVISAR), então se a caixa fosse desmontada ao fechar o aviso
+  // vermelho, o código e o "Tentar de novo" sumiriam. Aqui o MESMO elemento volta à vista e o pedido não é refeito.
+  it('I3 no REVISAR: o aviso vermelho do cadastro continua lá (o mesmo elemento) depois de fechar e abrir o item, sem pedir o cadastro de novo', async () => {
+    const agora = new Date().toISOString()
+    m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'p1' })
+    m.statusDoCadastroProduto.mockResolvedValue({
+      id: 'p1', estado: 'REVISAR', produto_id: 3476468, candidatos: [], descricao: 'TOMATE ITALIANO - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade: 'UN', criado_em: agora, atualizado_em: agora,
+      motivo: 'a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT — confira o produto 3476468 no SisChef',
+    })
+    tela()
+    await userEvent.click(cabecalhos()[2])                       // o TOMATE: nada na lista casa
+    await userEvent.click(within(itens()[2]).getByTestId('abrir-cadastro-produto'))
+    await userEvent.selectOptions(within(itens()[2]).getByTestId('grupo-produto'), 'ESTOQUE CONTROLADO')
+    await userEvent.selectOptions(within(itens()[2]).getByTestId('unidade-produto'), 'UN')
+    await userEvent.click(within(itens()[2]).getByTestId('cadastrar-produto-botao'))
+    const aviso = await within(itens()[2]).findByTestId('produto-revisar')
+    expect(aviso).toHaveTextContent('Este produto JÁ EXISTE no SisChef (código 3476468)')
+    await userEvent.click(cabecalhos()[2])                       // fecha
+    expect(aviso).not.toBeVisible()
+    await userEvent.click(cabecalhos()[2])                       // abre de novo
+    expect(within(itens()[2]).getByTestId('produto-revisar')).toBe(aviso)
+    expect(aviso).toBeVisible()
+    expect(within(itens()[2]).getByTestId('tentar-de-novo')).toBeEnabled()
+    expect(m.pedirCadastroProduto).toHaveBeenCalledTimes(1)
+  })
+
   it('vários itens podem ficar abertos ao mesmo tempo (abrir um não fecha o outro)', async () => {
     tela()
     await userEvent.click(cabecalhos()[0])

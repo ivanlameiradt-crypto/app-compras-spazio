@@ -293,7 +293,7 @@ export default function CadastrarProduto({
       {demorando && (
         <div className="amarelo" role="status" data-testid="produto-demorando">
           <p>Está demorando mais que o normal. Você pode chamar o robô de novo: isso não cria outro pedido.</p>
-          <button type="button" className="botao secundario" disabled={enviando || aguardando} onClick={() => void pedir(ultimoExtra.current, 'chamar')} data-testid="chamar-robo">
+          <button type="button" className="botao secundario" disabled={enviando || aguardando} onClick={() => void pedir(semForcar(ultimoExtra.current), 'chamar')} data-testid="chamar-robo">
             {enviando ? 'Chamando…' : aguardando ? AGUARDE : 'Chamar o robô de novo'}
           </button>
           {aviso?.acao === 'chamar' && <p data-testid="aviso-robo">{aviso.texto}</p>}

@@ -316,6 +316,17 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
 
   // I5 da revisão independente (04/11): o pedido preso pode ter criado o produto no SisChef sem responder; repetir o "criar mesmo assim" (forcar) pularia a conferência
   // de parecidos e, se a lista ainda não mostrasse o produto recém-salvo, criaria um SEGUNDO. O "usar este" (existente_id) é seguro e continua.
+  // Revisão independente do PR 69 (04/11): o "Chamar o robô de novo" aparece entre 5 e 20 minutos pelo relógio do CELULAR, e o servidor dá o pedido por perdido aos 20 e abre um NOVO:
+  // com o relógio atrasado (ou o toque perto dos 20 min) o "chamar" também poderia sair com o forcar. Nos dois botões o pedido de volta vai sem ele.
+  it('I5: "Chamar o robô de novo" de um pedido com "criar mesmo assim" também NÃO repete o forcar', async () => {
+    const p = emAndamento({ estado: 'PENDENTE', atualizado_em: haMin(6), palavras: 'maion hellmanns', forcar: true })
+    const a = acoes({ status: vi.fn().mockResolvedValue(p), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-1', reenviado: true }) })
+    abrir(a, vi.fn(), { inicial: p })
+    await userEvent.click(screen.getByTestId('chamar-robo'))
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith(MESMO_PEDIDO))
+    expect(a.cadastrar).not.toHaveBeenCalledWith(expect.objectContaining({ forcar: true }))
+  })
+
   it('I5: o "usar este" (existente_id) do pedido preso continua no "Tentar de novo": só traz o produto que o Ivan escolheu', async () => {
     const preso = emAndamento({ atualizado_em: haMin(30), palavras: 'maion hellmanns', existente_id: 3924999 })
     const novo = status({ id: 'ped-2', estado: 'PENDENTE', produto_id: null, atualizado_em: haMin(0) })
