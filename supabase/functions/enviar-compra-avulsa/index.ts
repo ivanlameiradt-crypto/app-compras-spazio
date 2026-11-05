@@ -4,6 +4,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { gravarSemDuplicar } from './gravacao.ts'
 import { tratar, type Corpo, type Deps } from './logica.ts'
+import { acharParecidas, ioDoSupabase, type ClienteConsulta } from './parecida.ts'
 
 const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'http://localhost:5173', 'http://localhost:4173'])
 const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
@@ -46,11 +47,16 @@ Deno.serve(async (req: Request) => {
       return (data as { id: string } | null) ?? null
     }
 
+    // E5 (pedido do Ivan, 04/11/2026): a procura de compras parecidas (cupom, compra avulsa e nota fiscal) mora em parecida.ts, igual nas três funções.
+    const ioParecidas = ioDoSupabase(admin as unknown as ClienteConsulta)
+
     const deps: Deps = {
       async buscarUsuario(email) {
         const { data } = await admin.from('usuarios').select('papel, ativo').eq('email', email).maybeSingle()
         return (data as { papel: string; ativo: boolean } | null) ?? null
       },
+      cupomDoEnvio: (fotoPath) => achar(fotoPath),   // o duplo toque é conferido ANTES da procura de parecidas (a compra não pode acusar a si mesma)
+      buscarParecidas: (imp) => acharParecidas(ioParecidas, imp, { agora: new Date() }),
       async produtosExistentes(ids) {
         // a lista do app = itens_semana (a lista semanal) + a planilha de produtos do Ivan (produto_planilha); basta estar em uma delas
         const achados = new Set<string>()
