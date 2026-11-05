@@ -12,7 +12,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { ProdutoCatalogo } from '../lib/tipos'
 import {
   GRUPOS_DE_INSUMO, MINUTOS_SEM_RESPOSTA, PRODUTO_PRONTO, UNIDADES, candidatoInativo, chaveDoNome, idadeDoPedido, mensagemDoRevisar, nomeNoSischef, palavrasSugeridas,
-  problemaDoProduto, separarCandidatos, sugerirUnidade, type EstadoProduto,
+  problemaDoProduto, separarCandidatos, sugerirUnidade, trocaDeUnidade, type EstadoProduto,
 } from './produtoRegras'
 
 export interface OrigemProduto { tipo: 'cupom' | 'nota' | 'avulsa'; id?: string; item?: number }
@@ -76,6 +76,25 @@ const AGUARDE = 'Aguarde alguns minutos…'
 const ESPERA_ENTRE_CHAMADAS_MS = 3 * 60_000
 /** O que o pedido teve além do formulário ("Criar mesmo assim" ou "Usar este"): repetir o pedido é repetir isto também. */
 const extraDe = (s: StatusProduto | null): Extra => (s?.forcar ? { forcar: true } : s?.existente_id ? { existente_id: s.existente_id } : {})
+/** "Tentar de novo" de um pedido que pode já ter criado o produto (revisão independente, 04/11/2026, I5): NUNCA repete o "criar mesmo assim" (forcar). Pulando a conferência de parecidos,
+ *  se a lista do SisChef ainda não mostrasse o produto recém-salvo, o robô criaria um SEGUNDO. O "usar este" (existente_id) é seguro: só traz o produto que o Ivan escolheu. */
+const semForcar = (e: Extra): Extra => (e.existente_id ? { existente_id: e.existente_id } : {})
+
+/** A frase pronta para o Ivan mandar ao Claude (ele não escreve comando: copia e cola no chat). Sem área de transferência (navegador sem permissão), a frase fica na tela para ele selecionar. */
+function FraseParaOClaude({ frase }: { frase: string }) {
+  const [copia, setCopia] = useState<'nao' | 'sim' | 'falhou'>('nao')
+  async function copiar() {
+    try { await navigator.clipboard.writeText(frase); setCopia('sim') } catch { setCopia('falhou') }
+  }
+  return (
+    <div className="frase-claude" data-testid="frase-para-o-claude">
+      <p className="sub">Frase para mandar ao Claude:</p>
+      <p className="frase" data-testid="trocar-unidade-frase">{frase}</p>
+      <button type="button" className="botao secundario" onClick={() => void copiar()} data-testid="copiar-frase">{copia === 'sim' ? 'Copiado ✓' : 'Copiar frase'}</button>
+      {copia === 'falhou' && <p className="sub" role="status" data-testid="copiar-falhou">Não consegui copiar. Toque na frase acima, selecione e copie.</p>}
+    </div>
+  )
+}
 
 /** O aviso "Produto não cadastrado" + o botão que abre o formulário. Fica fechado até o toque (ou abre sozinho se já há um cadastro deste nome em andamento/feito). */
 export function ProdutoNaoCadastrado({ descricaoDoItem, acoes, origem, aoUsar, discreto = false }: Omit<Props, 'intervaloMs' | 'inicial' | 'demoraMs' | 'limiteMs' | 'focarNome'> & {
@@ -283,14 +302,18 @@ export default function CadastrarProduto({
       {semResposta && (
         <div className="amarelo" role="status" data-testid="produto-sem-resposta">
           <p>O robô não respondeu em {MINUTOS_SEM_RESPOSTA} minutos. Confira no SisChef (Produtos) se o produto já foi criado; se não foi, toque em “Tentar de novo”.</p>
-          <button type="button" className="botao" disabled={enviando || aguardando} onClick={() => void pedir(ultimoExtra.current, 'tentar')} data-testid="tentar-de-novo">
+          <button type="button" className="botao" disabled={enviando || aguardando} onClick={() => void pedir(semForcar(ultimoExtra.current), 'tentar')} data-testid="tentar-de-novo">
             {enviando ? 'Enviando…' : aguardando ? AGUARDE : 'Tentar de novo'}
           </button>
           {aviso?.acao === 'tentar' && <p data-testid="aviso-robo">{aviso.texto}</p>}
         </div>
       )}
       {estado === 'REVISAR' && !comCandidatos && (
-        <p className="erro" role="alert" data-testid="produto-revisar">{mensagemDoRevisar(motivoRobo, produtoId)}</p>
+        <>
+          <p className="erro" role="alert" data-testid="produto-revisar">{mensagemDoRevisar(motivoRobo, produtoId)}</p>
+          {/* produto que JÁ existe no SisChef em CX/RL…: a saída é trocar a unidade para UN (o Ivan manda esta frase ao Claude) e só depois "Tentar de novo" */}
+          {(() => { const troca = trocaDeUnidade(motivoRobo, produtoId); return troca ? <FraseParaOClaude frase={troca.frase} /> : null })()}
+        </>
       )}
       {comCodigo && produtoId !== null && (
         <div className="acoes">

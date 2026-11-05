@@ -1,6 +1,6 @@
 import {
   CANDIDATOS_DE_INICIO, GRUPOS_DE_INSUMO, MAX_LETRAS_NOME, MINUTOS_SEM_RESPOSTA, UNIDADES, candidatoInativo, chaveDoNome, idadeDoPedido, mensagemDoRevisar, motivoSemConselho,
-  nomeNoSischef, palavrasSugeridas, problemaDoProduto, separarCandidatos, sugerirUnidade,
+  nomeNoSischef, palavrasSugeridas, problemaDoProduto, separarCandidatos, sugerirUnidade, trocaDeUnidade,
 } from '../../src/admin/produtoRegras'
 
 describe('nomeNoSischef', () => {
@@ -104,6 +104,26 @@ describe('idadeDoPedido', () => {
   })
 })
 
+describe('trocaDeUnidade — produto que JÁ existe no SisChef em CX, RL… (o grampo 3476468, 04/11/2026)', () => {
+  const CX = 'a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT — confira o produto 3476468 no SisChef'
+  it('devolve a unidade, o código e a frase que o Ivan manda ao Claude (ação nomeada)', () => {
+    expect(trocaDeUnidade(CX, 3476468)).toEqual({ unidade: 'CX', produtoId: 3476468, frase: 'pode trocar a unidade do produto 3476468 de CX para UN no SisChef' })
+  })
+  it('sem o código na coluna, lê o código de dentro do motivo; unidade em minúscula vira maiúscula', () => {
+    expect(trocaDeUnidade(CX, null)?.produtoId).toBe(3476468)
+    expect(trocaDeUnidade(CX.replace('é CX', 'é rl'), 3476468)?.unidade).toBe('RL')
+  })
+  it.each([
+    ['unidade que o app aceita (texto antigo do banco)', 'a unidade do produto no SisChef é PCT; a lista do app só aceita KG ou UN — confira o produto 3924999 no SisChef', 3924999],
+    ['KG', 'a unidade do produto no SisChef é KG; a lista do app só aceita KG, UN, CT ou PCT — confira o produto 1 no SisChef', 1],
+    ['outro motivo qualquer', 'grupo não encontrado: nada foi criado', 3476468],
+    ['sem motivo', null, 3476468],
+    ['sem nenhum código (nem coluna nem motivo)', 'a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT', null],
+  ])('não é troca de unidade (devolve null): %s', (_nome, motivo, id) => {
+    expect(trocaDeUnidade(motivo as string | null, id as number | null)).toBeNull()
+  })
+})
+
 // Revisão 2 (14/10), M2/I5: o aviso do REVISAR é honesto e curto, e o "confira" aparece uma vez só (o motivo do robô e do banco já costuma trazer o dele).
 describe('motivoSemConselho / mensagemDoRevisar', () => {
   const vezes = (t: string) => (t.match(/confira/gi) ?? []).length
@@ -145,6 +165,37 @@ describe('motivoSemConselho / mensagemDoRevisar', () => {
     const preso = mensagemDoRevisar('o robô não respondeu a tempo: confira no SisChef se o produto foi criado antes de tentar de novo', null)
     expect(preso).toBe('O robô parou sem terminar: o robô não respondeu a tempo. Confira no SisChef se o produto já existe antes de tentar de novo.')
     expect(vezes(preso)).toBe(1)
+  })
+
+  // 04/11/2026 (cupom da A. N. da Silva, o grampo): o texto de "O produto pode ter sido criado" era FALSO quando o produto já existia no SisChef em CX, e "Tentar de novo" repetia o erro.
+  const CX = 'a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT — confira o produto 3476468 no SisChef'
+  it('unidade fora das 4 do app (CX): diz que o produto JÁ EXISTE, em qual unidade está, e a ORDEM (trocar a unidade primeiro, depois "Tentar de novo")', () => {
+    const t = mensagemDoRevisar(CX, 3476468)
+    expect(t).toBe('Este produto JÁ EXISTE no SisChef (código 3476468), mas está em CX e o app só trabalha com KG, UN, CT e PCT. Primeiro troque a unidade dele para UN (peça ao Claude com a frase abaixo, ou troque você mesmo no SisChef); depois toque em “Tentar de novo”. Antes disso ele repete este aviso.')
+    expect(t).not.toMatch(/pode ter sido criado/i)
+    expect(vezes(t)).toBe(0)
+  })
+  it('a mesma mensagem quando o código só vem dentro do motivo (sem a coluna do código): a saída é o botão de sempre', () => {
+    const t = mensagemDoRevisar(CX, null)
+    expect(t).toContain('Este produto JÁ EXISTE no SisChef (código 3476468), mas está em CX')
+    expect(t).toContain('depois toque de novo em “Cadastrar no SisChef e no app”')
+    expect(t).not.toContain('Tentar de novo')
+  })
+  it('unidade que o app aceita (o texto antigo do banco dizia PCT) NÃO é troca de unidade: segue o texto de sempre', () => {
+    const antigo = 'a unidade do produto no SisChef é PCT; a lista do app só aceita KG ou UN — confira o produto 3924999 no SisChef'
+    expect(mensagemDoRevisar(antigo, 3924999)).toMatch(/^O robô parou sem terminar: a unidade do produto no SisChef é PCT/)
+  })
+  // o robô clicou em Salvar e viu "Salvo com sucesso.", mas a URL não ganhou ?id= (3 de 3 vezes desde 14/10): o produto FOI criado; o 2º toque o acha pelo nome (JA_EXISTIA)
+  const SEM_CODIGO = "cliquei em Salvar e não vi o código do produto na URL (estou em https://sistema.sischef.com/admin/produtos/produto.jsf) — o clique em Salvar pode ter criado o produto — confira no SisChef antes de tentar de novo"
+  it('"cliquei em Salvar e não vi o código": diz que o produto provavelmente foi criado, que o botão principal o traz pelo nome e que se não vier é para conferir antes de criar dois (1 "confira")', () => {
+    const t = mensagemDoRevisar(SEM_CODIGO, null)
+    expect(t).toBe('O robô clicou em Salvar no SisChef, mas não conseguiu ler o código do produto: ele provavelmente foi criado. Toque de novo em “Cadastrar no SisChef e no app”: o robô procura o produto pelo nome e traz o código para a sua lista. Se ele não aparecer, confira em Produtos no SisChef antes de tentar outra vez, para não criar dois.')
+    expect(vezes(t)).toBe(1)
+    expect(t).not.toMatch(/não cria outro/i)   // nunca promete o que só vale se a busca achar o produto
+  })
+  it('se o robô não viu NEM a mensagem de salvo NEM o código, o produto pode não ter sido criado: texto de sempre', () => {
+    const nada = "cliquei em Salvar e não vi a mensagem 'Salvo com sucesso.' nem o código do produto na URL (estou em https://x/produto.jsf) — o clique em Salvar pode ter criado o produto — confira no SisChef antes de tentar de novo"
+    expect(mensagemDoRevisar(nada, null)).toMatch(/^O robô parou sem terminar: cliquei em Salvar e não vi a mensagem/)
   })
 
   it('com o código (o robô pode ter criado o produto): diz o código e que "Tentar de novo" só traz o produto para a lista; o "confira" do robô não se repete', () => {

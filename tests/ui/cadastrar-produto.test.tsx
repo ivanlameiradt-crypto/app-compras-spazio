@@ -314,6 +314,17 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     expect(screen.queryByTestId('produto-sem-resposta')).not.toBeInTheDocument()
   })
 
+  // I5 da revisão independente (04/11): o pedido preso pode ter criado o produto no SisChef sem responder; repetir o "criar mesmo assim" (forcar) pularia a conferência
+  // de parecidos e, se a lista ainda não mostrasse o produto recém-salvo, criaria um SEGUNDO. O "usar este" (existente_id) é seguro e continua.
+  it('I5: o "usar este" (existente_id) do pedido preso continua no "Tentar de novo": só traz o produto que o Ivan escolheu', async () => {
+    const preso = emAndamento({ atualizado_em: haMin(30), palavras: 'maion hellmanns', existente_id: 3924999 })
+    const novo = status({ id: 'ped-2', estado: 'PENDENTE', produto_id: null, atualizado_em: haMin(0) })
+    const a = acoes({ status: vi.fn().mockImplementation(async (q: { id?: string }) => (q.id === 'ped-2' ? novo : preso)), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-2' }) })
+    abrir(a, vi.fn(), { inicial: preso })
+    await userEvent.click(screen.getByTestId('tentar-de-novo'))
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith({ ...MESMO_PEDIDO, existente_id: 3924999 }))
+  })
+
   it('"Tentar de novo" cedo demais para o servidor (ele devolve o MESMO pedido): avisa para esperar; o botão trava 3 minutos, toques repetidos NÃO chamam pedirCadastroProduto e depois ele volta', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
@@ -360,13 +371,16 @@ describe('pedido que não termina (revisão 2: I2 e M14): a tela nunca fica sem 
     }
   })
 
-  it('pedido de "Criar mesmo assim" preso: "Tentar de novo" repete com o forcar (o mesmo pedido), também quando a tela foi reaberta', async () => {
+  // Mudou em 04/11/2026 (revisão independente, I5): até então este teste exigia repetir o forcar. Mas um pedido preso pode ter criado o produto sem responder, e o "criar mesmo assim"
+  // pula a conferência de parecidos: se a lista do SisChef ainda não mostrar o produto recém-salvo, o robô cria um SEGUNDO. Agora o "Tentar de novo" repete o pedido SEM o forcar.
+  it('I5: pedido de "Criar mesmo assim" preso: "Tentar de novo" repete o MESMO pedido (também com a tela reaberta) mas SEM o forcar', async () => {
     const preso = emAndamento({ atualizado_em: haMin(30), forcar: true, existente_id: null, palavras: null })
     const a = acoes({ status: vi.fn().mockResolvedValue(preso), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-2' }) })
     abrir(a, vi.fn(), { inicial: preso })
     expect(screen.getByTestId('palavras-produto')).toHaveValue('')                  // as palavras do pedido, não as sugeridas pelo nome do item
     await userEvent.click(screen.getByTestId('tentar-de-novo'))
-    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith({ ...MESMO_PEDIDO, palavras: '', forcar: true }))
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledWith({ ...MESMO_PEDIDO, palavras: '' }))
+    expect(a.cadastrar).not.toHaveBeenCalledWith(expect.objectContaining({ forcar: true }))
   })
 
   it('a contagem recomeça quando o pedido muda de hora (o robô o pegou agora): o aviso de demora sai', async () => {
@@ -463,6 +477,55 @@ describe('REVISAR (revisão 2: I5, M1, M2)', () => {
     expect(aviso).toHaveTextContent('O robô parou sem terminar: a unidade do produto no SisChef é PCT; a lista do app só aceita KG ou UN. O produto pode ter sido criado no SisChef com o código 3924999')
     expect(vezesConfira(aviso)).toBe(1)
     expect(screen.getByTestId('tentar-de-novo')).toBeEnabled()
+  })
+})
+
+// 04/11/2026 (cupom da A. N. da Silva): o aviso "O produto pode ter sido criado" era falso quando o produto já existia em CX, e "Tentar de novo" repetia o erro sem dizer o que fazer.
+describe('REVISAR — textos novos de 04/11 (unidade em CX e "salvou mas não leu o código")', () => {
+  const CX = 'a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT — confira o produto 3476468 no SisChef'
+  const FRASE = 'pode trocar a unidade do produto 3476468 de CX para UN no SisChef'
+  const comCx = () => { const rev = status({ estado: 'REVISAR', produto_id: 3476468, motivo: CX }); abrir(acoes({ status: vi.fn().mockResolvedValue(rev) }), vi.fn(), { inicial: rev }) }
+
+  it('unidade em CX: texto novo (o produto JÁ EXISTE), a frase pronta e "Copiar frase"; "Tentar de novo" continua lá (vale depois de trocar a unidade)', async () => {
+    const user = userEvent.setup()
+    const escrever = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    comCx()
+    const aviso = screen.getByTestId('produto-revisar')
+    expect(aviso).toHaveTextContent('Este produto JÁ EXISTE no SisChef (código 3476468), mas está em CX e o app só trabalha com KG, UN, CT e PCT.')
+    expect(aviso).not.toHaveTextContent('pode ter sido criado')
+    expect(screen.getByTestId('trocar-unidade-frase')).toHaveTextContent(FRASE)
+    expect(screen.getByTestId('tentar-de-novo')).toBeEnabled()
+    await user.click(screen.getByTestId('copiar-frase'))
+    await waitFor(() => expect(escrever).toHaveBeenCalledWith(FRASE))
+    expect(await screen.findByTestId('copiar-frase')).toHaveTextContent('Copiado')
+  })
+
+  it('a cópia falhou (navegador sem permissão): a frase continua na tela para ele selecionar e a tela avisa', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('negado'))
+    comCx()
+    await user.click(screen.getByTestId('copiar-frase'))
+    expect(await screen.findByTestId('copiar-falhou')).toHaveTextContent('Não consegui copiar')
+    expect(screen.getByTestId('trocar-unidade-frase')).toHaveTextContent(FRASE)
+  })
+
+  it('REVISAR de outro motivo (grupo não encontrado, unidade que o app aceita): não aparece frase nem botão de copiar', () => {
+    const rev = status({ estado: 'REVISAR', produto_id: null, motivo: 'grupo não encontrado: nada foi criado' })
+    abrir(acoes({ status: vi.fn().mockResolvedValue(rev) }), vi.fn(), { inicial: rev })
+    expect(screen.queryByTestId('trocar-unidade-frase')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('copiar-frase')).not.toBeInTheDocument()
+  })
+
+  it('"cliquei em Salvar e não vi o código": texto novo (provavelmente foi criado) e o botão de sempre repete o pedido SEM "criar mesmo assim"', async () => {
+    const rev = status({ estado: 'REVISAR', produto_id: null, forcar: true, motivo: "cliquei em Salvar e não vi o código do produto na URL (estou em https://sistema.sischef.com/admin/produtos/produto.jsf) — o clique em Salvar pode ter criado o produto — confira no SisChef antes de tentar de novo" })
+    const a = acoes({ status: vi.fn().mockResolvedValue(status({ id: 'ped-2', estado: 'PENDENTE', produto_id: null })), cadastrar: vi.fn().mockResolvedValue({ cadastro_id: 'ped-2' }) })
+    abrir(a, vi.fn(), { inicial: rev })
+    const aviso = screen.getByTestId('produto-revisar')
+    expect(aviso).toHaveTextContent('O robô clicou em Salvar no SisChef, mas não conseguiu ler o código do produto: ele provavelmente foi criado.')
+    expect(aviso).toHaveTextContent('Toque de novo em “Cadastrar no SisChef e no app”')
+    await userEvent.click(screen.getByTestId('cadastrar-produto-botao'))
+    await waitFor(() => expect(a.cadastrar).toHaveBeenCalledTimes(1))
+    expect(a.cadastrar).toHaveBeenCalledWith(expect.not.objectContaining({ forcar: expect.anything() }))
   })
 })
 

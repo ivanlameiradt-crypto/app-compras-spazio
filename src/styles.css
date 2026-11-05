@@ -308,6 +308,9 @@ a.botao { display: inline-block; text-align: center; text-decoration: none; }
 .cupom .corrigir-cupom .corrigir-item { display: flex; flex-direction: column; gap: 4px; }
 .cupom .corrigir-cupom .corrigir-item > p { font-size: 14px; }
 .cupom .corrigir-cupom .associar { margin-top: 0; }
+/* Frase pronta para o Ivan mandar ao Claude (04/11/2026): o produto JÁ existe no SisChef em CX/RL e a unidade precisa virar UN. Um toque na frase seleciona tudo (celular sem "Copiar"). */
+.frase-claude { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.frase-claude .frase { margin: 0; padding: 8px 10px; border: 1px solid var(--linha); border-radius: 8px; background: var(--fundo); font-size: 13px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .cupom .corrigir-cupom label { font-size: 13px; }
 .cupom .corrigir-cupom input[inputmode='decimal'] { max-width: 180px; }
 /* a conferência é uma lista de duas colunas (descrição à esquerda, valor à direita), ao contrário da lista empilhada da nota */
