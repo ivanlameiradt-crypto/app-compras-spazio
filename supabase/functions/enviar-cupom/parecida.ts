@@ -69,7 +69,7 @@ export async function acharParecidas(
     c.teste !== true && c.id !== opcoes.ignorarId && ESTADOS_QUE_CONTAM.includes(c.estado) && soDigitos(c.emitente_cnpj) === imp.cnpj
     && centavosDe(c.valor_a_pagar) === imp.centavos && Date.parse(c.criado_em) >= desde.getTime())
   const notas = opcoes.comNotas === false ? [] : (await io.notas(imp.cnpj, desdeDia)).filter((n) =>
-    n.descartada_em === null && soDigitos(n.cnpj_emitente) === imp.cnpj && centavosDe(n.valor_nf) === imp.centavos && n.emissao >= desdeDia
+    n.descartada_em == null && soDigitos(n.cnpj_emitente) === imp.cnpj && centavosDe(n.valor_nf) === imp.centavos && n.emissao >= desdeDia
     && (n.situacao === 'lancada' || n.situacao === 'saiu_da_fila' || n.lancamento_estado === 'lancando' || n.lancamento_estado === 'erro'))
   const achadas: Parecida[] = [
     ...cupons.map((c): Parecida => ({

@@ -6,6 +6,7 @@ import { SISTEMA } from './prompt.ts'
 import { casarItens, type Aprendizado } from './casamento.ts'
 import { normalizar } from './normalizar.ts'
 import { conferirCnpjLido, cnpjValido, fraseCnpjCorrigido, fraseCnpjInvalido, type CnpjConhecido } from './cnpj.ts'
+import { fraseDaRepetida, impressaoDaCompra, type Impressao, type Parecida } from './parecida.ts'
 
 export interface Pagamento { forma: string; conta?: string }
 export interface Corpo { foto_path?: unknown; pagamento?: unknown; teste?: unknown }
@@ -36,6 +37,11 @@ export interface Deps {
    * sair sozinho. O index.ts liga por padrão; `CUPOM_CONFIRMAR_ANTES=OFF` (segredo da função) volta ao lançamento automático. Ausente = desligado.
    */
   exigirConfirmacao?: boolean
+  /**
+   * E5 (pedido do Ivan, 04/11/2026): as compras PARECIDAS (mesmo CNPJ e total) que já existem — cupom, compra avulsa e nota fiscal. Aqui SÓ INFORMA: achou ⇒ o cupom vai a REVISAR com a frase no
+   * FIM do motivo e nunca dispara (a trava forte é o portão do confirmar-cupom). Qualquer falha dela vale o envio como se não houvesse a conferência. Ausente = nada muda.
+   */
+  buscarParecidas?(imp: Impressao): Promise<Parecida[]>
 }
 
 export interface Resultado { status: number; corpo: Record<string, unknown> }
@@ -200,11 +206,22 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo 
   // confere e confirma ("Confirmar e lançar"). Só quando não há item incerto e o total foi lido; o motivo começa com CONFIRMAR_PREFIXO (o app e o
   // confirmar-cupom o reconhecem).
   const aguardaConfirmacao = deps.exigirConfirmacao === true && incertos === 0 && !semTotal
-  const estado = incertos > 0 || semTotal || aguardaConfirmacao ? REVISAR : PENDENTE
+  // E5: já existe compra do mesmo fornecedor com o mesmo total (cupom, avulsa ou nota)? Aqui só INFORMA: o aviso vai no FIM do motivo e o cupom NUNCA sai sozinho. Cupom de teste, sem CNPJ ou sem
+  // total não tem impressão digital (nada a comparar). A consulta que falha não derruba o envio: a trava forte é a do confirmar-cupom, na hora de soltar para o robô.
+  let frasePecida: string | null = null
+  const imp = !teste && deps.buscarParecidas && !semTotal ? impressaoDaCompra(leitura.emitente_cnpj, leitura.valor_total) : null
+  if (imp && deps.buscarParecidas) {
+    try {
+      const achadas = await deps.buscarParecidas(imp)
+      if (achadas.length > 0) frasePecida = fraseDaRepetida(achadas, imp.centavos)
+    } catch { /* só informa */ }
+  }
+  const estado = incertos > 0 || semTotal || aguardaConfirmacao || frasePecida !== null ? REVISAR : PENDENTE
   const motivos: string[] = []
   if (incertos > 0) motivos.push(`${incertos} item(ns) sem casamento confirmado — confira no Code`)
   if (semTotal) motivos.push('não consegui ler o total do cupom')
   if (aguardaConfirmacao) motivos.push(`${CONFIRMAR_PREFIXO} ${itens.length} item(ns) já conhecido(s) — confira e confirme no app`)
+  if (frasePecida !== null) motivos.push(frasePecida)
 
   // 6. grava a linha (service_role; o app nunca insere direto).
   const cupom = await deps.inserirCupom(linha({
@@ -222,8 +239,10 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps, modelo 
   if (estado === PENDENTE) {
     try { await deps.dispararLancamento(cupom.id); disparoOk = true } catch { /* fica PENDENTE; quem registra o motivo é o index.ts */ }
   }
+  const AVISO_REPETIDA = 'parece repetida (já existe compra igual): veja o aviso e decida'
+  const motivoDeParar = incertos > 0 ? `${incertos} item(ns) para você conferir` : aguardaConfirmacao ? 'todos os itens já conhecidos — confira e confirme no app' : semTotal ? 'não consegui ler o total do cupom — precisa de você' : null
   const resumoBase = estado === REVISAR
-    ? incertos > 0 ? `${incertos} item(ns) para você conferir` : aguardaConfirmacao ? 'todos os itens já conhecidos — confira e confirme no app' : 'não consegui ler o total do cupom — precisa de você'
+    ? motivoDeParar !== null ? (frasePecida !== null ? `${motivoDeParar}; ${AVISO_REPETIDA}` : motivoDeParar) : AVISO_REPETIDA
     : disparoOk ? 'enviado para lançar' : AVISO_DISPARO_FALHOU
   // a frase do CNPJ (corrigido ou inválido) vai depois do resumo de sempre; sem ela o resumo é exatamente o de antes
   const resumo = avisoCnpj ? `${resumoBase}; ${avisoCnpj}` : resumoBase
