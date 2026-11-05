@@ -25,6 +25,8 @@ const cupom = (itens: ItemCupomRecente[], valor = 425): CupomRecente => ({
 const mostrar = (c: CupomRecente, cat: ProdutoCatalogo[] | null = catalogo()) =>
   render(<CorrigirCupom cupom={c} catalogo={cat} catalogoFalhou={false} aoReenviar={() => {}} />)
 const escolherCoca = async () => {
+  // desde 04/11/2026 cada item começa FECHADO (pedido do Ivan: botão de abrir e fechar): abre o único item pendente destes testes
+  await userEvent.click(screen.getByTestId('item-cabecalho'))
   await userEvent.type(screen.getByLabelText('Produto do SisChef'), 'coca')
   await userEvent.click(within(await screen.findByTestId('achados')).getByRole('button', { name: /COCA COLA - ZERO 350 ML/ }))
 }

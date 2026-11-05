@@ -69,6 +69,67 @@ describe('sugerirPorPalavras — o app sugere forte só com TODAS as palavras do
   })
 })
 
+// 04/11/2026 (cupom da A. N. da Silva): o GRAMPO 26/6 sugeria "CAMARÃO 34/40" só porque as palavras-chave do camarão têm "26/30" e o "26" coincidia. Número SOZINHO nunca é parecido.
+describe('número sozinho não vira "parecido" (o grampo 26/6 não pode sugerir camarão)', () => {
+  const camarao34: ProdutoCatalogo = {
+    produto_id: 3469588, nome: 'CAMARÃO 34/40 - INSUMO (KG)', nome_sischef: 'CAMARÃO ROSA 34/40 - INSUMO (KG)', unidade: 'kg',
+    palavras: 'CAMARÃO 34/40 OU CAMARAO CINZA DESC G (FP 500G) OU CAMARAO CINZA DESC G 26/30 (CM 1KG)',
+  }
+  const camarao2630: ProdutoCatalogo = { produto_id: 3469589, nome: 'CAMARÃO 26/30 - INSUMO (KG)', unidade: 'kg' }
+  it('GRAMPO GRAMPEADOR 26/6 (só o número 26 em comum com o camarão) não recebe sugestão nenhuma', () => {
+    expect(sugerirPorPalavras([camarao34, ...catalogo], 'GRAMPO GRAMPEADOR 26/6 12X5000 BAZZE', 'UN')).toBeNull()
+  })
+  it('o número continua decidindo quando vem com o nome: CAMARAO 26/30 acha o 26/30 (forte) e CAMARAO 41/50 só dá candidatos (fraca)', () => {
+    const dois = [{ ...camarao34, palavras: undefined, nome_sischef: undefined }, camarao2630]
+    const s = sugerirPorPalavras(dois, 'CAMARAO CINZA 26/30 CONGELADO', 'KG')
+    expect(s?.forca).toBe('forte')
+    expect(s?.produto.produto_id).toBe(3469589)
+    const sem = sugerirPorPalavras(dois, 'CAMARAO 41/50', 'KG')
+    expect(sem?.forca).toBe('fraca')
+  })
+  // Revisão independente do PR 69 (04/11): tirar o número da CONTA fez "CAMARAO 34/40" sugerir o 51/60 em 1º (empate em "camarao" e o nome mais curto ganhava). O número continua
+  // desempatando quando uma palavra com letra TAMBÉM bateu; só não vale sozinho.
+  it('o número desempata entre candidatos parecidos: "CAMARAO 34/40" sugere o 34/40 em 1º (e não o 51/60, de nome mais curto)', () => {
+    const rosa: ProdutoCatalogo[] = [
+      { produto_id: 1, nome: 'CAMARÃO ROSA 51/60 - INSUMO', unidade: 'kg' }, { produto_id: 2, nome: 'CAMARÃO ROSA 34/40 - INSUMOS', unidade: 'kg' },
+      { produto_id: 3, nome: 'CAMARÃO ROSA 26/30 - INSUMOS', unidade: 'kg' },
+    ]
+    const s = sugerirPorPalavras(rosa, 'CAMARAO 34/40', 'KG')
+    expect(s?.forca).toBe('fraca')
+    expect(s?.produto.produto_id).toBe(2)
+  })
+  it('palavra com letra junto do número ("2KG", "10kg", "600g") continua valendo como parecida', () => {
+    const saco: ProdutoCatalogo = { produto_id: 3476484, nome: 'SACO 2KG - C/ 100 UND', unidade: 'un' }
+    const s = sugerirPorPalavras([saco], 'SACO 19X37 2KG AD FONTEPLAST', 'ML')
+    expect(s?.produto.produto_id).toBe(3476484)
+  })
+})
+
+// 04/11/2026: o SisChef escreve AMENDOIN e MEZINHA (erro de digitação dele) e o fornecedor escreve certo; "10K" do cupom é o "10 KG" do SisChef.
+describe('palavrasDe — grafias que são a mesma palavra', () => {
+  it('AMENDOIN (SisChef) e AMENDOIM (cupom) viram a mesma palavra; MEZINHA vira mesinha', () => {
+    expect(palavrasDe('AMENDOIN XEREM - INSUMOS')).toEqual(['amendoim', 'xerem'])
+    expect(palavrasDe('AMENDOIM XEREM TRITURADO AMARI')).toEqual(['amendoim', 'xerem', 'triturado', 'amari'])
+    expect(palavrasDe('MEZINHA P/ PIZZAS - PCT 250 UND')).toEqual(['mesinha', 'pizzas', '250'])
+    expect(palavrasDe('SUPORTE P/ PIZZA (MESINHA) C/100 UNIDS')).toContain('mesinha')
+  })
+  it('"10K" no cupom é "10 KG" do SisChef (sem mexer em "10 KG", "2KG" nem "600G")', () => {
+    expect(palavrasDe('SACOLA 42X53 10K BR. ESTRELA')).toEqual(['sacola', '10kg', 'br', 'estrela'])
+    expect(palavrasDe('SACOLA 10 KG - 100 UND')).toEqual(['sacola', '10kg', '100'])
+    expect(palavrasDe('SACO 2KG - C/ 100 UND')).toEqual(['saco', '2kg', '100'])
+    expect(palavrasDe('FAR.LACTEA NESTLE 1X600G')).toEqual(['farinha', 'lacta', 'nestle', '600g'])
+  })
+  it('a sacola do cupom (42X53 10K) agora tem a sacola de 10 KG como candidato', () => {
+    const sacolas: ProdutoCatalogo[] = [
+      { produto_id: 3476488, nome: 'SACOLA 5 KG - 100 UND', unidade: 'ct' }, { produto_id: 3476486, nome: 'SACOLA 10 KG - 100 UND', unidade: 'ct' },
+      { produto_id: 3476487, nome: 'SACOLA 15 KG - 100 UND', unidade: 'ct' },
+    ]
+    const s = sugerirPorPalavras(sacolas, 'SACOLA 42X53 10K BR. ESTRELA PLASCOLDRIL', 'UN')
+    expect(s?.forca).toBe('fraca')
+    expect(s?.produto.produto_id).toBe(3476486)   // o de 10 KG vem na frente (2 palavras: sacola e 10kg)
+  })
+})
+
 describe('a cópia do servidor (enviar-cupom/palavras.ts) é a mesma do app', () => {
   const corpo = (f: string) => { const t = readFileSync(f, 'utf8').split(String.fromCharCode(13)).join(''); return t.slice(t.indexOf('/** Palavras')) }
   it('o código é idêntico do `/** Palavras` para baixo', () => {

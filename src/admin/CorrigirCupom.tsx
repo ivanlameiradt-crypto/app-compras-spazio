@@ -3,7 +3,7 @@
 // cupom, vê a conferência da soma e toca em "Reenviar para lançar". Até aí NADA sai do aparelho: a soma e as linhas que aparecem aqui são só um
 // espelho da conta que a Edge Function confirmar-cupom refaz do zero (mesma fórmula e mesma tolerância do robô). O botão só habilita quando a
 // soma bate porque o servidor recusaria de qualquer jeito — é melhor o Ivan ver a diferença e corrigir o peso agora do que receber um erro depois.
-import { useMemo, useState } from 'react'
+import { Fragment, useId, useMemo, useState } from 'react'
 import * as api from '../lib/api'
 import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
@@ -142,6 +142,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const totalPorPeso = qCupom != null && pesoDigitado != null ? arred3(qCupom * pesoDigitado) : null
   const absurdo = modo === 'por_unidade' && destinoKg && qCupom != null && totalPorPeso != null && kgPorUnidadeAbsurdo(totalPorPeso, qCupom)
   const lembravel = podeLembrar(cupom, it)
+  // Quantos produtos a busca vê (04/11/2026, pergunta do Ivan "por que o app não puxa esses itens?"): a tela diz onde procurou. Os escondidos (receitas) não contam.
+  const naBusca = lista.filter((p) => !p.oculto).length
 
   // Item confirmado não tem caixa: quem o mostra é o resumo do fim (ItemConfirmadoNoResumo), com o "Editar" que reabre esta caixa na própria linha do resumo.
   if (estado.confirmado) return null
@@ -181,6 +183,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             <input type="text" autoComplete="off" placeholder="Nome, palavra-chave ou código" value={texto} disabled={travado}
               onChange={(e) => setTexto(e.target.value)} />
           </label>
+          <p className="sub" data-testid="busca-tamanho">Procurando entre {naBusca} {naBusca === 1 ? 'produto' : 'produtos'} da sua lista.</p>
           {proposta && (
             <p className="sub">Proposta do sistema:{' '}
               <button type="button" className="link" disabled={travado} onClick={() => escolher(proposta)}>{proposta.nome}</button>
@@ -211,9 +214,13 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
                 </button>
               </div>
               {porPalavras.alternativas.length > 0 && (
-                <p className="sub">Outras opções:{' '}
-                  {porPalavras.alternativas.map((a) => (
-                    <button key={a.produto_id} type="button" className="link" disabled={travado} onClick={() => escolher(a)}>{a.nome}</button>
+                // as opções saíam coladas umas nas outras (04/11/2026): agora vêm separadas por " · "
+                <p className="sub" data-testid="outras-opcoes">Outras opções:{' '}
+                  {porPalavras.alternativas.map((a, k) => (
+                    <Fragment key={a.produto_id}>
+                      {k > 0 && ' · '}
+                      <button type="button" className="link" disabled={travado} onClick={() => escolher(a)}>{a.nome}</button>
+                    </Fragment>
                   ))}
                 </p>
               )}
@@ -243,7 +250,10 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
           )}
           {busca.total > busca.itens.length && <p className="sub">Mostrando {busca.itens.length} de {busca.total}: digite mais letras para afinar.</p>}
           {texto.trim() !== '' && busca.total === 0 && (
-            <p className="sub">Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.</p>
+            <p className="sub" data-testid="nada-achado">
+              Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef. Produto do SisChef que está em CX, RL ou outra unidade fora de KG, UN, CT e PCT
+              não aparece aqui: se o seu é assim, toque em “Cadastrar produto novo” (o robô acha o produto e diz o que fazer).
+            </p>
           )}
           {/* Produto que o app não identificou (sem proposta, sem sugestão pelas palavras e nada na busca): aviso + botão. Com sugestão ou resultados na tela: só o botão discreto,
               sempre à mão (a sugestão pode estar errada: o Ivan sabe quando o produto é novo). Pedido do Ivan, 13/10. */}
@@ -397,6 +407,11 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
   const [erro, setErro] = useState('')
   const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos cadastrados agora pelo app (de qualquer item): valem na busca de todas as caixas
   const registrarNovo = (p: ProdutoCatalogo) => setNovos((a) => [...a.filter((x) => x.produto_id !== p.produto_id), p])
+  const idBase = useId()
+  // Abrir e fechar cada item (pedido do Ivan, 04/11/2026): undefined = nunca aberto (a caixa nem é montada: não consulta o cadastro de produtos à toa); true = aberto; false = fechado MAS
+  // montado, só escondido (revisão independente, I3): fechar não pode apagar o que foi digitado nem o cadastro de produto em andamento. Vários itens podem ficar abertos ao mesmo tempo.
+  const [abertos, setAbertos] = useState<Record<number, boolean>>({})
+  const alternar = (i: number) => setAbertos((a) => ({ ...a, [i]: !a[i] }))
 
   const pendentes = useMemo(() => itensPendentes(cupom), [cupom])
   const estadoDe = (i: number): EstadoItem => estados[i] ?? estadoInicial(cupom.itens[i])
@@ -482,17 +497,31 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
       {/* Só os itens que faltam: confirmado, o item sai daqui e passa para o resumo do fim (pedido do Ivan, 22/10/2026) */}
       {naLista.map((i) => {
         const it = cupom.itens[i]
+        const e = estadoDe(i)
+        const aberto = abertos[i] === true
+        const idCorpo = `${idBase}-item-${i}`
         return (
           <div key={i} className="corrigir-item" data-testid="corrigir-item">
-            <p>
-              <b>{(it.descricao_cupom ?? '').trim() || 'item'}</b>{' '}
-              {it.valor_unitario != null && Number.isFinite(Number(it.valor_unitario)) && (
-                <span className="sub">· {formatarReais(Number(it.valor_unitario))}{unid(it.unidade_cupom) !== '' && ` por ${unid(it.unidade_cupom)}`}</span>
+            {/* O cabeçalho SEMPRE à vista (descrição, preço e o andamento do item); tocar abre ou fecha a caixa de preencher, como nas notas (pedido do Ivan, 04/11/2026) */}
+            <button type="button" className="item-cab" aria-expanded={aberto} aria-controls={idCorpo} data-testid="item-cabecalho" onClick={() => alternar(i)}>
+              <span className="item-cab-texto">
+                <span>
+                  <b>{(it.descricao_cupom ?? '').trim() || 'item'}</b>{' '}
+                  {it.valor_unitario != null && Number.isFinite(Number(it.valor_unitario)) && (
+                    <span className="sub">· {formatarReais(Number(it.valor_unitario))}{unid(it.unidade_cupom) !== '' && ` por ${unid(it.unidade_cupom)}`}</span>
+                  )}
+                  <Origem de="cupom" />
+                </span>
+                <span className="sub item-estado" data-testid="item-estado">{e.produto ? `${e.produto.nome} · falta confirmar` : 'falta escolher o produto'}</span>
+              </span>
+              <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
+            </button>
+            <div id={idCorpo} className="item-corpo" data-testid="item-corpo" hidden={!aberto}>
+              {abertos[i] !== undefined && (
+                <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={e} mudar={(x) => mudar(i, x)}
+                  travado={enviando} novos={novos} registrarNovo={registrarNovo} />
               )}
-              <Origem de="cupom" />
-            </p>
-            <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={estadoDe(i)} mudar={(e) => mudar(i, e)}
-              travado={enviando} novos={novos} registrarNovo={registrarNovo} />
+            </div>
           </div>
         )
       })}

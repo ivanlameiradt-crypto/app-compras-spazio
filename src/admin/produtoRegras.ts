@@ -1,6 +1,7 @@
 // Cadastro de PRODUTO NOVO pelo app (pedido do Ivan, 13/10/2026): quando o produto de um cupom, de uma nota fiscal ou de uma compra avulsa não existe na lista do app nem no
 // SisChef, ele o cadastra pelo app (nome, grupo e unidade, com os mesmos parâmetros do formulário "Novo produto" do SisChef) e o robô o cria no SisChef; o app guarda o código
 // novo na planilha de produtos (a lista do app). Aqui só as regras puras: sem React nem rede.
+import { ehUnidadeDaLista } from '../lib/unidadesDaLista'
 
 /** Os grupos de INSUMO do SisChef (Produtos/Taxas › Grupos de produto; o texto é o do SisChef, o robô escolhe o grupo por ele). Lista lida do SisChef em 13/10/2026. */
 export const GRUPOS_DE_INSUMO: string[] = [
@@ -103,12 +104,39 @@ export function motivoSemConselho(motivo: string | null | undefined): string {
   return fato.replace(/[\s—–:;,.-]+$/, '').trim()
 }
 
+const RE_UNIDADE_FORA_DA_LISTA = /a unidade do produto no SisChef é\s*([^;]+?)\s*;\s*a lista do app só aceita/i
+const RE_CODIGO_NO_MOTIVO = /confira o produto\s*(\d+)/i
+// O robô clicou em Salvar, viu "Salvo com sucesso." e a URL não ganhou ?id= (3 de 3 vezes desde 14/10): o produto FOI criado. Sem a mensagem de salvo ("não vi a mensagem … nem o código") não se sabe.
+const RE_SALVOU_SEM_CODIGO = /cliquei em Salvar e não vi o código do produto na URL/i
+
+/** Produto que JÁ existe no SisChef numa unidade que o app não conhece (CX, RL…) e a frase que o Ivan manda ao Claude para trocá-la para UN (ação nomeada, como em 31/10). */
+export interface TrocaDeUnidade { unidade: string; produtoId: number; frase: string }
+
+/** O motivo do banco "a unidade do produto no SisChef é CX; a lista do app só aceita KG, UN, CT ou PCT — confira o produto N no SisChef": a unidade, o código e a frase. null se não é isso. */
+export function trocaDeUnidade(motivo: string | null | undefined, produtoId: number | null): TrocaDeUnidade | null {
+  const m = String(motivo ?? '')
+  const un = RE_UNIDADE_FORA_DA_LISTA.exec(m)?.[1]?.trim().toUpperCase()
+  if (!un || un === '?' || ehUnidadeDaLista(un)) return null   // o texto antigo do banco dizia "só aceita KG ou UN" também para PCT, que hoje o app aceita
+  const id = produtoId ?? (Number(RE_CODIGO_NO_MOTIVO.exec(m)?.[1]) || null)
+  if (id === null || !Number.isInteger(id) || id <= 0) return null
+  return { unidade: un, produtoId: id, frase: `pode trocar a unidade do produto ${id} de ${un} para UN no SisChef` }
+}
+
 /**
  * O aviso do REVISAR sem candidatos (os candidatos têm o aviso deles): o fato que o robô contou e UM conselho. Com o código do produto (o robô pode
  * ter criado o produto no SisChef), a saída é "Tentar de novo", que só traz ESTE produto para a lista; sem ele, conferir no SisChef antes de pedir de novo.
- * Nunca afirma que o produto não existe nem que nada foi criado.
+ * Nunca afirma que o produto não existe nem que nada foi criado, salvo nos dois casos que o robô prova (04/11/2026, cupom da A. N. da Silva): o produto JÁ existe em unidade que o app não
+ * conhece (o "pode ter sido criado" era falso e "Tentar de novo" repetia o erro) e o robô salvou mas não leu o código (o produto existe; o 2º pedido o acha pelo nome).
  */
 export function mensagemDoRevisar(motivo: string | null | undefined, produtoId: number | null): string {
+  const troca = trocaDeUnidade(motivo, produtoId)
+  if (troca) {
+    const saida = produtoId !== null ? 'toque em “Tentar de novo”' : 'toque de novo em “Cadastrar no SisChef e no app”'
+    return `Este produto JÁ EXISTE no SisChef (código ${troca.produtoId}), mas está em ${troca.unidade} e o app só trabalha com KG, UN, CT e PCT. Primeiro troque a unidade dele para UN, ou para outra dessas 4 se UN não servir (peça ao Claude com a frase abaixo, ou troque você mesmo no SisChef); depois ${saida}. Antes disso ele repete este aviso.`
+  }
+  if (produtoId === null && RE_SALVOU_SEM_CODIGO.test(String(motivo ?? ''))) {
+    return 'O robô clicou em Salvar no SisChef, mas não conseguiu ler o código do produto: ele provavelmente foi criado. Toque de novo em “Cadastrar no SisChef e no app”: o robô procura o produto pelo nome e traz o código para a sua lista. Se ele não aparecer, confira em Produtos no SisChef antes de tentar outra vez, para não criar dois.'
+  }
   const fato = motivoSemConselho(motivo)
   const inicio = fato === '' ? 'O robô parou sem terminar.' : `O robô parou sem terminar: ${fato}${/[.!?]$/.test(fato) ? '' : '.'}`
   if (produtoId === null) return RE_CONFIRA.test(fato) || RE_OUTRA_INSTRUCAO.test(fato) ? inicio : `${inicio} Confira no SisChef se o produto já existe antes de tentar de novo.`
