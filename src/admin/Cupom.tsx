@@ -9,9 +9,10 @@ import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
 } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { diagnosticoDoCupom, envioRepetido, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
+import { diagnosticoDoCupom, envioRepetido, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
 import AvisoRepetida from './AvisoRepetida'
+import AvisoFalhaConferir from './AvisoFalhaConferir'
 import CuponsExcluidos from './CuponsExcluidos'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
@@ -80,6 +81,11 @@ function avisoDeReenvio(r: RespostaConfirmacaoCupom): AvisoReenvio {
   if (r.disparo_ok === false) return { classe: 'amarelo', texto: naoGuardou ? `${r.resumo}. Além disso, ${naoGuardou}` : r.resumo }
   if (naoGuardou) return { classe: 'amarelo', texto: `Cupom corrigido e reenviado para lançar, mas ${naoGuardou}` }
   return { classe: 'ok', texto: 'Cupom corrigido e reenviado para lançar. Em 2 ou 3 minutos ele aparece como “lançado ✓” ou volta com um motivo novo.' }
+}
+/** O que a tela diz depois de um "Tentar de novo" aceito (E5, ajuste 2): o servidor conferiu de novo, não achou compra igual e soltou o cupom; amarelo quando o disparo automático falhou (o cupom ficou na fila). */
+function avisoDeConferirDeNovo(r: RespostaConfirmacaoCupom): AvisoReenvio {
+  if (r.disparo_ok === false) return { classe: 'amarelo', texto: r.resumo }
+  return { classe: 'ok', texto: 'Conferi de novo e não achei compra igual. Enviado para lançar: em 2 ou 3 minutos ele aparece como “lançado ✓” ou volta com um motivo novo.' }
 }
 
 /**
@@ -280,6 +286,12 @@ export default function Cupom() {
     carregarRecentes()
   }
 
+  /** O servidor conferiu de novo (E5, ajuste 2) e soltou o cupom para o robô lançar: guarda o aviso deste cupom e recarrega a lista (ele volta como "na fila"). */
+  function aoConferirDeNovo(id: string, r: RespostaConfirmacaoCupom) {
+    setReenviados((m) => ({ ...m, [id]: avisoDeConferirDeNovo(r) }))
+    carregarRecentes()
+  }
+
   async function escolherFoto(arquivo: File | undefined) {
     if (!arquivo) return
     setResultado(null); setErro('')
@@ -384,6 +396,8 @@ export default function Cupom() {
             // "já lançado em outro envio" (nada a fazer) e no "fornecedor não encontrado" (a caixa de cadastro já avisa, com o passo a passo). Nunca os dois ao mesmo tempo: é um aviso só.
             // E5: aviso "parece repetida" (só no REVISAR sem pedido e que não parou no meio do SisChef); parado SÓ por ele, o aviso já diz tudo e o diagnóstico de sempre não repete
             const repetida = repetidaDoCupom(c)
+            // E5, ajuste 2: o robô não conseguiu conferir se é repetida (parado SÓ por isso): aviso próprio com "Tentar de novo"; ele já diz tudo, então o diagnóstico de sempre não repete
+            const falha = repetida ? null : falhaDeConferirDoCupom(c)
             const nomeDoCartao = c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : ''
             const avisoCnpjSemAbrir = !aberto && cnpjLidoSuspeito(c.emitente_cnpj) && c.estado === 'REVISAR' && !envioRepetido(c) && !fornecedorNaoEncontrado(c.motivo)
             return (
@@ -403,8 +417,9 @@ export default function Cupom() {
                   <AvisoRepetida id={c.id} texto={repetida.texto} sobraMotivo={repetida.sobraMotivo} rotulo="cupom" nome={nomeDoCartao}
                     aoDecidir={(r) => aoDecidirRepetida(c.id, r)} aoExcluir={carregarRecentes} />
                 )}
+                {falha && <AvisoFalhaConferir id={c.id} texto={falha.texto} aoSoltar={(r) => aoConferirDeNovo(c.id, r)} aoRecarregar={carregarRecentes} />}
                 {anotados[c.id] && c.estado === 'REVISAR' && !repetida && <p className="ok" data-testid="outra-compra-anotada">{anotados[c.id]}</p>}
-                {c.estado === 'REVISAR' && !envioRepetido(c) && !(repetida && !repetida.sobraMotivo) && <ProblemaDoCupom c={c} />}
+                {c.estado === 'REVISAR' && !envioRepetido(c) && !(repetida && !repetida.sobraMotivo) && !falha && <ProblemaDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <FotoDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && fornecedorNaoEncontrado(c.motivo) && (
                   <CadastrarFornecedor cupom={c} acoes={ACOES_FORNECEDOR} aoRecarregar={carregarRecentes} aoReenviar={() => { setReenviados((m) => ({ ...m, [c.id]: { classe: 'ok', texto: 'Reenviado: o cupom entrou na fila e o robô lança em 2 ou 3 minutos.' } })); carregarRecentes() }} />

@@ -1,4 +1,6 @@
-import { REPETIDA_PREFIXO, diagnosticoDoCupom, motivoSemRepetida, parouNoMeioDoSischef, podeExcluirCupom, repetidaDoCupom, trechoDaRepetida } from '../../src/admin/cupomRegras'
+import {
+  FALHA_PREFIXO, REPETIDA_PREFIXO, diagnosticoDoCupom, falhaDeConferirDoCupom, motivoSemFalha, motivoSemRepetida, parouNoMeioDoSischef, podeExcluirCupom, repetidaDoCupom, trechoDaFalha, trechoDaRepetida,
+} from '../../src/admin/cupomRegras'
 import type { CupomRecente, ItemCupomRecente } from '../../src/lib/tipos'
 
 // E5 (compra repetida, pedido do Ivan de 04/11/2026): o app reconhece o aviso "POSSÍVEL REPETIDA: …" que o servidor e o robô gravam no FIM do motivo do cupom. O aviso aparece JUNTO do
@@ -79,5 +81,70 @@ describe('diagnosticoDoCupom com o aviso de repetida (o aviso vem JUNTO, nunca n
     const d = diagnosticoDoCupom(cupom({ motivo: `CONFERIR NO SISCHEF antes de repetir: GERAR_COMPRA_CLICADO; ${FRASE}` }))!
     expect(d.problema).toMatch(/PODE já existir/)
     expect(d.corrigivel).toBe(false)
+  })
+})
+
+// ---------- ajuste 2 da revisão do código (05/11): "não consegui conferir" tem aviso PRÓPRIO ("CONFERÊNCIA DE REPETIDA FALHOU: …"), com o botão "Tentar de novo" (confere de novo no servidor).
+const FALHA = 'CONFERÊNCIA DE REPETIDA FALHOU: não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).'
+
+describe('o trecho CONFERÊNCIA DE REPETIDA FALHOU dentro do motivo (as mesmas regras do servidor e do robô)', () => {
+  it('o prefixo é o do servidor e do robô, e NÃO é o da repetida: um aviso nunca é lido como o outro', () => {
+    expect(FALHA_PREFIXO).toBe('CONFERÊNCIA DE REPETIDA FALHOU: ')
+    expect(trechoDaFalha(FRASE)).toBeNull()
+    expect(trechoDaRepetida(FALHA)).toBeNull()
+  })
+  it('acha o trecho (do prefixo até o fim) e devolve o motivo sem ele; sem trecho ou sem motivo: tudo igual / vazio', () => {
+    expect(trechoDaFalha(`${MOTIVO_CONFIRMAR}; ${FALHA}`)).toBe(FALHA)
+    expect(motivoSemFalha(`${MOTIVO_CONFIRMAR}; ${FALHA}`)).toBe(MOTIVO_CONFIRMAR)
+    expect(motivoSemFalha(FALHA)).toBe('')
+    expect(trechoDaFalha(MOTIVO_ITENS)).toBeNull()
+    expect(motivoSemFalha(MOTIVO_ITENS)).toBe(MOTIVO_ITENS)
+    expect(trechoDaFalha(null)).toBeNull()
+    expect(motivoSemFalha(null)).toBe('')
+    expect(trechoDaFalha('   ')).toBeNull()
+  })
+})
+
+describe('falhaDeConferirDoCupom (o aviso "não consegui conferir" que o cartão mostra, com "Tentar de novo")', () => {
+  it('REVISAR parado SÓ pela falha (o do robô): devolve o texto SEM o prefixo', () => {
+    expect(falhaDeConferirDoCupom(cupom({ motivo: FALHA }))).toEqual({ texto: 'não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).' })
+  })
+  it('com outro motivo junto (itens sem produto, CONFIRMAR:), sem o trecho, ou com o aviso de repetida: NÃO há "Tentar de novo" (o servidor só aceita a falha sozinha)', () => {
+    expect(falhaDeConferirDoCupom(cupom({ motivo: `${MOTIVO_CONFIRMAR}; ${FALHA}` }))).toBeNull()
+    expect(falhaDeConferirDoCupom(cupom({ motivo: `${MOTIVO_ITENS}; ${FALHA}` }))).toBeNull()
+    expect(falhaDeConferirDoCupom(cupom({ motivo: MOTIVO_ITENS }))).toBeNull()
+    expect(falhaDeConferirDoCupom(cupom({ motivo: null }))).toBeNull()
+    expect(falhaDeConferirDoCupom(cupom({ motivo: FRASE }))).toBeNull()
+  })
+  it('os dois avisos no mesmo motivo (não deveria acontecer): ganha o de repetida, que tem os botões de decisão', () => {
+    expect(falhaDeConferirDoCupom(cupom({ motivo: `${FALHA}; ${FRASE}` }))).toBeNull()
+    expect(repetidaDoCupom(cupom({ motivo: `${FALHA}; ${FRASE}` }))).toEqual({ texto: SEM_PREFIXO, sobraMotivo: true })
+  })
+  it('fora do REVISAR, com pedido aberto no SisChef ou parado no meio dele: nada a mostrar (a compra PODE existir lá)', () => {
+    for (const estado of ['PENDENTE', 'PROCESSANDO', 'LANCADO', 'TESTE', 'EXCLUIDO'] as const) expect(falhaDeConferirDoCupom(cupom({ estado, motivo: FALHA }))).toBeNull()
+    expect(falhaDeConferirDoCupom(cupom({ motivo: FALHA, pedido_sischef: '163377325' }))).toBeNull()
+    expect(falhaDeConferirDoCupom(cupom({ motivo: `CONFERIR NO SISCHEF antes de repetir: GERAR_COMPRA_CLICADO; ${FALHA}` }))).toBeNull()
+  })
+  it('o aviso NÃO muda quem pode ser excluído: o cupom parado pela falha é excluível como qualquer REVISAR que não parou no meio', () => {
+    expect(podeExcluirCupom(cupom({ motivo: FALHA }))).toBe(true)
+    expect(parouNoMeioDoSischef(cupom({ motivo: FALHA }))).toBe(false)
+  })
+})
+
+describe('diagnosticoDoCupom com o aviso de falha de conferência', () => {
+  it('só a falha: diagnóstico próprio (nada foi feito no SisChef), que manda tocar em "Tentar de novo"; sem correção na tela', () => {
+    const d = diagnosticoDoCupom(cupom({ motivo: FALHA, itens: [COM] }))!
+    expect(d.problema).toContain('Não consegui conferir se esta compra já foi lançada')
+    expect(d.problema).toContain('Nada foi feito no SisChef')
+    expect(d.solucao).toContain('Tentar de novo')
+    expect(d.corrigivel).toBe(false)
+    expect(d.itens).toEqual([])
+    expect(d.pedidos).toEqual([])
+  })
+  it('a falha junto de outro motivo: o diagnóstico é o do outro motivo (a falha é tirada antes), e continua corrigível na tela', () => {
+    expect(diagnosticoDoCupom(cupom({ motivo: `${MOTIVO_ITENS}; ${FALHA}` }))).toEqual(diagnosticoDoCupom(cupom({ motivo: MOTIVO_ITENS })))
+    const d = diagnosticoDoCupom(cupom({ motivo: `${MOTIVO_CONFIRMAR}; ${FALHA}`, itens: [{ ...COM }] }))!
+    expect(d.problema).toMatch(/Todos os itens já são conhecidos/)
+    expect(d.corrigivel).toBe(true)
   })
 })

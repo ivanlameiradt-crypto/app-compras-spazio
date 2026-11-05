@@ -16,9 +16,10 @@ import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from '.
 import { formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { faltaNaLinha, lerPreco, lerQuantidade, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
 import { unidadeDoProduto } from './unidadeEstoque'
-import { REPETIDA_PREFIXO, ehErroRepetida, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
+import { REPETIDA_PREFIXO, ehErroRepetida, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
 import AvisoRepetida from './AvisoRepetida'
+import AvisoFalhaConferir from './AvisoFalhaConferir'
 import CuponsExcluidos from './CuponsExcluidos'
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
@@ -313,6 +314,7 @@ export default function CompraAvulsa() {
             const nome = nomeNaLista(c.emitente_cnpj, c.emitente_nome)
             const repetidaDaCompra = repetidaDoCupom(c)   // E5: parou SÓ pelo aviso do robô (ou o servidor o gravou): decisão do Ivan nos dois botões
             const motivoSemAviso = motivoSemRepetida(c.motivo)
+            const falhaDaCompra = repetidaDaCompra ? null : falhaDeConferirDoCupom(c)   // E5, ajuste 2: o robô não conseguiu conferir se é repetida: "Tentar de novo" (o texto técnico não repete)
             return (
               <li key={c.id} data-testid="compra-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto} onClick={() => setExpandido(aberto ? null : c.id)}>
@@ -323,7 +325,8 @@ export default function CompraAvulsa() {
                   <AvisoRepetida id={c.id} texto={repetidaDaCompra.texto} sobraMotivo={repetidaDaCompra.sobraMotivo} rotulo="compra avulsa" nome={nome}
                     aoDecidir={() => carregarRecentes()} aoExcluir={carregarRecentes} />
                 )}
-                {c.estado === 'REVISAR' && motivoSemAviso !== '' && <p className="amarelo" data-testid="motivo-recente">{motivoSemAviso}</p>}
+                {falhaDaCompra && <AvisoFalhaConferir id={c.id} texto={falhaDaCompra.texto} aoSoltar={() => carregarRecentes()} aoRecarregar={carregarRecentes} />}
+                {c.estado === 'REVISAR' && motivoSemAviso !== '' && !falhaDaCompra && <p className="amarelo" data-testid="motivo-recente">{motivoSemAviso}</p>}
                 {aberto && (
                   <DetalheLancamento pedido={c.pedido_sischef} rotuloQtd={false}
                     fornecedor={c.emitente_nome ? `${c.emitente_nome}${c.emitente_cnpj ? ` · CNPJ ${formatarCnpj(c.emitente_cnpj)}` : ''}` : null}

@@ -122,19 +122,51 @@ export function repetidaDoCupom(c: CupomRecente): { texto: string; sobraMotivo: 
 /** O erro que uma tela recebeu é o aviso de repetida do servidor? Pelo TEXTO (começa pelo prefixo), não pela classe: vale com qualquer cópia do módulo e com o corpo da resposta já lido. */
 export const ehErroRepetida = (e: unknown): e is Error => e instanceof Error && e.message.startsWith(REPETIDA_PREFIXO)
 
+// ---------- "não consegui conferir" (E5, ajuste 2 da revisão do código, 05/11/2026)
+/** O que o robô grava, SOZINHO como motivo, quando NÃO conseguiu conferir se a compra é repetida (falha passageira do banco; nada foi feito no SisChef). Igual ao de parecida.ts das três funções e ao do robô (cupom_repetida.py). */
+export const FALHA_PREFIXO = 'CONFERÊNCIA DE REPETIDA FALHOU: '
+/** O trecho da falha (do prefixo até o fim do motivo), ou null. */
+export function trechoDaFalha(motivo: string | null | undefined): string | null {
+  const m = (motivo ?? '').trim()
+  const i = m.indexOf(FALHA_PREFIXO)
+  return i < 0 ? null : m.slice(i)
+}
+/** O motivo sem o trecho da falha (e sem o "; " que o separava); vazio quando a falha era o motivo inteiro (o caso do robô). */
+export function motivoSemFalha(motivo: string | null | undefined): string {
+  const m = (motivo ?? '').trim()
+  const i = m.indexOf(FALHA_PREFIXO)
+  return i < 0 ? m : m.slice(0, i).replace(/[;\s]+$/, '').trim()
+}
+/**
+ * O aviso "não consegui conferir" deste envio, para o cartão mostrar com "Tentar de novo" (o servidor confere DE NOVO e só então solta). Só no REVISAR que ainda NÃO tem pedido no SisChef, não parou no meio dele e cujo
+ * motivo é SÓ a falha: o servidor só aceita a falha sozinha (com outro motivo junto, os botões de sempre já refazem a conferência). `texto` é a frase sem o prefixo.
+ */
+export function falhaDeConferirDoCupom(c: CupomRecente): { texto: string } | null {
+  if (c.estado !== 'REVISAR' || c.pedido_sischef != null || parouNoMeioDoSischef(c)) return null
+  if (trechoDaRepetida(c.motivo) !== null) return null
+  const trecho = trechoDaFalha(c.motivo)
+  if (trecho === null || motivoSemFalha(c.motivo) !== '') return null
+  return { texto: trecho.slice(FALHA_PREFIXO.length).trim() }
+}
+
 /**
  * O diagnóstico de um envio que está em REVISAR (null para os outros estados). A ordem importa: primeiro o que pode ter chegado ao SisChef
  * (conferir antes de qualquer coisa), depois o que é só dado do cupom. Texto que ninguém reconhece vira o motivo cru + o pedido genérico.
  */
 export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   if (c.estado !== 'REVISAR') return null
-  // o aviso de repetida (E5) vem JUNTO do resto, nunca no lugar: o diagnóstico lê o motivo SEM ele
-  const motivo = motivoSemRepetida(c.motivo)
+  // o aviso de repetida (E5) e o de "não consegui conferir" vêm JUNTO do resto, nunca no lugar: o diagnóstico lê o motivo SEM eles
+  const motivo = motivoSemFalha(motivoSemRepetida(c.motivo))
   const sem = (problema: string, solucao: string): DiagnosticoCupom => ({ problema, itens: [], pedidos: [], conferencia: null, solucao, corrigivel: false })
   // parou SÓ pelo aviso (o do robô, antes de abrir o SisChef): não há o que corrigir, a decisão é do Ivan, nos dois botões do aviso
   if (motivo === '' && trechoDaRepetida(c.motivo) !== null) {
     return sem('Parece que esta compra já foi lançada: já existe uma compra do mesmo fornecedor com o mesmo total.',
       'Decida nos botões do aviso: se é a mesma compra, toque em “É o mesmo: excluir este envio”; se é outra compra de verdade, toque em “É outra compra: lançar mesmo assim”.')
+  }
+  // parou SÓ porque o robô não conseguiu conferir se a compra é repetida (falha passageira; nada foi feito no SisChef): o botão "Tentar de novo" confere de novo
+  if (motivo === '' && trechoDaFalha(c.motivo) !== null) {
+    return sem('Não consegui conferir se esta compra já foi lançada (a conferência falhou na hora). Nada foi feito no SisChef.',
+      'Toque em “Tentar de novo”: eu confiro de novo e, se não houver compra igual, o robô lança. Se você sabe que é a mesma compra, exclua este envio (dá para desfazer).')
   }
 
   // Pode já existir compra no SisChef: nunca reenviar sem conferir.

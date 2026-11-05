@@ -144,6 +144,9 @@ describe('excluir cupom e compra avulsa (cupom_excluir / cupom_restaurar)', () =
       'não consegui ler a foto',
       'já lançado em outro envio',
       '3 itens sem produto confirmado',
+      // E5 (05/11): os dois avisos de compra repetida nada tocam no SisChef, então o Ivan pode excluir ("É o mesmo: excluir este envio" e o Excluir do aviso "não consegui conferir")
+      'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 119,90): cupom de 03/10, lançado no SisChef (pedido 163377089).',
+      'CONFERÊNCIA DE REPETIDA FALHOU: não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).',
     ]
     for (const [i, motivo] of livres.entries()) {
       const id = `00000000-0000-0000-0000-00000000040${i}`

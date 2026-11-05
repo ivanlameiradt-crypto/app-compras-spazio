@@ -356,3 +356,48 @@ describe('CompraAvulsa — compra repetida (E5)', () => {
     expect(screen.queryByTestId('aviso-repetida')).not.toBeInTheDocument()
   })
 })
+
+// ---------- ajuste 2 da revisão do código (05/11): nas "Últimas compras avulsas", a compra parada porque o robô NÃO conseguiu conferir se é repetida mostra "Tentar de novo" (e não o texto técnico).
+describe('CompraAvulsa — "não consegui conferir": Tentar de novo (E5, ajuste 2)', () => {
+  const FALHA = 'CONFERÊNCIA DE REPETIDA FALHOU: não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).'
+  it('compra parada pela falha do robô: mostra o aviso próprio com "Tentar de novo" (sem o motivo cru); o toque chama a conferência e recarrega a lista', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValueOnce([recente({ id: 'r7', estado: 'REVISAR', pedido_sischef: null, motivo: FALHA })])
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ id: 'r7', estado: 'PENDENTE', pedido_sischef: null, motivo: null })])
+    m.cuponsExcluidos.mockResolvedValue([])
+    m.tentarConferirDeNovo.mockResolvedValue({ cupom_id: 'r7', estado: 'PENDENTE', resumo: 'conferido de novo e enviado para lançar', disparo_ok: true })
+    render(<CompraAvulsa />)
+    const b = await screen.findByTestId('aviso-falha-conferir')
+    expect(b).toHaveTextContent('Não consegui conferir se esta compra já foi lançada')
+    expect(b).not.toHaveTextContent('CONFERÊNCIA DE REPETIDA FALHOU')
+    expect(screen.queryByTestId('motivo-recente')).not.toBeInTheDocument()            // o aviso tem o bloco próprio: o motivo cru não repete
+    expect(screen.queryByTestId('aviso-repetida')).not.toBeInTheDocument()
+    await userEvent.click(within(b).getByRole('button', { name: 'Tentar de novo' }))
+    expect(m.tentarConferirDeNovo).toHaveBeenCalledWith('r7')
+    await waitFor(() => expect(screen.queryByTestId('aviso-falha-conferir')).not.toBeInTheDocument())
+    expect(await screen.findByText(/na fila/)).toBeInTheDocument()
+  })
+
+  it('achou compra igual: a lista recarrega e o cartão passa a mostrar "Parece repetida" com os dois botões', async () => {
+    const FRASE = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 111,25): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+    m.comprasAvulsasRecentes.mockResolvedValueOnce([recente({ id: 'r7', estado: 'REVISAR', pedido_sischef: null, motivo: FALHA })])
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ id: 'r7', estado: 'REVISAR', pedido_sischef: null, motivo: FRASE })])
+    m.cuponsExcluidos.mockResolvedValue([])
+    m.tentarConferirDeNovo.mockRejectedValue(new Error(FRASE))
+    render(<CompraAvulsa />)
+    await userEvent.click(within(await screen.findByTestId('aviso-falha-conferir')).getByRole('button', { name: 'Tentar de novo' }))
+    const a = await screen.findByTestId('aviso-repetida')
+    expect(within(a).getByRole('button', { name: 'É outra compra: lançar mesmo assim' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('aviso-falha-conferir')).not.toBeInTheDocument())
+  })
+
+  it('a conferência falhou de novo (503): o texto do servidor aparece no bloco e o botão continua à mão', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ id: 'r7', estado: 'REVISAR', pedido_sischef: null, motivo: FALHA })])
+    m.cuponsExcluidos.mockResolvedValue([])
+    m.tentarConferirDeNovo.mockRejectedValue(new Error('Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.'))
+    render(<CompraAvulsa />)
+    const b = await screen.findByTestId('aviso-falha-conferir')
+    await userEvent.click(within(b).getByRole('button', { name: 'Tentar de novo' }))
+    expect(await within(b).findByRole('alert')).toHaveTextContent('Tente de novo em instantes')
+    expect(within(b).getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+  })
+})

@@ -31,7 +31,7 @@ import {
   comprasAvulsasRecentes, confirmarCupom, confirmarOutraCompra, reenviarCupomDoFornecedor, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsExcluidos, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
   associarItem, catalogoProdutos, lembrarDescricao, descartarNota, excluirCupom, restaurarCupom, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, pedirCadastroProduto, prepararCotacoes,
-  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha, unidadeDoProdutoNaPlanilha,
+  redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, tentarConferirDeNovo, trocarMinhaSenha, unidadeDoProdutoNaPlanilha,
 } from '../../src/lib/api'
 import { ErroRede, pendentes, type Op } from '../../src/lib/fila'
 import { EVENTO_SAIU, guardarUsuario, ultimoUsuario, usuarioGuardado } from '../../src/auth/usuarioGuardado'
@@ -1378,5 +1378,24 @@ describe('compra repetida (E5): ErroRepetida e a decisão "é outra compra"', ()
     invoke.mockClear()
     await enviarCompraAvulsa(ENVIO)
     expect(invoke.mock.calls[0][1].body).not.toHaveProperty('outra_compra')
+  })
+
+  // ajuste 2 da revisão do código (05/11): "Tentar de novo" depois de o robô avisar que não conseguiu conferir se a compra é repetida
+  it('tentarConferirDeNovo chama o confirmar-cupom no modo próprio (só cupom_id e conferir_de_novo: true) e devolve a resposta', async () => {
+    invoke.mockResolvedValue({ data: { cupom_id: ID, estado: 'PENDENTE', resumo: 'conferido de novo e enviado para lançar', disparo_ok: true }, error: null })
+    const r = await tentarConferirDeNovo(ID)
+    expect(invoke).toHaveBeenCalledWith('confirmar-cupom', { body: { cupom_id: ID, conferir_de_novo: true } })
+    expect(r).toMatchObject({ cupom_id: ID, estado: 'PENDENTE', disparo_ok: true })
+  })
+
+  it('tentarConferirDeNovo: agora achou compra igual (409 com o aviso) vira ErroRepetida; a conferência que falha de novo (503) sobe como erro comum, com o texto do servidor', async () => {
+    invoke.mockResolvedValue({ data: null, error: erroDaFuncao(FRASE) })
+    const achou = await tentarConferirDeNovo(ID).catch((x: unknown) => x)
+    expect(achou).toBeInstanceOf(ErroRepetida)
+    expect((achou as Error).message).toBe(FRASE)
+    invoke.mockResolvedValue({ data: null, error: erroDaFuncao('Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.') })
+    const falhou = await tentarConferirDeNovo(ID).catch((x: unknown) => x)
+    expect(falhou).not.toBeInstanceOf(ErroRepetida)
+    expect((falhou as Error).message).toBe('Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.')
   })
 })

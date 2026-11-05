@@ -1135,6 +1135,16 @@ export async function confirmarOutraCompra(cupomId: string): Promise<RespostaCon
   if (error) throw new Error(await mensagemDaFuncao(error))
   return data as RespostaConfirmacaoCupom
 }
+/**
+ * "Tentar de novo" (E5, ajuste 2 da revisão do código): o robô não conseguiu conferir se a compra deste cupom é repetida (aviso "CONFERÊNCIA DE REPETIDA FALHOU: …"; nada foi feito no SisChef). O servidor confere
+ * DE NOVO: não achando compra igual, solta o cupom para o robô lançar (`estado: 'PENDENTE'`); achando, devolve o aviso de repetida (ErroRepetida) e o grava no cartão; se a conferência falha outra vez, devolve erro
+ * comum (503) e nada muda. NÃO grava a marca de "é outra compra": essa só vem da decisão do Ivan.
+ */
+export async function tentarConferirDeNovo(cupomId: string): Promise<RespostaConfirmacaoCupom> {
+  const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, conferir_de_novo: true } })
+  if (error) throw await erroDaFuncao(error)
+  return data as RespostaConfirmacaoCupom
+}
 
 /** O que a consulta pública do CNPJ devolve (Edge Function consultar-cnpj). */
 export async function consultarCnpj(cnpj: string): Promise<{ cnpj: string; razao_social: string; nome_fantasia: string; uf: string; municipio: string }> {
