@@ -27,8 +27,8 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }))
 import {
-  ErroApi, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
-  comprasAvulsasRecentes, confirmarCupom, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsExcluidos, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
+  ErroApi, ErroRepetida, abrirComoVendedor, adminFecharCompra, aprovarCompra, codigosDasCotacoes, comprasAbertasParaFechar,
+  comprasAvulsasRecentes, confirmarCupom, confirmarOutraCompra, reenviarCupomDoFornecedor, cotacoesAnterioresVivas, cotacoesSubstituidasPor, criarAcesso, cuponsExcluidos, cuponsRecentes, definirNota, economiaSemanas, entrarComSenha, escolherSenhaInicial, executarOp,
   associarItem, catalogoProdutos, lembrarDescricao, descartarNota, excluirCupom, restaurarCupom, enviarCompraAvulsa, enviarCupom, enviarOp, gravarPedido, historicoItem, itensDaSemana, itensDasCotacoes, lancarNota, marcasDaSemana, notasALancar, notasDescartadas, notasLancadas, restaurarNota, formasPadraoPorFornecedor, lancamentosSeguidosEmBoleto,
   novaVersao, painelEconomia, pedidosRecentes, pedirCadastroProduto, prepararCotacoes,
   redefinirSenha, responderComoAdmin, sair, semanaTravandoAprovacao, statusDoCadastroProduto, subirFotoCupom, trocarMinhaSenha, unidadeDoProdutoNaPlanilha,
@@ -1322,5 +1322,61 @@ describe('cadastro de produto novo: pedirCadastroProduto e statusDoCadastroProdu
     }
     from.mockReturnValue(consulta({ data: null, error: { message: 'permission denied', code: '42501' } as never }))
     await expect(statusDoCadastroProduto({ id: 'ped-1' })).rejects.toBeInstanceOf(ErroApi)
+  })
+})
+
+// ---------- E5: compra repetida (pedido do Ivan, 04/11/2026). O servidor recusa com 409 e o texto "POSSÍVEL REPETIDA: …" (corpo JSON {erro}); a camada api o devolve como ErroRepetida (um Error
+// com o texto) para a tela mostrar o aviso e os botões; qualquer outro erro continua um Error comum.
+describe('compra repetida (E5): ErroRepetida e a decisão "é outra compra"', () => {
+  const FRASE = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 35,27): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+  const ID = 'aaf54e6f-0000-4000-8000-000000000001'
+  const erroDaFuncao = (erro: string) => ({ message: 'Edge Function returned a non-2xx status code', context: { json: async () => ({ erro }) } as unknown as Response })
+  const ENVIO = { envio_id: '3f2b8c1e-5d4a-4e7b-9a10-6c2d8f0b1a23', fornecedor: { cnpj: '75315333032655', nome: 'ATACADAO S.A.' }, pagamento: { forma: 'sem_cartao' as const }, itens: [{ produto_id: 1001, quantidade: 2, preco: 3 }] }
+
+  it('confirmarCupom: o 409 com o aviso vira ErroRepetida (e continua sendo um Error com o texto)', async () => {
+    invoke.mockResolvedValue({ data: null, error: erroDaFuncao(FRASE) })
+    const e = await confirmarCupom(ID, [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }]).catch((x: unknown) => x)
+    expect(e).toBeInstanceOf(ErroRepetida)
+    expect(e).toBeInstanceOf(Error)
+    expect((e as Error).message).toBe(FRASE)
+  })
+
+  it('reenviarCupomDoFornecedor ("Reenviar este cupom") e enviarCompraAvulsa também devolvem ErroRepetida', async () => {
+    invoke.mockResolvedValue({ data: null, error: erroDaFuncao(FRASE) })
+    await expect(reenviarCupomDoFornecedor(ID)).rejects.toBeInstanceOf(ErroRepetida)
+    await expect(enviarCompraAvulsa(ENVIO)).rejects.toBeInstanceOf(ErroRepetida)
+  })
+
+  it('erro que NÃO começa pelo aviso (soma, 503 de "não consegui conferir", sem corpo) continua um Error comum: a tela não oferece "é outra compra" nesses casos', async () => {
+    for (const erro of ['a soma dos itens (R$ 41,57) não bate com o total do cupom (R$ 35,27).', 'Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.']) {
+      invoke.mockResolvedValue({ data: null, error: erroDaFuncao(erro) })
+      const e = await enviarCompraAvulsa(ENVIO).catch((x: unknown) => x)
+      expect(e).toBeInstanceOf(Error)
+      expect(e).not.toBeInstanceOf(ErroRepetida)
+      expect((e as Error).message).toBe(erro)
+    }
+    invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
+    await expect(confirmarCupom(ID, [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }])).rejects.not.toBeInstanceOf(ErroRepetida)
+  })
+
+  it('confirmarOutraCompra chama o confirmar-cupom no modo da decisão (só cupom_id e outra_compra: true) e devolve a resposta', async () => {
+    invoke.mockResolvedValue({ data: { cupom_id: ID, estado: 'REVISAR', resumo: 'anotado: você disse que é outra compra. Siga com o cupom como de costume.', disparo_ok: false }, error: null })
+    const r = await confirmarOutraCompra(ID)
+    expect(invoke).toHaveBeenCalledWith('confirmar-cupom', { body: { cupom_id: ID, outra_compra: true } })
+    expect(r).toMatchObject({ cupom_id: ID, estado: 'REVISAR' })
+  })
+
+  it('confirmarOutraCompra: erro da função (ex.: o cupom mudou) sobe com o texto do servidor', async () => {
+    invoke.mockResolvedValue({ data: null, error: erroDaFuncao('este cupom mudou enquanto você decidia: atualize a tela') })
+    await expect(confirmarOutraCompra(ID)).rejects.toThrow('este cupom mudou enquanto você decidia: atualize a tela')
+  })
+
+  it('enviarCompraAvulsa leva o "outra_compra: true" no corpo quando o Ivan decidiu (e só então)', async () => {
+    invoke.mockResolvedValue({ data: { cupom_id: 'c1', resumo: 'enviado para lançar', estado: 'PENDENTE', disparo_ok: true }, error: null })
+    await enviarCompraAvulsa({ ...ENVIO, outra_compra: true })
+    expect(invoke).toHaveBeenCalledWith('enviar-compra-avulsa', { body: { ...ENVIO, outra_compra: true } })
+    invoke.mockClear()
+    await enviarCompraAvulsa(ENVIO)
+    expect(invoke.mock.calls[0][1].body).not.toHaveProperty('outra_compra')
   })
 })

@@ -257,3 +257,102 @@ describe('CompraAvulsa — excluir a compra que não vai lançar (pedido do Ivan
     expect(screen.queryByTestId('cupons-excluidos')).not.toBeInTheDocument()
   })
 })
+
+// ---------- E5: compra repetida (pedido do Ivan, 04/11/2026). Na compra avulsa o servidor recusa com 409 "POSSÍVEL REPETIDA: …" ANTES de gravar: a tela mostra o aviso (frase em português simples) com
+// "É outra compra: lançar mesmo assim" (reenvia o MESMO envio com outra_compra: true) e "Cancelar" (o formulário continua como está). Nas "Últimas compras avulsas" o cartão parado pelo aviso do robô
+// mostra o mesmo aviso com os dois botões.
+describe('CompraAvulsa — compra repetida (E5)', () => {
+  const FRASE = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 111,25): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+  const TEXTO = 'Já existe compra deste fornecedor com o mesmo total (R$ 111,25): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+  async function enviarAteRecusar() {
+    await preencher()
+    await userEvent.click(screen.getByTestId('lancar-avulsa'))
+    await userEvent.click(screen.getByTestId('confirmar-lancamento'))
+  }
+
+  it('o servidor recusa por repetida: mostra o aviso com a frase, NÃO limpa o que foi digitado, e não mostra como erro vermelho', async () => {
+    m.enviarCompraAvulsa.mockRejectedValue(new Error(FRASE))
+    await enviarAteRecusar()
+    const aviso = await screen.findByTestId('aviso-repetida-avulsa')
+    expect(aviso).toHaveTextContent('Parece repetida')
+    expect(aviso).toHaveTextContent(TEXTO)
+    expect(aviso).not.toHaveTextContent('POSSÍVEL REPETIDA')
+    expect(within(aviso).getByRole('button', { name: 'É outra compra: lançar mesmo assim' })).toBeEnabled()
+    expect(within(aviso).getByRole('button', { name: 'Cancelar' })).toBeEnabled()
+    expect(screen.queryByTestId('erro-avulsa')).not.toBeInTheDocument()
+    expect(screen.getByTestId('total-geral')).toHaveTextContent('R$ 111,25')           // o formulário continua como estava
+    expect(screen.getByTestId('quantidade-avulsa')).toHaveValue('12,5')
+  })
+
+  it('"É outra compra: lançar mesmo assim" reenvia o MESMO envio (mesmo envio_id e itens) com outra_compra: true e, aceito, limpa e avisa como sempre', async () => {
+    m.enviarCompraAvulsa.mockRejectedValueOnce(new Error(FRASE))
+    await enviarAteRecusar()
+    const primeiro = m.enviarCompraAvulsa.mock.calls[0][0]
+    expect(primeiro).not.toHaveProperty('outra_compra')
+    await userEvent.click(within(await screen.findByTestId('aviso-repetida-avulsa')).getByRole('button', { name: 'É outra compra: lançar mesmo assim' }))
+    await waitFor(() => expect(m.enviarCompraAvulsa).toHaveBeenCalledTimes(2))
+    const segundo = m.enviarCompraAvulsa.mock.calls[1][0]
+    expect(segundo).toEqual({ ...primeiro, outra_compra: true })
+    expect(segundo.envio_id).toBe(primeiro.envio_id)
+    expect(await screen.findByTestId('resultado-avulsa')).toHaveTextContent('Compra enviada')
+    expect(screen.queryByTestId('aviso-repetida-avulsa')).not.toBeInTheDocument()
+    expect(screen.getByTestId('total-geral')).toHaveTextContent('R$ 0,00')              // formulário limpo para a próxima
+  })
+
+  it('"Cancelar" some com o aviso e deixa tudo como está (nada é enviado de novo)', async () => {
+    m.enviarCompraAvulsa.mockRejectedValue(new Error(FRASE))
+    await enviarAteRecusar()
+    await userEvent.click(within(await screen.findByTestId('aviso-repetida-avulsa')).getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByTestId('aviso-repetida-avulsa')).not.toBeInTheDocument()
+    expect(m.enviarCompraAvulsa).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('total-geral')).toHaveTextContent('R$ 111,25')
+    expect(screen.getByTestId('lancar-avulsa')).toBeEnabled()
+  })
+
+  it('mexer na compra (trocar a quantidade) apaga o aviso: ele já não descreve o que está na tela', async () => {
+    m.enviarCompraAvulsa.mockRejectedValue(new Error(FRASE))
+    await enviarAteRecusar()
+    await screen.findByTestId('aviso-repetida-avulsa')
+    await userEvent.type(screen.getByTestId('quantidade-avulsa'), '0')
+    expect(screen.queryByTestId('aviso-repetida-avulsa')).not.toBeInTheDocument()
+  })
+
+  it('o reenvio "é outra compra" que também falha (sem internet): mostra o erro e o aviso continua à mão para tentar de novo', async () => {
+    m.enviarCompraAvulsa.mockRejectedValueOnce(new Error(FRASE)).mockRejectedValueOnce(new Error('Failed to send a request'))
+    await enviarAteRecusar()
+    await userEvent.click(within(await screen.findByTestId('aviso-repetida-avulsa')).getByRole('button', { name: 'É outra compra: lançar mesmo assim' }))
+    expect(await screen.findByTestId('erro-avulsa')).toHaveTextContent('Failed to send a request')
+    expect(screen.getByTestId('aviso-repetida-avulsa')).toBeInTheDocument()
+  })
+
+  it('erro que NÃO é de repetida (o 503 de "não consegui conferir", a soma…) continua erro vermelho, sem botão de "é outra compra"', async () => {
+    m.enviarCompraAvulsa.mockRejectedValue(new Error('Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.'))
+    await enviarAteRecusar()
+    expect(await screen.findByTestId('erro-avulsa')).toHaveTextContent('Tente de novo em instantes')
+    expect(screen.queryByTestId('aviso-repetida-avulsa')).not.toBeInTheDocument()
+  })
+
+  it('nas "Últimas compras avulsas": o cartão parado pelo aviso do robô mostra o aviso com os dois botões; "É outra compra" chama a decisão e recarrega', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValueOnce([recente({ id: 'r9', estado: 'REVISAR', pedido_sischef: null, motivo: FRASE })])
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ id: 'r9', estado: 'PENDENTE', pedido_sischef: null, motivo: null })])
+    m.cuponsExcluidos.mockResolvedValue([])
+    m.confirmarOutraCompra.mockResolvedValue({ cupom_id: 'r9', estado: 'PENDENTE', resumo: 'confirmado como outra compra e enviado para lançar', disparo_ok: true })
+    render(<CompraAvulsa />)
+    const aviso = await screen.findByTestId('aviso-repetida')
+    expect(aviso).toHaveTextContent(TEXTO)
+    expect(screen.queryByTestId('motivo-recente')).not.toBeInTheDocument()            // o aviso tem o bloco próprio: o motivo cru não repete
+    expect(within(aviso).getByTestId('excluir-cupom')).toHaveTextContent('É o mesmo: excluir este envio')
+    await userEvent.click(within(aviso).getByRole('button', { name: 'É outra compra: lançar mesmo assim' }))
+    expect(m.confirmarOutraCompra).toHaveBeenCalledWith('r9')
+    await waitFor(() => expect(screen.queryByTestId('aviso-repetida')).not.toBeInTheDocument())
+    expect(await screen.findByText(/na fila/)).toBeInTheDocument()
+  })
+
+  it('compra parada por OUTRO motivo continua mostrando o motivo cru (sem aviso de repetida)', async () => {
+    m.comprasAvulsasRecentes.mockResolvedValue([recente({ id: 'r8', estado: 'REVISAR', pedido_sischef: null, motivo: 'forma de pagamento ausente' })])
+    m.cuponsExcluidos.mockResolvedValue([])
+    render(<CompraAvulsa />)
+    expect(await screen.findByTestId('motivo-recente')).toHaveTextContent('forma de pagamento ausente')
+    expect(screen.queryByTestId('aviso-repetida')).not.toBeInTheDocument()
+  })
+})

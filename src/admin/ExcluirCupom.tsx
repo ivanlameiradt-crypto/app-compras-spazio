@@ -25,12 +25,16 @@ export interface PropsExcluirCupom {
   rotulo: 'cupom' | 'compra avulsa'
   /** Depois de excluir: a tela relê as listas. */
   aoExcluir: () => void
+  /** O botão que abre a pergunta (E5: "É o mesmo: excluir este envio", no aviso de repetida). Sem isso é o link "Excluir cupom" de sempre. */
+  rotuloAbrir?: string
+  /** O motivo já escrito (E5: "Repetido"); o Ivan ainda pode trocar. */
+  motivoInicial?: string
 }
 
-export default function ExcluirCupom({ id, nome, rotulo, aoExcluir }: PropsExcluirCupom) {
+export default function ExcluirCupom({ id, nome, rotulo, aoExcluir, rotuloAbrir, motivoInicial = '' }: PropsExcluirCupom) {
   const t = TEXTOS[rotulo]
   const [perguntando, setPerguntando] = useState(false)
-  const [motivo, setMotivo] = useState('')
+  const [motivo, setMotivo] = useState(motivoInicial)
   const [excluindo, setExcluindo] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -51,7 +55,7 @@ export default function ExcluirCupom({ id, nome, rotulo, aoExcluir }: PropsExclu
   if (!perguntando) {
     return (
       <div>
-        <button type="button" className="link perigo" data-testid="excluir-cupom" onClick={() => { setErro(''); setPerguntando(true) }}>{t.abrir}</button>
+        <button type="button" className={rotuloAbrir ? 'botao secundario' : 'link perigo'} data-testid="excluir-cupom" onClick={() => { setErro(''); setPerguntando(true) }}>{rotuloAbrir ?? t.abrir}</button>
         {erro && <p className="erro" role="alert">{erro}</p>}
       </div>
     )
@@ -68,7 +72,7 @@ export default function ExcluirCupom({ id, nome, rotulo, aoExcluir }: PropsExclu
         <button type="button" className="botao perigo" disabled={excluindo} onClick={() => void excluir()}>
           {excluindo ? 'Excluindo…' : 'Excluir'}
         </button>
-        <button type="button" className="botao secundario" disabled={excluindo} onClick={() => { setPerguntando(false); setMotivo('') }}>Cancelar</button>
+        <button type="button" className="botao secundario" disabled={excluindo} onClick={() => { setPerguntando(false); setMotivo(motivoInicial) }}>Cancelar</button>
       </div>
     </div>
   )

@@ -9,8 +9,9 @@ import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
 } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { diagnosticoDoCupom, envioRepetido, podeExcluirCupom } from './cupomRegras'
+import { diagnosticoDoCupom, envioRepetido, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
+import AvisoRepetida from './AvisoRepetida'
 import CuponsExcluidos from './CuponsExcluidos'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
@@ -117,7 +118,7 @@ function ProblemaDoCupom({ c }: { c: CupomRecente }) {
         </>
       )}
       <p><b>Como resolver:</b> {d.solucao}</p>
-      {c.motivo && <p className="sub">Motivo registrado: <span>{c.motivo}</span></p>}
+      {motivoSemRepetida(c.motivo) !== '' && <p className="sub">Motivo registrado: <span>{motivoSemRepetida(c.motivo)}</span></p>}
     </div>
   )
 }
@@ -227,6 +228,8 @@ export default function Cupom() {
   // aviso por cupom depois de "Reenviar para lançar": preso ao id (a lista recarrega e o cupom muda de estado) e mostrado só enquanto ele está na fila
   // — quando vira "lançado ✓" ou volta a REVISAR com outro motivo, o aviso velho contradiria o estado novo
   const [reenviados, setReenviados] = useState<Record<string, AvisoReenvio>>({})
+  // E5: o Ivan disse "é outra compra" e o cupom segue parado (ainda há itens a confirmar): o recado fica no cartão até ele seguir
+  const [anotados, setAnotados] = useState<Record<string, string>>({})
 
   function carregarRecentes() {
     api.cuponsRecentes()
@@ -267,6 +270,13 @@ export default function Cupom() {
   /** O servidor aceitou a correção: guarda o aviso deste cupom e recarrega a lista (ele volta como "na fila"). */
   function aoReenviar(id: string, r: RespostaConfirmacaoCupom) {
     setReenviados((m) => ({ ...m, [id]: avisoDeReenvio(r) }))
+    carregarRecentes()
+  }
+
+  /** O servidor aceitou "é outra compra" (E5): foi para a fila (aviso de sempre) ou só anotou e o cupom segue parado (recado no cartão). */
+  function aoDecidirRepetida(id: string, r: RespostaConfirmacaoCupom) {
+    if (r.estado === 'PENDENTE') { aoReenviar(id, r); return }
+    setAnotados((m) => ({ ...m, [id]: 'Anotado: você disse que é outra compra. Siga com o cupom como de costume.' }))
     carregarRecentes()
   }
 
@@ -372,6 +382,9 @@ export default function Cupom() {
             const aberto = expandido === c.id
             // CNPJ lido errado (29/10): o aviso mora no detalhe aberto. No cupom parado ele aparece TAMBÉM com o detalhe fechado (o Ivan precisa vê-lo antes de confirmar os itens), menos no
             // "já lançado em outro envio" (nada a fazer) e no "fornecedor não encontrado" (a caixa de cadastro já avisa, com o passo a passo). Nunca os dois ao mesmo tempo: é um aviso só.
+            // E5: aviso "parece repetida" (só no REVISAR sem pedido e que não parou no meio do SisChef); parado SÓ por ele, o aviso já diz tudo e o diagnóstico de sempre não repete
+            const repetida = repetidaDoCupom(c)
+            const nomeDoCartao = c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : ''
             const avisoCnpjSemAbrir = !aberto && cnpjLidoSuspeito(c.emitente_cnpj) && c.estado === 'REVISAR' && !envioRepetido(c) && !fornecedorNaoEncontrado(c.motivo)
             return (
               <li key={c.id} data-testid="cupom-recente">
@@ -386,13 +399,18 @@ export default function Cupom() {
                 {/* envio repetido de um cupom já lançado: a compra já está no SisChef — concluído, sem bloco de problema, foto nem caixa */}
                 {envioRepetido(c) && <p className="sub" data-testid="envio-repetido">Envio repetido: este cupom já tinha sido lançado em outro envio. Nada a fazer.</p>}
                 {avisoCnpjSemAbrir && <AvisoCnpjSuspeito cnpj={c.emitente_cnpj} />}
-                {c.estado === 'REVISAR' && !envioRepetido(c) && <ProblemaDoCupom c={c} />}
+                {repetida && (
+                  <AvisoRepetida id={c.id} texto={repetida.texto} sobraMotivo={repetida.sobraMotivo} rotulo="cupom" nome={nomeDoCartao}
+                    aoDecidir={(r) => aoDecidirRepetida(c.id, r)} aoExcluir={carregarRecentes} />
+                )}
+                {anotados[c.id] && c.estado === 'REVISAR' && !repetida && <p className="ok" data-testid="outra-compra-anotada">{anotados[c.id]}</p>}
+                {c.estado === 'REVISAR' && !envioRepetido(c) && !(repetida && !repetida.sobraMotivo) && <ProblemaDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <FotoDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && fornecedorNaoEncontrado(c.motivo) && (
-                  <CadastrarFornecedor cupom={c} acoes={ACOES_FORNECEDOR} aoReenviar={() => { setReenviados((m) => ({ ...m, [c.id]: { classe: 'ok', texto: 'Reenviado: o cupom entrou na fila e o robô lança em 2 ou 3 minutos.' } })); carregarRecentes() }} />
+                  <CadastrarFornecedor cupom={c} acoes={ACOES_FORNECEDOR} aoRecarregar={carregarRecentes} aoReenviar={() => { setReenviados((m) => ({ ...m, [c.id]: { classe: 'ok', texto: 'Reenviado: o cupom entrou na fila e o robô lança em 2 ou 3 minutos.' } })); carregarRecentes() }} />
                 )}
                 {corrigivel(c) && (
-                  <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} />
+                  <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} aoRecarregar={carregarRecentes} />
                 )}
                 {aberto && <AvisoCnpjSuspeito cnpj={c.emitente_cnpj} />}
                 {/* Lançado em: dia e hora do lançamento (pedido do Ivan, 07/10, igual ao da aba fiscal). Só cupom LANCADO: o robô grava atualizado_em ao
@@ -403,9 +421,8 @@ export default function Cupom() {
                     quando={c.estado === 'LANCADO' && c.atualizado_em ? formatarDataHora(c.atualizado_em) : null} />
                 )}
                 {/* Excluir (03/11/2026): só o envio que ainda não foi lançado nem parou no meio do SisChef */}
-                {podeExcluirCupom(c) && (
-                  <ExcluirCupom id={c.id} rotulo="cupom" aoExcluir={carregarRecentes}
-                    nome={c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : ''} />
+                {podeExcluirCupom(c) && !repetida && (
+                  <ExcluirCupom id={c.id} rotulo="cupom" aoExcluir={carregarRecentes} nome={nomeDoCartao} />
                 )}
               </li>
             )

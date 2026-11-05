@@ -11,6 +11,7 @@ import { buscarProdutos } from './associacaoRegras'
 import { sugerirPorPalavras } from './palavraChave'
 import { ProdutoNaoCadastrado } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
+import { ehErroRepetida } from './cupomRegras'
 import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 import { ehMilheiro, sugestaoPorMilheiro, unidadesNaEmbalagemDoProduto } from './embalagemContada'
@@ -26,6 +27,8 @@ interface Props {
   catalogoFalhou: boolean
   /** O servidor aceitou: o cupom voltou à fila (quem mostra a mensagem e recarrega os "Últimos envios" é a tela de cima). */
   aoReenviar: (r: RespostaConfirmacaoCupom) => void
+  /** E5: o servidor recusou por "POSSÍVEL REPETIDA" e gravou o aviso no motivo do cupom: a tela de cima recarrega os "Últimos envios" e o cartão passa a mostrar o aviso com os dois botões. */
+  aoRecarregar?: () => void
 }
 
 /** O que o Ivan já decidiu sobre UM item pendente. As quantidades ficam como TEXTO (do jeito que ele digitou) até a hora de montar o envio. */
@@ -401,7 +404,7 @@ function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalog
   )
 }
 
-export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenviar }: Props) {
+export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenviar, aoRecarregar }: Props) {
   const [estados, setEstados] = useState<Record<number, EstadoItem>>({})
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
@@ -449,6 +452,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
         aoReenviar(await api.confirmarCupom(cupom.id, [], true))
       } catch (e) {
         setErro(e instanceof Error ? e.message : 'Não consegui confirmar agora. Tente de novo.')
+        if (ehErroRepetida(e)) aoRecarregar?.()
       } finally {
         setEnviando(false)
       }
@@ -471,6 +475,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
       aoReenviar(await api.confirmarCupom(cupom.id, itens))
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui reenviar agora. Tente de novo.') // o que ele digitou fica: é só tocar de novo
+      if (ehErroRepetida(e)) aoRecarregar?.()
     } finally {
       setEnviando(false)
     }

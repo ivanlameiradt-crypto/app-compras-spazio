@@ -93,14 +93,49 @@ const CLAUDE = 'Peça ao Claude'
  */
 export const envioRepetido = (c: CupomRecente): boolean => c.estado === 'REVISAR' && /já lançado em outro envio/i.test(c.motivo ?? '')
 
+// ---------- compra repetida (E5, pedido do Ivan de 04/11/2026)
+/** O que o servidor (enviar-cupom e confirmar-cupom) e o robô gravam no começo do aviso, sempre no FIM do motivo: "CONFIRMAR: …; POSSÍVEL REPETIDA: …". Igual ao de parecida.ts das três funções (supabase/functions). */
+export const REPETIDA_PREFIXO = 'POSSÍVEL REPETIDA: '
+/** O trecho do aviso (do prefixo até o fim do motivo), ou null. */
+export function trechoDaRepetida(motivo: string | null | undefined): string | null {
+  const m = (motivo ?? '').trim()
+  const i = m.indexOf(REPETIDA_PREFIXO)
+  return i < 0 ? null : m.slice(i)
+}
+/** O motivo sem o aviso (e sem o "; " que o separava); vazio quando o aviso era o motivo inteiro (o caso do robô). */
+export function motivoSemRepetida(motivo: string | null | undefined): string {
+  const m = (motivo ?? '').trim()
+  const i = m.indexOf(REPETIDA_PREFIXO)
+  return i < 0 ? m : m.slice(0, i).replace(/[;\s]+$/, '').trim()
+}
+/**
+ * O aviso "parece repetida" deste envio, para o cartão mostrar com os dois botões. Só no REVISAR que ainda NÃO tem pedido no SisChef e não parou no meio dele (aí a compra PODE existir lá e a decisão
+ * é conferir no SisChef, não um botão). `texto` é a frase sem o prefixo; `sobraMotivo` diz se há outro motivo além do aviso (então "É outra compra" só anota e o cupom segue pelos botões de sempre).
+ */
+export function repetidaDoCupom(c: CupomRecente): { texto: string; sobraMotivo: boolean } | null {
+  if (c.estado !== 'REVISAR' || c.pedido_sischef != null || parouNoMeioDoSischef(c)) return null
+  const trecho = trechoDaRepetida(c.motivo)
+  if (trecho === null) return null
+  return { texto: trecho.slice(REPETIDA_PREFIXO.length).trim(), sobraMotivo: motivoSemRepetida(c.motivo) !== '' }
+}
+
+/** O erro que uma tela recebeu é o aviso de repetida do servidor? Pelo TEXTO (começa pelo prefixo), não pela classe: vale com qualquer cópia do módulo e com o corpo da resposta já lido. */
+export const ehErroRepetida = (e: unknown): e is Error => e instanceof Error && e.message.startsWith(REPETIDA_PREFIXO)
+
 /**
  * O diagnóstico de um envio que está em REVISAR (null para os outros estados). A ordem importa: primeiro o que pode ter chegado ao SisChef
  * (conferir antes de qualquer coisa), depois o que é só dado do cupom. Texto que ninguém reconhece vira o motivo cru + o pedido genérico.
  */
 export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   if (c.estado !== 'REVISAR') return null
-  const motivo = (c.motivo ?? '').trim()
+  // o aviso de repetida (E5) vem JUNTO do resto, nunca no lugar: o diagnóstico lê o motivo SEM ele
+  const motivo = motivoSemRepetida(c.motivo)
   const sem = (problema: string, solucao: string): DiagnosticoCupom => ({ problema, itens: [], pedidos: [], conferencia: null, solucao, corrigivel: false })
+  // parou SÓ pelo aviso (o do robô, antes de abrir o SisChef): não há o que corrigir, a decisão é do Ivan, nos dois botões do aviso
+  if (motivo === '' && trechoDaRepetida(c.motivo) !== null) {
+    return sem('Parece que esta compra já foi lançada: já existe uma compra do mesmo fornecedor com o mesmo total.',
+      'Decida nos botões do aviso: se é a mesma compra, toque em “É o mesmo: excluir este envio”; se é outra compra de verdade, toque em “É outra compra: lançar mesmo assim”.')
+  }
 
   // Pode já existir compra no SisChef: nunca reenviar sem conferir.
   if (/^CONFERIR NO SISCHEF|GERAR_COMPRA_CLICADO|FINALIZAR_COMPRA_CLICADO/i.test(motivo)) {

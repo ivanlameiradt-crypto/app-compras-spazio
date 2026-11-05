@@ -1,5 +1,6 @@
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
+import { REPETIDA_PREFIXO } from '../admin/cupomRegras'
 import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/CadastrarProduto'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
@@ -57,6 +58,19 @@ async function mensagemDaFuncao(erro: unknown): Promise<string> {
     } catch { /* corpo não era JSON: segue com a mensagem padrão */ }
   }
   return erro instanceof Error ? erro.message : String(erro)
+}
+
+/**
+ * O servidor recusou porque JÁ EXISTE compra do mesmo fornecedor com o mesmo total ("POSSÍVEL REPETIDA: …", E5, pedido do Ivan de 04/11/2026). É um Error com o texto (qualquer tela o mostra como
+ * erro); a tela que sabe decidir reconhece a classe e oferece "É outra compra". O corpo da resposta só se lê UMA vez: por isso o texto é a única carga (o servidor também grava o aviso no motivo do cupom).
+ */
+export class ErroRepetida extends Error {
+  constructor(mensagem: string) { super(mensagem); this.name = 'ErroRepetida' }
+}
+/** O erro de uma Edge Function como a tela o recebe: ErroRepetida quando o texto começa pelo aviso de repetida; senão um Error comum com o texto. */
+async function erroDaFuncao(erro: unknown): Promise<Error> {
+  const texto = await mensagemDaFuncao(erro)
+  return texto.startsWith(REPETIDA_PREFIXO) ? new ErroRepetida(texto) : new Error(texto)
 }
 
 export async function criarAcesso(args: { login: string; nome: string; papel: Papel; senha: string }): Promise<{ email: string }> {
@@ -1109,6 +1123,15 @@ export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom, t
 export async function confirmarCupom(cupomId: string, itens: ConfirmacaoItemCupom[], soConfirmar = false): Promise<RespostaConfirmacaoCupom> {
   // soConfirmar: cupom em que TODOS os itens já vieram conhecidos (motivo CONFIRMAR:) — o Ivan só confere e confirma o cupom inteiro, sem itens um a um
   const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: soConfirmar ? { cupom_id: cupomId, so_confirmar: true } : { cupom_id: cupomId, itens } })
+  if (error) throw await erroDaFuncao(error)
+  return data as RespostaConfirmacaoCupom
+}
+/**
+ * "É outra compra" (E5): o Ivan viu o aviso "parece repetida" deste cupom e decidiu. O servidor grava a decisão (quando e quem) e tira o aviso do motivo; se o aviso era o único motivo, o cupom volta
+ * à fila e o robô lança (resposta `estado: 'PENDENTE'`); se sobra motivo (itens a confirmar…), só anota (`estado: 'REVISAR'`) e o Ivan segue pelos botões de sempre.
+ */
+export async function confirmarOutraCompra(cupomId: string): Promise<RespostaConfirmacaoCupom> {
+  const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, outra_compra: true } })
   if (error) throw new Error(await mensagemDaFuncao(error))
   return data as RespostaConfirmacaoCupom
 }
@@ -1200,7 +1223,7 @@ export async function statusDoCadastroFornecedor(cnpj: string): Promise<{ estado
 /** Depois do cadastro do fornecedor, o Ivan toca em "Reenviar este cupom": o cupom volta à fila e o robô lança. */
 export async function reenviarCupomDoFornecedor(cupomId: string): Promise<void> {
   const { error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, reenviar_fornecedor: true } })
-  if (error) throw new Error(await mensagemDaFuncao(error))
+  if (error) throw await erroDaFuncao(error)
 }
 /** Nome fantasia por CNPJ dos fornecedores cadastrados pelo app (só existe no app; o SisChef não o recebe). Falha ou tabela ausente = nenhum. */
 export async function fantasiasDosFornecedores(): Promise<Record<string, string>> {
@@ -1294,10 +1317,12 @@ export interface EnvioCompraAvulsa {
   fornecedor: { cnpj: string; nome: string }
   pagamento: PagamentoCupom
   itens: { produto_id: number; quantidade: number; preco: number; /** O nome do produto na lista do app, para a compra guardar e mostrar. */ descricao?: string }[]
+  /** E5: o Ivan viu o aviso "POSSÍVEL REPETIDA" desta compra e disse que É outra compra: só então o servidor a grava mesmo com uma parecida já existente. */
+  outra_compra?: boolean
 }
 /** Chama a Edge Function enviar-compra-avulsa (grava a linha cupom 'avulsa' e dispara o mesmo robô do cupom). */
 export async function enviarCompraAvulsa(envio: EnvioCompraAvulsa): Promise<ResumoEnvioCupom> {
   const { data, error } = await supabase.functions.invoke('enviar-compra-avulsa', { body: envio })
-  if (error) throw new Error(await mensagemDaFuncao(error))
+  if (error) throw await erroDaFuncao(error)
   return data as ResumoEnvioCupom
 }
