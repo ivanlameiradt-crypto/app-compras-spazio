@@ -5,10 +5,11 @@
 // cupom a PENDENTE, guarda o aprendizado confirmado (cupom_aprendizado) e dispara o robô. Sem foto nova nem leitura nova.
 // Sem globais do Deno nem rede: banco e GitHub entram por `deps` (molde enviar-cupom/logica.ts). index.ts monta `deps` e chama `tratar`.
 import { normalizar } from './normalizar.ts'
-import { fraseDaRepetida, impressaoDaCompra, semTrechoDaRepetida, trechoDaRepetida, type Impressao, type Parecida } from './parecida.ts'
+import { fraseDaRepetida, impressaoDaCompra, semTrechoDaFalha, semTrechoDaRepetida, trechoDaFalha, trechoDaRepetida, type Impressao, type Parecida } from './parecida.ts'
 
 /** `outra_compra: true` (E5) = o Ivan viu o aviso "POSSÍVEL REPETIDA" deste cupom e disse que É outra compra: modo próprio, sem itens (ver `tratar`). */
-export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown; outra_compra?: unknown }
+/** `conferir_de_novo: true` (E5) = o robô não conseguiu conferir se a compra é repetida (falha passageira): confere DE NOVO e só então solta, SEM gravar a marca "outra compra" (a marca só vem de `outra_compra`). */
+export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown; outra_compra?: unknown; conferir_de_novo?: unknown }
 /** O cupom está todo casado e só espera o Ivan conferir e confirmar (o mesmo texto de enviar-cupom/logica.ts e de src/admin/cupomRegras.ts). */
 export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
 /** O motivo que o robô de cupom grava quando o fornecedor não está no Sischef (cupom_navegador.py) — o app deixa cadastrá-lo e reenviar o cupom. */
@@ -211,9 +212,11 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   const reenviarFornecedor = c.reenviar_fornecedor === true
   // "É outra compra" (E5, pedido do Ivan de 04/11): ele viu o aviso POSSÍVEL REPETIDA deste cupom e decidiu. Modo próprio: sem itens e sem os outros modos. Só o booleano true liga.
   const outraCompra = c.outra_compra === true
-  if (outraCompra && (soConfirmar || reenviarFornecedor || (Array.isArray(c.itens) && c.itens.length > 0))) return { status: 400, corpo: { erro: 'a decisão de "outra compra" não leva itens nem outro modo' } }
+  const conferirDeNovo = c.conferir_de_novo === true
+  if ((outraCompra && (soConfirmar || reenviarFornecedor || conferirDeNovo)) || (conferirDeNovo && (soConfirmar || reenviarFornecedor))) return { status: 400, corpo: { erro: 'peça um modo de cada vez' } }
+  if ((outraCompra || conferirDeNovo) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'a decisão de "outra compra" e o "tentar de novo" não levam itens nem outro modo' } }
   if ((soConfirmar || reenviarFornecedor) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'confirmar o cupom inteiro não leva itens: confirme os itens um a um ou o cupom todo' } }
-  const conf = soConfirmar || reenviarFornecedor || outraCompra ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
+  const conf = soConfirmar || reenviarFornecedor || outraCompra || conferirDeNovo ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
   if (!conf.ok) return { status: 400, corpo: { erro: conf.erro } }
 
   // 3. o cupom tem de estar parado por item sem produto, e nada pode ter chegado ao SisChef.
@@ -256,6 +259,26 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
       return { status: 409, corpo: { erro: 'este cupom mudou enquanto você decidia: atualize a tela' } }
     }
     return { status: 200, corpo: { cupom_id: cupomId, estado: REVISAR, resumo: 'anotado: você disse que é outra compra. Siga com o cupom como de costume.', disparo_ok: false, lembrados: 0, nao_lembrados: 0 } }
+  }
+  if (conferirDeNovo) {
+    // "Tentar de novo" (E5): só vale para o cupom parado SÓ porque o robô não conseguiu conferir se a compra é repetida (nada foi tocado no SisChef). Confere de novo (o portão) e, nada achando, solta
+    // como PENDENTE SEM gravar a marca "outra compra" (a marca é decisão do Ivan, não de uma falha passageira). Achou: 409 com a frase, e o aviso de repetida troca o da falha no motivo.
+    if (trechoDaFalha(cupom.motivo) === null || semTrechoDaFalha(cupom.motivo) !== '') {
+      return { status: 409, corpo: { erro: 'este cupom não está esperando só a conferência de compra repetida: atualize a tela' } }
+    }
+    if (pendentes.length > 0) return { status: 409, corpo: { erro: 'este cupom ainda tem item sem produto: atualize a tela' } }
+    const soma = conferirSoma(originais, total)
+    if (!soma.bate) {
+      return { status: 400, corpo: { erro: `a soma dos itens (${brl(soma.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(soma.diferenca))}.`, soma: soma.soma, total } }
+    }
+    const barradoC = await conferirRepetida(cupom, cupom.emitente_cnpj, deps)
+    if (barradoC) return barradoC
+    if (!(await deps.atualizarCupom(cupomId, originais))) {
+      return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
+    }
+    let disparou = false
+    try { await deps.dispararLancamento(cupomId); disparou = true } catch { /* quem registra o motivo é o index.ts */ }
+    return { status: 200, corpo: { cupom_id: cupomId, estado: PENDENTE, resumo: disparou ? 'conferido de novo e enviado para lançar' : AVISO_DISPARO_FALHOU, disparo_ok: disparou, lembrados: 0, nao_lembrados: 0 } }
   }
   if (reenviarFornecedor) {
     // só vale para o cupom parado por fornecedor não cadastrado, com todos os itens já com produto, depois de o cadastro do fornecedor ter dado certo

@@ -1035,3 +1035,77 @@ describe('confirmar-cupom — "É outra compra" (outra_compra: true) (E5)', () =
     nadaGravado(d)
   })
 })
+
+// ---------- E5, ajuste 2 da revisão do código (05/11): "não consegui conferir" tem aviso e saída PRÓPRIOS. O robô gravou FALHA_PREFIXO (nada foi tocado no SisChef); o "Tentar de novo" CONFERE DE NOVO e só então
+// solta, SEM gravar a marca "outra compra" (a marca só vem de `outra_compra`, que é decisão do Ivan sobre uma compra parecida, não o jeito de contornar uma falha passageira).
+const FALHA = 'CONFERÊNCIA DE REPETIDA FALHOU: não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).'
+const conferirDeNovo = { cupom_id: CUPOM_ID, conferir_de_novo: true }
+
+describe('confirmar-cupom — "Tentar de novo" depois de a conferência do robô falhar (E5, ajuste 2)', () => {
+  it('nada parecido agora: solta como PENDENTE e dispara, SEM gravar a marca de "outra compra"; a conferência foi feita de novo', async () => {
+    const d = depsE5([], { cupom: cupomCasado({ motivo: FALHA }) })
+    const r = await tratar(conferirDeNovo, IVAN, d)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ cupom_id: CUPOM_ID, estado: 'PENDENTE', disparo_ok: true })
+    expect(d.atualizacoesComExtras).toHaveLength(1)
+    expect(d.atualizacoesComExtras[0].extras).toBeUndefined()      // NENHUMA marca: uma falha passageira não vira passe livre
+    expect(d.consultas).toEqual([{ cnpj: CNPJ_ATACADAO, centavos: 3527, ignorarId: CUPOM_ID }])
+    expect(d.disparos).toEqual([CUPOM_ID])
+    expect(d.marcadas).toEqual([])
+  })
+
+  it('agora achou compra parecida: 409 com a frase, nada solto, e o aviso de repetida é gravado no lugar do da falha', async () => {
+    const d = depsE5([PARECIDA], { cupom: cupomCasado({ motivo: FALHA }) })
+    const r = await tratar(conferirDeNovo, IVAN, d)
+    expect(r.status).toBe(409)
+    expect(r.corpo).toEqual({ erro: FRASE })
+    nadaGravado(d)
+    expect(d.anotadas).toEqual([{ id: CUPOM_ID, motivoLido: FALHA, frase: FRASE }])
+  })
+
+  it('a conferência falha de novo: 503 em texto simples, nada solto e nada gravado — nunca libera às cegas', async () => {
+    const d = depsE5(new Error('banco fora'), { cupom: cupomCasado({ motivo: FALHA }) })
+    const r = await tratar(conferirDeNovo, IVAN, d)
+    expect(r.status).toBe(503)
+    expect(r.corpo).toEqual({ erro: 'Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.' })
+    nadaGravado(d)
+    expect(d.anotadas).toEqual([])
+  })
+
+  it('só vale para o cupom parado SÓ pela falha de conferência: sem o trecho, ou com outro motivo junto, 409; item sem produto 409; soma que não fecha 400', async () => {
+    for (const motivo of [MOTIVO_CONFIRMAR, `${MOTIVO_CONFIRMAR}; ${FALHA}`, FRASE, null]) {
+      const d = depsE5([], { cupom: cupomCasado({ motivo }) })
+      expect((await tratar(conferirDeNovo, IVAN, d)).status).toBe(409)
+      nadaGravado(d)
+    }
+    const incompleto = depsE5([], { cupom: cupom({ motivo: FALHA }) })
+    expect((await tratar(conferirDeNovo, IVAN, incompleto)).status).toBe(409)
+    nadaGravado(incompleto)
+    const itens = structuredClone(ITENS_TODOS_CASADOS)
+    itens[2].entrada_estoque = 1
+    const naoFecha = depsE5([], { cupom: cupomCasado({ motivo: FALHA, itens }) })
+    expect((await tratar(conferirDeNovo, IVAN, naoFecha)).status).toBe(400)
+    nadaGravado(naoFecha)
+  })
+
+  it('NÃO se contorna a falha com "É outra compra": o modo da decisão exige o aviso de REPETIDA no motivo, e o da falha não é esse', async () => {
+    const d = depsE5([PARECIDA], { cupom: cupomCasado({ motivo: FALHA }) })
+    const r = await tratar(outraCompra, IVAN, d)
+    expect(r.status).toBe(409)
+    expect(d.marcadas).toEqual([])
+    nadaGravado(d)
+  })
+
+  it('não mistura com os outros modos (400); parou no meio do SisChef continua sem reenvio; só o administrador', async () => {
+    for (const outro of [{ so_confirmar: true }, { reenviar_fornecedor: true }, { outra_compra: true }, { itens: CONFIRMACOES }]) {
+      const d = depsE5([], { cupom: cupomCasado({ motivo: FALHA }) })
+      expect((await tratar({ ...conferirDeNovo, ...outro } as never, IVAN, d)).status).toBe(400)
+      nadaGravado(d)
+    }
+    const meio = depsE5([], { cupom: cupomCasado({ motivo: `CONFERIR NO SISCHEF antes de repetir: GERAR_COMPRA_CLICADO; ${FALHA}` }) })
+    expect((await tratar(conferirDeNovo, IVAN, meio)).status).toBe(409)
+    nadaGravado(meio)
+    const comprador = depsE5([], { cupom: cupomCasado({ motivo: FALHA }), async buscarUsuario() { return { papel: 'comprador', ativo: true } } })
+    expect((await tratar(conferirDeNovo, IVAN, comprador)).status).toBe(403)
+  })
+})

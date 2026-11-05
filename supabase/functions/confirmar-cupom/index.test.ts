@@ -823,3 +823,49 @@ describe('confirmar-cupom/index.ts — compra repetida (E5)', () => {
     expect(escritas()).toHaveLength(0)
   })
 })
+
+// ---------- E5, ajuste 2: o fluxo "não consegui conferir" → "Tentar de novo" pelo index.ts (consultas reais, gravações condicionais).
+describe('confirmar-cupom/index.ts — "Tentar de novo" depois da falha de conferência (E5, ajuste 2)', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(AGORA_E5) })
+  afterEach(() => { vi.useRealTimers() })
+  const FALHA_E5 = 'CONFERÊNCIA DE REPETIDA FALHOU: não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).'
+  const tentarDeNovo = (o: Parameters<typeof pedido>[1] = {}) => pedido({ cupom_id: CUPOM_ID, conferir_de_novo: true }, o)
+  function cupomDaFalha() {
+    const itens = structuredClone(ITENS_ATACADAO)
+    itens[0] = { ...itens[0], sugestao_produto: { id: '3484974' }, entrada_estoque: 0.5, casado_por: 'descricao', proposta: null }
+    itens[1] = { ...itens[1], sugestao_produto: { id: '3484991' }, entrada_estoque: 0.912, casado_por: 'descricao', proposta: null }
+    return cupomAtacadao({ itens, motivo: FALHA_E5 })
+  }
+
+  it('nada parecido: solta como PENDENTE, dispara e NÃO grava a marca de "outra compra"', async () => {
+    h.banco.cupons = [cupomDaFalha()]
+    const r = await handler(tentarDeNovo())
+    expect(r.status).toBe(200)
+    expect(await corpoDe(r)).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null })
+    expect(cupomNoBanco().outra_compra_ok_em).toBeUndefined()
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+
+  it('agora existe compra igual lançada: 409 e o motivo passa a ser SÓ o aviso de repetida (troca o da falha); aí sim o Ivan decide com "É outra compra", que grava a marca e solta', async () => {
+    h.banco.cupons = [cupomDaFalha(), jaLancadoE5()]
+    const r = await handler(tentarDeNovo())
+    expect(r.status).toBe(409)
+    expect(await corpoDe(r)).toEqual({ erro: FRASE_E5 })
+    expect(cupomNoBanco()).toMatchObject({ estado: 'REVISAR', motivo: FRASE_E5 })
+    expect(fetchFalso).not.toHaveBeenCalled()
+    const decisao = await handler(decisaoOutraCompra())
+    expect(decisao.status).toBe(200)
+    expect(cupomNoBanco()).toMatchObject({ estado: 'PENDENTE', motivo: null, outra_compra_ok_por: 'ivan@spazio.com' })
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+
+  it('a leitura da conferência falha de novo (cot_nfe): 503, o cupom continua REVISAR com o aviso da falha, nada disparado', async () => {
+    h.banco.cupons = [cupomDaFalha()]
+    h.banco.falharLeitura = { cupom: false, cot_nfe: true }
+    const r = await handler(tentarDeNovo())
+    expect(r.status).toBe(503)
+    expect(cupomNoBanco()).toMatchObject({ estado: 'REVISAR', motivo: FALHA_E5 })
+    expect(fetchFalso).not.toHaveBeenCalled()
+  })
+})

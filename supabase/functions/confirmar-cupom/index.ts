@@ -6,7 +6,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { tratar, type Corpo, type CupomLinha, type Deps, type Produto } from './logica.ts'
 import { gravarAprendizado, type CamposAprendizado } from './aprendizado.ts'
-import { acharParecidas, acrescentarTrecho, ioDoSupabase, type ClienteConsulta } from './parecida.ts'
+import { acharParecidas, acrescentarTrecho, ioDoSupabase, semTrechoDaFalha, type ClienteConsulta } from './parecida.ts'
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
       buscarParecidas: (imp, ignorarId) => acharParecidas(ioParecidas, imp, { agora: new Date(), ignorarId }),
       async anotarRepetida(id, motivoLido, frase) {
         // grava o aviso no FIM do motivo, com a mesma trava do resto (REVISAR, sem pedido) e só se o motivo ainda é o que foi lido: uma tela velha não pisa em outra mudança
-        const novo = acrescentarTrecho(motivoLido, frase)
+        const novo = acrescentarTrecho(semTrechoDaFalha(motivoLido), frase)   // o aviso de repetida TROCA o da "falha de conferência" (conferir_de_novo achou compra igual)
         if (novo === (motivoLido ?? '').trim()) return   // o cupom já carrega o aviso (o enviar-cupom o gravou na criação)
         let q = admin.from('cupom').update({ motivo: novo, atualizado_em: agora() }).eq('id', id).eq('estado', 'REVISAR').is('pedido_sischef', null)
         q = motivoLido === null ? q.is('motivo', null) : q.eq('motivo', motivoLido)

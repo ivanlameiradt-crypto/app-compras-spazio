@@ -6,6 +6,8 @@
 
 /** O que o app e as funções reconhecem no começo do aviso (no motivo do cupom ou no texto do erro 409). */
 export const REPETIDA_PREFIXO = 'POSSÍVEL REPETIDA: '
+/** O robô NÃO conseguiu conferir se a compra é repetida (falha passageira do banco, nada foi tocado no SisChef): aviso PRÓPRIO, sem "já foi lançada" e sem passe livre (revisão do código, 05/11). */
+export const FALHA_PREFIXO = 'CONFERÊNCIA DE REPETIDA FALHOU: '
 export const JANELA_DIAS = 45
 const MAX_NA_FRASE = 3
 
@@ -129,6 +131,19 @@ export function trechoDaRepetida(motivo: string | null | undefined): string | nu
 export function semTrechoDaRepetida(motivo: string | null | undefined): string {
   const m = (motivo ?? '').trim()
   const i = m.indexOf(REPETIDA_PREFIXO)
+  return i < 0 ? m : m.slice(0, i).replace(/[;\s]+$/, '').trim()
+}
+
+/** O trecho da falha de conferência (do prefixo até o fim do motivo), ou null. */
+export function trechoDaFalha(motivo: string | null | undefined): string | null {
+  const m = (motivo ?? '').trim()
+  const i = m.indexOf(FALHA_PREFIXO)
+  return i < 0 ? null : m.slice(i)
+}
+/** O motivo sem o trecho da falha (e sem o "; " que o separava); vazio quando a falha era o motivo inteiro (o caso do robô). */
+export function semTrechoDaFalha(motivo: string | null | undefined): string {
+  const m = (motivo ?? '').trim()
+  const i = m.indexOf(FALHA_PREFIXO)
   return i < 0 ? m : m.slice(0, i).replace(/[;\s]+$/, '').trim()
 }
 

@@ -1,5 +1,5 @@
 import {
-  JANELA_DIAS, REPETIDA_PREFIXO, acharParecidas, acrescentarTrecho, fraseDaRepetida, impressaoDaCompra, ioDoSupabase, semTrechoDaRepetida, trechoDaRepetida,
+  FALHA_PREFIXO, JANELA_DIAS, REPETIDA_PREFIXO, acharParecidas, acrescentarTrecho, fraseDaRepetida, impressaoDaCompra, ioDoSupabase, semTrechoDaFalha, semTrechoDaRepetida, trechoDaFalha, trechoDaRepetida,
   type IoParecidas, type LinhaCupom, type LinhaNota,
 } from '../../supabase/functions/enviar-cupom/parecida.ts'
 
@@ -195,6 +195,37 @@ describe('o trecho no motivo (trechoDaRepetida, semTrechoDaRepetida, acrescentar
     expect(trechoDaRepetida(null)).toBeNull()
     expect(semTrechoDaRepetida(null)).toBe('')
     expect(trechoDaRepetida('  ')).toBeNull()
+  })
+})
+
+// Ajuste 2 da revisão do código (05/11): quando o robô NÃO consegue conferir se a compra é repetida, o motivo leva um aviso PRÓPRIO (outro prefixo), para o app oferecer "Tentar de novo"
+// em vez de dizer "já foi lançada". Os dois avisos nunca se confundem.
+describe('o trecho da FALHA de conferência no motivo (FALHA_PREFIXO, trechoDaFalha, semTrechoDaFalha)', () => {
+  const FALHA = 'CONFERÊNCIA DE REPETIDA FALHOU: não consegui conferir se esta compra já foi lançada (nada foi feito no SisChef).'
+  const REPETIDA = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 119,90): cupom de 03/10, lançado no SisChef (pedido 1).'
+  it('o prefixo é o que o app, as funções e o robô reconhecem, e NÃO é o da repetida: um aviso nunca é lido como o outro', () => {
+    expect(FALHA_PREFIXO).toBe('CONFERÊNCIA DE REPETIDA FALHOU: ')
+    expect(trechoDaRepetida(FALHA)).toBeNull()
+    expect(trechoDaFalha(REPETIDA)).toBeNull()
+  })
+  it('acha o trecho (do prefixo até o fim) e devolve o motivo sem ele, sem o "; " que o separava', () => {
+    const motivo = `CONFIRMAR: 3 item(ns) já conhecido(s) — confira e confirme no app; ${FALHA}`
+    expect(trechoDaFalha(motivo)).toBe(FALHA)
+    expect(semTrechoDaFalha(motivo)).toBe('CONFIRMAR: 3 item(ns) já conhecido(s) — confira e confirme no app')
+  })
+  it('motivo que é só o trecho (o do robô): sobra nada; sem trecho: tudo igual; vazio e nulo', () => {
+    expect(trechoDaFalha(FALHA)).toBe(FALHA)
+    expect(semTrechoDaFalha(FALHA)).toBe('')
+    expect(trechoDaFalha('16 item(ns) sem casamento confirmado — confira no Code')).toBeNull()
+    expect(semTrechoDaFalha('16 item(ns) sem casamento confirmado — confira no Code')).toBe('16 item(ns) sem casamento confirmado — confira no Code')
+    expect(trechoDaFalha(null)).toBeNull()
+    expect(semTrechoDaFalha(null)).toBe('')
+    expect(trechoDaFalha('  ')).toBeNull()
+  })
+  it('motivo com a falha NO MEIO e outro aviso depois: o "sem o trecho" corta dali em diante (o trecho vai até o fim, como o da repetida)', () => {
+    const motivo = `${FALHA}; ${REPETIDA}`
+    expect(trechoDaFalha(motivo)).toBe(motivo)
+    expect(semTrechoDaFalha(motivo)).toBe('')
   })
 })
 
