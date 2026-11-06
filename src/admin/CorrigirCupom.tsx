@@ -12,7 +12,7 @@ import { sugerirPorPalavras } from './palavraChave'
 import { ProdutoNaoCadastrado } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
 import { ehErroRepetida } from './cupomRegras'
-import { ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
+import { conferenciaDaLinha, ehPeso, itemSempreManual, itensPendentes, lerQuantidade, linhaConfirmada, podeLembrar, precisaConversao, somaDoCupom, type Confirmada } from './cupomCorrigirRegras'
 import { MAX_KG_POR_UNIDADE, entradaEmKg, kgPorUnidadeAbsurdo } from './regraQuilos'
 import { ehMilheiro, sugestaoPorMilheiro, unidadesNaEmbalagemDoProduto } from './embalagemContada'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
@@ -130,6 +130,8 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   const unCupom = minusc(it.unidade_cupom)
   const conf = confirmacaoDe(it, estado)
   const linha = conf ? linhaConfirmada(it, conf) : null
+  // Tique da linha (pedido do Ivan, 05/11/2026): o valor que ele confirmou para esta linha é o que o robô leu na foto? Só fala quando a leitura do cupom inteiro fecha o total.
+  const conferencia = linha ? conferenciaDaLinha(cupom, it, linha.valor) : null
   // Preço fora do normal (29/10/2026): o preço por unidade de ESTOQUE desta linha não se parece com o das últimas compras do produto. Só avisa; some sozinho se o Ivan acertar a conversão.
   const avisoPreco = linha && estado.produto ? precoForaDoNormal(linha.valorUnitario, estado.produto.unidade, estado.produto.compras) : null
   const converte = estado.produto != null && precisaConversao(it.unidade_cupom, estado.produto.unidade)
@@ -342,10 +344,24 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
             </>
           )}
           {conf && linha && (
-            <p className="sub">
-              Linha: {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} × {formatarReais(Number(it.valor_unitario))} = <b>{formatarReais(linha.valor)}</b>
-              {converte && conf.entrada != null && <> · entra {qtd(linha.entrada)} {minusc(estado.produto.unidade)} no estoque</>}
-            </p>
+            <>
+              <p className="sub">
+                Linha: {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : unCupom} × {formatarReais(Number(it.valor_unitario))} = <b>{formatarReais(linha.valor)}</b>
+                {converte && conf.entrada != null && <> · entra {qtd(linha.entrada)} {minusc(estado.produto.unidade)} no estoque</>}
+                {/* o ✓ é desenhado pelo CSS (::before), não está no texto: no texto da tela o ✓ quer dizer "confirmado pelo Ivan" (resumo do fim) e os testes o usam para saber se o item foi confirmado */}
+                {conferencia?.tipo === 'confere' && <>{' '}<span className="tique-linha" data-testid="linha-confere">bate com o cupom</span></>}
+              </p>
+              {conferencia?.tipo === 'confere' && (
+                <p className="sub" data-testid="linha-confere-explica">
+                  O robô leu {formatarReais(conferencia.valor)} nesta linha na foto e a soma de todas as linhas fecha o total do cupom ({formatarReais(conferencia.total)}).
+                </p>
+              )}
+              {conferencia?.tipo === 'diferente' && (
+                <div className="amarelo" role="status" data-testid="linha-diferente">
+                  O robô leu {formatarReais(conferencia.lido)} nesta linha na foto e aqui deu {formatarReais(conferencia.valor)}. Confira a quantidade.
+                </div>
+              )}
+            </>
           )}
           <AvisoPreco aviso={avisoPreco} />   {/* só desenha quando há aviso */}
           {lembravel ? (
