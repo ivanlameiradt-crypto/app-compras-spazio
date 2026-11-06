@@ -16,8 +16,10 @@ import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from '.
 import { formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { faltaNaLinha, lerPreco, lerQuantidade, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
 import { unidadeDoProduto } from './unidadeEstoque'
-import { podeExcluirCupom } from './cupomRegras'
+import { REPETIDA_PREFIXO, ehErroRepetida, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
+import AvisoRepetida from './AvisoRepetida'
+import AvisoFalhaConferir from './AvisoFalhaConferir'
 import CuponsExcluidos from './CuponsExcluidos'
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
@@ -66,6 +68,8 @@ export default function CompraAvulsa() {
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  // E5: o servidor recusou porque JÁ EXISTE compra igual (a frase, sem o prefixo): o Ivan responde "é outra compra" ou cancela
+  const [repetida, setRepetida] = useState<string | null>(null)
   const [resultado, setResultado] = useState<{ classe: 'ok' | 'amarelo'; texto: string } | null>(null)
   const [recentes, setRecentes] = useState<CupomRecente[]>([])
   const [excluidos, setExcluidos] = useState<CupomRecente[]>([]) // as que o Ivan excluiu (a lista de onde ele desfaz)
@@ -94,6 +98,8 @@ export default function CompraAvulsa() {
     return () => clearInterval(t)
   }, [naFila, carregarRecentes])
 
+  useEffect(() => { setRepetida(null) }, [linhas, forma, contaPix, fornecedor])
+
   const pagamento = montarPagamento(forma, contaPix)
   const problema = useMemo(() => problemaDaCompra(linhas), [linhas])
   const total = totalGeral(linhas)
@@ -111,7 +117,8 @@ export default function CompraAvulsa() {
   function adicionar() { setConfirmando(false); setLinhas((ls) => [...ls, linhaVazia(proxima)]); setProxima((n) => n + 1) }
   function remover(chave: number) { setConfirmando(false); setLinhas((ls) => (ls.length > 1 ? ls.filter((l) => l.chave !== chave) : [linhaVazia(chave)])) }
 
-  async function enviar() {
+  /** `outraCompra`: o Ivan viu o aviso de repetida e disse que É outra compra (E5): reenvia o MESMO envio com a decisão; o servidor a grava com a marca. */
+  async function enviar(outraCompra = false) {
     if (!pronta || !pagamento || !fornecedor) return
     setEnviando(true); setErro('')
     try {
@@ -120,6 +127,7 @@ export default function CompraAvulsa() {
         fornecedor: { cnpj: fornecedor.cnpj, nome: fornecedor.razao || nomeDoConhecido(fornecedor) },
         pagamento,
         itens: linhas.map((l) => ({ produto_id: l.produtoId as number, quantidade: lerQuantidade(l.quantidade) as number, preco: lerPreco(l.preco) as number, descricao: produtoDe(l.produtoId)?.nome })),
+        ...(outraCompra ? { outra_compra: true } : {}),
       })
       setResultado({
         classe: r.disparo_ok === false ? 'amarelo' : 'ok',
@@ -129,9 +137,11 @@ export default function CompraAvulsa() {
       })
       // pronta para a próxima compra: itens e fornecedor limpos (a forma de pagamento fica, é comum repetir), identificador novo
       setLinhas([linhaVazia(1)]); setProxima(2); setFornecedor(null); setBuscaForn(''); setConfirmando(false); setEnvioId(novoId())
+      setRepetida(null)
       carregarRecentes()
     } catch (e) {
-      setErro(mensagem(e))
+      if (ehErroRepetida(e)) { setRepetida(e.message.slice(REPETIDA_PREFIXO.length).trim()); setConfirmando(false) }   // nada foi gravado: o formulário fica como está
+      else setErro(mensagem(e))
     } finally {
       setEnviando(false)
     }
@@ -281,6 +291,16 @@ export default function CompraAvulsa() {
             </div>
           </div>
         )}
+        {repetida && (
+          <div className="amarelo aviso-repetida" data-testid="aviso-repetida-avulsa" role="group" aria-label="Parece repetida">
+            <p><b>Parece repetida.</b> {repetida.charAt(0).toUpperCase() + repetida.slice(1)}</p>
+            <p className="sub">Se é a MESMA compra, não precisa lançar de novo: toque em “Cancelar”. Se é OUTRA compra de verdade, toque em “É outra compra”.</p>
+            <div className="acoes">
+              <button type="button" className="botao" disabled={enviando} onClick={() => void enviar(true)} data-testid="outra-compra-avulsa">{enviando ? 'Enviando…' : 'É outra compra: lançar mesmo assim'}</button>
+              <button type="button" className="botao secundario" disabled={enviando} onClick={() => setRepetida(null)}>Cancelar</button>
+            </div>
+          </div>
+        )}
         {erro && <p className="erro" role="alert" data-testid="erro-avulsa">{erro}</p>}
         {resultado && <p className={resultado.classe} role="status" data-testid="resultado-avulsa">{resultado.texto}</p>}
       </div>
@@ -292,13 +312,21 @@ export default function CompraAvulsa() {
           {recentes.map((c) => {
             const aberto = expandido === c.id
             const nome = nomeNaLista(c.emitente_cnpj, c.emitente_nome)
+            const repetidaDaCompra = repetidaDoCupom(c)   // E5: parou SÓ pelo aviso do robô (ou o servidor o gravou): decisão do Ivan nos dois botões
+            const motivoSemAviso = motivoSemRepetida(c.motivo)
+            const falhaDaCompra = repetidaDaCompra ? null : falhaDeConferirDoCupom(c)   // E5, ajuste 2: o robô não conseguiu conferir se é repetida: "Tentar de novo" (o texto técnico não repete)
             return (
               <li key={c.id} data-testid="compra-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto} onClick={() => setExpandido(aberto ? null : c.id)}>
                   <span><b>{ROTULO_ESTADO[c.estado]}</b> · {nome}{c.valor_a_pagar != null && ` · ${formatarReais(c.valor_a_pagar)}`}</span>
                   <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
                 </button>
-                {c.estado === 'REVISAR' && c.motivo && <p className="amarelo" data-testid="motivo-recente">{c.motivo}</p>}
+                {repetidaDaCompra && (
+                  <AvisoRepetida id={c.id} texto={repetidaDaCompra.texto} sobraMotivo={repetidaDaCompra.sobraMotivo} rotulo="compra avulsa" nome={nome}
+                    aoDecidir={() => carregarRecentes()} aoExcluir={carregarRecentes} />
+                )}
+                {falhaDaCompra && <AvisoFalhaConferir id={c.id} texto={falhaDaCompra.texto} aoSoltar={() => carregarRecentes()} aoRecarregar={carregarRecentes} />}
+                {c.estado === 'REVISAR' && motivoSemAviso !== '' && !falhaDaCompra && <p className="amarelo" data-testid="motivo-recente">{motivoSemAviso}</p>}
                 {aberto && (
                   <DetalheLancamento pedido={c.pedido_sischef} rotuloQtd={false}
                     fornecedor={c.emitente_nome ? `${c.emitente_nome}${c.emitente_cnpj ? ` · CNPJ ${formatarCnpj(c.emitente_cnpj)}` : ''}` : null}
@@ -316,7 +344,7 @@ export default function CompraAvulsa() {
                     })} />
                 )}
                 {/* Excluir (03/11/2026): só a compra que ainda não foi lançada nem parou no meio do SisChef */}
-                {podeExcluirCupom(c) && <ExcluirCupom id={c.id} rotulo="compra avulsa" aoExcluir={carregarRecentes} nome={nome} />}
+                {podeExcluirCupom(c) && !repetidaDaCompra && <ExcluirCupom id={c.id} rotulo="compra avulsa" aoExcluir={carregarRecentes} nome={nome} />}
               </li>
             )
           })}

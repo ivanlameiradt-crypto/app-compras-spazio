@@ -4,7 +4,10 @@
 // sem foto e sem chave fiscal) já PENDENTE e dispara o MESMO robô do cupom (lancar-cupom.yml): Pedido de compra manual no SisChef, estoque e, conforme a forma, financeiro à vista.
 // Sem globais do Deno nem rede: banco e GitHub entram por `deps` (molde enviar-cupom/logica.ts). index.ts monta `deps` e chama `tratar`.
 
-export interface Corpo { envio_id?: unknown; fornecedor?: unknown; pagamento?: unknown; itens?: unknown }
+import { fraseDaRepetida, impressaoDaCompra, type Impressao, type Parecida } from './parecida.ts'
+
+/** `outra_compra: true` = o Ivan viu o aviso "POSSÍVEL REPETIDA" e disse que É outra compra (E5): só então a compra é gravada mesmo com uma parecida já existente. */
+export interface Corpo { envio_id?: unknown; fornecedor?: unknown; pagamento?: unknown; itens?: unknown; outra_compra?: unknown }
 export interface UsuarioLinha { papel: string; ativo: boolean }
 export interface Resultado { status: number; corpo: Record<string, unknown> }
 
@@ -15,6 +18,13 @@ export interface Deps {
   /** Insert sem duplicar (gravacao.ts): `duplicado: true` quando o foto_path já existia (duplo toque / reenvio). */
   inserirCupom(linha: Record<string, unknown>): Promise<{ id: string; duplicado?: boolean }>
   dispararLancamento(cupomId: string): Promise<void>
+  /**
+   * E5 (pedido do Ivan, 04/11/2026): as compras PARECIDAS (mesmo CNPJ e mesmo total) que já existem — cupom, compra avulsa e nota fiscal. Achou e o Ivan não disse que é outra compra: 409 com a
+   * frase e nada é gravado. Erro da consulta: 503 (nunca libera às cegas). Ausente = nada muda (testes antigos).
+   */
+  buscarParecidas?(imp: Impressao): Promise<Parecida[]>
+  /** O envio já gravado com este foto_path (duplo toque / reenvio depois de a rede cair)? É conferido ANTES da procura de parecidas: senão a compra acusaria a si mesma. Ausente = só o insert trava. */
+  cupomDoEnvio?(fotoPath: string): Promise<{ id: string } | null>
 }
 
 export type Pagamento = { forma: 'sem_cartao' } | { forma: 'dinheiro' | 'tesouraria' | 'pix'; conta: string }
@@ -116,11 +126,32 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   const faltando = it.itens.findIndex((i) => !existentes.has(i.produto_id))
   if (faltando >= 0) return { status: 400, corpo: { erro: `item ${faltando + 1}: produto não encontrado na lista` } }
 
-  // 4. grava (PENDENTE, sem foto e sem chave fiscal). `foto_path` = avulsa/<envio_id>: o índice único dele é a trava contra duplo toque (o reenvio devolve a mesma linha).
+  // 3b. duplo toque / reenvio do MESMO envio (foto_path = avulsa/<envio_id>) ANTES da procura de parecidas: a linha que o 1º envio acabou de gravar é "parecida" com a compra de agora
+  // (mesmo CNPJ e total), e sem esta ordem o Ivan veria um aviso falso de uma compra que é ela mesma (revisão independente do E5, achado 7).
   const fotoPath = `avulsa/${envioId.toLowerCase()}`
+  if (deps.cupomDoEnvio) {
+    const ja = await deps.cupomDoEnvio(fotoPath)
+    if (ja) return { status: 200, corpo: { cupom_id: ja.id, resumo: 'já recebido', duplicado: true } }
+  }
+
+  // 3c. E5: já existe compra do mesmo fornecedor com o mesmo total (cupom, avulsa ou nota)? Só AVISA (409 com a frase; nada é gravado): o Ivan responde com `outra_compra: true` ou desiste.
+  // Sem CNPJ/total válidos não há impressão digital (aqui sempre há: já foram validados). A consulta que falha NÃO libera: 503 em texto simples.
+  const outraCompra = c.outra_compra === true
+  const imp = impressaoDaCompra(cnpj, total)
+  if (deps.buscarParecidas && imp && !outraCompra) {
+    let achadas: Parecida[]
+    try { achadas = await deps.buscarParecidas(imp) } catch {
+      return { status: 503, corpo: { erro: 'Não consegui conferir se esta compra é repetida agora. Tente de novo em instantes.' } }
+    }
+    if (achadas.length > 0) return { status: 409, corpo: { erro: fraseDaRepetida(achadas, imp.centavos) } }
+  }
+
+  // 4. grava (PENDENTE, sem foto e sem chave fiscal). `foto_path` = avulsa/<envio_id>: o índice único dele é a trava contra duplo toque (o reenvio devolve a mesma linha).
+  // Com `outra_compra`, a decisão do Ivan fica na linha (quando e quem): nenhum cadeado confere esta compra de novo.
   const cupom = await deps.inserirCupom({
     estado: 'PENDENTE', origem: 'avulsa', teste: false, foto_path: fotoPath, chave: null,
     emitente_cnpj: cnpj, emitente_nome: nome, pagamento: pg.pagamento, valor_a_pagar: total, itens: it.itens.map(itemDoCupom), motivo: null,
+    ...(outraCompra ? { outra_compra_ok_em: new Date().toISOString(), outra_compra_ok_por: chamador.trim().toLowerCase() } : {}),
   })
   if (cupom.duplicado) return { status: 200, corpo: { cupom_id: cupom.id, resumo: 'já recebido', duplicado: true } }
 

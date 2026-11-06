@@ -24,9 +24,11 @@ const h = vi.hoisted(() => {
     /** simula a corrida: o PRIMEIRO SELECT por foto_path (o do dedup) "não vê" a linha que outro pedido gravou logo depois */
     cegarPrimeiroSelectPorFoto: false,
     /** leitura que falha (rede/permissão): o select devolve erro em vez de dados. `cupom_conhecidos` = só a leitura dos CNPJs conhecidos (29/10), não a do dedup */
-    falharLeitura: { cupom: false, aprendizado: false, cupom_conhecidos: false, fornecedor_app: false, fornecedor_cadastro: false, cot_nfe: false } as Record<string, boolean>,
+    falharLeitura: { cupom: false, aprendizado: false, cupom_conhecidos: false, fornecedor_app: false, fornecedor_cadastro: false, cot_nfe: false, parecidas: false } as Record<string, boolean>,
     /** cada leitura de CNPJs conhecidos (29/10): a tabela, as colunas, a ordem, o limite, as colunas exigidas não nulas e se levou um tempo máximo */
     consultasConhecidos: [] as { tabela: string; colunas: string; ordem: string | null; limite: number | null; naoNulos: string[]; comTempoMaximo: boolean }[],
+    /** E5: cada leitura de compras PARECIDAS (cupom e cot_nfe): a tabela e os filtros como o index.ts os montou */
+    consultasParecidas: [] as { tabela: string; filtros: [string, string, unknown][] }[],
     proximoId: 1,
   }
   const ia = {
@@ -38,6 +40,7 @@ const h = vi.hoisted(() => {
 
   class Consulta {
     private filtros: [string, unknown][] = []
+    private filtrosE5: ['in' | 'gte' | 'is', string, unknown][] = []
     private orFiltro: string | null = null
     private naoNulos: string[] = []
     private ordem: { coluna: string; crescente: boolean } | null = null
@@ -54,6 +57,9 @@ const h = vi.hoisted(() => {
       return this
     }
     eq(coluna: string, valor: unknown) { this.filtros.push([coluna, valor]); return this }
+    in(coluna: string, valor: unknown) { this.filtrosE5.push(['in', coluna, valor]); return this }
+    gte(coluna: string, valor: unknown) { this.filtrosE5.push(['gte', coluna, valor]); return this }
+    is(coluna: string, valor: unknown) { this.filtrosE5.push(['is', coluna, valor]); return this }
     or(filtro: string) { this.orFiltro = filtro; return this }
     not(coluna: string, operador: string, valor: unknown) { if (operador === 'is' && valor === null) this.naoNulos.push(coluna); return this }
     order(coluna: string, opcoes?: { ascending?: boolean }) { this.ordem = { coluna, crescente: opcoes?.ascending !== false }; return this }
@@ -73,7 +79,12 @@ const h = vi.hoisted(() => {
       if (this.linhaNova) return this.gravar(this.linhaNova)
       if (this.tabela === 'cupom' && banco.falharLeitura.cupom) return { data: null, error: { message: 'connection reset' } }
       // 29/10: a leitura dos CNPJs conhecidos (para corrigir um CNPJ mal lido) — registra como foi pedida e falha sozinha, por fonte
-      const leituraDeConhecidos = this.tabela === 'cupom' ? this.colunasBrutas.includes('emitente_cnpj') : ['fornecedor_app', 'fornecedor_cadastro', 'cot_nfe'].includes(this.tabela)
+      const leituraDeConhecidos = this.naoNulos.length > 0 && (this.tabela === 'cupom' ? this.colunasBrutas.includes('emitente_cnpj') : ['fornecedor_app', 'fornecedor_cadastro', 'cot_nfe'].includes(this.tabela))
+      // E5: a leitura de compras PARECIDAS (cupom e cot_nfe, com filtros in/gte/is): registra como foi pedida e falha sozinha (falharLeitura.parecidas)
+      if (!leituraDeConhecidos && (this.tabela === 'cupom' || this.tabela === 'cot_nfe') && this.filtrosE5.length > 0) {
+        banco.consultasParecidas.push({ tabela: this.tabela, filtros: [...this.filtros.map(([c, v]): [string, string, unknown] => ['eq', c, v]), ...this.filtrosE5] })
+        if (banco.falharLeitura.parecidas) return { data: null, error: { message: 'connection reset' } }
+      }
       if (leituraDeConhecidos) {
         banco.consultasConhecidos.push({
           tabela: this.tabela, colunas: this.colunasBrutas, ordem: this.ordem ? `${this.ordem.coluna} ${this.ordem.crescente ? 'asc' : 'desc'}` : null,
@@ -92,6 +103,9 @@ const h = vi.hoisted(() => {
         linhas = []
       }
       for (const [c, v] of this.filtros) linhas = linhas.filter((l) => l[c] === v)
+      for (const [op, c, v] of this.filtrosE5) {
+        linhas = linhas.filter((l) => (op === 'is' ? (v === null ? l[c] == null : l[c] === v) : op === 'in' ? (v as unknown[]).map(String).includes(String(l[c])) : String(l[c]) >= String(v)))
+      }
       if (this.orFiltro !== null) {
         const listas = [...this.orFiltro.matchAll(/(\w+)\.in\.\(([^)]*)\)/g)].map((m) => ({
           coluna: m[1], valores: m[2].split(',').map((s) => s.replace(/"/g, '')),
@@ -221,7 +235,8 @@ beforeEach(() => {
   h.banco.consultasAprendizado = []
   h.banco.selects = []
   h.banco.cegarPrimeiroSelectPorFoto = false
-  h.banco.falharLeitura = { cupom: false, aprendizado: false, cupom_conhecidos: false, fornecedor_app: false, fornecedor_cadastro: false, cot_nfe: false }
+  h.banco.falharLeitura = { cupom: false, aprendizado: false, cupom_conhecidos: false, fornecedor_app: false, fornecedor_cadastro: false, cot_nfe: false, parecidas: false }
+  h.banco.consultasParecidas = []
   h.banco.fornecedoresApp = []; h.banco.fornecedoresCadastro = []; h.banco.notasNfe = []; h.banco.consultasConhecidos = []
   h.banco.proximoId = 1
   h.ia.chamadas = []; h.ia.construcoes = []; h.clientes.criacoes = []
@@ -728,5 +743,73 @@ describe('enviar-cupom/index.ts — CNPJ lido errado na foto', () => {
       const corpo = await corpoDe(await handler(envio()))
       expect(corpo.resumo).toBe(`1 item(ns) para você conferir; ${AVISO}`)
     })
+  })
+})
+
+// ---------- E5: compra repetida (pedido do Ivan, 04/11/2026). A LIGAÇÃO: as consultas que o index.ts monta (cupom e cot_nfe), o aviso no motivo e o "nunca dispara" quando parece repetido.
+const AGORA_E5 = new Date('2026-11-05T05:00:00Z')   // o index usa `new Date()` (a janela de 45 dias): relógio fixo, senão estes testes falhariam sozinhos daqui a umas semanas
+const FRASE_E5 = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 9,00): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+const jaLancadoE5 = (over: Linha = {}): Linha => ({
+  id: 'c-lancado', estado: 'LANCADO', origem: 'cupom', emitente_cnpj: '12345678000195', valor_a_pagar: '9.00', pedido_sischef: '163377089', motivo: null,
+  criado_em: '2026-10-03T18:04:00Z', teste: false, foto_path: 'cupom/outro.jpg', pagamento: PG, itens: [], ...over,
+})
+const gravadaE5 = () => h.banco.cupons.find((c) => c.foto_path === 'cupom/a.jpg')!
+
+describe('enviar-cupom/index.ts — compra repetida (E5)', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(AGORA_E5) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('nada parecido: sai para lançar como sempre; a procura levou o CNPJ normalizado, sem teste, nos 4 estados, na janela de 45 dias (cupom e cot_nfe)', async () => {
+    const r = await handler(envio())
+    expect(r.status).toBe(200)
+    expect(await corpoDe(r)).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+    const cupom = h.banco.consultasParecidas.find((c) => c.tabela === 'cupom')!
+    expect(cupom.filtros).toEqual(expect.arrayContaining([['eq', 'emitente_cnpj', '12345678000195'], ['eq', 'teste', false], ['in', 'estado', ['LANCADO', 'PENDENTE', 'PROCESSANDO', 'REVISAR']], ['gte', 'criado_em', '2026-09-21T05:00:00.000Z']]))
+    const nota = h.banco.consultasParecidas.find((c) => c.tabela === 'cot_nfe')!
+    expect(nota.filtros).toEqual(expect.arrayContaining([['eq', 'cnpj_emitente', '12345678000195'], ['is', 'descartada_em', null], ['gte', 'emissao', '2026-09-21']]))
+  })
+
+  it('já existe cupom LANCADO do mesmo CNPJ e total: vai a REVISAR com o aviso e NÃO dispara (mesmo com o "confirmar antes" desligado e tudo conhecido)', async () => {
+    h.banco.cupons = [jaLancadoE5()]
+    const r = await handler(envio())
+    expect(r.status).toBe(200)
+    expect(await corpoDe(r)).toMatchObject({ estado: 'REVISAR', disparo_ok: false, resumo: 'parece repetida (já existe compra igual): veja o aviso e decida' })
+    expect(gravadaE5()).toMatchObject({ estado: 'REVISAR', motivo: FRASE_E5 })
+    expect(fetchFalso).not.toHaveBeenCalled()
+  })
+
+  it('com o "confirmar antes" ligado (o padrão em produção) o aviso vem DEPOIS do CONFIRMAR:', async () => {
+    env.CUPOM_CONFIRMAR_ANTES = undefined
+    h.banco.cupons = [jaLancadoE5()]
+    const r = await handler(envio())
+    expect(await corpoDe(r)).toMatchObject({ estado: 'REVISAR', resumo: 'todos os itens já conhecidos — confira e confirme no app; parece repetida (já existe compra igual): veja o aviso e decida' })
+    expect(gravadaE5().motivo).toBe(`CONFIRMAR: 1 item(ns) já conhecido(s) — confira e confirme no app; ${FRASE_E5}`)
+    expect(fetchFalso).not.toHaveBeenCalled()
+  })
+
+  it('nota fiscal lançada do mesmo CNPJ e total também avisa', async () => {
+    h.banco.notasNfe = [{ chave: '3'.repeat(44), cnpj_emitente: '12345678000195', emitente: 'ATACADAO', numero: '000112786', emissao: '2026-10-16', valor_nf: '9.00', situacao: 'lancada', lancamento_estado: null, nf_sischef: '4410', descartada_em: null }]
+    await handler(envio())
+    expect(String(gravadaE5().motivo)).toContain('nota fiscal nº 000112786 de 16/10, lançada no SisChef')
+    expect(gravadaE5().estado).toBe('REVISAR')
+    expect(fetchFalso).not.toHaveBeenCalled()
+  })
+
+  it('a conferência falhou (leitura do banco): o envio segue como se não houvesse a conferência e o erro vai ao log sem segredo (aqui só informa; a trava forte é a do confirmar-cupom)', async () => {
+    h.banco.falharLeitura.parecidas = true
+    const r = await handler(envio())
+    expect(r.status).toBe(200)
+    expect(await corpoDe(r)).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(gravadaE5().motivo).toBeNull()
+    expect(errosNoLog.join('\n')).toContain('enviar-cupom: não consegui conferir se o cupom é repetido')
+    semVazamento(errosNoLog.join('\n'))
+  })
+
+  it('cupom de teste (teste: true) não consulta: o ensaio nunca é "repetido"', async () => {
+    h.banco.cupons = [jaLancadoE5()]
+    await handler(envio('cupom/a.jpg', { teste: true }))
+    expect(h.banco.consultasParecidas).toEqual([])
+    expect(gravadaE5()).toMatchObject({ estado: 'PENDENTE', teste: true })
   })
 })

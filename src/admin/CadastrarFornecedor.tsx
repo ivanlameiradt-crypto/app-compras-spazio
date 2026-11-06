@@ -3,6 +3,7 @@
 // (Cadastros › Pessoas › Novo › Fornecedor). Pronto o cadastro, o Ivan toca em "Reenviar este cupom" — o app NUNCA reenvia sozinho.
 // As ações (rede) entram por `acoes`, para a tela ser testada e mostrada sem servidor.
 import { useEffect, useRef, useState } from 'react'
+import { ehErroRepetida } from './cupomRegras'
 import {
   CADASTRO_CONCLUIDO, cnpjLidoSuspeito, cnpjValido, formatarCnpj, fornecedorNaoEncontrado, problemaDoFormulario, soDigitos,
   type DadosCnpj, type EstadoCadastro, type PedidoCadastro,
@@ -21,6 +22,8 @@ interface Props {
   acoes: AcoesFornecedor
   /** O servidor aceitou o reenvio (quem recarrega os "Últimos envios" é a tela de cima). */
   aoReenviar: () => void
+  /** E5: o servidor recusou o "Reenviar este cupom" por "POSSÍVEL REPETIDA" e gravou o aviso no motivo: a tela de cima recarrega os "Últimos envios" e o cartão mostra o aviso com os dois botões. */
+  aoRecarregar?: () => void
   /** Intervalo entre as conferências do cadastro (ms); os testes usam um bem curto. */
   intervaloMs?: number
   /** Aba "Compras avulsas" (10/10/2026): não há cupom para reenviar. Pronto o cadastro, o botão vira "Usar este fornecedor" e entrega os dados a quem chamou. Aqui `cupom.id` é o identificador da compra e o pedido de cadastro leva
@@ -41,7 +44,7 @@ const LIMITE_PARADO_MS = 15 * 60_000
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 const mensagem = (e: unknown, padrao: string): string => (e instanceof Error && e.message ? e.message : padrao)
 
-export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, intervaloMs = 5000, aoUsar, paraNota = false, recusadaEm = null, ocupado = false }: Props) {
+export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarregar, intervaloMs = 5000, aoUsar, paraNota = false, recusadaEm = null, ocupado = false }: Props) {
   const lido = fornecedorNaoEncontrado(cupom.motivo)
   const [cnpj, setCnpj] = useState(formatarCnpj(lido?.cnpj || cupom.emitente_cnpj || ''))
   const [razao, setRazao] = useState(lido?.nome ?? (paraNota ? (cupom.emitente_nome ?? '') : ''))    // a razão social: é ela (e o CNPJ) que vai ao SisChef
@@ -143,6 +146,7 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, interval
       aoReenviar()
     } catch (e) {
       setErro(mensagem(e, 'Não consegui reenviar agora. Tente de novo.'))
+      if (ehErroRepetida(e)) aoRecarregar?.()
     } finally {
       setReenviando(false)
     }

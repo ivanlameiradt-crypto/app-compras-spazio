@@ -3,6 +3,7 @@ import { ESQUEMA_CUPOM, type LeituraCupomIA } from './esquema'
 import { SISTEMA } from './prompt'
 import type { Aprendizado } from './casamento'
 import type { CnpjConhecido } from './cnpj'
+import type { Parecida } from './parecida'
 
 const LEITURA_OK: LeituraCupomIA = {
   legivel: true, chave: null, emitente_cnpj: '12345678000190', emitente_nome: 'ATACADAO', valor_total: 9,
@@ -603,5 +604,99 @@ describe('tratar — CNPJ lido errado na foto', () => {
     const deps = depsSilva({ async buscarAprendizado() { return [] } })
     await enviar(deps)
     expect(deps.gravou[0]).toMatchObject({ estado: 'REVISAR', motivo: '1 item(ns) sem casamento confirmado — confira no Code' })
+  })
+})
+
+// ---- E5: compra repetida (pedido do Ivan, 04/11/2026). Aqui SÓ INFORMA (a trava forte é o portão do confirmar-cupom): o cupom que parece repetido vai para REVISAR com o aviso no FIM do
+// motivo e NUNCA dispara. Desenho: E5-DESENHO-v5.md.
+describe('tratar — compra repetida (E5)', () => {
+  const PARECIDA_E5: Parecida = { tipo: 'cupom', id: 'c-lancado', estado: 'LANCADO', quando: '2026-10-03T18:04:00Z', centavos: 900, pedido: '163377089', numero: null, motivo: null }
+  const FRASE_E5 = 'POSSÍVEL REPETIDA: já existe compra deste fornecedor com o mesmo total (R$ 9,00): cupom de 03/10, lançado no SisChef (pedido 163377089).'
+  const AVISO_RESUMO = 'parece repetida (já existe compra igual): veja o aviso e decida'
+  const ENVIO = { foto_path: 'cupom/a.jpg', pagamento: PG }
+  function comParecidas(achadas: Parecida[] | Error, over: Partial<Deps> & { aprendizado?: Aprendizado[] } = {}) {
+    const consultas: { cnpj: string; centavos: number }[] = []
+    const d = fakeDeps({ aprendizado: [CONFIRMADO], async buscarParecidas(imp) { consultas.push(imp); if (achadas instanceof Error) throw achadas; return achadas }, ...over })
+    return Object.assign(d, { consultas })
+  }
+
+  it('sem a dependência (como antes do E5): nada muda, o cupom conhecido sai para lançar', async () => {
+    const d = fakeDeps({ aprendizado: [CONFIRMADO] })
+    const r = await tratar(ENVIO, IVAN, d)
+    expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(d.gravou[0].motivo).toBeNull()
+  })
+
+  it('tudo conhecido e "confirmar antes" ligado (o padrão): REVISAR com o aviso DEPOIS do CONFIRMAR:, sem disparo; o resumo diz que parece repetida', async () => {
+    const d = comParecidas([PARECIDA_E5], { exigirConfirmacao: true })
+    const r = await tratar(ENVIO, IVAN, d)
+    expect(d.gravou[0]).toMatchObject({ estado: 'REVISAR', motivo: `CONFIRMAR: 1 item(ns) já conhecido(s) — confira e confirme no app; ${FRASE_E5}` })
+    expect(d.disparou).toEqual([])
+    expect(r.corpo).toMatchObject({ estado: 'REVISAR', disparo_ok: false, resumo: `todos os itens já conhecidos — confira e confirme no app; ${AVISO_RESUMO}` })
+  })
+
+  it('tudo conhecido e "confirmar antes" DESLIGADO: em vez de ir para a fila vai a REVISAR só com o aviso, e NÃO dispara', async () => {
+    const d = comParecidas([PARECIDA_E5])
+    const r = await tratar(ENVIO, IVAN, d)
+    expect(d.gravou[0]).toMatchObject({ estado: 'REVISAR', motivo: FRASE_E5 })
+    expect(d.disparou).toEqual([])
+    expect(r.corpo).toMatchObject({ estado: 'REVISAR', disparo_ok: false, resumo: AVISO_RESUMO })
+  })
+
+  it('item incerto + parecida: o aviso vai depois do motivo dos itens e o resumo junta as duas coisas', async () => {
+    const d = comParecidas([PARECIDA_E5], { aprendizado: [] })
+    const r = await tratar(ENVIO, IVAN, d)
+    expect(d.gravou[0]).toMatchObject({ estado: 'REVISAR', motivo: `1 item(ns) sem casamento confirmado — confira no Code; ${FRASE_E5}` })
+    expect(r.corpo).toMatchObject({ estado: 'REVISAR', resumo: `1 item(ns) para você conferir; ${AVISO_RESUMO}` })
+  })
+
+  it('nada parecido: o envio de sempre (PENDENTE, dispara)', async () => {
+    const d = comParecidas([])
+    const r = await tratar(ENVIO, IVAN, d)
+    expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(d.gravou[0].motivo).toBeNull()
+    expect(d.consultas).toEqual([{ cnpj: '12345678000190', centavos: 900 }])
+  })
+
+  it('a consulta leva o CNPJ FINAL (o corrigido pela conferência dos dígitos) e o total em centavos', async () => {
+    const SILVA_ERRADO = '63540861000102'
+    const SILVA_CERTO = '63540861000182'
+    const d = comParecidas([], {
+      aprendizado: [],
+      async chamarModelo() { return { ok: true, resp: RESP({ ...LEITURA_OK, emitente_cnpj: SILVA_ERRADO, emitente_nome: 'A. N. DA SILVA DESCARTAVEIS' }) } },
+      async cnpjsConhecidos() { return [{ cnpj: SILVA_CERTO, nome: 'A. N. DA SILVA DESCARTAVEIS LTDA' }] },
+    })
+    await tratar(ENVIO, IVAN, d)
+    expect(d.consultas).toEqual([{ cnpj: SILVA_CERTO, centavos: 900 }])
+  })
+
+  it('a consulta que falha NÃO derruba o envio (aqui só informa): sai como se não houvesse a conferência, sem o aviso', async () => {
+    const d = comParecidas(new Error('banco fora'))
+    const r = await tratar(ENVIO, IVAN, d)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true })
+    expect(d.gravou[0].motivo).toBeNull()
+  })
+
+  it('cupom de TESTE, sem total lido e sem CNPJ lido: não consulta (não há o que comparar ou não vale)', async () => {
+    const teste = comParecidas([PARECIDA_E5])
+    await tratar({ ...ENVIO, teste: true }, IVAN, teste)
+    expect(teste.consultas).toEqual([])
+    const semTotal = comParecidas([PARECIDA_E5], { async chamarModelo() { return { ok: true, resp: RESP({ ...LEITURA_OK, valor_total: null }) } } })
+    await tratar(ENVIO, IVAN, semTotal)
+    expect(semTotal.consultas).toEqual([])
+    const semCnpj = comParecidas([PARECIDA_E5], { async chamarModelo() { return { ok: true, resp: RESP({ ...LEITURA_OK, emitente_cnpj: null }) } } })
+    await tratar(ENVIO, IVAN, semCnpj)
+    expect(semCnpj.consultas).toEqual([])
+  })
+
+  it('foto ilegível e cupom já recebido (mesma foto): não consulta', async () => {
+    const ilegivel = comParecidas([PARECIDA_E5], { async chamarModelo() { return { ok: false } } })
+    await tratar(ENVIO, IVAN, ilegivel)
+    expect(ilegivel.consultas).toEqual([])
+    const jaRecebido = comParecidas([PARECIDA_E5], { async acharCupomPorFoto() { return { id: 'c-antigo' } } })
+    const r = await tratar(ENVIO, IVAN, jaRecebido)
+    expect(r.corpo).toMatchObject({ duplicado: true })
+    expect(jaRecebido.consultas).toEqual([])
   })
 })
