@@ -84,6 +84,30 @@ describe('CadastrarFornecedor', () => {
     expect(screen.queryByTestId('reenviar-cupom')).not.toBeInTheDocument()
   })
 
+  // 06/11/2026: três toques seguidos na SIGMARINGA PLAZA. O aviso dizia "Nada foi cadastrado errado", mas o SisChef já tinha criado uma ficha sem CNPJ e cada toque criava outra.
+  it('REVISAR: manda falar com o Claude ANTES de tocar de novo e não diz mais que "nada foi cadastrado errado"', async () => {
+    abrir(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'REVISAR', motivo: 'não achei o município X' }) }))
+    const aviso = await screen.findByTestId('cadastro-revisar')
+    expect(aviso).toHaveTextContent('Antes de tocar de novo em “Cadastrar no SisChef”, fale com o Claude: o SisChef pode ter criado uma ficha pela metade.')
+    expect(aviso).not.toHaveTextContent('Nada foi cadastrado errado')
+  })
+
+  it('REVISAR: o motivo do robô sem ponto final ganha um ponto antes do conselho (o print de 06/11 saía "…tentar de novo Nada foi…")', async () => {
+    const motivo = "cliquei em 'Salvar' e achei 0 pessoa(s) com o CNPJ 04632558000140 em Cadastros › Pessoas — confira à mão antes de tentar de novo"
+    abrir(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'REVISAR', motivo }) }))
+    expect(await screen.findByTestId('cadastro-revisar')).toHaveTextContent('antes de tentar de novo. Antes de tocar de novo')
+  })
+
+  it('REVISAR: motivo que já termina em ponto não ganha outro; sem motivo, o aviso começa com "não conseguiu cadastrar."', async () => {
+    const { unmount } = abrir(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'REVISAR', motivo: 'o Sischef criou a ficha (id 7), mas SEM o CNPJ.' }) }))
+    const comPonto = await screen.findByTestId('cadastro-revisar')
+    expect(comPonto).toHaveTextContent('SEM o CNPJ. Antes de tocar de novo')
+    expect(comPonto).not.toHaveTextContent('..')
+    unmount()
+    abrir(acoes({ statusDoCadastro: vi.fn().mockResolvedValue({ estado: 'REVISAR', motivo: null }) }))
+    expect(await screen.findByTestId('cadastro-revisar')).toHaveTextContent('O robô não conseguiu cadastrar. Antes de tocar de novo')
+  })
+
   it('consulta do CNPJ fora do ar: avisa e deixa preencher à mão', async () => {
     const a = acoes({ consultarCnpj: vi.fn().mockRejectedValue(new Error('não consegui consultar o CNPJ agora: preencha os dados à mão')) })
     abrir(a)

@@ -43,6 +43,8 @@ interface Props {
 const LIMITE_PARADO_MS = 15 * 60_000
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 const mensagem = (e: unknown, padrao: string): string => (e instanceof Error && e.message ? e.message : padrao)
+/** O motivo do robô pronto para vir antes de outra frase: sem espaços sobrando e SEMPRE terminando em ponto (o motivo "…antes de tentar de novo" vinha sem ponto e a frase seguinte emendava: "…de novo Nada foi…"). */
+const frasePontuada = (t: string): string => { const s = t.trim(); return /[.!?]$/.test(s) ? s : `${s}.` }
 
 export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarregar, intervaloMs = 5000, aoUsar, paraNota = false, recusadaEm = null, ocupado = false }: Props) {
   const lido = fornecedorNaoEncontrado(cupom.motivo)
@@ -237,7 +239,8 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarr
       {cadastrando && <p className="ok" role="status" data-testid="cadastrando">Cadastrando no SisChef… o robô leva uns 2 minutos. Pode deixar esta tela aberta.</p>}
       {estado === 'REVISAR' && (
         <p className="erro" role="alert" data-testid="cadastro-revisar">
-          O robô não conseguiu cadastrar{motivoRobo ? `: ${motivoRobo}` : '.'} Nada foi cadastrado errado; confira no SisChef ou fale com o Claude.
+          {/* 06/11/2026: o texto antigo dizia "Nada foi cadastrado errado", falso quando o SisChef já criou uma ficha incompleta; cada toque novo criava outra (3 vezes na SIGMARINGA PLAZA). */}
+          O robô não conseguiu cadastrar{motivoRobo?.trim() ? `: ${frasePontuada(motivoRobo)}` : '.'} Antes de tocar de novo em “Cadastrar no SisChef”, fale com o Claude: o SisChef pode ter criado uma ficha pela metade.
         </p>
       )}
       {pronto && (
