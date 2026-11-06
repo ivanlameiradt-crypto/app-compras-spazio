@@ -8,6 +8,7 @@ import { tratar, type Corpo, type Deps, type ImagemBase64, type PedidoModelo } f
 import { gravarSemDuplicar } from './gravacao.ts'
 import type { Aprendizado } from './casamento.ts'
 import { juntarConhecidos, type CnpjConhecido } from './cnpj.ts'
+import { acharParecidas, ioDoSupabase, type ClienteConsulta } from './parecida.ts'
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
@@ -88,8 +89,18 @@ Deno.serve(async (req: Request) => {
       return (data as { id: string } | null) ?? null
     }
 
+    // E5 (pedido do Ivan, 04/11/2026): a procura de compras parecidas (cupom, compra avulsa e nota fiscal) mora em parecida.ts, igual nas três funções.
+    const ioParecidas = ioDoSupabase(admin as unknown as ClienteConsulta)
+
     const deps: Deps = {
       exigirConfirmacao: (Deno.env.get('CUPOM_CONFIRMAR_ANTES') ?? '').trim().toUpperCase() !== 'OFF', // liga por padrão (pedido do Ivan, 08/10)
+      async buscarParecidas(imp) {
+        // aqui só INFORMA (a trava forte é o portão do confirmar-cupom): a falha não derruba o envio (a tratar() a engole), mas fica no log, só com a mensagem do banco
+        try { return await acharParecidas(ioParecidas, imp, { agora: new Date() }) } catch (e) {
+          console.error('enviar-cupom: não consegui conferir se o cupom é repetido', e instanceof Error ? e.message : String(e))
+          throw e
+        }
+      },
       async buscarUsuario(email) {
         const { data } = await admin.from('usuarios').select('papel, ativo').eq('email', email).maybeSingle()
         return (data as { papel: string; ativo: boolean } | null) ?? null
