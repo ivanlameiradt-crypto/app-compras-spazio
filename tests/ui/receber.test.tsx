@@ -49,3 +49,91 @@ it('mudar o campo Chegou faz o botão virar "Registrar com as diferenças"', asy
   await userEvent.type(campos[0], '7')          // 7 fardos = 84 un (< 108)
   expect(await screen.findByRole('button', { name: 'Registrar com as diferenças' })).toBeTruthy()
 })
+
+// ---- digitar decimal tecla por tecla (item 4 da análise de 07/11/2026): antes, o campo era redesenhado a partir do número e a vírgula sumia
+async function abrirCartao() {
+  render(<Recebimento usuario={JOAO} />)
+  await userEvent.click(await screen.findByRole('button', { name: /MATEUS/ }))
+  await screen.findByRole('button', { name: 'Chegou tudo certo' })
+  return screen.getAllByRole('textbox') as HTMLInputElement[]   // [0] = fardos (COCA COLA), [1] = kg (QUEIJO)
+}
+
+describe('campo Chegaram: o que a pessoa digita fica na tela', () => {
+  it('2,5 kg digitado tecla por tecla fica "2,5" (a vírgula não some) e vale 2,5', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '2,5')
+    expect(campos[1].value).toBe('2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    expect(await screen.findByText(/QUEIJO: faltaram 17,5 kg/)).toBeTruthy()      // 20 − 2,5
+  })
+
+  it('por embalagem: 7,5 fardos fica "7,5" e mostra 90 un', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[0])
+    await userEvent.type(campos[0], '7,5')
+    expect(campos[0].value).toBe('7,5')
+    expect(screen.getByText(/fardos c\/12 = 90 un/)).toBeTruthy()
+  })
+
+  it('por embalagem com muitos decimais (0,33333 fardo): o texto não é refeito no meio da digitação', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[0])
+    await userEvent.type(campos[0], '0,33333')
+    expect(campos[0].value).toBe('0,33333')           // 0,33333 fardo = 3,99996 un → arredonda para 4 un → 0,3333: diferença só de arredondamento
+  })
+
+  it('milhar com ponto e decimal com vírgula: "1.234,5" fica como foi digitado', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '1.234,5')
+    expect(campos[1].value).toBe('1.234,5')
+  })
+
+  it('"2.500" da balança (teclado só com ponto) é 2,5 kg, não 2.500 kg: fica "2.500" na tela e faltaram 17,5 kg', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '2.500')
+    expect(campos[1].value).toBe('2.500')
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    expect(await screen.findByText(/QUEIJO: faltaram 17,5 kg/)).toBeTruthy()      // 20 − 2,5
+  })
+
+  it('apagar tudo deixa o campo vazio enquanto digita e volta a "0" ao sair do campo', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    expect(campos[1].value).toBe('')
+    await userEvent.tab()
+    expect(campos[1].value).toBe('0')
+    expect(screen.getByRole('button', { name: 'Registrar com as diferenças' })).toBeTruthy()
+  })
+
+  it('"Não veio" zera o campo mesmo depois de digitar', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '2,5')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Não veio' })[1])
+    expect(campos[1].value).toBe('0')
+  })
+
+  it('texto que não é número é marcado como inválido, não vira 0 em silêncio, e ao sair volta ao último valor bom', async () => {
+    const campos = await abrirCartao()
+    expect(campos[1].value).toBe('20')
+    await userEvent.type(campos[1], 'x')                       // "20x"
+    expect(campos[1].value).toBe('20x')
+    expect(campos[1].getAttribute('aria-invalid')).toBe('true')
+    await userEvent.tab()
+    expect(campos[1].value).toBe('20')
+    expect(campos[1].getAttribute('aria-invalid')).not.toBe('true')
+  })
+
+  it('avaria também aceita decimal tecla por tecla: 0,5 fica "0,5"', async () => {
+    const campos = await abrirCartao()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Mais' })[1])
+    const avaria = screen.getAllByRole('textbox')[2] as HTMLInputElement
+    await userEvent.clear(avaria)
+    await userEvent.type(avaria, '0,5')
+    expect(avaria.value).toBe('0,5')
+    expect(campos[1].value).toBe('20')                          // o Chegaram não mexeu
+  })
+})

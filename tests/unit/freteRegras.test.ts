@@ -26,6 +26,15 @@ describe('lerFrete', () => {
     expect(lerFrete(' 12,345 ')).toBe(12.35)
     for (const ruim of ['', '0', '0,00', '-5', 'abc']) expect(lerFrete(ruim)).toBeNull()
   })
+  it('ponto de milhar sem vírgula é milhar: "1.250" é R$ 1.250,00 (e não R$ 1,25); decimal com ponto continua decimal', () => {
+    expect(lerFrete('1.250')).toBe(1250)
+    expect(lerFrete('1.250.000')).toBe(1250000)
+    expect(lerFrete('12.50')).toBe(12.5)
+    expect(lerFrete('1.5')).toBe(1.5)
+    expect(lerFrete('0.5')).toBe(0.5)
+    for (const ruim of ['1.2.3', '1,2,3']) expect(lerFrete(ruim)).toBeNull()
+    expect(lerFrete('1.25,5')).toBe(125.5)   // com vírgula, o leitor geral (lib/regras.lerNumero) tira todo ponto: regra de sempre do app, não deste PR
+  })
 })
 
 describe('ratearFrete — proporcional ao valor, como o "Distribuir entre os itens" do SisChef', () => {

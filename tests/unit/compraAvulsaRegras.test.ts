@@ -9,6 +9,17 @@ describe('compra avulsa — números', () => {
     expect(lerQuantidade('3')).toBe(3)
     for (const ruim of ['', '0', '-2', 'abc']) expect(lerQuantidade(ruim)).toBeNull()
   })
+  it('quantidade: ponto sem vírgula é decimal ("2.500" da balança = 2,5 kg; "1.000" = 1); preço: ponto com 3 dígitos é milhar ("1.250" = R$ 1.250)', () => {
+    expect(lerQuantidade('2.500')).toBe(2.5)
+    expect(lerQuantidade('1.000')).toBe(1)
+    expect(lerQuantidade('2.5')).toBe(2.5)
+    expect(lerQuantidade('1.234,5')).toBe(1234.5)
+    expect(lerPreco('1.250')).toBe(1250)
+    expect(lerPreco('1.250,75')).toBe(1250.75)
+    expect(lerPreco('0.125')).toBe(0.125)
+    expect(lerPreco('12.50')).toBe(12.5)
+    for (const ruim of ['1.2.3', '1,2,3', '1.25,5']) expect(lerQuantidade(ruim)).toBeNull()
+  })
   it('total do item = quantidade × preço unitário (a unidade da planilha), em centavos', () => {
     expect(totalDaLinha({ quantidade: '12,5', preco: '8,90' })).toBe(111.25)
     expect(totalDaLinha({ quantidade: '1000', preco: '1,516' })).toBe(1516)
