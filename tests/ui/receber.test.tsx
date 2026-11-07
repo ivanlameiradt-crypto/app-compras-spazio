@@ -90,6 +90,15 @@ describe('campo Chegaram: o que a pessoa digita fica na tela', () => {
     expect(campos[1].value).toBe('1.234,5')
   })
 
+  it('"2.500" da balança (teclado só com ponto) é 2,5 kg, não 2.500 kg: fica "2.500" na tela e faltaram 17,5 kg', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '2.500')
+    expect(campos[1].value).toBe('2.500')
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    expect(await screen.findByText(/QUEIJO: faltaram 17,5 kg/)).toBeTruthy()      // 20 − 2,5
+  })
+
   it('apagar tudo deixa o campo vazio enquanto digita e volta a "0" ao sair do campo', async () => {
     const campos = await abrirCartao()
     await userEvent.clear(campos[1])

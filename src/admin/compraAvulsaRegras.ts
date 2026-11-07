@@ -2,16 +2,16 @@
 // o lançamento no SisChef é o mesmo Pedido de compra manual do cupom (estoque + o pagamento escolhido), sem foto e sem nota. A unidade é sempre a do produto no
 // BANCO (a planilha do Ivan = o SisChef), como nas outras abas: ele digita a quantidade já nessa unidade.
 
-import { lerNumeroBr } from '../lib/numeroBr'
+import { lerNumero as lerDinheiro } from '../lib/regras'
+import { lerQuantidadeBr } from '../lib/quantidade'
 
 const arredondar = (v: number, casas: number): number => { const f = 10 ** casas; return Math.round(v * f) / f }
+const positivo = (n: number | null, casas: number): number | null => (n != null && n > 0 ? arredondar(n, casas) : null)
 
-/** O número como o Ivan digita ("1,5", "1.250,75", "1.250" = mil duzentos e cinquenta, "3"; ver lib/numeroBr), ou null se não for um número maior que zero. `casas` = máximo de casas decimais guardadas. */
-export function lerNumero(texto: string, casas: number): number | null {
-  const n = lerNumeroBr(texto)
-  return n != null && n > 0 ? arredondar(n, casas) : null
-}
-export const lerQuantidade = (texto: string): number | null => lerNumero(texto, 3)
+/** Valor em dinheiro como o Ivan digita ("1,5", "1.250,75", "1.250" = mil duzentos e cinquenta, "3": a regra de lib/regras.lerNumero), ou null se não for um número maior que zero. `casas` = máximo de casas decimais guardadas. */
+export function lerNumero(texto: string, casas: number): number | null { return positivo(lerDinheiro(texto), casas) }
+/** Quantidade na unidade do produto: sem vírgula o ponto é decimal ("2.500" da balança = 2,5 kg; ver lib/quantidade); 3 casas, como o servidor e o SisChef. */
+export const lerQuantidade = (texto: string): number | null => positivo(lerQuantidadeBr(texto), 3)
 export const lerPreco = (texto: string): number | null => lerNumero(texto, 4)
 
 /** Quantidade e preço unitário máximos aceitos (trava de digitação errada: um zero a mais). */

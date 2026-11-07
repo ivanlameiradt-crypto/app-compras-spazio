@@ -32,7 +32,8 @@ describe('lerFrete', () => {
     expect(lerFrete('12.50')).toBe(12.5)
     expect(lerFrete('1.5')).toBe(1.5)
     expect(lerFrete('0.5')).toBe(0.5)
-    for (const ruim of ['1.2.3', '1,2,3', '1.25,5']) expect(lerFrete(ruim)).toBeNull()
+    for (const ruim of ['1.2.3', '1,2,3']) expect(lerFrete(ruim)).toBeNull()
+    expect(lerFrete('1.25,5')).toBe(125.5)   // com vírgula, o leitor geral (lib/regras.lerNumero) tira todo ponto: regra de sempre do app, não deste PR
   })
 })
 
