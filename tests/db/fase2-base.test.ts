@@ -60,6 +60,7 @@ const F3R = '20261222000001_unidades_ct_pct.sql' // a lista do app aceita produt
 const F3S = '20261223000001_nfe_aprendizado.sql' // memória de embalagem das notas fiscais (29/10/2026): nfe_aprendizado + nfe_aprendizado_ler/gravar (só cria; as 2 funções são do robô, para anon)
 const F3U = '20261225000001_cupom_excluir.sql' // excluir cupom e compra avulsa (03/11/2026): estado EXCLUIDO + cupom_excluir/cupom_restaurar (só cria as 2 funções e mexe no CHECK e nas colunas de cupom; são do admin, para authenticated)
 const F3V = '20261226000001_cupom_outra_compra.sql' // compra repetida, E5 (05/11/2026): só acrescenta 2 colunas em cupom (outra_compra_ok_em/por, a decisão "é outra compra" do Ivan); nenhuma função nem tabela nova
+const F3W = '20261227000001_nfe_lancada_limpa_estado.sql' // NF lançada não fica presa em 'lancando' (07/11/2026): reescreve cot_nfe_marcar_lancadas (mesma assinatura, mesmas permissões) e limpa a reserva das notas já lançadas; nenhuma tabela nova
 const F3T = '20261224000001_nfe_aprendizado_esquecer.sql' // memória de embalagem, fase 2 (29/10/2026): nfe_aprendizado_esquecer, o "Esquecer" do app (só cria a função; é do admin, para authenticated)
 const F3N = '20261217000001_fornecedor_cadastro.sql' // cadastro de fornecedor pelo app (fornecedor_cadastro, fornecedor_app)
 const F3M = '20261216000001_produto_planilha_descricao.sql' // produto acrescentado pela planilha (descrição) entra na lista de insumos e em cot_nfe_associar
@@ -68,7 +69,7 @@ const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R, F3S, F3T, F3U, F3V]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R, F3S, F3T, F3U, F3V, F3W]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [
