@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import type { ItemAReceber, PedidoAReceber, Recebimento, Resto, Usuario } from '../lib/tipos'
 import { diaCurto, ddmm, numeroBr, mensagemFaltaAvaria } from '../cotacao/mensagens'
+import CampoNumero from './CampoNumero'
 import {
   descricaoPedido, embParaUn, faltaChegar, itensComFalta, linhasFaltaAvaria, montarItens, porEmbalagem,
   prontoParaGravar, resumoRecebido, tudoQueFalta, unParaEmb, type EntradaItem,
@@ -178,19 +179,14 @@ function ItemLinha({ item, entrada, onChegouUn, onAvaria, onNaoVeio }: {
       <div className="pedido-linha">Pedido: {descricaoPedido(item)}</div>
       <label>
         Chegaram{' '}
-        <input type="text" inputMode="decimal" value={String(valorCampo).replace('.', ',')}
-          onChange={(e) => {
-            const v = Number(e.target.value.replace(',', '.')) || 0
-            onChegouUn(emb ? embParaUn(v, fator) : v)
-          }} />
+        <CampoNumero valor={valorCampo} onMudar={(v) => onChegouUn(emb ? embParaUn(v, fator) : v)} />
         {emb ? ` ${item.embalagem}s c/${numeroBr(fator)} = ${numeroBr(chegouUn)} ${item.unidade}` : ` ${item.unidade}`}
       </label>
       <button className="link" onClick={onNaoVeio}>Não veio</button>
       <button className="link" onClick={() => setMais((m) => !m)}>Mais</button>
       {mais && (
         <label className="avaria">Avaria ({item.unidade}):{' '}
-          <input type="text" inputMode="decimal" value={String(entrada?.avaria_un ?? 0).replace('.', ',')}
-            onChange={(e) => onAvaria(Number(e.target.value.replace(',', '.')) || 0)} />
+          <CampoNumero valor={entrada?.avaria_un ?? 0} onMudar={onAvaria} />
         </label>
       )}
     </div>

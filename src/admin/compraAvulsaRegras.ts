@@ -2,14 +2,14 @@
 // o lançamento no SisChef é o mesmo Pedido de compra manual do cupom (estoque + o pagamento escolhido), sem foto e sem nota. A unidade é sempre a do produto no
 // BANCO (a planilha do Ivan = o SisChef), como nas outras abas: ele digita a quantidade já nessa unidade.
 
+import { lerNumeroBr } from '../lib/numeroBr'
+
 const arredondar = (v: number, casas: number): number => { const f = 10 ** casas; return Math.round(v * f) / f }
 
-/** O número como o Ivan digita ("1,5", "1.250,75", "3"), ou null se não for um número maior que zero. `casas` = máximo de casas decimais guardadas. */
+/** O número como o Ivan digita ("1,5", "1.250,75", "1.250" = mil duzentos e cinquenta, "3"; ver lib/numeroBr), ou null se não for um número maior que zero. `casas` = máximo de casas decimais guardadas. */
 export function lerNumero(texto: string, casas: number): number | null {
-  const t = texto.replace(/\s/g, '')
-  if (t === '') return null
-  const n = t.includes(',') ? Number(t.replace(/\./g, '').replace(',', '.')) : Number(t)
-  return Number.isFinite(n) && n > 0 ? arredondar(n, casas) : null
+  const n = lerNumeroBr(texto)
+  return n != null && n > 0 ? arredondar(n, casas) : null
 }
 export const lerQuantidade = (texto: string): number | null => lerNumero(texto, 3)
 export const lerPreco = (texto: string): number | null => lerNumero(texto, 4)
