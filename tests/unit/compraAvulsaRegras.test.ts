@@ -9,12 +9,12 @@ describe('compra avulsa — números', () => {
     expect(lerQuantidade('3')).toBe(3)
     for (const ruim of ['', '0', '-2', 'abc']) expect(lerQuantidade(ruim)).toBeNull()
   })
-  it('quantidade: ponto sem vírgula é decimal ("2.500" da balança = 2,5 kg; "1.000" = 1); preço: ponto com 3 dígitos é milhar ("1.250" = R$ 1.250)', () => {
+  it('quantidade: ponto sem vírgula é decimal ("2.500" da balança = 2,5 kg; "1.000" = 1); preço: ponto com 3 dígitos é ambíguo ("1.250" não passa)', () => {
     expect(lerQuantidade('2.500')).toBe(2.5)
     expect(lerQuantidade('1.000')).toBe(1)
     expect(lerQuantidade('2.5')).toBe(2.5)
     expect(lerQuantidade('1.234,5')).toBe(1234.5)
-    expect(lerPreco('1.250')).toBe(1250)
+    expect(lerPreco('1.250')).toBeNull()
     expect(lerPreco('1.250,75')).toBe(1250.75)
     expect(lerPreco('0.125')).toBe(0.125)
     expect(lerPreco('12.50')).toBe(12.5)
@@ -41,5 +41,23 @@ describe('compra avulsa — conferência', () => {
     expect(problemaDaCompra([l(1, '2', '3'), l(null, '', '')])).toMatch(/Item 2/)
     expect(problemaDaCompra([l(1, '2', '3'), l(1, '1', '4')])).toMatch(/repete/)
     expect(problemaDaCompra([l(1, '2', '3'), l(2, '1', '4')])).toBe('')
+  })
+})
+describe('compra avulsa — preço unitário e número que arredonda para zero (correção de 08/11/2026)', () => {
+  it('"1.516" no preço é ambíguo: não passa, e a conferência pede a vírgula; "1.516,00" = 1516', () => {
+    expect(lerPreco('1.516')).toBeNull()
+    expect(faltaNaLinha(l(1, '2', '1.516'))).toMatch(/use a vírgula nos centavos/)
+    expect(lerPreco('1.516,00')).toBe(1516)
+  })
+
+  it('separador na ponta no preço: ",50" = 0,50 e "5," = 5', () => {
+    expect(lerPreco(',50')).toBe(0.5)
+    expect(lerPreco('5,')).toBe(5)
+  })
+
+  it('quantidade ou preço que arredonda para zero não conta como linha completa', () => {
+    expect(lerQuantidade('0,0004')).toBeNull()
+    expect(lerPreco('0,00004')).toBeNull()
+    expect(faltaNaLinha(l(1, '0,0004', '2'))).toMatch(/quantidade/)
   })
 })

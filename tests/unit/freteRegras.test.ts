@@ -85,3 +85,12 @@ describe('unidadesDoPacote — quantas unidades vêm no pacote, lido do nome do 
     expect(unidadesDoPacote(null)).toBeNull()
   })
 })
+describe('lerFrete — correção de 08/11/2026 (regressões da leitura de 07/11)', () => {
+  it('",50" e "5," valem 0,50 e 5, como antes de 07/11', () => {
+    expect(lerFrete(',50')).toBe(0.5)
+    expect(lerFrete('5,')).toBe(5)
+  })
+  it('número gigante não é frete (o JavaScript lê como infinito e o app confirmava "R$ ∞")', () => {
+    expect(lerFrete('9'.repeat(400))).toBeNull()
+  })
+})

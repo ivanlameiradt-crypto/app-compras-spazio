@@ -453,3 +453,24 @@ describe('Lançamentos — compra aberta de outra pessoa (Fase 1A)', () => {
     expect(await screen.findByText(/compra sem itens/)).toBeInTheDocument()
   })
 })
+describe('Lançamentos — preço unitário que não é preço não apaga o preço lançado (correção de 08/11/2026)', () => {
+  it('"1.516" no preço: não corrige a linha e pede a vírgula nos centavos', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('50').mockReturnValueOnce('1.516')
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Ver itens' }))
+    expect(await screen.findByText('COCA COLA 350 ML')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Corrigir' }))
+    expect(await screen.findByText(/use a vírgula nos centavos/)).toBeInTheDocument()
+    expect(m.corrigirItemCompra).not.toHaveBeenCalled()
+  })
+
+  it('preço escrito em letras: não corrige a linha (antes gravava o preço como vazio)', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('50').mockReturnValueOnce('abc')
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Ver itens' }))
+    expect(await screen.findByText('COCA COLA 350 ML')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Corrigir' }))
+    expect(await screen.findByText(/Preço inválido/)).toBeInTheDocument()
+    expect(m.corrigirItemCompra).not.toHaveBeenCalled()
+  })
+})
