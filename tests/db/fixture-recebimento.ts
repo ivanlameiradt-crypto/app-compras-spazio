@@ -1,7 +1,7 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, beforeEach } from 'vitest'
 import { novoBanco, como, limpar } from './banco'
-import { fixarRelogio } from './relogio'
+import { fixarRelogio, RELOGIO_DOS_TESTES } from './relogio'
 import {
   semearCotacao, aprovar, preparar, cotacaoDe, congelar, responder, resp, chamar,
   V_FULANO, type Json,
@@ -24,7 +24,7 @@ export function bancoRecebimento(ate: string | null = ATE_D2): () => PGlite {
   beforeAll(async () => { db = await novoBanco(ate ?? undefined) })
   beforeEach(async () => {
     if (ate === null) {
-      await limpar(db!) // a cadeia inteira: o limpar() compartilhado conhece todas as tabelas (e zera o relógio)
+      await limpar(db!) // a cadeia inteira: o limpar() compartilhado conhece todas as tabelas (e fixa o relógio em RELOGIO_DOS_TESTES)
     } else {
       // truncate próprio (a cadeia até a D2 não tem as tabelas da B que o limpar() compartilhado trunca)
       await db!.exec(
@@ -33,7 +33,7 @@ export function bancoRecebimento(ate: string | null = ATE_D2): () => PGlite {
           'cot_codigos, cot_itens, cot_envios, cot_pedidos, cot_limites, cot_avisos, cot_categorias, ' +
           'cot_pedidos_acomp, cot_recebimentos, cot_fornecedores_cnpj, cot_nfe, cot_nfe_leituras restart identity cascade',
       )
-      await fixarRelogio(db!, null)
+      await fixarRelogio(db!, RELOGIO_DOS_TESTES)
     }
     await db!.exec('truncate vault.decrypted_secrets')
     await db!.exec(`insert into vault.decrypted_secrets (name, decrypted_secret) values ('cot_nfe_robo', '${SEGREDO}')`)
