@@ -6,6 +6,7 @@ import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
 import { emailDoLogin, SENHA_PADRAO } from './login'
+import { mensagemDeErroDaFoto } from './foto'
 import { ehUnidadeDaLista } from './unidadesDaLista'
 import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
@@ -1104,7 +1105,7 @@ export async function enviarOp(op: Op): Promise<void> {
 export async function subirFotoCupom(caminho: string, foto: Blob): Promise<void> {
   const up = await supabase.storage.from('cupons').upload(caminho, foto, { contentType: foto.type || 'image/jpeg' })
   if (up.error && !/exists|duplicate/i.test(up.error.message)) {
-    throw new ErroApi(up.error.message, (up.error as { status?: number }).status)
+    throw new ErroApi(mensagemDeErroDaFoto(up.error.message), (up.error as { status?: number }).status)
   }
 }
 

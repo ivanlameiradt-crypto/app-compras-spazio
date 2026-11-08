@@ -2,17 +2,18 @@
 // o lançamento no SisChef é o mesmo Pedido de compra manual do cupom (estoque + o pagamento escolhido), sem foto e sem nota. A unidade é sempre a do produto no
 // BANCO (a planilha do Ivan = o SisChef), como nas outras abas: ele digita a quantidade já nessa unidade.
 
-import { lerNumero as lerDinheiro } from '../lib/regras'
+import { lerDinheiro, lerPrecoUnitario, ehMilharAmbiguo } from '../lib/dinheiro'
 import { lerQuantidadeBr } from '../lib/quantidade'
 
 const arredondar = (v: number, casas: number): number => { const f = 10 ** casas; return Math.round(v * f) / f }
-const positivo = (n: number | null, casas: number): number | null => (n != null && n > 0 ? arredondar(n, casas) : null)
+// arredonda ANTES de conferir > 0: "0,0004" vira 0 e não pode contar como quantidade ou preço (correção de 08/11/2026)
+const positivo = (n: number | null, casas: number): number | null => { const r = n == null ? null : arredondar(n, casas); return r != null && r > 0 ? r : null }
 
 /** Valor em dinheiro como o Ivan digita ("1,5", "1.250,75", "1.250" = mil duzentos e cinquenta, "3": a regra de lib/regras.lerNumero), ou null se não for um número maior que zero. `casas` = máximo de casas decimais guardadas. */
 export function lerNumero(texto: string, casas: number): number | null { return positivo(lerDinheiro(texto), casas) }
 /** Quantidade na unidade do produto: sem vírgula o ponto é decimal ("2.500" da balança = 2,5 kg; ver lib/quantidade); 3 casas, como o servidor e o SisChef. */
 export const lerQuantidade = (texto: string, unidade?: string | null): number | null => positivo(lerQuantidadeBr(texto, unidade), 3)
-export const lerPreco = (texto: string): number | null => lerNumero(texto, 4)
+export const lerPreco = (texto: string): number | null => positivo(lerPrecoUnitario(texto), 4)
 
 /** Quantidade e preço unitário máximos aceitos (trava de digitação errada: um zero a mais). */
 export const QUANTIDADE_MAXIMA = 100_000
@@ -33,7 +34,7 @@ export function faltaNaLinha(l: LinhaAvulsa): string {
   if (q === null) return 'digite a quantidade'
   if (q > QUANTIDADE_MAXIMA) return 'quantidade grande demais: confira'
   const p = lerPreco(l.preco)
-  if (p === null) return 'digite o preço'
+  if (p === null) return ehMilharAmbiguo(l.preco) ? 'use a vírgula nos centavos (ex.: 1,516 ou 1.516,00)' : 'digite o preço'
   if (p > PRECO_MAXIMO) return 'preço grande demais: confira'
   return ''
 }

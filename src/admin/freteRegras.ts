@@ -4,7 +4,7 @@
 // o frete PROPORCIONAL AO VALOR de cada item (390,00 e 47,40 com frete de 100,00 → "(+) frete 89,16" e "(+) frete 10,84") e soma o frete ao total do pedido.
 // Aqui, a mesma conta, para o Ivan conferir antes de mandar lançar. Puro: sem React nem rede.
 
-import { lerNumero } from '../lib/regras'
+import { lerDinheiro } from '../lib/dinheiro'
 
 /** Os tipos de frete do SisChef (campo "Tipo do frete" do Complemento do pedido), com o código dele. */
 export const TIPOS_DE_FRETE: { valor: string; rotulo: string }[] = [
@@ -43,7 +43,7 @@ const round2 = (v: number): number => Math.round(v * 100) / 100
 
 /** O que o Ivan digita ("300", "300,00", "1.250,5", "1.250" = mil duzentos e cinquenta: regra de dinheiro de lib/regras.lerNumero) como valor do frete; só vale maior que zero. */
 export function lerFrete(texto: string): number | null {
-  const n = lerNumero(texto)
+  const n = lerDinheiro(texto)
   return n != null && n > 0 ? round2(n) : null
 }
 
