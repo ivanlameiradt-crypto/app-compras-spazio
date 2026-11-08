@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ehMilharAmbiguo, lerPrecoUnitario } from '../lib/dinheiro'
 import * as api from '../lib/api'
 import type { Semana, Usuario } from '../lib/tipos'
 import {
@@ -63,7 +64,9 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
     if (q === null) return
     const textoPreco = window.prompt('Preço unitário', l.preco_unit == null ? '' : String(l.preco_unit).replace('.', ','))
     if (textoPreco === null) return // cancelou: não apaga o preço já lançado
-    const p = textoPreco.trim() ? lerNumero(textoPreco) : null
+    const p = textoPreco.trim() ? lerPrecoUnitario(textoPreco) : null
+    // preço que não é número não pode apagar o preço já lançado: para antes de gravar (correção de 08/11/2026)
+    if (textoPreco.trim() && p === null) throw new Error(ehMilharAmbiguo(textoPreco) ? 'Preço: use a vírgula nos centavos (ex.: 1,516).' : 'Preço inválido. Nada foi alterado.')
     await api.corrigirItemCompra(l.id, q, p)
     setLinhas((ls) => ls.map((x) => (x.id === l.id ? { ...x, qtd: q, preco_unit: p } : x)))
   })
