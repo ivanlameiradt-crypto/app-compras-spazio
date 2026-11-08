@@ -189,14 +189,14 @@ function ItemLinha({ item, entrada, onChegouUn, onAvaria, onNaoVeio, onInvalido 
       <div className="pedido-linha">Pedido: {descricaoPedido(item)}</div>
       <label>
         Chegaram{' '}
-        <CampoNumero valor={valorCampo} onMudar={(v) => onChegouUn(emb ? embParaUn(v, fator) : v)} onInvalido={(inv) => onInvalido(`${item.numero}:chegou`, inv)} />
+        <CampoNumero valor={valorCampo} onMudar={(v) => onChegouUn(emb ? embParaUn(v, fator) : v)} onInvalido={(inv) => onInvalido(`${item.numero}:chegou`, inv)} unidade={emb ? undefined : item.unidade} />
         {emb ? ` ${item.embalagem}s c/${numeroBr(fator)} = ${numeroBr(chegouUn)} ${item.unidade}` : ` ${item.unidade}`}
       </label>
       <button className="link" onClick={onNaoVeio}>Não veio</button>
       <button className="link" onClick={() => setMais((m) => !m)}>Mais</button>
       {mais && (
         <label className="avaria">Avaria ({item.unidade}):{' '}
-          <CampoNumero valor={entrada?.avaria_un ?? 0} onMudar={onAvaria} onInvalido={(inv) => onInvalido(`${item.numero}:avaria`, inv)} />
+          <CampoNumero valor={entrada?.avaria_un ?? 0} onMudar={onAvaria} onInvalido={(inv) => onInvalido(`${item.numero}:avaria`, inv)} unidade={item.unidade} />
         </label>
       )}
     </div>

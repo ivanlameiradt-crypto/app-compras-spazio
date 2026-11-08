@@ -126,7 +126,7 @@ export default function CompraAvulsa() {
         envio_id: envioId,
         fornecedor: { cnpj: fornecedor.cnpj, nome: fornecedor.razao || nomeDoConhecido(fornecedor) },
         pagamento,
-        itens: linhas.map((l) => ({ produto_id: l.produtoId as number, quantidade: lerQuantidade(l.quantidade) as number, preco: lerPreco(l.preco) as number, descricao: produtoDe(l.produtoId)?.nome })),
+        itens: linhas.map((l) => ({ produto_id: l.produtoId as number, quantidade: lerQuantidade(l.quantidade, l.unidade) as number, preco: lerPreco(l.preco) as number, descricao: produtoDe(l.produtoId)?.nome })),
         ...(outraCompra ? { outra_compra: true } : {}),
       })
       setResultado({
@@ -239,7 +239,7 @@ export default function CompraAvulsa() {
                             <ul className="achados" data-testid="achados">
                               {achados.map((a) => (
                                 <li key={a.produto_id}>
-                                  <button type="button" onClick={() => mudar(l.chave, { produtoId: a.produto_id, busca: '' })}>{a.nome}{a.unidade ? ` · ${rotuloUnidade(a.unidade)}` : ''}</button>
+                                  <button type="button" onClick={() => mudar(l.chave, { produtoId: a.produto_id, busca: '', unidade: a.unidade })}>{a.nome}{a.unidade ? ` · ${rotuloUnidade(a.unidade)}` : ''}</button>
                                 </li>
                               ))}
                             </ul>

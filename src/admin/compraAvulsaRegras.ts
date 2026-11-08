@@ -11,25 +11,25 @@ const positivo = (n: number | null, casas: number): number | null => (n != null 
 /** Valor em dinheiro como o Ivan digita ("1,5", "1.250,75", "1.250" = mil duzentos e cinquenta, "3": a regra de lib/regras.lerNumero), ou null se não for um número maior que zero. `casas` = máximo de casas decimais guardadas. */
 export function lerNumero(texto: string, casas: number): number | null { return positivo(lerDinheiro(texto), casas) }
 /** Quantidade na unidade do produto: sem vírgula o ponto é decimal ("2.500" da balança = 2,5 kg; ver lib/quantidade); 3 casas, como o servidor e o SisChef. */
-export const lerQuantidade = (texto: string): number | null => positivo(lerQuantidadeBr(texto), 3)
+export const lerQuantidade = (texto: string, unidade?: string | null): number | null => positivo(lerQuantidadeBr(texto, unidade), 3)
 export const lerPreco = (texto: string): number | null => lerNumero(texto, 4)
 
 /** Quantidade e preço unitário máximos aceitos (trava de digitação errada: um zero a mais). */
 export const QUANTIDADE_MAXIMA = 100_000
 export const PRECO_MAXIMO = 100_000
 
-export interface LinhaAvulsa { produtoId: number | null; quantidade: string; preco: string }
+export interface LinhaAvulsa { produtoId: number | null; quantidade: string; preco: string; unidade?: string | null }
 
 /** Total do item = quantidade × preço unitário, em centavos arredondados; null se faltar quantidade ou preço. */
-export function totalDaLinha(l: Pick<LinhaAvulsa, 'quantidade' | 'preco'>): number | null {
-  const q = lerQuantidade(l.quantidade), p = lerPreco(l.preco)
+export function totalDaLinha(l: Pick<LinhaAvulsa, 'quantidade' | 'preco' | 'unidade'>): number | null {
+  const q = lerQuantidade(l.quantidade, l.unidade), p = lerPreco(l.preco)
   return q === null || p === null ? null : arredondar(q * p, 2)
 }
 
 /** O que falta na linha, em português ('' = a linha está completa). */
 export function faltaNaLinha(l: LinhaAvulsa): string {
   if (l.produtoId === null) return 'escolha o produto'
-  const q = lerQuantidade(l.quantidade)
+  const q = lerQuantidade(l.quantidade, l.unidade)
   if (q === null) return 'digite a quantidade'
   if (q > QUANTIDADE_MAXIMA) return 'quantidade grande demais: confira'
   const p = lerPreco(l.preco)
@@ -40,7 +40,7 @@ export function faltaNaLinha(l: LinhaAvulsa): string {
 
 /** O total da compra = soma de quantidade × preço das linhas completas (quantidade a 3 casas e preço a 4, como o servidor e o SisChef), arredondada ao centavo UMA vez. */
 export function totalGeral(linhas: LinhaAvulsa[]): number {
-  const soma = linhas.reduce((s, l) => (faltaNaLinha(l) === '' ? s + (lerQuantidade(l.quantidade) as number) * (lerPreco(l.preco) as number) : s), 0)
+  const soma = linhas.reduce((s, l) => (faltaNaLinha(l) === '' ? s + (lerQuantidade(l.quantidade, l.unidade) as number) * (lerPreco(l.preco) as number) : s), 0)
   return arredondar(soma, 2)
 }
 

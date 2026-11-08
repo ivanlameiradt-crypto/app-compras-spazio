@@ -51,3 +51,21 @@ describe('lerQuantidadeBrDigitando', () => {
     for (const ruim of ['abc', '2,,', ',', '.', '1,2,3', '-1', '20x']) expect(lerQuantidadeBrDigitando(ruim), JSON.stringify(ruim)).toBeNull()
   })
 })
+// Decisão do Ivan (revisão de 08/11/2026): em unidade contada ("un": copos, guardanapos) o ponto com 3 dígitos é milhar.
+describe('unidade contada ("un"): o ponto é milhar', () => {
+  it('"2.000" em un é 2000; "1.250.000" em UN é 1250000', () => {
+    expect(lerQuantidadeBr('2.000', 'un')).toBe(2000)
+    expect(lerQuantidadeBr('1.250.000', 'UN')).toBe(1250000)
+  })
+
+  it('a mesma digitação em kg continua 2 (balança: 2,000) e sem unidade continua 2', () => {
+    expect(lerQuantidadeBr('2.000', 'kg')).toBe(2)
+    expect(lerQuantidadeBr('2.000')).toBe(2)
+  })
+
+  it('em un, decimal continua valendo ("2,5" = 2,5); o digitando começa em 0 e acompanha o milhar', () => {
+    expect(lerQuantidadeBr('2,5', 'un')).toBe(2.5)
+    expect(lerQuantidadeBrDigitando('', 'un')).toBe(0)
+    expect(lerQuantidadeBrDigitando('2.000', 'un')).toBe(2000)
+  })
+})

@@ -1,3 +1,4 @@
+import { lerQuantidadeBr } from '../../lib/quantidade'
 // "Confirmar pedido" como mapa por item (spec 8.2, item 7; ajuste Foozi 1; contrato 8.3, D44 e D45): preço cotado ×
 // último preço, Δ% e a chave "No pedido / Comprar na loja" por item. O App sugere deixar para a loja o que subiu mais de
 // 10% (o Ivan aceita com um toque e pode voltar qualquer item), confere o pedido mínimo sobre a mercadoria (sem o frete,
@@ -109,7 +110,7 @@ export default function ConfirmarPedido({ c, v, onFechar }: { c: Cotacao; v: Ven
   /** A linha como vai ao banco, com a quantidade da tela, ou o motivo de não poder ir. */
   function linhaDaTela(n: number): ItemPedidoEntrada | string {
     const l = base.get(n) as ItemPedidoEntrada
-    const q = lerNumero(valorNaTela(n))
+    const q = lerQuantidadeBr(valorNaTela(n), itens.find((x) => x.numero === n)?.unidade)
     if (l.base === 'embalagem') {
       if (q === null || q < 1 || !Number.isInteger(q)) return `item ${n}: diga quantas embalagens (número inteiro)`
       // com fator (un ou kg por embalagem) a quantidade acompanha as embalagens; sem ele fica a do montarPedido (a

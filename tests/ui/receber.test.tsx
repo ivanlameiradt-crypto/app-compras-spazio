@@ -172,3 +172,41 @@ describe('Receber: itens que ninguém tocou e avaria digitada sozinha', () => {
     expect(campos[1].value).toBe('2,5')
   })
 })
+// Correção de 08/11/2026: três proteções da tela Receber (duas são guardas contra as falhas que a sabotagem mostrou; a de "un" é a decisão do Ivan).
+describe('Receber — tolerância, avaria ao reabrir e unidade contada', () => {
+  it('fardo digitado com 5 casas ("0,08338" = 1 un a mais que "0,0833") fica como foi digitado', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[0])
+    await userEvent.type(campos[0], '0,08338')
+    expect(campos[0].value).toBe('0,08338')
+  })
+
+  it('avaria digitada continua no campo quando se fecha e se abre "Mais"', async () => {
+    await abrirCartao()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Mais' })[1])
+    const avaria = screen.getAllByRole('textbox')[2] as HTMLInputElement
+    await userEvent.clear(avaria)
+    await userEvent.type(avaria, '0,5')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Mais' })[1])
+    await userEvent.click(screen.getAllByRole('button', { name: 'Mais' })[1])
+    expect((screen.getAllByRole('textbox')[2] as HTMLInputElement).value).toBe('0,5')
+  })
+
+  it('item em un (sem embalagem): "2.000" conta 2000 unidades no registro', async () => {
+    m.pedidosAReceber.mockResolvedValue([{ ...pedido(), itens: [
+      { numero: 4, nome: 'GUARDANAPO', unidade: 'un', qtd: 5000, embalagens: null, fator: null, embalagem: 'embalagem', marca: null, chegou: 0, avaria: 0, resto: null },
+    ] } as PedidoAReceber])
+    render(<Recebimento usuario={JOAO} />)
+    await userEvent.click(await screen.findByRole('button', { name: /MATEUS/ }))
+    await screen.findByRole('button', { name: 'Chegou tudo certo' })
+    const campo = screen.getAllByRole('textbox')[0] as HTMLInputElement
+    await userEvent.clear(campo)
+    await userEvent.type(campo, '2.000')
+    expect(campo.value).toBe('2.000')
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    await userEvent.click(within(document.querySelector('.resto-todos') as HTMLElement).getByRole('button', { name: 'Ainda vem' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    await waitFor(() => expect(m.registrarRecebimento).toHaveBeenCalled())
+    expect(m.registrarRecebimento.mock.calls[0][3]).toEqual([{ numero: 4, chegou: 2000 }])
+  })
+})
