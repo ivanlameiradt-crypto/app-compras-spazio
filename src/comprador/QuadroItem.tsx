@@ -1,3 +1,4 @@
+import { lerQuantidadeBr } from '../lib/quantidade'
 import { useState } from 'react'
 import type { ItemSemana, Resultado } from '../lib/tipos'
 import { formatarQtd, lerNumero } from '../lib/regras'
@@ -25,7 +26,7 @@ export default function QuadroItem({ item, marcacao, jaCompradoPorOutros, etique
 
   function confirmar(resultado: Resultado) {
     if (resultado === 'nao_achei') return onConfirmar(0, null, 'nao_achei')
-    const q = lerNumero(qtd)
+    const q = lerQuantidadeBr(qtd, item.unidade)
     if (q === null || q <= 0) return setErro('Informe a quantidade comprada.')
     const p = preco.trim() ? lerPrecoUnitario(preco) : null
     if (preco.trim() && p === null) return setErro(ehMilharAmbiguo(preco) ? 'Preço: use a vírgula nos centavos (ex.: 1,516).' : 'Preço inválido.')

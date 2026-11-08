@@ -1,3 +1,4 @@
+import { lerQuantidadeBr } from '../lib/quantidade'
 import { useEffect, useState } from 'react'
 import { ehMilharAmbiguo, lerPrecoUnitario } from '../lib/dinheiro'
 import * as api from '../lib/api'
@@ -60,8 +61,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const corrigir = (l: api.LinhaDetalhada) => acao(async () => {
     const textoQtd = window.prompt(`Quantidade de ${l.produto}`, String(l.qtd).replace('.', ','))
     if (textoQtd === null) return // cancelou: não mexe em nada
-    const q = lerNumero(textoQtd)
-    if (q === null) return
+    const q = lerQuantidadeBr(textoQtd, l.unidade)
+    if (q === null) throw new Error('Quantidade inválida. Nada foi alterado.')
     const textoPreco = window.prompt('Preço unitário', l.preco_unit == null ? '' : String(l.preco_unit).replace('.', ','))
     if (textoPreco === null) return // cancelou: não apaga o preço já lançado
     const p = textoPreco.trim() ? lerPrecoUnitario(textoPreco) : null

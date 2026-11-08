@@ -61,3 +61,14 @@ describe('compra avulsa — preço unitário e número que arredonda para zero (
     expect(faltaNaLinha(l(1, '0,0004', '2'))).toMatch(/quantidade/)
   })
 })
+
+describe('compra avulsa — quantidade pela unidade do produto (correção de 08/11/2026)', () => {
+  it('produto em un: "2.000" é 2000, e o total da linha usa 2000 (não 2)', () => {
+    expect(lerQuantidade('2.000', 'un')).toBe(2000)
+    expect(totalDaLinha({ quantidade: '2.000', preco: '0,10', unidade: 'un' })).toBe(200)
+  })
+
+  it('produto em kg: "2.000" continua 2 (balança)', () => {
+    expect(lerQuantidade('2.000', 'kg')).toBe(2)
+  })
+})

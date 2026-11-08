@@ -1,3 +1,4 @@
+import { lerQuantidadeBr } from '../lib/quantidade'
 import { useEffect, useMemo, useState } from 'react'
 import * as api from '../lib/api'
 import type { ItemSemana, PedidoRecente, Semana, Usuario, Vendedor } from '../lib/tipos'
@@ -274,7 +275,7 @@ function Cartao({ item, editavel, onAjustar, onTirarSempre, onIncluirSempre, ped
   const soLinhaAlta = aConferir && item.selos.length === 1 && item.selos[0].codigo === 'linha_alta'
   const qtdIncluir = qtdAoIncluir(item)
   const confirmarTexto = () => {
-    const v = lerNumero(texto)
+    const v = lerQuantidadeBr(texto, item.unidade)
     if (v === null) { setTexto(String(item.qtd_aprovada).replace('.', ',')); return }
     if (v !== item.qtd_aprovada) onAjustar(item, v, true)
   }

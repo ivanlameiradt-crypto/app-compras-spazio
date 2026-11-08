@@ -15,15 +15,15 @@ const formatar = (v: number): string => String(v).replace('.', ',')
 /** O valor de fora passa por conversão e arredondamento (fardos ↔ unidades, 3 e 4 casas): diferença menor que isto é só arredondamento, não mudança. */
 const TOLERANCIA = 0.0006
 
-export default function CampoNumero({ valor, onMudar, onInvalido }: {
-  valor: number; onMudar: (n: number) => void; onInvalido?: (invalido: boolean) => void
+export default function CampoNumero({ valor, onMudar, onInvalido, unidade }: {
+  valor: number; onMudar: (n: number) => void; onInvalido?: (invalido: boolean) => void; unidade?: string
 }) {
   const [texto, setTexto] = useState(() => formatar(valor))
-  const lido = lerQuantidadeBrDigitando(texto)
+  const lido = lerQuantidadeBrDigitando(texto, unidade)
   const idAviso = useId()
 
   useEffect(() => {
-    const atual = lerQuantidadeBrDigitando(texto)
+    const atual = lerQuantidadeBrDigitando(texto, unidade)
     if (atual == null || Math.abs(atual - valor) > TOLERANCIA) setTexto(formatar(valor))
     // só quando o valor de fora muda: o texto é lido na hora, sem entrar na lista (senão cada tecla refaria o texto)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -46,7 +46,7 @@ export default function CampoNumero({ valor, onMudar, onInvalido }: {
         onChange={(e) => {
           const t = e.target.value
           setTexto(t)
-          const n = lerQuantidadeBrDigitando(t)
+          const n = lerQuantidadeBrDigitando(t, unidade)
           if (n != null) onMudar(n)
         }}
         onBlur={aoSair} />
