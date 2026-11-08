@@ -6,11 +6,14 @@ import { erroDe, type Json } from './fixture-cotacao'
 const atual = bancoRecebimento(null)
 const banco = async (): Promise<PGlite> => atual()
 const CHAVE = '35261008637193000106550010001207101371230333'
+// As datas são de hoje: com data fixa, a nota passa de 30 dias e sai da fila (o teste quebrou no CI em 08/11/2026).
+const ONTEM = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+const AGORA = new Date().toISOString()
 
-const nota = (): Json => ({ chave: CHAVE, emitente: 'TAMAROZZI COMERCIO DE EMBALAGENS LTDA', numero: '000120710', emissao: '2026-10-08', valor_nf: 1516,
+const nota = (): Json => ({ chave: CHAVE, emitente: 'TAMAROZZI COMERCIO DE EMBALAGENS LTDA', numero: '000120710', emissao: ONTEM, valor_nf: 1516,
   totais: { v_prod: 1516, v_desc: 0, v_ipi: 0, v_st: 0, v_frete: 0, v_outro: 0 },
   itens: [{ n: 1, cod_forn: '2350LG', descricao: 'EMBALAGEM P/ PIZZA N. 35', qtd_nf: 40, unidade_nf: 'PCT', produto_id: null, associacao: null, qtd: null, unidade_sischef: 'PCT', v_prod: 1516, v_desc: 0, v_ipi: 0, v_st: 0, v_outro: 0 }] })
-const sincronizar = (db: PGlite) => chamar(db, 'anon', 'cot_nfe_sincronizar($1, $2::jsonb)', [SEGREDO, JSON.stringify({ lida_em: '2026-10-09T15:00:00Z', completa: true, origem: 'agendada', notas: [nota()] })])
+const sincronizar = (db: PGlite) => chamar(db, 'anon', 'cot_nfe_sincronizar($1, $2::jsonb)', [SEGREDO, JSON.stringify({ lida_em: AGORA, completa: true, origem: 'agendada', notas: [nota()] })])
 
 describe('cot_nfe — frete', () => {
   it('sem frete por padrão (os dois nulos); com frete, valor e tipo juntos', async () => {
