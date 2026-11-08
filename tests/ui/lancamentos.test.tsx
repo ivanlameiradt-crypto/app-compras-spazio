@@ -424,4 +424,32 @@ describe('Lançamentos — compra aberta de outra pessoa (Fase 1A)', () => {
     await cartao('ATACADÃO')
     expect(screen.queryByText('Compras abertas')).not.toBeInTheDocument()
   })
+
+  it('item 1 (07/11/2026): se a releitura da fila falhar depois de Fechar pelo comprador, a tela avisa e "Tentar de novo" recarrega', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('sem').mockReturnValueOnce('130,50')
+    const fechada: api.CompraNaFila = {
+      ...fila[0], id: 'a1', loja: 'FEIRA', comprador_nome: 'João', status: 'fechada', itens: 2, com_nota: false, total_pago: 130.5, foto_cupom: null,
+    }
+    m.filaLancamentos.mockResolvedValueOnce(fila).mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce([...fila, fechada])
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await aberta('FEIRA')).getByRole('button', { name: 'Fechar pelo comprador' }))
+    expect(m.adminFecharCompra).toHaveBeenCalledWith('a1', false, 130.5)
+    // antes: `.catch(() => undefined)`: a fila ficava velha (sem a FEIRA) e ninguém sabia
+    const aviso = await screen.findByTestId('erro-fila')
+    expect(aviso).toHaveTextContent(/Não consegui atualizar a lista de compras/)
+    expect(screen.queryByText(/R\$ 130,50/)).not.toBeInTheDocument()
+    await userEvent.click(within(aviso).getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText(/R\$ 130,50/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('erro-fila')).not.toBeInTheDocument())
+  })
+
+  it('item 1 (07/11/2026): o banco recusa o Fechar E a releitura da fila falha: o aviso da fila aparece junto com o erro', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('sem').mockReturnValueOnce('10')
+    m.adminFecharCompra.mockRejectedValue(new Error('compra sem itens: use Cancelar'))
+    m.filaLancamentos.mockResolvedValueOnce(fila).mockRejectedValueOnce(new Error('Failed to fetch'))
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await aberta('FEIRA')).getByRole('button', { name: 'Fechar pelo comprador' }))
+    expect(await screen.findByTestId('erro-fila')).toHaveTextContent(/Não consegui atualizar a lista de compras \(Failed to fetch\)/)
+    expect(await screen.findByText(/compra sem itens/)).toBeInTheDocument()
+  })
 })

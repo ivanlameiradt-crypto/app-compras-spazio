@@ -15,6 +15,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const [aviso, setAviso] = useState('')
   // falha ao ler o bloco de compras abertas: estado próprio, mostrado no lugar do bloco (acao não apaga)
   const [erroAbertas, setErroAbertas] = useState('')
+  // item 1 da análise de 07/11/2026: a releitura da fila depois de uma ação falhou (a lista pode estar velha); antes ficava calado
+  const [erroFila, setErroFila] = useState('')
   const [cupomEmbutido, setCupomEmbutido] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -39,6 +41,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   async function acao(f: () => Promise<void>) {
     try { await f(); setErro('') } catch (e) { setErro(mensagemDeErro(e)) }
   }
+  // relê a fila depois de uma ação (a compra fechada entra nela); se falhar, avisa em vez de deixar a lista velha em silêncio (item 1, 07/11/2026)
+  const relerFila = () => api.filaLancamentos().then((f) => { setFila(f); setErroFila('') }).catch((e) => setErroFila(mensagemDeErro(e)))
   const aprovar = (id: string) => acao(async () => {
     await api.aprovarCompra(id)
     setFila((l) => l?.map((c) => (c.id === id ? { ...c, status: 'aprovada' } : c)))
@@ -103,7 +107,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
       }
     }
     // se o comprador já fechou, a compra sai das abertas e entra na fila: relê a fila também
-    api.filaLancamentos().then(setFila).catch(() => undefined)
+    void relerFila()
     throw e
   }
   const fecharPeloComprador = (a: api.CompraAbertaParaFechar) => acao(async () => {
@@ -131,7 +135,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
       setAviso(`O comprador já tinha fechado esta compra; valores dele mantidos — confira em ${a.loja} · ${a.comprador_nome}, na fila abaixo.`)
     }
     // fechada, ela entra na fila de lançamento como qualquer compra fechada
-    api.filaLancamentos().then(setFila).catch(() => undefined)
+    void relerFila()
   })
   const cancelarAberta = (a: api.CompraAbertaParaFechar) => acao(async () => {
     setAviso('')
@@ -146,6 +150,12 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
     <section>
       <div className="cabecalho"><h2>Lançamentos</h2><span className="sub">{fila.length} compras</span></div>
       {erro && <p className="erro">{erro}</p>}
+      {erroFila && (
+        <p className="erro" data-testid="erro-fila">
+          Não consegui atualizar a lista de compras ({erroFila}): ela pode estar desatualizada.{' '}
+          <button className="link" onClick={() => { void relerFila() }}>Tentar de novo</button>
+        </p>
+      )}
       {aviso && (
         <p className="aviso" data-testid="aviso">
           {aviso}{' '}
