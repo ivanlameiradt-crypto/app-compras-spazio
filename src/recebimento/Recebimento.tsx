@@ -57,6 +57,10 @@ export default function Receber({ usuario }: { usuario: Usuario }) {
 function Cartao({ pedido, admin, onVoltar }: { pedido: PedidoAReceber; admin: boolean; onVoltar: () => void }) {
   const [entradas, setEntradas] = useState<Record<number, EntradaItem>>({})
   const [mexeu, setMexeu] = useState(false)
+  // campos com texto que não é número (chave = item:campo): enquanto houver algum, a tela não deixa registrar
+  const [invalidos, setInvalidos] = useState<Record<string, boolean>>({})
+  const temInvalido = Object.values(invalidos).some(Boolean)
+  const marcarInvalido = (chave: string, inv: boolean) => setInvalidos((s) => (s[chave] === inv ? s : { ...s, [chave]: inv }))
   const [restoTodos, setRestoTodos] = useState<Resto | null>(null)
   const [perguntar, setPerguntar] = useState(false)
   const [antes, setAntes] = useState(false)          // "Chegou antes?" abre data e hora
@@ -70,17 +74,22 @@ function Cartao({ pedido, admin, onVoltar }: { pedido: PedidoAReceber; admin: bo
     setMexeu(true)
     setEntradas((e) => ({ ...e, [it.numero]: { ...e[it.numero], numero: it.numero, chegou_un: un } }))
   }
-  const setAvaria = (it: ItemAReceber, un: number) =>
+  const setAvaria = (it: ItemAReceber, un: number) => {
+    setMexeu(true)                                // digitar só a avaria também conta como mexer (antes era descartada em silêncio)
     setEntradas((e) => ({ ...e, [it.numero]: { ...e[it.numero], numero: it.numero, chegou_un: e[it.numero]?.chegou_un ?? faltaChegar(it), avaria_un: un } }))
+  }
   const setResto = (numero: number, r: Resto) => setEntradas((e) => ({ ...e, [numero]: { ...e[numero], numero, chegou_un: e[numero]?.chegou_un ?? 0, resto: r } }))
 
   const efetivas = (): Record<number, EntradaItem> => {
-    if (!mexeu) return Object.fromEntries(tudoQueFalta(pedido).map((i) => [i.numero, { numero: i.numero, chegou_un: i.chegou }]))
-    return entradas
+    // quem não foi tocado conta com o que o campo mostra (tudo o que falta); só o que foi digitado muda isso
+    // (defeito de 07/11: sem isto, mexer em UM item fazia os outros irem como "chegou 0")
+    const padrao = Object.fromEntries(tudoQueFalta(pedido).map((i) => [i.numero, { numero: i.numero, chegou_un: i.chegou }]))
+    return mexeu ? { ...padrao, ...entradas } : padrao
   }
   const faltando = itensComFalta(pedido, efetivas())
 
   const gravar = async () => {
+    if (temInvalido) return
     setErro('')
     const usar = efetivas()
     if (faltando.length > 0 && !perguntar) { setPerguntar(true); return }
@@ -126,7 +135,7 @@ function Cartao({ pedido, admin, onVoltar }: { pedido: PedidoAReceber; admin: bo
       <h2>{pedido.vendedor}</h2>
       {pedido.itens.map((it) => (
         <ItemLinha key={it.numero} item={it} entrada={entradas[it.numero]}
-          onChegouUn={(un) => setChegouUn(it, un)} onAvaria={(un) => setAvaria(it, un)} onNaoVeio={() => setChegouUn(it, 0)} />
+          onChegouUn={(un) => setChegouUn(it, un)} onAvaria={(un) => setAvaria(it, un)} onNaoVeio={() => setChegouUn(it, 0)} onInvalido={marcarInvalido} />
       ))}
       <div className="acoes">
         <label className="chegou-antes">
@@ -157,16 +166,17 @@ function Cartao({ pedido, admin, onVoltar }: { pedido: PedidoAReceber; admin: bo
       )}
       {erro && <p className="erro">{erro}</p>}
       {!online && <p className="faixa">Sem internet: registre quando a internet voltar.</p>}
-      <button className="botao verde" disabled={!online || enviando} onClick={gravar}>
+      <button className="botao verde" disabled={!online || enviando || temInvalido} onClick={gravar}>
         {mexeu ? 'Registrar com as diferenças' : 'Chegou tudo certo'}
       </button>
     </div>
   )
 }
 
-function ItemLinha({ item, entrada, onChegouUn, onAvaria, onNaoVeio }: {
+function ItemLinha({ item, entrada, onChegouUn, onAvaria, onNaoVeio, onInvalido }: {
   item: ItemAReceber; entrada?: EntradaItem
   onChegouUn: (un: number) => void; onAvaria: (un: number) => void; onNaoVeio: () => void
+  onInvalido: (chave: string, inv: boolean) => void
 }) {
   const [mais, setMais] = useState(false)
   const emb = porEmbalagem(item)
@@ -179,14 +189,14 @@ function ItemLinha({ item, entrada, onChegouUn, onAvaria, onNaoVeio }: {
       <div className="pedido-linha">Pedido: {descricaoPedido(item)}</div>
       <label>
         Chegaram{' '}
-        <CampoNumero valor={valorCampo} onMudar={(v) => onChegouUn(emb ? embParaUn(v, fator) : v)} />
+        <CampoNumero valor={valorCampo} onMudar={(v) => onChegouUn(emb ? embParaUn(v, fator) : v)} onInvalido={(inv) => onInvalido(`${item.numero}:chegou`, inv)} />
         {emb ? ` ${item.embalagem}s c/${numeroBr(fator)} = ${numeroBr(chegouUn)} ${item.unidade}` : ` ${item.unidade}`}
       </label>
       <button className="link" onClick={onNaoVeio}>Não veio</button>
       <button className="link" onClick={() => setMais((m) => !m)}>Mais</button>
       {mais && (
         <label className="avaria">Avaria ({item.unidade}):{' '}
-          <CampoNumero valor={entrada?.avaria_un ?? 0} onMudar={onAvaria} />
+          <CampoNumero valor={entrada?.avaria_un ?? 0} onMudar={onAvaria} onInvalido={(inv) => onInvalido(`${item.numero}:avaria`, inv)} />
         </label>
       )}
     </div>

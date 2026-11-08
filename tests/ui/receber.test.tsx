@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import Recebimento from '../../src/recebimento/Recebimento'
@@ -116,17 +116,6 @@ describe('campo Chegaram: o que a pessoa digita fica na tela', () => {
     expect(campos[1].value).toBe('0')
   })
 
-  it('texto que não é número é marcado como inválido, não vira 0 em silêncio, e ao sair volta ao último valor bom', async () => {
-    const campos = await abrirCartao()
-    expect(campos[1].value).toBe('20')
-    await userEvent.type(campos[1], 'x')                       // "20x"
-    expect(campos[1].value).toBe('20x')
-    expect(campos[1].getAttribute('aria-invalid')).toBe('true')
-    await userEvent.tab()
-    expect(campos[1].value).toBe('20')
-    expect(campos[1].getAttribute('aria-invalid')).not.toBe('true')
-  })
-
   it('avaria também aceita decimal tecla por tecla: 0,5 fica "0,5"', async () => {
     const campos = await abrirCartao()
     await userEvent.click(screen.getAllByRole('button', { name: 'Mais' })[1])
@@ -135,5 +124,51 @@ describe('campo Chegaram: o que a pessoa digita fica na tela', () => {
     await userEvent.type(avaria, '0,5')
     expect(avaria.value).toBe('0,5')
     expect(campos[1].value).toBe('20')                          // o Chegaram não mexeu
+  })
+})
+// ---- correção de 08/11/2026 (revisão independente dos itens 3 e 4): o defeito de 07/11 (mexer em UM item zerava os outros) e a avaria sozinha
+describe('Receber: itens que ninguém tocou e avaria digitada sozinha', () => {
+  it('mexer em UM item não zera os outros: a COCA, que ninguém tocou, vai com 108 un (o que o campo mostra)', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    await userEvent.click(within(document.querySelector('.resto-todos') as HTMLElement).getByRole('button', { name: 'Ainda vem' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar com as diferenças' }))
+    await waitFor(() => expect(m.registrarRecebimento).toHaveBeenCalled())
+    expect(m.registrarRecebimento.mock.calls[0][3]).toEqual([{ numero: 2, chegou: 108 }, { numero: 3, chegou: 2.5 }])
+  })
+
+  it('digitar só a avaria (sem mexer no Chegaram) não some: vai no registro e o botão vira "Registrar com as diferenças"', async () => {
+    await abrirCartao()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Mais' })[1])
+    const avaria = screen.getAllByRole('textbox')[2] as HTMLInputElement
+    await userEvent.clear(avaria)
+    await userEvent.type(avaria, '0,5')
+    await userEvent.click(await screen.findByRole('button', { name: 'Registrar com as diferenças' }))
+    await waitFor(() => expect(m.registrarRecebimento).toHaveBeenCalled())
+    expect(m.registrarRecebimento.mock.calls[0][3]).toEqual([{ numero: 2, chegou: 108 }, { numero: 3, chegou: 20, avaria: 0.5 }])
+  })
+
+  it('texto que não é número: aparece o aviso e o Registrar fica bloqueado; sair do campo não aceita o texto em silêncio', async () => {
+    const campos = await abrirCartao()
+    await userEvent.type(campos[1], 'x')                       // "20x"
+    expect(screen.getByText(/Não entendi este número/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chegou tudo certo' })).toBeDisabled()
+    await userEvent.tab()
+    expect(campos[1].value).toBe('20x')
+    expect(screen.getByText(/Não entendi este número/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chegou tudo certo' })).toBeDisabled()
+    expect(m.registrarRecebimento).not.toHaveBeenCalled()
+  })
+
+  it('"2," ao sair do campo continua "2,"; quem volta para digitar o resto (5) tem 2,5 e nada se perde', async () => {
+    const campos = await abrirCartao()
+    await userEvent.clear(campos[1])
+    await userEvent.type(campos[1], '2,')
+    await userEvent.tab()
+    expect(campos[1].value).toBe('2,')
+    await userEvent.type(campos[1], '5')
+    expect(campos[1].value).toBe('2,5')
   })
 })
