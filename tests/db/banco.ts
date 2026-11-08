@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, beforeEach } from 'vitest'
-import { fixarRelogio } from './relogio'
+import { fixarRelogio, RELOGIO_DOS_TESTES } from './relogio'
 
 const AQUI = dirname(fileURLToPath(import.meta.url))
 const MIGRATIONS = join(AQUI, '../../supabase/migrations')
@@ -26,7 +26,7 @@ export async function novoBanco(antesDe?: string): Promise<PGlite> {
   return db
 }
 
-/** Apaga todos os dados e reinicia os ids: o banco volta ao estado de recém-criado (relógio real inclusive). */
+/** Apaga todos os dados e reinicia os ids: o banco volta ao estado de recém-criado, com o relógio fixo em RELOGIO_DOS_TESTES (nunca o relógio real). */
 export async function limpar(db: PGlite): Promise<void> {
   await db.exec(
     'truncate usuarios, semanas, itens_semana, compras, compras_itens, historico_alteracoes, ' +
@@ -54,7 +54,7 @@ export async function limpar(db: PGlite): Promise<void> {
       "set ligada = false, liberada_em = null, modelo = 'claude-opus-5', esforco = 'low', " +
       'limite_dia = 30, limite_mes = 150, mudado_por = null, atualizado_em = null; end if; end $$',
   )
-  await fixarRelogio(db, null)
+  await fixarRelogio(db, RELOGIO_DOS_TESTES)
 }
 
 /**
