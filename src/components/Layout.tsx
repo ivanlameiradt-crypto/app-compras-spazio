@@ -5,15 +5,23 @@ import type { Usuario } from '../lib/tipos'
 import AvisoFila from './AvisoFila'
 import AvisoNovaVersao from './AvisoNovaVersao'
 import { conferirVersao, recarregarPagina } from '../lib/atualizacao'
+import { LogoComprar } from './marca/Comprar'
+import { Icone, type NomeIcone } from './Icones'
 
 // As 4 abas do topo (admin; "Compras avulsas" desde 10/10/2026). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
 // Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Fiscal (a nota da SEFAZ) são cada um sua tela.
-const ABAS = [
-  { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: '🛒' },
-  { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: '🧾' },
-  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', ic: '📄' },
-  { chave: 'avulsa', to: '/compra-avulsa', rotulo: 'Compras avulsas', ic: '🛍️' },
-] as const
+const ABAS: readonly { chave: 'compra' | 'cupom' | 'sefaz' | 'avulsa'; to: string; rotulo: string; ic: NomeIcone }[] = [
+  { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: 'carrinho' },
+  { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: 'cupom' },
+  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', ic: 'fiscal' },
+  { chave: 'avulsa', to: '/compra-avulsa', rotulo: 'Compras avulsas', ic: 'sacola' },
+]
+
+/** Quem só compra e recebe (perfil comprador) vê duas telas na barra. A tela "Comprar" passou a se chamar "Fazer compra" (o app inteiro é o "Comprar"). */
+const ABAS_COMPRADOR: readonly { to: string; rotulo: string; ic: NomeIcone }[] = [
+  { to: '/comprar', rotulo: 'Fazer compra', ic: 'carrinho' },
+  { to: '/receber', rotulo: 'Receber', ic: 'receber' },
+]
 
 /** Qual aba fica acesa para a rota atual: Cupom e Nota SEFAZ só nas suas; todo o resto é Compra. */
 function abaAtual(pathname: string): 'compra' | 'cupom' | 'sefaz' | 'avulsa' {
@@ -49,28 +57,42 @@ export default function Layout({ usuario, offline = false, children }: { usuario
   }, [admin])
   return (
     <div className="app">
-      <header className="topo">
-        <strong>Compras Spazio</strong>
-        <button type="button" className="link" disabled={atualizando} onClick={() => void atualizar()}>{atualizando ? 'Atualizando…' : 'Atualizar'}</button>
-        <NavLink to="/senha" className="link">Trocar minha senha</NavLink>
-        <button className="link" onClick={() => api.sair()}>Sair</button>
+      <header className="barra-topo">
+        <div className="barra-linha">
+          <LogoComprar altura={30} cor="#FFFFFF" />
+          <button type="button" className="fantasma" disabled={atualizando} onClick={() => void atualizar()}>
+            <Icone nome="atualizar" tamanho={18} />
+            {atualizando ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        </div>
+        <div className="barra-links">
+          <NavLink to="/senha" className="link-claro">Trocar minha senha</NavLink>
+          <button type="button" className="link-claro" onClick={() => api.sair()}>Sair</button>
+        </div>
+        {admin ? (
+          <nav className="barra-abas" aria-label="Seções">
+            {ABAS.map((a) => (
+              <Link key={a.chave} to={a.to} className={aba === a.chave ? 'ativo' : undefined} aria-current={aba === a.chave ? 'page' : undefined}>
+                <span className="aba-icone">
+                  <Icone nome={a.ic} tamanho={26} />
+                  {a.chave === 'compra' && aguardando > 0 && <span className="contador">{aguardando}</span>}
+                </span>
+                <span>{a.rotulo}</span>
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <nav className="barra-abas duas" aria-label="Seções">
+            {ABAS_COMPRADOR.map((a) => (
+              <NavLink key={a.to} to={a.to} className={({ isActive }) => (isActive ? 'ativo' : undefined)}>
+                <span className="aba-icone"><Icone nome={a.ic} tamanho={26} /></span>
+                <span>{a.rotulo}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
       </header>
-      {admin ? (
-        <nav className="abas-topo" aria-label="Seções">
-          {ABAS.map((a) => (
-            <Link key={a.chave} to={a.to} className={aba === a.chave ? 'ativo' : undefined} aria-current={aba === a.chave ? 'page' : undefined}>
-              <span className="ic" aria-hidden="true">{a.ic}</span>
-              <span>{a.rotulo}{a.chave === 'compra' && aguardando > 0 && <span className="contador">{aguardando}</span>}</span>
-            </Link>
-          ))}
-        </nav>
-      ) : (
-        <nav className="menu">
-          <NavLink to="/comprar">Comprar</NavLink>
-          <NavLink to="/receber">Receber</NavLink>
-        </nav>
-      )}
-      {emSubtelaCompra && <Link to="/compra" className="voltar-menu">← Menu Compra</Link>}
+      {emSubtelaCompra && <Link to="/compra" className="voltar-menu"><Icone nome="esq" tamanho={20} />Menu Compra</Link>}
       {offline && <p className="faixa">Sem internet — seus itens serão enviados quando voltar.</p>}
       <AvisoNovaVersao />
       <AvisoFila />

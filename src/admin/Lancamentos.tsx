@@ -2,6 +2,7 @@ import { lerQuantidadeBr } from '../lib/quantidade'
 import { useEffect, useState } from 'react'
 import { ehMilharAmbiguo, lerPrecoUnitario } from '../lib/dinheiro'
 import * as api from '../lib/api'
+import { Icone } from '../components/Icones'
 import type { Semana, Usuario } from '../lib/tipos'
 import {
   ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, lerNumero, mensagemDeErro,
@@ -203,7 +204,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             <span className="pill">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>{' '}
             <span className={c.status === 'aprovada' ? 'pill ok' : 'pill'}>{ROTULO_STATUS[c.status]}</span>
           </div>
-          {c.foto_cupom && <button className="link" onClick={() => cupom(c)}>📷 Ver cupom</button>}
+          {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
           {cupomEmbutido[c.id] && <img src={cupomEmbutido[c.id]} alt="Foto do cupom fiscal" style={{ maxWidth: '100%', marginTop: 8 }} />}
           {aberta === c.id && (
             <table>

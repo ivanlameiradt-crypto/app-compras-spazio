@@ -52,20 +52,30 @@ export default defineConfig(({ command, mode }) => {
         // Registro do service worker é feito à mão em src/main.tsx (com checagem de versão pela rede);
         // por isso desligamos a injeção automática, para não registrar duas vezes.
         injectRegister: false,
+        includeAssets: ['icone.svg', 'icons/*.png'],
         manifest: {
-          name: 'Compras Spazio',
-          short_name: 'Compras',
+          // Nome e cores do Comprar (manual da Spazio; nome e design aprovados pelo Ivan em 10/11/2026). O endereço NÃO muda (start_url e scope),
+          // senão os apps já instalados parariam de abrir. Sem "orientation": o app instalado gira com o aparelho (celular, tablet, notebook).
+          name: 'Comprar',
+          short_name: 'Comprar',
+          description: 'Lançamento de compra e estoque da Spazio Gourmet e da Kūkan Sushi.',
           lang: 'pt-BR',
           start_url: '/app-compras-spazio/',
           scope: '/app-compras-spazio/',
           display: 'standalone',
-          background_color: '#f6f7f5',
-          theme_color: '#1f6f4a',
-          icons: [{ src: 'icone.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+          background_color: '#FFD201',
+          theme_color: '#231F20',
+          icons: [
+            { src: 'icons/icone-192.png', sizes: '192x192', type: 'image/png' },
+            { src: 'icons/icone-512.png', sizes: '512x512', type: 'image/png' },
+            { src: 'icons/icone-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            { src: 'icone.svg', sizes: 'any', type: 'image/svg+xml' },
+          ],
         },
         // clientsClaim: o service worker novo assume as telas JÁ abertas (sem isto, "sair e entrar" num app instalado
         // continuava no velho, porque o novo só assumiria ao fechar tudo). Com skipWaiting, ele troca na hora.
-        workbox: { navigateFallback: '/app-compras-spazio/index.html', clientsClaim: true, skipWaiting: true },
+        // woff2 = a letra Archivo e png/svg = os ícones: ficam guardados no aparelho (o app funciona sem internet).
+        workbox: { navigateFallback: '/app-compras-spazio/index.html', clientsClaim: true, skipWaiting: true, globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
       }),
       emitirVersao(BUILD_ID), // por último: grava version.json fora do precache
     ],

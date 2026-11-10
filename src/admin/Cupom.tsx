@@ -2,6 +2,7 @@
 // A guarda por papel (só admin, em App.tsx) é só de UX: a segurança real é a RLS + a checagem de admin da Edge Function enviar-cupom.
 import { useEffect, useState, type ChangeEvent } from 'react'
 import * as api from '../lib/api'
+import { Icone } from '../components/Icones'
 import { reduzirFoto } from '../lib/foto'
 import { formatarDataHora, formatarReais } from '../lib/regras'
 import { CONTAS_PIX, CONTA_DINHEIRO, CONTA_TESOURARIA, FORMAS } from '../cupom/formasPagamento'
@@ -182,7 +183,7 @@ function FotoDoCupom({ c }: { c: CupomRecente }) {
   return (
     <div className="foto-cupom" data-testid="foto-cupom">
       <button type="button" className="link" disabled={abrindo} onClick={() => void abrir()}>
-        {abrindo ? 'Abrindo a foto…' : aberta ? 'Fechar a foto' : '📷 Ver a foto do cupom'}
+        {abrindo ? 'Abrindo a foto…' : aberta ? 'Fechar a foto' : <><Icone nome="foto" tamanho={22} /> Ver a foto do cupom</>}
       </button>
       {erro && <p className="erro" role="alert">Não consegui abrir a foto: {erro}</p>}
       {aberta && url && (
@@ -357,10 +358,10 @@ export default function Cupom() {
         )}
 
         <div className="grupo">2. Inserir o cupom</div>
-        <label>📷 Bater foto
+        <label className="botao-arquivo"><Icone nome="foto" tamanho={22} /> Bater foto
           <input type="file" accept="image/*" capture="environment" aria-label="Bater foto do cupom" onChange={aoEscolherArquivo} />
         </label>
-        <label>📎 Anexar
+        <label className="botao-arquivo"><Icone nome="clip" tamanho={22} /> Anexar
           <input type="file" accept="image/*" aria-label="Anexar arquivo do cupom" onChange={aoEscolherArquivo} />
         </label>
         {preparando && <p className="sub">Preparando a foto…</p>}
