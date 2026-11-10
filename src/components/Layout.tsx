@@ -69,29 +69,29 @@ export default function Layout({ usuario, offline = false, children }: { usuario
           <NavLink to="/senha" className="link-claro">Trocar minha senha</NavLink>
           <button type="button" className="link-claro" onClick={() => api.sair()}>Sair</button>
         </div>
+        {admin ? (
+          <nav className="barra-abas" aria-label="Seções">
+            {ABAS.map((a) => (
+              <Link key={a.chave} to={a.to} className={aba === a.chave ? 'ativo' : undefined} aria-current={aba === a.chave ? 'page' : undefined}>
+                <span className="aba-icone">
+                  <Icone nome={a.ic} tamanho={26} />
+                  {a.chave === 'compra' && aguardando > 0 && <span className="contador">{aguardando}</span>}
+                </span>
+                <span>{a.rotulo}</span>
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <nav className="barra-abas duas" aria-label="Seções">
+            {ABAS_COMPRADOR.map((a) => (
+              <NavLink key={a.to} to={a.to} className={({ isActive }) => (isActive ? 'ativo' : undefined)}>
+                <span className="aba-icone"><Icone nome={a.ic} tamanho={26} /></span>
+                <span>{a.rotulo}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
       </header>
-      {admin ? (
-        <nav className="barra-abas" aria-label="Seções">
-          {ABAS.map((a) => (
-            <Link key={a.chave} to={a.to} className={aba === a.chave ? 'ativo' : undefined} aria-current={aba === a.chave ? 'page' : undefined}>
-              <span className="aba-icone">
-                <Icone nome={a.ic} tamanho={26} />
-                {a.chave === 'compra' && aguardando > 0 && <span className="contador">{aguardando}</span>}
-              </span>
-              <span>{a.rotulo}</span>
-            </Link>
-          ))}
-        </nav>
-      ) : (
-        <nav className="barra-abas duas" aria-label="Seções">
-          {ABAS_COMPRADOR.map((a) => (
-            <NavLink key={a.to} to={a.to} className={({ isActive }) => (isActive ? 'ativo' : undefined)}>
-              <span className="aba-icone"><Icone nome={a.ic} tamanho={26} /></span>
-              <span>{a.rotulo}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
       {emSubtelaCompra && <Link to="/compra" className="voltar-menu"><Icone nome="esq" tamanho={20} />Menu Compra</Link>}
       {offline && <p className="faixa">Sem internet — seus itens serão enviados quando voltar.</p>}
       <AvisoNovaVersao />

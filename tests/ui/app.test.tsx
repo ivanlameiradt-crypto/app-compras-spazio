@@ -1,4 +1,5 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { EstadoSessao } from '../../src/auth/useSessao'
 
 let estado: EstadoSessao = { carregando: true }
@@ -67,13 +68,52 @@ describe('App', () => {
     // a aba Compra (rota padrão do admin) abre o menu em grade com as telas de compra (findBy: espera o redirect p/ /compra)
     expect(await screen.findByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
     expect(screen.getByRole('link', { name: 'Lançamentos' })).toHaveAttribute('href', '#/lancamentos')
-    expect(screen.getByRole('link', { name: 'Comprar' })).toHaveAttribute('href', '#/comprar')
+    // a tela que se chamava "Comprar" passou a "Fazer compra" (o app inteiro é o Comprar; nome do Ivan, 10/11/2026)
+    expect(screen.getByRole('link', { name: 'Fazer compra' })).toHaveAttribute('href', '#/comprar')
+    expect(screen.queryByRole('link', { name: 'Comprar' })).not.toBeInTheDocument()
   })
 
   it('comprador não vê a aba Cotações', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'joao@spazio.com', nome: 'João', papel: 'comprador', ativo: true } }
     render(<App />)
     expect(screen.queryByRole('link', { name: /cotações/i })).not.toBeInTheDocument()
+  })
+
+  it('enquanto confere o acesso mostra a tela de abertura do Comprar', () => {
+    estado = { carregando: true }
+    render(<App />)
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando…')
+    expect(screen.getByRole('img', { name: 'Comprar' })).toBeInTheDocument()
+  })
+
+  it('sem sessão, "Instalar o app neste aparelho" abre a tela de instalar e o Voltar traz de volta o login', async () => {
+    estado = { carregando: false, sessao: null }
+    render(<App />)
+    const link = screen.getByRole('link', { name: 'Instalar o app neste aparelho' })
+    expect(link).toHaveAttribute('href', '#/instalar')
+    await userEvent.click(link)
+    expect(await screen.findByRole('heading', { name: 'Instalar o app' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('link', { name: 'Voltar' }))
+    expect(await screen.findByRole('button', { name: 'Entrar' })).toBeInTheDocument()
+  })
+
+  it('a barra de cima tem o logo e as ações Atualizar, Trocar minha senha e Sair', async () => {
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    render(<App />)
+    const barra = (await screen.findByRole('banner')) as HTMLElement
+    expect(within(barra).getByRole('img', { name: 'Comprar' })).toBeInTheDocument()
+    expect(within(barra).getByRole('button', { name: 'Atualizar' })).toBeInTheDocument()
+    expect(within(barra).getByRole('link', { name: 'Trocar minha senha' })).toHaveAttribute('href', '#/senha')
+    expect(within(barra).getByRole('button', { name: 'Sair' })).toBeInTheDocument()
+  })
+
+  it('comprador vê a barra de baixo só com Fazer compra e Receber', async () => {
+    estado = { carregando: false, sessao, usuario: { email: 'joao@spazio.com', nome: 'João', papel: 'comprador', ativo: true } }
+    render(<App />)
+    const barra = (await screen.findByRole('navigation', { name: 'Seções' })) as HTMLElement
+    expect([...barra.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/comprar', '#/receber'])
+    expect(within(barra).getByRole('link', { name: 'Fazer compra' })).toBeInTheDocument()
+    expect(within(barra).getByRole('link', { name: 'Receber' })).toBeInTheDocument()
   })
 
   it('P3: senha padrão ainda não trocada mostra só "Escolha sua senha", sem menu', async () => {
