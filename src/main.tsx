@@ -1,8 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
+import '@fontsource-variable/archivo/wdth.css' // letra Archivo embutida no app (peso e largura variáveis): funciona sem internet
 import App from './App'
 import { iniciarAtualizacao } from './lib/atualizacao'
+import './lib/instalar' // guarda o convite de instalação do navegador assim que ele chega
 import './styles.css'
 
 // --- PWA: o app se mantém na versão publicada (src/lib/atualizacao.ts): troca sozinho na abertura e ao voltar do fundo, avisa com uma faixa quando está em uso e tem o

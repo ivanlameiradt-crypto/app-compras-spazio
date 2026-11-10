@@ -1,3 +1,4 @@
+import { LogoComprar } from '../components/marca/Comprar'
 import { useState } from 'react'
 import { entrarComSenha } from '../lib/api'
 
@@ -29,7 +30,7 @@ export default function Login() {
 
   return (
     <main className="login">
-      <h1>Compras Spazio</h1>
+      <h1 className="logo-titulo"><LogoComprar altura={40} /></h1>
       <form onSubmit={entrar} className="coluna">
         <label>
           Usuário ou e-mail
@@ -39,9 +40,10 @@ export default function Login() {
           Senha
           <input type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="current-password" />
         </label>
-        <button className="botao" type="submit" disabled={enviando}>Entrar</button>
+        <button className="botao grande" type="submit" disabled={enviando}>Entrar</button>
       </form>
-      {erro && <p className="erro">{erro}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      <p className="login-links"><a className="link sublinhado" href="#/instalar">Instalar o app neste aparelho</a></p>
     </main>
   )
 }
