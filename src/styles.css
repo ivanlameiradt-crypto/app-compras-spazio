@@ -15,10 +15,10 @@
   --alerta: #a3261b; --alerta-fundo: #fdecea;
   --aviso-fundo: #fff1c2; --aviso-texto: #5b300e; --ok-fundo: #e6f4ea; --ok-texto: #1e6b3a;
   --barra-baixo: 80px;
+  color-scheme: only light;
   --i-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E");
   --i-relogio: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5v5l3 2'/%3E%3C/svg%3E");
   --i-alerta: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4 21 19H3z'/%3E%3Cpath d='M12 10v4'/%3E%3Cpath d='M12 16.6v.4'/%3E%3C/svg%3E");
-  color-scheme: light;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--fundo); color: var(--texto); font: 17px/1.45 'Archivo Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
