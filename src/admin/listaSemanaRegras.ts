@@ -32,6 +32,8 @@ export interface LinhaLista {
   fornecedorTexto: string | null
   precoUnit: number | null
   avisoUnidade: string | null
+  /** Aviso discreto: compras fora do padrão ficaram de fora da conta (o item segue com cálculo e no total). */
+  avisoIgnoradas: string | null
   avisoEstoque: string | null
   conferir: boolean
 }
@@ -61,6 +63,7 @@ export function avisoEstoqueNegativo(estoque: number, unidade?: string | null): 
 export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, contagem: number | null, manual: number | undefined | null): LinhaLista {
   const alvo = sug?.alvo ?? null
   const conferirUnidade = !!sug?.fornecedores.conferirUnidade
+  const ignoradas = sug?.comprasIgnoradas ?? 0
   const deVezEmQuando = alvo === null && !conferirUnidade
   const negativo = item.estoque < 0
   let calculado: number | null
@@ -86,9 +89,10 @@ export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, conta
     item, sug, alvo, contagem, calculado, comprar, ajustado, deVezEmQuando, melhorPreco, melhor, outros,
     fornecedorTexto: forn && (forn.melhor || forn.outros.length > 0) ? null : item.fornecedor_ultima,
     precoUnit: melhor?.custo ?? item.preco_estimado,
+    avisoIgnoradas: ignoradas > 0 ? (ignoradas === 1 ? '1 compra fora do padrão ficou de fora da conta. Confira no SisChef.' : `${ignoradas} compras fora do padrão ficaram de fora da conta. Confira no SisChef.`) : null,
     avisoUnidade: conferirUnidade ? avisoDoMotivo(forn?.motivoConferir) : null,
     avisoEstoque: negativo ? avisoEstoqueNegativo(item.estoque, item.unidade) : null,
-    conferir: conferirUnidade || semNumero || paraConferir([item]).length > 0,
+    conferir: conferirUnidade || ignoradas > 0 || semNumero || paraConferir([item]).length > 0,
   }
 }
 

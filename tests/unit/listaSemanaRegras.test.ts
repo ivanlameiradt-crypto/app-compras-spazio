@@ -6,7 +6,7 @@ import {
 
 const sug = (x: Partial<SugestaoProduto> = {}): SugestaoProduto => ({
   produtoId: 1, nome: 'X', unidade: 'kg', semanas: 8, janelaEncolhida: false, compras: 5, mediaSemana: 8, alvo: 10, gastoSemana: 100,
-  esporadico: false, classe: 'A',
+  esporadico: false, classe: 'A', comprasIgnoradas: 0,
   fornecedores: { melhor: { fornecedor: 'FORNECEDOR A', custo: 5, data: '2026-11-01' }, outros: [{ fornecedor: 'FORNECEDOR B', custo: 6, data: '2026-10-20' }], conferirUnidade: false, motivoConferir: null },
   ...x,
 })
@@ -77,6 +77,16 @@ describe('montarLinha', () => {
     expect(com('preco_fornecedores')).toBe('Confira a unidade: os preços dos fornecedores estão muito diferentes')
     expect(com('preco_historico')).toBe('Confira a unidade: os preços deste produto estão muito diferentes entre as compras')
     expect(com('quantidade_historico')).toBe('Confira a unidade: uma das compras tem quantidade muito fora do normal')
+  })
+  it('compra ignorada: aviso cinza, vai para Conferir, mas segue no total e com cálculo automático', () => {
+    const um = montarLinha(item({ estoque: 0, preco_estimado: 5 }), sug({ comprasIgnoradas: 1 }), null, undefined)
+    expect(um.avisoIgnoradas).toBe('1 compra fora do padrão ficou de fora da conta. Confira no SisChef.')
+    expect(um.conferir).toBe(true)
+    expect(um.comprar).toBe(10)
+    expect(totalEstimadoLista([um])).toBe(50)
+    const dois = montarLinha(item({}), sug({ comprasIgnoradas: 2 }), null, undefined)
+    expect(dois.avisoIgnoradas).toBe('2 compras fora do padrão ficaram de fora da conta. Confira no SisChef.')
+    expect(montarLinha(item({}), sug(), null, undefined).avisoIgnoradas).toBeNull()
   })
   it('outros mostram a diferença em % sobre o melhor', () => {
     const l = montarLinha(item({}), sug(), 0, undefined)

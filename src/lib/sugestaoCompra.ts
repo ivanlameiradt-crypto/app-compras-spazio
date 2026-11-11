@@ -53,6 +53,8 @@ export interface SugestaoProduto {
   /** Só 1 compra na janela. */
   esporadico: boolean
   classe: 'A' | 'B' | 'C'
+  /** Compras fora do padrão (preço ou quantidade longe da mediana) deixadas de fora da conta; 0 no caso comum. */
+  comprasIgnoradas: number
   fornecedores: {
     /** O de menor custo; null quando conferirUnidade. */
     melhor: PrecoFornecedor | null
@@ -69,6 +71,21 @@ export type MotivoConferir = 'preco_fornecedores' | 'preco_historico' | 'quantid
 
 const DIA_MS = 86_400_000
 const diaUtc = (d: string): number => Date.parse(`${d}T00:00:00Z`)
+
+function mediana(v: number[]): number {
+  const q = [...v].sort((a, b) => a - b)
+  const meio = q.length >> 1
+  return q.length % 2 ? q[meio] : (q[meio - 1] + q[meio]) / 2
+}
+
+/** Compra "fora do padrão": custo > 2x ou < metade da mediana, ou (com 3+ compras) quantidade > 10x a mediana. */
+function criarForaDoPadrao(compras: LinhaCompra[]): (c: LinhaCompra) => boolean {
+  const medCusto = mediana(compras.map((c) => c.custoLiquido))
+  const medQtd = mediana(compras.map((c) => c.qtd))
+  const tres = compras.length >= 3
+  return (c) =>
+    (medCusto > 0 && (c.custoLiquido > 2 * medCusto || c.custoLiquido < medCusto / 2)) || (tres && medQtd > 0 && c.qtd > 10 * medQtd)
+}
 
 function precos(linhas: LinhaCompra[], hoje: number, dias: number): SugestaoProduto['fornecedores'] {
   const inicio = hoje - dias * DIA_MS
@@ -92,10 +109,8 @@ function motivoNoHistorico(compras: LinhaCompra[]): MotivoConferir | null {
   const custos = compras.map((c) => c.custoLiquido).filter((c) => c > 0)
   if (custos.length > 1 && Math.max(...custos) > 2 * Math.min(...custos)) return 'preco_historico'
   if (compras.length >= 3) {
-    const q = compras.map((c) => c.qtd).sort((a, b) => a - b)
-    const meio = q.length >> 1
-    const mediana = q.length % 2 ? q[meio] : (q[meio - 1] + q[meio]) / 2
-    if (mediana > 0 && q[q.length - 1] > 10 * mediana) return 'quantidade_historico'
+    const mediana_ = mediana(compras.map((c) => c.qtd))
+    if (mediana_ > 0 && Math.max(...compras.map((c) => c.qtd)) > 10 * mediana_) return 'quantidade_historico'
   }
   return null
 }
@@ -125,12 +140,17 @@ export function sugerirCompras(produtos: ProdutoHistorico[], hoje: string, p: Pa
       return t >= inicio && t <= tHoje
     })
     if (naJanela.length === 0) continue
-    const soma = naJanela.reduce((s, l) => s + l.qtd, 0)
-    const gasto = naJanela.reduce((s, l) => s + l.qtd * l.custoLiquido, 0)
+    // uma compra fora do padrão não derruba o produto: com 3+ compras e no máximo 1/3 delas fora, ela só fica de fora da conta
+    const fora = criarForaDoPadrao(naJanela)
+    const ignoradas = naJanela.filter(fora).length
+    const ignorar = naJanela.length >= 3 && ignoradas > 0 && ignoradas * 3 <= naJanela.length
+    const usadas = ignorar ? naJanela.filter((c) => !fora(c)) : naJanela
+    const soma = usadas.reduce((s, l) => s + l.qtd, 0)
+    const gasto = usadas.reduce((s, l) => s + l.qtd * l.custoLiquido, 0)
     const mediaSemana = soma / semanas
-    const esporadico = naJanela.length === 1
-    let fornecedores = precos(prod.linhas, tHoje, dias)
-    const motivo = fornecedores.motivoConferir ?? motivoNoHistorico(naJanela)
+    const esporadico = usadas.length === 1
+    let fornecedores = precos(ignorar ? prod.linhas.filter((c) => !fora(c)) : prod.linhas, tHoje, dias)
+    const motivo = ignorar ? fornecedores.motivoConferir : fornecedores.motivoConferir ?? motivoNoHistorico(naJanela)
     // o erro está nas compras do produto: a média não é confiável, então não há alvo nem melhor preço
     if (motivo && !fornecedores.conferirUnidade) {
       const todos = [...(fornecedores.melhor ? [fornecedores.melhor] : []), ...fornecedores.outros].sort((x, y) => x.custo - y.custo)
@@ -142,7 +162,8 @@ export function sugerirCompras(produtos: ProdutoHistorico[], hoje: string, p: Pa
       unidade: prod.unidade ?? null,
       semanas,
       janelaEncolhida,
-      compras: naJanela.length,
+      compras: usadas.length,
+      comprasIgnoradas: ignorar ? ignoradas : 0,
       mediaSemana,
       alvo: esporadico || fornecedores.conferirUnidade ? null : mediaSemana * (1 + folga),
       gastoSemana: gasto / semanas,

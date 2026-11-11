@@ -214,6 +214,7 @@ function Cartao({ l, editavel, situacao, onContar, onAjustar }: {
       <div className="nome">{nomeNaTela(item.produto)}</div>
       {l.avisoEstoque && <div className="selo">{l.avisoEstoque}</div>}
       {l.avisoUnidade && <div className="selo">{l.avisoUnidade}</div>}
+      {l.avisoIgnoradas && <div className="sub" style={{ marginTop: 6 }}>{l.avisoIgnoradas}</div>}
 
       <div className="sub" style={{ marginTop: 6 }}>
         {l.alvo !== null && <>Precisa ter <b>{qtdNaTela(l.alvo, un)}</b> · </>}

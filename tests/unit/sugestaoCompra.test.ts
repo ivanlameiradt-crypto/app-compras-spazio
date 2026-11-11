@@ -114,19 +114,20 @@ describe('quantoComprar', () => {
       const [s] = sugerirCompras([prod(1, [l(1, 5, 2.01, 'A'), l(5, 5, 1, 'B')])], HOJE)
       expect(s.fornecedores.motivoConferir).toBe('preco_fornecedores')
     })
-    it('um fornecedor só, preço lançado por caixa numa compra: conferirUnidade, motivo "preco_historico", sem alvo', () => {
-      const [s] = sugerirCompras([prod(1, [l(1, 10, 67.17), l(8, 10, 1.1), l(15, 10, 1.2), l(22, 10, 1.1)])], HOJE)
+    it('preço lançado por caixa em 3 de 4 compras (sem maioria): conferirUnidade, motivo "preco_historico", sem alvo', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 67.17), l(8, 10, 1.1), l(15, 10, 70), l(22, 10, 1.2)])], HOJE)
       expect(s.fornecedores.conferirUnidade).toBe(true)
       expect(s.fornecedores.motivoConferir).toBe('preco_historico')
       expect(s.fornecedores.melhor).toBeNull()
       expect(s.alvo).toBeNull()
+      expect(s.comprasIgnoradas).toBe(0)
     })
     it('compra sem fornecedor também entra na checagem de preço', () => {
-      const [s] = sugerirCompras([prod(1, [l(1, 10, 3, null), l(8, 10, 1, null), l(15, 10, 1, 'A')])], HOJE)
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 3, null), l(8, 10, 1, null)])], HOJE)
       expect(s.fornecedores.motivoConferir).toBe('preco_historico')
     })
-    it('quantidade lançada em gramas: uma compra passa de 10x a mediana → "quantidade_historico", sem alvo', () => {
-      const [s] = sugerirCompras([prod(1, [l(1, 12000, 1), l(8, 12, 1), l(15, 10, 1), l(22, 15, 1)])], HOJE)
+    it('quantidade lançada em gramas em 3 de 7 compras (sem maioria): "quantidade_historico", sem alvo', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 12000), l(3, 12000), l(5, 12000), l(8, 12), l(15, 10), l(22, 15), l(29, 11)])], HOJE)
       expect(s.fornecedores.conferirUnidade).toBe(true)
       expect(s.fornecedores.motivoConferir).toBe('quantidade_historico')
       expect(s.alvo).toBeNull()
@@ -144,10 +145,46 @@ describe('quantoComprar', () => {
       expect(b.fornecedores.motivoConferir).toBeNull()
     })
     it('classe e ordem por gasto continuam calculadas mesmo com conferirUnidade', () => {
-      const r = sugerirCompras([prod(1, [l(1, 12000, 1), l(8, 12, 1), l(15, 10, 1)]), prod(2, [l(1, 1, 1), l(8, 1, 1)])], HOJE)
+      const r = sugerirCompras([prod(1, [l(1, 12000, 1), l(8, 12000, 1), l(15, 10, 1)]), prod(2, [l(1, 1, 1), l(8, 1, 1)])], HOJE)
       expect(r[0].produtoId).toBe(1)
       expect(r[0].classe).toBe('A')
       expect(r[0].gastoSemana).toBeGreaterThan(1000)
+    })
+  })
+
+  describe('compra fora do padrão não derruba o produto', () => {
+    it('4 compras a ~2,00 e 1 a 11,03: ignora 1, média só das 4, melhor entre os 3 normais', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 11.03, 'X'), l(8, 10, 1.88, 'A'), l(15, 10, 2.0, 'B'), l(22, 10, 2.07, 'C'), l(29, 10, 1.95, 'A')])], HOJE)
+      expect(s.comprasIgnoradas).toBe(1)
+      expect(s.fornecedores.conferirUnidade).toBe(false)
+      expect(s.mediaSemana).toBeCloseTo(40 / 8, 9)
+      expect(s.alvo).toBeCloseTo((40 / 8) * 1.25, 9)
+      expect(s.compras).toBe(4)
+      expect(s.gastoSemana).toBeCloseTo((10 * 1.88 + 10 * 2.0 + 10 * 2.07 + 10 * 1.95) / 8, 9)
+      expect(s.fornecedores.melhor?.fornecedor).toBe('A')
+      expect(s.fornecedores.melhor?.custo).toBe(1.88) // o último preço de A; o de X (fora do padrão) não vale
+      expect([...s.fornecedores.outros.map((f) => f.fornecedor)]).toEqual(['B', 'C'])
+    })
+    it('2 compras (5,85 e 50,27): sem maioria, conferirUnidade', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 5.85), l(8, 10, 50.27)])], HOJE)
+      expect(s.fornecedores.conferirUnidade).toBe(true)
+      expect(s.alvo).toBeNull()
+      expect(s.comprasIgnoradas).toBe(0)
+    })
+    it('5 compras com 1 quantidade 100x maior: ignora 1', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 1000), l(8, 10), l(15, 10), l(22, 10), l(29, 10)])], HOJE)
+      expect(s.comprasIgnoradas).toBe(1)
+      expect(s.fornecedores.conferirUnidade).toBe(false)
+      expect(s.mediaSemana).toBeCloseTo(40 / 8, 9)
+    })
+    it('3 compras com 2 fora do padrão: conferirUnidade', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 1), l(8, 10, 5), l(15, 10, 50)])], HOJE)
+      expect(s.fornecedores.conferirUnidade).toBe(true)
+      expect(s.alvo).toBeNull()
+      expect(s.comprasIgnoradas).toBe(0)
+    })
+    it('caso comum: comprasIgnoradas = 0', () => {
+      expect(sugerirCompras([BATATA], HOJE)[0].comprasIgnoradas).toBe(0)
     })
   })
 })
