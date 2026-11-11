@@ -4,8 +4,9 @@
 // servidor: nunca vai ao repo, ao log nem à resposta.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
-  filtroReservavel, tratar, verificar,
-  type Corpo, type Deps, type DepsVerificar, type Execucao, type NotaEstado, type NotaParaParcelas, type NotaReservada, type PassoExecucao,
+  filtroReservavel, retomar, tratar, verificar,
+  type Corpo, type Deps, type DepsRetomar, type DepsVerificar, type Execucao, type NotaEstado, type NotaParaParcelas, type NotaPelaMetade, type NotaReservada,
+  type PassoExecucao,
 } from './logica.ts'
 
 const ORIGENS_PERMITIDAS = new Set([
@@ -19,6 +20,7 @@ const WORKFLOW = 'lancar-nfe.yml'
 // associacoes_app (etapa 2): a decisão que o Ivan confirmou no app para item sem produto no SisChef vai junto ao robô, que a
 // aplica na tela ao lançar (montarNotaJson, em logica.ts). Sem ela aqui, a nota chegaria ao robô como se nada tivesse sido decidido.
 const COLUNAS = 'chave, emitente, numero, emissao, valor_nf, forma_pagamento, itens, parcelas_manuais, associacoes_app, frete_valor, frete_tipo'
+const COLUNAS_RETOMADA = `${COLUNAS}, situacao, lancamento_estado, lancamento_motivo, lancamento_em, lancada_em, descartada_em, parcelas, v_prod, v_desc, v_ipi, v_st, v_frete, v_outro`
 
 function cabecalhosCors(origem: string | null): Record<string, string> {
   return {
@@ -115,6 +117,38 @@ Deno.serve(async (req: Request) => {
         }
       },
       agora: () => new Date(),
+    }
+
+    // ação "retomar": o botão "Terminar pedido" (11/11/2026) — pede ao robô para CONTINUAR o pedido que ficou pela metade. A nota segue 'erro'.
+    if (corpo && typeof corpo === 'object' && corpo.acao === 'retomar') {
+      const depsRetomar: DepsRetomar = {
+        buscarUsuario: deps.buscarUsuario,
+        outraLancando: deps.outraLancando,
+        disparar: deps.disparar,
+        agora: deps.agora,
+        async notaPelaMetade(chave) {
+          const { data, error } = await admin.from('cot_nfe').select(COLUNAS_RETOMADA).eq('chave', chave).maybeSingle()
+          if (error) throw new Error(error.message)
+          return (data as NotaPelaMetade | null) ?? null
+        },
+        async carimbarRetomada(chave, motivo, agoraIso, limiteIso) {
+          // compara-e-troca num UPDATE só: a nota ainda 'erro', com o MESMO motivo, e sem pedido de retomada desde `limiteIso`.
+          const { data, error } = await admin.from('cot_nfe')
+            .update({ lancamento_em: agoraIso, atualizado_em: agoraIso })
+            .eq('chave', chave).eq('situacao', 'na_fila').eq('lancamento_estado', 'erro').eq('lancamento_motivo', motivo)
+            .is('descartada_em', null).is('lancada_em', null)
+            .or(`lancamento_em.is.null,lancamento_em.lt."${limiteIso}"`)
+            .select('chave')
+          if (error) throw new Error(error.message)
+          return (data ?? []).length > 0
+        },
+        async desfazerCarimbo(chave, anterior) {
+          const { error } = await admin.from('cot_nfe').update({ lancamento_em: anterior }).eq('chave', chave).eq('lancamento_estado', 'erro')
+          if (error) throw new Error(error.message)
+        },
+      }
+      const rr = await retomar(corpo, chamador, depsRetomar)
+      return resposta(rr.status, rr.corpo, cors)
     }
 
     // ação "verificar": o que houve com o robô de uma nota que ficou "lançando" (consulta o GitHub; só muda a nota quando é seguro)

@@ -754,3 +754,24 @@ export function planoSemanal(n: NotaSefazLista, editadas: string[]): PlanoSemana
   if (!motivo && !resumoFinanceiro(n).bate) motivo = 'Os boletos do XML não fecham com o valor da nota'
   return { quarta, semana, parcelas, ok: motivo === '', motivo }
 }
+
+/** = PASSOS_RETOMAVEIS do robô (lancar_nfe_nuvem.py) e da Edge Function lancar-nfe: passos em que o pedido parou ANTES de gravar estoque ou financeiro. */
+export const PASSOS_QUE_O_ROBO_TERMINA = ['conferir o total do pedido', 'Gerar compra', 'pagamento', 'abrir o pedido da retomada', 'fechar o arredondamento do pedido']
+
+/**
+ * O botão "Terminar pedido" aparece? (11/11/2026) Só na nota pela metade que o robô sabe continuar sozinho: boleto do XML, sem parcelas
+ * digitadas, parada num passo de antes de gravar, com o número do pedido no registro. É um resumo: a Edge Function e o robô repetem as
+ * travas (frete, imposto, desconto…) e recusam com o motivo se não der.
+ */
+export function podeTerminarPedido(nota: Pick<NotaSefazLista, 'lancamento_estado' | 'lancamento_motivo' | 'forma_pagamento' | 'parcelas' | 'parcelas_manuais' | 'situacao' | 'lancada_em'>): boolean {
+  if (nota.lancamento_estado !== 'erro' || nota.situacao !== 'na_fila' || nota.lancada_em) return false
+  const motivo = String(nota.lancamento_motivo ?? '')
+  if (freteAberto('erro', motivo)) return false
+  if (!/\|\s*id:\s*\d+|pedido JÁ gerado \d+|(?:gerarCompraVenda|pedido)\.jsf\?id=\d+/.test(motivo)) return false
+  if (motivo.includes('FINALIZADA') || motivo.includes('o robô parou antes de terminar') || motivo.includes('fala do pedido')) return false
+  const passo = /no passo '([^']+)'/.exec(motivo.split(' | antes: ')[0])
+  if (!passo || !PASSOS_QUE_O_ROBO_TERMINA.includes(passo[1])) return false
+  if (String(nota.forma_pagamento ?? '').trim().toLowerCase() !== 'boleto') return false
+  if (Array.isArray(nota.parcelas_manuais) && nota.parcelas_manuais.length > 0) return false
+  return Array.isArray(nota.parcelas) && nota.parcelas.length > 0
+}

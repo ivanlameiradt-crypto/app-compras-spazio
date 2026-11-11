@@ -511,3 +511,7 @@ a.botao { display: inline-flex; text-decoration: none; }
 .seta .icone { transition: transform .15s; }
 .seta .icone.aberto { transform: rotate(90deg); }
 .link .icone, .editar-item .icone { margin-right: 2px; }
+
+/* Terminar pedido (11/11/2026): nota pela metade que o robo sabe continuar */
+.terminar-pedido { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.terminar-pedido p { margin: 0; }
