@@ -6,7 +6,7 @@ import { gravarSemDuplicar } from './gravacao.ts'
 import { tratar, type Corpo, type Deps } from './logica.ts'
 import { acharParecidas, ioDoSupabase, type ClienteConsulta } from './parecida.ts'
 
-const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'http://localhost:5173', 'http://localhost:4173'])
+const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'https://comprar.spazioburgerpizza.cloud', 'http://localhost:5173', 'http://localhost:4173'])
 const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
 const WORKFLOW = 'lancar-cupom.yml'
 

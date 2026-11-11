@@ -3,7 +3,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { deBrasilApi, deCnpjWs, deReceitaWs, tratar, type Deps, type Fonte } from './logica.ts'
 
-const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'http://localhost:5173', 'http://localhost:4173'])
+const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'https://comprar.spazioburgerpizza.cloud', 'http://localhost:5173', 'http://localhost:4173'])
 
 function cabecalhosCors(origem: string | null): Record<string, string> {
   return {
