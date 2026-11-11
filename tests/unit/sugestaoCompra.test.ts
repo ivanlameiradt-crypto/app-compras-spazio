@@ -5,7 +5,7 @@ import { quantoComprar, sugerirCompras, type LinhaCompra, type ProdutoHistorico 
 const HOJE = '2026-11-11'
 /** Data N dias antes de HOJE. */
 const dia = (n: number): string => new Date(Date.UTC(2026, 10, 11 - n)).toISOString().slice(0, 10)
-const l = (diasAtras: number, qtd: number, custo = 1, fornecedor = 'F1'): LinhaCompra =>
+const l = (diasAtras: number, qtd: number, custo = 1, fornecedor: string | null = 'F1'): LinhaCompra =>
   ({ data: dia(diasAtras), fornecedor, referencia: null, qtd, precoUnit: custo, custoLiquido: custo })
 const prod = (produtoId: number, linhas: LinhaCompra[], nome = `P${produtoId}`): ProdutoHistorico => ({ produtoId, nome, unidade: 'KG', linhas })
 
@@ -77,6 +77,14 @@ describe('sugerirCompras', () => {
     expect(s.fornecedores.outros.map((f) => f.fornecedor)).toEqual(['B', 'A'])
     const [t] = sugerirCompras([prod(1, [l(1, 5, 2, 'A'), l(5, 5, 1, 'B')])], HOJE)
     expect(t.fornecedores.conferirUnidade).toBe(false)
+  })
+
+  it('compra sem fornecedor conta na média e no gasto, mas fica fora da lista de fornecedores', () => {
+    const [s] = sugerirCompras([prod(1, [l(1, 10, 0.5, null), l(3, 10, 0.4, ''), l(5, 20, 1, 'A')])], HOJE)
+    expect(s.compras).toBe(3)
+    expect(s.mediaSemana).toBeCloseTo(40 / 8, 9)
+    expect(s.gastoSemana).toBeCloseTo((5 + 4 + 20) / 8, 9)
+    expect(s.fornecedores).toEqual({ melhor: { fornecedor: 'A', custo: 1, data: dia(5) }, outros: [], conferirUnidade: false })
   })
 
   it('parâmetros mudam janela e folga', () => {

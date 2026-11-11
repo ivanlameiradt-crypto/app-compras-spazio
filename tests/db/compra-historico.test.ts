@@ -64,6 +64,12 @@ describe('gravar em espelho', () => {
     ])
   })
 
+  it('compra sem fornecedor ("", só espaços ou null) grava com fornecedor null', async () => {
+    const db = await banco()
+    expect(Number(await gravar(db, [produto({ linhas: [['2026-10-01', '', '', 1, 1, 1], ['2026-10-02', '   ', '', 2, 1, 1], ['2026-10-03', null, '', 3, 1, 1]] })]))).toBe(1)
+    expect((await linhas(db)).map((l) => l.fornecedor)).toEqual([null, null, null])
+  })
+
   it('lote vazio devolve 0', async () => {
     const db = await banco()
     expect(Number(await gravar(db, []))).toBe(0)
@@ -93,7 +99,7 @@ describe('gravar em espelho', () => {
       [{ produto_id: '12', linhas: [] }, /produto_id/],
       [{ produto_id: 5 }, /linhas precisa ser uma lista/],
       [produto({ linhas: [['2026-02-30', 'F', '', 1, 1, 1]] }), /data/],
-      [produto({ linhas: [['2026-10-01', '', '', 1, 1, 1]] }), /fornecedor/],
+      [produto({ linhas: [['2026-10-01', 'x'.repeat(201), '', 1, 1, 1]] }), /fornecedor/],
       [produto({ linhas: [['2026-10-01', 'F', '', 0, 1, 1]] }), /quantidade/],
       [produto({ linhas: [['2026-10-01', 'F', '', 1, -1, 1]] }), /preço unitário/],
       [produto({ linhas: [['2026-10-01', 'F', '', 1, 1, '1']] }), /custo líquido/],

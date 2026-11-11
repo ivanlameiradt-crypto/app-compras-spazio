@@ -42,7 +42,7 @@ create table public.compra_historico (
   id            uuid primary key default gen_random_uuid(),
   produto_id    bigint not null references public.compra_historico_produto (produto_id) on delete cascade,
   data          date not null,
-  fornecedor    text not null check (char_length(fornecedor) between 1 and 200),
+  fornecedor    text check (fornecedor is null or char_length(fornecedor) between 1 and 200),   -- null = compra sem fornecedor no SisChef
   referencia    text check (referencia is null or char_length(referencia) <= 200),
   qtd           numeric not null check (qtd > 0),
   preco_unit    numeric not null check (preco_unit >= 0),
@@ -169,9 +169,13 @@ begin
       if v_data is null then
         raise exception 'histórico de compras inválido (produto %, linha %): data precisa ser AAAA-MM-DD', i, j;
       end if;
-      v_forn := case when jsonb_typeof(ln -> 1) = 'string' then btrim(ln ->> 1, E' \t\r\n') else '' end;
-      if v_forn = '' or char_length(v_forn) > 200 then
-        raise exception 'histórico de compras inválido (produto %, linha %): fornecedor é obrigatório (até 200 caracteres)', i, j;
+      -- fornecedor é opcional (o SisChef tem compras sem fornecedor): vazio ou só espaços vira null
+      if jsonb_typeof(ln -> 1) not in ('string', 'null') then
+        raise exception 'histórico de compras inválido (produto %, linha %): fornecedor precisa ser texto (ou ficar vazio)', i, j;
+      end if;
+      v_forn := nullif(btrim(coalesce(ln ->> 1, ''), E' \t\r\n'), '');
+      if char_length(coalesce(v_forn, '')) > 200 then
+        raise exception 'histórico de compras inválido (produto %, linha %): fornecedor passa de 200 caracteres', i, j;
       end if;
       if jsonb_typeof(ln -> 2) not in ('string', 'null') or char_length(coalesce(ln ->> 2, '')) > 200 then
         raise exception 'histórico de compras inválido (produto %, linha %): referência precisa ser texto (até 200 caracteres)', i, j;

@@ -3,7 +3,8 @@
 
 export interface LinhaCompra {
   data: string
-  fornecedor: string
+  /** null ou vazio: compra sem fornecedor no SisChef (conta na média e no gasto, fica fora dos preços). */
+  fornecedor: string | null
   referencia?: string | null
   qtd: number
   precoUnit: number
@@ -70,9 +71,10 @@ function precos(linhas: LinhaCompra[], hoje: number, dias: number): SugestaoProd
   const ultimo = new Map<string, PrecoFornecedor>()
   for (const l of linhas) {
     const t = diaUtc(l.data)
-    if (t < inicio || t > hoje) continue
-    const atual = ultimo.get(l.fornecedor)
-    if (!atual || l.data > atual.data) ultimo.set(l.fornecedor, { fornecedor: l.fornecedor, custo: l.custoLiquido, data: l.data })
+    const forn = l.fornecedor?.trim()
+    if (t < inicio || t > hoje || !forn) continue
+    const atual = ultimo.get(forn)
+    if (!atual || l.data > atual.data) ultimo.set(forn, { fornecedor: forn, custo: l.custoLiquido, data: l.data })
   }
   const lista = [...ultimo.values()].sort((a, b) => a.custo - b.custo || a.fornecedor.localeCompare(b.fornecedor))
   if (lista.length === 0) return { melhor: null, outros: [], conferirUnidade: false }
