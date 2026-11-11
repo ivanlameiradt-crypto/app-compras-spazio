@@ -36,6 +36,7 @@ import {
 } from './notaSefazRegras'
 import TituloDaTela from '../components/TituloDaTela'
 import { Icone } from '../components/Icones'
+import TerminarPedido from './TerminarPedido'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
 const INTERVALO_ATUALIZAR = 15_000
@@ -635,6 +636,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo, nota.itens)}</div>}
+      {/* Terminar pedido (11/11/2026): o robô continua o pedido que ficou pela metade, quando é um caso que ele sabe terminar sozinho. */}
+      {estado === 'erro' && <TerminarPedido nota={nota} ocupado={outraOcupando} aoPedir={() => { void recarregar() }} />}
       {/* Fornecedor novo (Plast Mais 8928, 31/10/2026): o robô só cadastra com a autorização do Ivan — o toque em "Cadastrar no SisChef" é ela. Depois, é só tocar em Lançar. */}
       {(estado === 'revisar' || estado === 'ensaio_ok') && fornecedorNovoNaNota(nota.lancamento_motivo) && (
         <CadastrarFornecedor paraNota cupom={{ id: nota.chave, motivo: null, emitente_nome: nota.emitente, emitente_cnpj: cnpjDaChave(nota.chave) || nota.cnpj_emitente }}

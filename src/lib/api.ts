@@ -749,6 +749,26 @@ export async function lancarNota(chave: string, forma: string, parcelas?: Parcel
   throw new ErroApi(mensagemDoLancar(status, texto), status)
 }
 
+/**
+ * "Terminar pedido" (11/11/2026): pede ao robô para CONTINUAR o pedido de uma nota que ficou pela metade (Edge Function lancar-nfe, ação
+ * "retomar"). A nota segue pela metade até o robô terminar. A função devolve o motivo em português quando não dá (409): mostra-o como veio.
+ */
+export async function terminarPedidoDaNota(chave: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('lancar-nfe', { body: { chave, acao: 'retomar' } })
+  if (!error) return
+  const contexto = (error as { context?: Response }).context
+  const status = typeof contexto?.status === 'number' ? contexto.status : undefined
+  let texto = ''
+  if (contexto && typeof contexto.json === 'function') {
+    try { const corpo = await contexto.json(); if (corpo && typeof corpo.erro === 'string') texto = corpo.erro } catch { /* corpo não era JSON */ }
+  }
+  if (status === 403) throw new ErroApi('Só o administrador pode fazer isso.', status)
+  if (status === 409 && texto) throw new ErroApi(`Não deu para chamar o robô: ${texto}.`, status)
+  if (status === 404) throw new ErroApi('Não achei esta nota. Atualize a tela.', status)
+  if (status === 502) throw new ErroApi('Não consegui chamar o robô agora, tente de novo.', status)
+  throw new ErroApi('Não consegui chamar o robô agora. Confira a internet e tente de novo.', status)
+}
+
 /** O que a Edge Function lancar-nfe (ação "verificar") diz sobre o robô de uma nota "lançando". */
 export interface VerificacaoRobo {
   /** nada_a_verificar | aguardando | rodando | concluida | sem_execucao | liberada | pela_metade */

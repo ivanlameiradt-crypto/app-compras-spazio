@@ -81,9 +81,12 @@ export interface Deps {
 
 export interface Resultado { status: number; corpo: Record<string, unknown> }
 
-/** As contas PIX válidas (= cupom_formas_pagamento.MAPA_PIX do robô; o app as mostra em src/cupom/formasPagamento.ts). Sem 'itau|ij' desde 31/10/2026:
- *  o SisChef não tem mais a conta Itaú (robô PR 79) e o robô recusaria a nota depois de a reservar. */
-export const CONTAS_PIX = ['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesco|sp', 'caixa|ij', 'caixa|sp']
+/** As contas PIX válidas (= cupom_formas_pagamento.MAPA_PIX do robô; o app as mostra em src/cupom/formasPagamento.ts), MAIS 'itau|ij'.
+ *  O Itaú saiu do código em 31/10/2026 (o SisChef não mostrava mais a conta; robô PR 79), mas essa retirada nunca foi publicada e, em
+ *  11/11/2026, o Ivan decidiu MANTER o Itaú nesta função ("pode deixar a conta Itaú", "mantenha o Itaú"). O app não oferece o Itaú na tela
+ *  e o robô recusa 'pix:itau|ij' ANTES de abrir o SisChef (a nota volta como "precisa de você"); para voltar a usar, o robô e o app
+ *  precisam ganhar a conta de volta. */
+export const CONTAS_PIX = ['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesco|sp', 'itau|ij', 'caixa|ij', 'caixa|sp']
 /** Uma tentativa 'lancando' mais velha que isto é dada como presa (o run caiu/foi cancelado) e pode ser reservada. */
 export const MINUTOS_TRAVA = 30
 const RE_CHAVE = /^\d{44}$/
@@ -339,4 +342,126 @@ export async function verificar(corpo: Corpo, chamador: string, deps: DepsVerifi
   const motivo = `A execução do robô ${como} depois de começar a lançar, sem avisar o resultado: a nota pode ter ficado pela metade. Confira no SisChef antes de qualquer coisa. Não lance de novo.`
   const mudou = await deps.marcarEstado(chave, 'erro', motivo, agora.toISOString())
   return respostaVerificacao('pela_metade', mudou ? motivo : 'A nota já mudou de estado: recarregue a tela.', { execucao: dela.id, mudou })
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Ação "retomar": o botão "Terminar pedido" do app (11/11/2026).
+// O robô já sabe CONTINUAR um pedido que ficou pela metade (lancar_nfe_nuvem.py: `retomar: true` no nota_json; abre o pedido pelo número,
+// confere a chave da NF-e e o status no SisChef e segue de 'Gerar compra' em diante), mas isso só disparava por comando técnico. Aqui o app
+// pede. Regras: a nota CONTINUA 'erro' o tempo todo (nunca volta a ser "lançável": lançar de novo criaria OUTRO pedido); o robô é quem a
+// marca lançada ou regrava o erro. Para dois toques não dispararem duas vezes, a função só carimba a hora (lancamento_em) num
+// compara-e-troca e recusa novo pedido por MINUTOS_ENTRE_RETOMADAS. As travas daqui são um resumo das do robô (validar_retomada), que
+// repete TODAS antes de abrir o SisChef: se as duas divergirem, vale a do robô (ele para sem tocar em nada).
+
+/** = lancar_nfe_nuvem.PASSOS_RETOMAVEIS: passos em que o erro deixa o pedido ANTES de qualquer coisa gravada no estoque ou no financeiro. */
+export const PASSOS_RETOMAVEIS = ['conferir o total do pedido', 'Gerar compra', 'pagamento', 'abrir o pedido da retomada', 'fechar o arredondamento do pedido']
+export const MINUTOS_ENTRE_RETOMADAS = 5
+
+export interface NotaPelaMetade extends NotaReservada {
+  situacao: string
+  lancamento_estado: string | null
+  lancamento_motivo: string | null
+  lancamento_em: string | null
+  lancada_em: string | null
+  descartada_em: string | null
+  /** Boletos lidos do XML (cot_nfe.parcelas). */
+  parcelas: unknown
+  v_prod: number | string | null
+  v_desc: number | string | null
+  v_ipi: number | string | null
+  v_st: number | string | null
+  v_frete: number | string | null
+  v_outro: number | string | null
+}
+
+const numero = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return 0
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** O número do pedido que ficou pela metade, lido do motivo do erro (os três jeitos em que o robô o escreve), ou null. */
+export function pedidoDoMotivo(motivo: string | null | undefined): string | null {
+  const t = String(motivo ?? '')
+  const m = /\|\s*id:\s*(\d+)/.exec(t) ?? /pedido JÁ gerado (\d+)/.exec(t) ?? /(?:gerarCompraVenda|pedido)\.jsf\?id=(\d+)/.exec(t)
+  return m ? m[1] : null
+}
+
+/** Por que esta nota NÃO pode ser terminada pelo robô (texto para o Ivan), ou null se pode pedir. Resumo de validar_retomada do robô. */
+export function motivoNaoRetomavel(n: NotaPelaMetade): string | null {
+  const NO_SISCHEF = 'confira o pedido no SisChef e termine por lá'
+  if (n.lancada_em || n.situacao === 'lancada') return 'esta nota já foi lançada: não há o que terminar'
+  if (n.descartada_em) return 'esta nota foi excluída da lista'
+  if (n.situacao !== 'na_fila' || n.lancamento_estado !== 'erro') return 'esta nota não está pela metade'
+  const motivo = String(n.lancamento_motivo ?? '')
+  if (/aberto na tela de pagamento com o frete/i.test(motivo)) return 'o pedido ficou aberto de propósito por causa do frete: falta lançar o boleto do frete e finalizar no SisChef'
+  if (pedidoDoMotivo(motivo) === null) return `o app não guardou o número do pedido que ficou pela metade: ${NO_SISCHEF}`
+  if (motivo.includes('FINALIZADA') || motivo.includes('o robô parou antes de terminar') || motivo.includes('fala do pedido')) {
+    return `a última tentativa pode ter gravado a compra ou a nota: ${NO_SISCHEF}`
+  }
+  const passo = /no passo '([^']+)'/.exec(motivo.split(' | antes: ')[0])
+  if (!passo || !PASSOS_RETOMAVEIS.includes(passo[1])) return `o robô parou num passo que ele não sabe continuar sozinho: ${NO_SISCHEF}`
+  if (String(n.forma_pagamento ?? '').trim().toLowerCase() !== 'boleto') return `o robô só sabe terminar sozinho nota paga em boleto: ${NO_SISCHEF}`
+  if (n.frete_valor != null && Number(n.frete_valor) > 0) return `o robô não termina sozinho nota com frete: ${NO_SISCHEF}`
+  if (Array.isArray(n.parcelas_manuais) && n.parcelas_manuais.length > 0) return `esta nota tem parcelas digitadas no app: ${NO_SISCHEF}`
+  const vProd = numero(n.v_prod), vNf = numero(n.valor_nf)
+  const extras = [n.v_desc, n.v_ipi, n.v_st, n.v_frete, n.v_outro].map(numero)
+  if (!vProd || !vNf || extras.some((x) => x === null)) return `os totais desta nota não estão legíveis para conferir o pedido: ${NO_SISCHEF}`
+  if (extras.some((x) => x !== 0) || Math.abs(vProd - vNf) > 0.005) return `esta nota tem imposto, frete embutido ou desconto: ${NO_SISCHEF}`
+  if (!Array.isArray(n.parcelas) || n.parcelas.length === 0) return `esta nota não tem os boletos lidos do XML: ${NO_SISCHEF}`
+  return null
+}
+
+/** O nota_json da retomada: o do lançamento normal + o registro do erro (o robô lê dali o pedido e o passo) + os totais e boletos do XML
+ *  (a retomada não consegue reler o XML no SisChef: a nota já saiu da lista quando o pedido foi criado) + `retomar: true` (booleano). */
+export function montarNotaJsonRetomada(n: NotaPelaMetade): string {
+  return JSON.stringify({
+    ...JSON.parse(montarNotaJson(n)),
+    situacao: n.situacao, lancamento_estado: n.lancamento_estado, lancamento_motivo: n.lancamento_motivo,
+    parcelas: n.parcelas, v_prod: n.v_prod, v_desc: n.v_desc, v_ipi: n.v_ipi, v_st: n.v_st, v_frete: n.v_frete, v_outro: n.v_outro,
+    retomar: true,
+  })
+}
+
+export interface DepsRetomar {
+  buscarUsuario(email: string): Promise<UsuarioLinha | null>
+  outraLancando(chave: string, limiteIso: string): Promise<boolean>
+  notaPelaMetade(chave: string): Promise<NotaPelaMetade | null>
+  /** Compara-e-troca: grava lancamento_em = agora SÓ se a nota ainda está 'erro' com o MESMO motivo e sem pedido de retomada desde
+   *  `limiteIso`. true = carimbou (pode disparar); false = outro toque chegou antes ou a nota mudou. Não muda estado nem motivo. */
+  carimbarRetomada(chave: string, motivo: string, agoraIso: string, limiteIso: string): Promise<boolean>
+  /** O disparo falhou: devolve o lancamento_em anterior, para o botão voltar a valer na hora. */
+  desfazerCarimbo(chave: string, anterior: string | null): Promise<void>
+  disparar(notaJson: string): Promise<void>
+  agora(): Date
+}
+
+export async function retomar(corpo: Corpo, chamador: string, deps: DepsRetomar): Promise<Resultado> {
+  const u = await deps.buscarUsuario(chamador.trim().toLowerCase())
+  if (!u || !u.ativo || u.papel !== 'admin') return { status: 403, corpo: { erro: 'apenas o administrador pode fazer isso' } }
+  const c: Corpo = corpo !== null && typeof corpo === 'object' ? corpo : {}
+  const chave = typeof c.chave === 'string' ? c.chave.trim() : ''
+  if (!RE_CHAVE.test(chave)) return { status: 400, corpo: { erro: 'chave da nota inválida' } }
+
+  const nota = await deps.notaPelaMetade(chave)
+  if (!nota) return { status: 404, corpo: { erro: 'nota não encontrada' } }
+  const impedimento = motivoNaoRetomavel(nota)
+  if (impedimento) return { status: 409, corpo: { erro: impedimento } }
+
+  const agora = deps.agora()
+  // Um robô por vez (o GitHub guarda só UM run pendente do grupo sischef-session): com outra nota lançando, este disparo a cancelaria.
+  if (await deps.outraLancando(chave, new Date(agora.getTime() - MINUTOS_TRAVA * 60_000).toISOString())) {
+    return { status: 409, corpo: { erro: 'o robô está lançando outra nota: aguarde ela terminar e peça de novo' } }
+  }
+  const limite = new Date(agora.getTime() - MINUTOS_ENTRE_RETOMADAS * 60_000).toISOString()
+  if (!(await deps.carimbarRetomada(chave, String(nota.lancamento_motivo ?? ''), agora.toISOString(), limite))) {
+    return { status: 409, corpo: { erro: `o robô já foi chamado para terminar este pedido: aguarde ${MINUTOS_ENTRE_RETOMADAS} minutos e atualize a tela` } }
+  }
+  try {
+    await deps.disparar(montarNotaJsonRetomada(nota))
+  } catch {
+    await deps.desfazerCarimbo(chave, nota.lancamento_em).catch(() => undefined)
+    return { status: 502, corpo: { erro: 'não consegui chamar o robô agora — tente de novo em instantes' } }
+  }
+  return { status: 202, corpo: { ok: true, chave, retomada: true } }
 }

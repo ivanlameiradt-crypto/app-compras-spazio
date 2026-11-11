@@ -34,8 +34,8 @@ describe('Pix — paridade entre as listas do app, das funções e do robô', ()
     for (const c of CONTAS_PIX) expect(validarCupom({ forma: 'pix', conta: c.conta }).ok).toBe(true)
   })
 
-  it('função da NF-e aceita EXATAMENTE as 6 chaves do app', () => {
-    expect([...CHAVES_NFE].sort()).toEqual(CONTAS_PIX.map((c) => `${c.banco}|${c.empresa}`).sort())
+  it('função da NF-e aceita as 6 chaves do app e, por decisão do Ivan de 11/11/2026, também o Itaú (que o app não oferece e o robô recusa)', () => {
+    expect([...CHAVES_NFE].sort()).toEqual([...CONTAS_PIX.map((c) => `${c.banco}|${c.empresa}`), 'itau|ij'].sort())
   })
 
   it('os textos estão na mesma forma Unicode (NFC) do Python do robô: "Á" e "À" de um caractere só', () => {
