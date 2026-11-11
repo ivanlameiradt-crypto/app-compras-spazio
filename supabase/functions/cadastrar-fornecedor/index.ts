@@ -3,7 +3,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { MINUTOS_PENDENTE_PARADO, MINUTOS_PROCESSANDO_PARADO, tratar, type Corpo, type CupomLinha, type Deps, type NotaLinha } from './logica.ts'
 
-const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'http://localhost:5173', 'http://localhost:4173'])
+const ORIGENS_PERMITIDAS = new Set(['https://ivanlameiradt-crypto.github.io', 'https://comprar.spazioburgerpizza.cloud', 'http://localhost:5173', 'http://localhost:4173'])
 const REPO = 'ivanlameiradt-crypto/sischef-monitor-notas'
 const WORKFLOW = 'cadastrar-fornecedor.yml'
 

@@ -7,6 +7,7 @@ import { type CodigoErro, type ContextoIA, type Deps, type PedidoModelo, tratar 
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
+  'https://comprar.spazioburgerpizza.cloud',
   'http://localhost:5173',
   'http://localhost:4173',
 ])
