@@ -42,6 +42,8 @@ export async function limpar(db: PGlite): Promise<void> {
       'fornecedor_cadastro, fornecedor_app, produto_cadastro, ' +
       // memória de embalagem das notas fiscais (29/10/2026)
       'nfe_aprendizado, ' +
+      // histórico de compras do SisChef (11/11/2026)
+      'compra_historico_produto, compra_historico, ' +
       // cupom e compra avulsa (tabela do robô, copiada no shim): as linhas que os testes de cupom_excluir/cupom_restaurar criam
       'cupom restart identity cascade',
   )

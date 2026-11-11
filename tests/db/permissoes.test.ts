@@ -131,7 +131,9 @@ const DO_APP = [
 const DA_PAGINA = ['cotacao_abrir(text,boolean)', 'cotacao_responder(text,uuid,jsonb,jsonb)']
 const DO_ROBO_NFE = ['cot_nfe_sincronizar(text,jsonb)', 'cot_nfe_marcar_notificado(text,text,text,text)', 'cot_nfe_marcar_lancadas(text,jsonb)',
   'cot_nfe_marcar_estado(text,jsonb)', 'cot_nfe_anexar_parcelas(text,jsonb)',
-  'nfe_aprendizado_ler(text,text)', 'nfe_aprendizado_gravar(text,jsonb)']
+  'nfe_aprendizado_ler(text,text)', 'nfe_aprendizado_gravar(text,jsonb)',
+  // histórico de compras do SisChef (11/11/2026, 20261227000001): o robô grava com o segredo próprio compra_historico_robo
+  'compra_historico_gravar(text,jsonb)']
 const ANON = [...DA_PAGINA, ...DO_ROBO_NFE]
 
 /** Chamadas pelo robô com a chave de serviço (grant explícito). */
