@@ -50,7 +50,7 @@ function Cabeca({ c }: { c: Cotacao }) {
   return (
     <div className="linha">
       <b>v{c.versao}{c.complementar ? ' · complementar' : ''}</b>
-      <span className={c.status === 'respondida' || c.resultado === 'pedido' ? 'pill ok' : 'pill'}>{rotuloStatus(c)}</span>
+      <span className={c.status === 'respondida' || c.resultado === 'pedido' ? 'pill ok' : 'pill atencao'}>{rotuloStatus(c)}</span>
     </div>
   )
 }

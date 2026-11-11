@@ -34,6 +34,8 @@ import {
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
   etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
+import TituloDaTela from '../components/TituloDaTela'
+import { Icone } from '../components/Icones'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
 const INTERVALO_ATUALIZAR = 15_000
@@ -945,7 +947,7 @@ export default function NotaSefaz() {
 
   return (
     <section className="coluna cupom">
-      <h2>Lançamento fiscal</h2>
+      <TituloDaTela>Lançamento fiscal</TituloDaTela>
       <p className="sub">Modo: eu disparo — você confere e manda lançar (o automático vem depois).</p>
 
       <div className="grupo">Notas a lançar</div>
@@ -1003,7 +1005,7 @@ export default function NotaSefaz() {
                   <button type="button" className="recente-linha" aria-expanded={aberto}
                     onClick={() => setExpandido(aberto ? null : n.chave)}>
                     <span><b>lançada ✓</b> · {nomeDe(n)} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
-                    <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
+                    <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                   </button>
                   {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map((it) => linhaDoItem(it, catalogo))}
                     fornecedor={`${n.emitente}${cnpjDe(n) ? ` · CNPJ ${formatarCnpj(cnpjDe(n))}` : ''}`} />}

@@ -7,6 +7,7 @@ import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 import { EmbalagemLembradaDoItem } from './CaixaEmbalagemLembrada'
 import { situacaoDaMemoria } from './embalagemLembrada'
 import { useValorEstavel } from './useValorEstavel'
+import { Icone } from '../components/Icones'
 
 /**
  * "Editar" de um item que JÁ vem associado no SisChef (pedido do Ivan, 21/10/2026: todo item tem o botão, mesmo o que está certo). O que se edita aqui é a
@@ -114,7 +115,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
             </p>
           )}
           <button type="button" className="editar-item" disabled={desabilitado || enviando} onClick={() => abrir()}>
-            <span aria-hidden="true">✎</span> Editar
+            <Icone nome="lancamentos" tamanho={18} /> Editar
           </button>
         </div>
         {/* Memória de embalagem: o que o robô lembra para este código (ou o aviso de que o Ivan acabou de mandá-lo esquecer). Fica fora do .editar-linha de propósito: a linha compacta dos itens confirmados é uma grade de 2 colunas. */}
@@ -161,7 +162,7 @@ export function ConversaoItemAssociado({ item, atual, pede, desabilitado, salvar
         </p>
       )}
       <div role="status" data-testid="conversao-item-um-regiao">
-        {avisoUm && <p className="amarelo aviso-um" data-testid="conversao-item-um-aviso"><span aria-hidden="true">⚠ </span>{avisoUm}</p>}
+        {avisoUm && <p className="amarelo aviso-um" data-testid="conversao-item-um-aviso"><Icone nome="alerta" tamanho={20} className="no-texto" />{avisoUm}</p>}
       </div>
       {/* A leitura clara do que ENTRA no SisChef (pedido do Ivan, 30/10/2026), a mesma frase da caixa de associação: o total, o produto, o porquê e a conta. Aqui o produto já está
           associado no SisChef, então a unidade é a dele (a da "Qtde Conver."). Sem a quantidade da leitura não há conta: nada aparece. */}

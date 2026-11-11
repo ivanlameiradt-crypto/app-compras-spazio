@@ -145,6 +145,8 @@ describe('rota /cupom (Sub-fase 3)', () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Lançar cupom' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Lançamento de cupom' })).toHaveClass('ativo') // a aba do topo fica marcada
+    // o título da tela mora dentro da barra preta (celular e tablet), como título principal
+    expect(within(screen.getByRole('banner')).getByRole('heading', { level: 1, name: 'Lançar cupom' })).toBeInTheDocument()
   })
 
   it('comprador não abre #/cupom: cai em Comprar e nem vê o item no menu', async () => {

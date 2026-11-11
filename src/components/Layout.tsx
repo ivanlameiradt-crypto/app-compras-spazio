@@ -7,6 +7,7 @@ import AvisoNovaVersao from './AvisoNovaVersao'
 import { conferirVersao, recarregarPagina } from '../lib/atualizacao'
 import { LogoComprar } from './marca/Comprar'
 import { Icone, type NomeIcone } from './Icones'
+import { SlotDoTitulo } from './TituloDaTela'
 
 // As 4 abas do topo (admin; "Compras avulsas" desde 10/10/2026). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
 // Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Fiscal (a nota da SEFAZ) são cada um sua tela.
@@ -34,6 +35,7 @@ function abaAtual(pathname: string): 'compra' | 'cupom' | 'sefaz' | 'avulsa' {
 export default function Layout({ usuario, offline = false, children }: { usuario: Usuario; offline?: boolean; children: ReactNode }) {
   const [aguardando, setAguardando] = useState(0)
   const [atualizando, setAtualizando] = useState(false)
+  const [slotTitulo, setSlotTitulo] = useState<HTMLElement | null>(null)
   const admin = usuario.papel === 'admin'
   // Botão Atualizar (pedido do Ivan, 07/10): o iPhone instalado não tem "puxar para atualizar" e ele não deve precisar sair do app. Confere a versão no ar:
   // se saiu versão nova, troca já (a tela fica a mesma); se não, recarrega a tela para ler os dados de novo (rascunhos como as parcelas ficam guardados no aparelho).
@@ -69,6 +71,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
           <NavLink to="/senha" className="link-claro">Trocar minha senha</NavLink>
           <button type="button" className="link-claro" onClick={() => api.sair()}>Sair</button>
         </div>
+        <div className="barra-titulo" ref={setSlotTitulo} />
         {admin ? (
           <nav className="barra-abas" aria-label="Seções">
             {ABAS.map((a) => (
@@ -96,7 +99,9 @@ export default function Layout({ usuario, offline = false, children }: { usuario
       {offline && <p className="faixa">Sem internet — seus itens serão enviados quando voltar.</p>}
       <AvisoNovaVersao />
       <AvisoFila />
-      <main className="conteudo">{children}</main>
+      <SlotDoTitulo.Provider value={slotTitulo}>
+        <main className="conteudo">{children}</main>
+      </SlotDoTitulo.Provider>
     </div>
   )
 }

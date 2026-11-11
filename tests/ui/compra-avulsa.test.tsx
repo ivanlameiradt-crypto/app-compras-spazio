@@ -140,7 +140,7 @@ describe('CompraAvulsa', () => {
     render(<CompraAvulsa />)
     const linhas = await screen.findAllByTestId('compra-recente')
     expect(linhas[0]).toHaveTextContent('lançada ✓ · ATACADÃO · R$ 1.627,25')
-    expect(linhas[1]).toHaveTextContent('precisa de você ⚠')
+    expect(linhas[1]).toHaveTextContent('precisa de você')
     expect(screen.getByTestId('motivo-recente')).toHaveTextContent('fornecedor não encontrado')
     await userEvent.click(within(linhas[0]).getByRole('button', { name: /lançada/ }))
     expect(linhas[0]).toHaveTextContent('164200001')

@@ -18,6 +18,7 @@ import { chaveCot, ContextoCotacoes, useCotacoes, type Contexto, type Sessao } f
 import { BotoesCopiar, LinkWhatsApp } from './cotacoes/Copiar'
 import { prontaSemSinal } from './cotacoes/estado'
 import { textoMotivo } from './cotacoes/formato'
+import TituloDaTela from '../components/TituloDaTela'
 
 const INTERVALO = 30_000
 
@@ -212,7 +213,7 @@ export default function Cotacoes() {
     <ContextoCotacoes.Provider value={ctx}>
       <section className="cotacoes">
         <div className="cabecalho">
-          <h2>Cotações{semana ? ` · semana ${formatarData(semana.data_referencia)}` : ''}</h2>
+          <TituloDaTela>Cotações{semana ? ` · semana ${formatarData(semana.data_referencia)}` : ''}</TituloDaTela>
           <a className="link" href="#/historico">Histórico</a>
           <button className="botao secundario" disabled={ocupado} onClick={() => void atualizar()}>Atualizar</button>
         </div>

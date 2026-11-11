@@ -3,6 +3,7 @@ import * as api from '../lib/api'
 import type { Papel, Usuario } from '../lib/tipos'
 import { mensagemDeErro } from '../lib/regras'
 import { SENHA_PADRAO, usuarioDoEmail } from '../lib/login'
+import TituloDaTela from '../components/TituloDaTela'
 
 export default function Pessoas({ usuario }: { usuario: Usuario }) {
   const [pessoas, setPessoas] = useState<Usuario[]>([])
@@ -54,7 +55,7 @@ export default function Pessoas({ usuario }: { usuario: Usuario }) {
 
   return (
     <section>
-      <h2>Pessoas</h2>
+      <TituloDaTela>Pessoas</TituloDaTela>
       {erro && <p className="erro">{erro}</p>}
       {aviso && <p className="aviso">{aviso}</p>}
       <form className="coluna cartao" onSubmit={criar}>

@@ -367,7 +367,7 @@ describe('Cupom — "Últimos envios"', () => {
     ])
     render(<Cupom />)
     const linhas = await screen.findAllByTestId('cupom-recente')
-    expect(linhas.map((l) => l.querySelector('b')?.textContent)).toEqual(['na fila', 'na fila', 'lançado ✓', 'precisa de você ⚠', 'teste ✓'])
+    expect(linhas.map((l) => l.querySelector('b')?.textContent)).toEqual(['na fila', 'na fila', 'lançado ✓', 'precisa de você', 'teste ✓'])
   })
 
   it('sem envios ainda: avisa', async () => {
@@ -680,7 +680,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(itens[0]).not.toBeInTheDocument()
     expect(await itensDaCaixa()).toHaveLength(1)                                              // só falta o pepino
     expect(progresso()).toHaveTextContent('Falta confirmar 1 de 2 itens.')
-    expect(resumo()[0]).toHaveTextContent(/^LIMAO SICILIANO\s*do cupom fiscal\s*R\$\s6,95\s*✓ LIMÃO SICILIANO - INSUMOS\s*do SisChef\s*· 0,5 kg\s*✎ Editar$/)
+    expect(resumo()[0]).toHaveTextContent(/^LIMAO SICILIANO\s*do cupom fiscal\s*R\$\s6,95\s*✓ LIMÃO SICILIANO - INSUMOS\s*do SisChef\s*· 0,5 kg\s*Editar$/)
     expect(within(resumo()[0]).getByRole('button', { name: /Editar/ })).toBeInTheDocument()
     expect(resumo()[1]).toHaveTextContent(/^PEPINO JAPONES\s*do cupom fiscal\s*falta confirmar$/)               // o que falta continua marcado no resumo
     expect(reenviar()).toBeDisabled()                                                        // ainda falta o pepino
@@ -703,8 +703,8 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     // a conferência: uma linha por item do cupom, com o produto e o que entra no estoque; os já confirmados marcados; a soma fecha em R$ 35,27
     const conferencia = resumo()
     expect(conferencia).toHaveLength(3)
-    expect(conferencia[0]).toHaveTextContent(/^LIMAO SICILIANO\s*do cupom fiscal\s*R\$\s6,95\s*✓ LIMÃO SICILIANO - INSUMOS\s*do SisChef\s*· 0,5 kg\s*✎ Editar$/)
-    expect(conferencia[1]).toHaveTextContent(/^PEPINO JAPONES\s*do cupom fiscal\s*R\$\s5,28\s*✓ PEPINO JAPONÊS - INSUMOS\s*do SisChef\s*· 0,912 kg\s*✎ Editar$/)   // 0,912 × 5,79 = 5,28048 → 5,28 (a 2 casas, como o robô)
+    expect(conferencia[0]).toHaveTextContent(/^LIMAO SICILIANO\s*do cupom fiscal\s*R\$\s6,95\s*✓ LIMÃO SICILIANO - INSUMOS\s*do SisChef\s*· 0,5 kg\s*Editar$/)
+    expect(conferencia[1]).toHaveTextContent(/^PEPINO JAPONES\s*do cupom fiscal\s*R\$\s5,28\s*✓ PEPINO JAPONÊS - INSUMOS\s*do SisChef\s*· 0,912 kg\s*Editar$/)   // 0,912 × 5,79 = 5,28048 → 5,28 (a 2 casas, como o robô)
     expect(conferencia[2]).toHaveTextContent(/^LIMAO TAITI TROPICAL \(já confirmado\)\s*do cupom fiscal\s*R\$\s23,04\s*✓ LIMÃO - INSUMOS\s*do SisChef\s*· entra 2,884 kg no estoque$/)
     expect(within(conferencia[2]).queryByRole('button', { name: /Editar/ })).not.toBeInTheDocument()   // o que o servidor já casou não tem "Editar"
     expect(soma()).toHaveTextContent(/Soma R\$\s35,27 · cupom R\$\s35,27 · bate/)
@@ -746,7 +746,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     await userEvent.type(peso, '0,912')
     await userEvent.click(within(resumo()[1]).getByRole('button', { name: 'Confirmar este item' }))
     expect(screen.queryByTestId('resumo-edicao')).not.toBeInTheDocument()                     // confirmou: a caixa fecha e a linha volta a ser só o resumo
-    expect(resumo()[1]).toHaveTextContent(/^PEPINO JAPONES\s*do cupom fiscal\s*R\$\s5,28\s*✓ PEPINO JAPONÊS - INSUMOS\s*do SisChef\s*· 0,912 kg\s*✎ Editar$/)
+    expect(resumo()[1]).toHaveTextContent(/^PEPINO JAPONES\s*do cupom fiscal\s*R\$\s5,28\s*✓ PEPINO JAPONÊS - INSUMOS\s*do SisChef\s*· 0,912 kg\s*Editar$/)
     expect(soma()).toHaveClass('ok')
     expect(reenviar()).toBeEnabled()
   })
@@ -897,7 +897,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     expect(within(item).getByTestId('vai-lembrar')).toHaveTextContent('Vou lembrar: da próxima vez, “QUEIJO MINAS PC” deste fornecedor entra com 1 UN = 0,8 KG, sem perguntar.')
     await userEvent.click(confirmar)
     expect(item).not.toBeInTheDocument()                                                      // confirmado: sai da lista
-    expect(resumo()[0]).toHaveTextContent(/^QUEIJO MINAS PC\s*do cupom fiscal\s*R\$\s25,00\s*✓ QUEIJO MINAS - INSUMOS\s*do SisChef\s*· 1 un → entram 0,8 kg\s*✎ Editar$/)   // e o resumo diz o que entra no estoque
+    expect(resumo()[0]).toHaveTextContent(/^QUEIJO MINAS PC\s*do cupom fiscal\s*R\$\s25,00\s*✓ QUEIJO MINAS - INSUMOS\s*do SisChef\s*· 1 un → entram 0,8 kg\s*Editar$/)   // e o resumo diz o que entra no estoque
     expect(soma()).toHaveClass('ok')
     await userEvent.click(reenviar())
     await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('q1', [{ indice: 0, insumo_id: '3500001', quantidade: 1, entrada: 0.8, lembrar: true }]))
@@ -1072,7 +1072,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(confirmar).toBeEnabled()
       await userEvent.click(confirmar)
       expect(item0).not.toBeInTheDocument()                                                    // agora sim: confirmado, sai da lista
-      expect(resumo()[0]).toHaveTextContent(/^ALHO Kg A GRANEL\s*do cupom fiscal\s*R\$\s10,00\s*✓ .*ALHO.*\s*do SisChef\s*· 1 kg\s*✎ Editar$/)
+      expect(resumo()[0]).toHaveTextContent(/^ALHO Kg A GRANEL\s*do cupom fiscal\s*R\$\s10,00\s*✓ .*ALHO.*\s*do SisChef\s*· 1 kg\s*Editar$/)
       expect(progresso()).toHaveTextContent('✓ O item está confirmado. Confira a soma abaixo e reenvie.')
       expect(reenviar()).toBeEnabled()
     })
@@ -1185,7 +1185,7 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
       expect(reenviar()).toBeDisabled()                                                                      // nada vai para o servidor sem o toque no "Confirmar este item"
       await userEvent.click(within(item0).getByRole('button', { name: 'Confirmar este item' }))
       expect(item0).not.toBeInTheDocument()                                                                  // confirmado: sai da lista
-      expect(resumo()[0]).toHaveTextContent(/^SACO 12X27 1\/2 KG AD FONTEPLAST\s*do cupom fiscal\s*R\$\s141,60\s*✓ SACO 1\/2 KG - C\/ 100 UND\s*do SisChef\s*· 6 ML \(milheiro\) → entram 60 ct\s*✎ Editar$/)   // o resumo mostra o milheiro e o que entra no estoque
+      expect(resumo()[0]).toHaveTextContent(/^SACO 12X27 1\/2 KG AD FONTEPLAST\s*do cupom fiscal\s*R\$\s141,60\s*✓ SACO 1\/2 KG - C\/ 100 UND\s*do SisChef\s*· 6 ML \(milheiro\) → entram 60 ct\s*Editar$/)   // o resumo mostra o milheiro e o que entra no estoque
       await userEvent.click(reenviar())
       await waitFor(() => expect(m.confirmarCupom).toHaveBeenCalledWith('p1', [{ indice: 0, insumo_id: '3476481', quantidade: 6, entrada: 60, lembrar: true }]))
     })

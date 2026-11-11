@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { escolherSenhaInicial, trocarMinhaSenha } from '../lib/api'
 import { SENHA_PADRAO } from '../lib/login'
+import TituloDaTela from '../components/TituloDaTela'
 
 function mensagemDeErroSenha(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
@@ -88,7 +89,7 @@ export default function TrocarSenha({ forcada, offline = false, onSair }: {
 
   return (
     <section className="coluna">
-      <h2>Trocar minha senha</h2>
+      <TituloDaTela>Trocar minha senha</TituloDaTela>
       {formulario}
     </section>
   )

@@ -4,6 +4,8 @@ import type { HistoricoItemLinha, HistoricoSemana, Vendedor } from '../lib/tipos
 import { mensagemDeErro } from '../lib/regras'
 import * as api from '../lib/api'
 import * as cad from '../cadastros/api'
+import TituloDaTela from '../components/TituloDaTela'
+import { Icone } from '../components/Icones'
 
 const reais = (n: number) => `R$ ${Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pct = (p: number | null) => (p == null ? '' : `${(p * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`)
@@ -42,8 +44,8 @@ export default function Historico() {
 
   return (
     <section>
-      <h2>Histórico de cotações</h2>
-      <Link className="link" to="/cadastros">← Cadastros</Link>
+      <TituloDaTela>Histórico de cotações</TituloDaTela>
+      <Link className="link" to="/cadastros"><Icone nome="esq" tamanho={20} /> Cadastros</Link>
       {erro && <p className="erro">{erro}</p>}
       {porSemana.map((g) => (
         <div key={g.data} className="cartao coluna">

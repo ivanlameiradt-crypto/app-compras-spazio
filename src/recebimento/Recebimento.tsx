@@ -9,6 +9,8 @@ import {
   descricaoPedido, embParaUn, faltaChegar, itensComFalta, linhasFaltaAvaria, montarItens, porEmbalagem,
   prontoParaGravar, resumoRecebido, tudoQueFalta, unParaEmb, type EntradaItem,
 } from './receber'
+import TituloDaTela from '../components/TituloDaTela'
+import { Icone } from '../components/Icones'
 
 const novoId = (): string =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`)
@@ -32,7 +34,7 @@ export default function Receber({ usuario }: { usuario: Usuario }) {
   const hoje = new Date().toISOString().slice(0, 10)
   return (
     <div className="receber">
-      <h2>Pedidos a receber</h2>
+      <TituloDaTela>Pedidos a receber</TituloDaTela>
       <ul className="lista-pedidos">
         {pedidos.map((p) => {
           const atrasado = p.entrega_prevista != null && p.entrega_prevista < hoje && p.recebimento === 'aguardando'
@@ -117,7 +119,7 @@ function Cartao({ pedido, admin, onVoltar }: { pedido: PedidoAReceber; admin: bo
     const linhasMsg = linhasFaltaAvaria(pedido, resultado)
     return (
       <div className="receber">
-        <button className="link" onClick={onVoltar}>← Voltar</button>
+        <button className="link" onClick={onVoltar}><Icone nome="esq" tamanho={20} /> Voltar</button>
         <p className="ok">{resumoRecebido(resultado)}</p>
         {admin && (resultado.faltas.length > 0 || resultado.avarias.length > 0) && (
           <button className="botao" onClick={() => navigator.clipboard?.writeText(
@@ -131,8 +133,8 @@ function Cartao({ pedido, admin, onVoltar }: { pedido: PedidoAReceber; admin: bo
 
   return (
     <div className="receber">
-      <button className="link" onClick={onVoltar}>← Voltar</button>
-      <h2>{pedido.vendedor}</h2>
+      <button className="link" onClick={onVoltar}><Icone nome="esq" tamanho={20} /> Voltar</button>
+      <TituloDaTela>{pedido.vendedor}</TituloDaTela>
       {pedido.itens.map((it) => (
         <ItemLinha key={it.numero} item={it} entrada={entradas[it.numero]}
           onChegouUn={(un) => setChegouUn(it, un)} onAvaria={(un) => setAvaria(it, un)} onNaoVeio={() => setChegouUn(it, 0)} onInvalido={marcarInvalido} />

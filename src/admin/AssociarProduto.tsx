@@ -29,6 +29,7 @@ import { ACOES_PRODUTO } from './acoesProduto'
 import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 import { Origem } from './Origem'
 import { useValorEstavel } from './useValorEstavel'
+import { Icone } from '../components/Icones'
 
 interface Props {
   item: ItemNotaSefaz
@@ -176,7 +177,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
           {entra != null && conv != null && ` · entram ${formatarQuantidade(Number(item.qtd))} × ${formatarConversao(conv)} = ${formatarQuantidade(entra)} ${rotuloUnidade(decisao.unidade)}`}
         </span>
         <button type="button" className="editar-item" onClick={() => { setErro(''); setConversaoAberta(true); setTrocando(true) }}>
-          <span aria-hidden="true">✎</span> Editar
+          <Icone nome="lancamentos" tamanho={18} /> Editar
         </button>
       </div>
     )
@@ -340,7 +341,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
               {ecoConversao && <p className="sub" data-testid="conversao-eco">Vai gravar: {ecoConversao}</p>}
               {/* a região existe ANTES do texto (leitor de tela só anuncia o que muda numa região já montada) e o aviso tem estilo próprio, senão se perde dentro da caixa amarela */}
               <div role="status" data-testid="conversao-um-regiao">
-                {avisoUm && <p className="amarelo aviso-um" data-testid="conversao-um-aviso"><span aria-hidden="true">⚠ </span>{avisoUm}</p>}
+                {avisoUm && <p className="amarelo aviso-um" data-testid="conversao-um-aviso"><Icone nome="alerta" tamanho={20} className="no-texto" />{avisoUm}</p>}
               </div>
               {leitura != null && atual != null && (
                 <p className="ok" data-testid="conversao-entrada">

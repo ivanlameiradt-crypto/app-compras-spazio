@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import TituloDaTela from '../components/TituloDaTela'
 
 export default function EscolherLoja({ lojas, onEscolher }: { lojas: string[]; onEscolher: (loja: string) => void }) {
   const [nova, setNova] = useState('')
   return (
     <section className="coluna">
-      <h2>Em que loja você está?</h2>
+      <TituloDaTela>Em que loja você está?</TituloDaTela>
       {lojas.map((l) => <button key={l} className="item" onClick={() => onEscolher(l)}>{l}</button>)}
       <form className="coluna" onSubmit={(e) => { e.preventDefault(); if (nova.trim()) onEscolher(nova) }}>
         <input placeholder="Outra loja (digite o nome)" value={nova} onChange={(e) => setNova(e.target.value)} />

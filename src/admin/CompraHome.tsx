@@ -2,6 +2,7 @@
 // de compra que já existem; o Layout mostra "← Menu Compra" para voltar aqui.
 import { Link } from 'react-router-dom'
 import { Icone, type NomeIcone } from '../components/Icones'
+import TituloDaTela from '../components/TituloDaTela'
 
 // "Fazer compra" é a tela de antes chamada "Comprar" (rota /comprar): o app inteiro passou a se chamar "Comprar" (nome dado pelo Ivan em 10/11/2026).
 const TELAS: { to: string; rotulo: string; ic: NomeIcone }[] = [
@@ -18,7 +19,7 @@ const TELAS: { to: string; rotulo: string; ic: NomeIcone }[] = [
 export default function CompraHome() {
   return (
     <section className="coluna">
-      <h2>Compra</h2>
+      <TituloDaTela>Compra</TituloDaTela>
       <nav className="grade" aria-label="Telas de compra">
         {TELAS.map((t) => (
           <Link key={t.to} to={t.to}>

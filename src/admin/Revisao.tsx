@@ -9,6 +9,7 @@ import {
 import { ddmm, diaCurto, horaLocal, rotuloVendedor } from '../cotacao/mensagens'
 import * as cad from '../cadastros/api'
 import { tirarSempre as textoTirarSempre } from '../cadastros/textos'
+import TituloDaTela from '../components/TituloDaTela'
 
 type Aba = 'conferir' | 'bebidas' | 'insumos' | 'negativos'
 /** Outra semana ainda em compra: só uma fica em compra por vez, então ela precisa ser encerrada antes de aprovar esta. */
@@ -165,8 +166,8 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
   return (
     <section>
       <div className="cabecalho">
-        <h2>Semana {formatarData(s.data_referencia)}</h2>
-        <span className={s.status === 'rascunho' ? 'pill' : 'pill ok'}>{ROTULO_STATUS[s.status]}</span>
+        <TituloDaTela>Semana {formatarData(s.data_referencia)}</TituloDaTela>
+        <span className={s.status === 'rascunho' ? 'pill atencao' : 'pill ok'}>{ROTULO_STATUS[s.status]}</span>
       </div>
       {!editavel && (
         <div className="aviso">
