@@ -44,6 +44,8 @@ export async function limpar(db: PGlite): Promise<void> {
       'nfe_aprendizado, ' +
       // histórico de compras do SisChef (11/11/2026)
       'compra_historico_produto, compra_historico, ' +
+      // contagem da prateleira da lista da semana (11/11/2026)
+      'compra_contagem, ' +
       // cupom e compra avulsa (tabela do robô, copiada no shim): as linhas que os testes de cupom_excluir/cupom_restaurar criam
       'cupom restart identity cascade',
   )
