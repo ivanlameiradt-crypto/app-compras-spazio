@@ -34,15 +34,15 @@ function fakeDeps(over: Partial<Deps> = {}): Deps & { reservas: unknown[][]; dis
 
 describe('normalizarForma ("como pagar" do app -> forma do robô)', () => {
   it.each([['boleto', 'boleto'], [' DINHEIRO ', 'dinheiro'], ['tesouraria', 'tesouraria'], ['cartao', 'cartao'],
-    ['PIX:Bradesco|IJ', 'pix:bradesco|ij'], ['pix:caixa|sp', 'pix:caixa|sp']])('%s -> %s', (entrada, saida) => {
+    ['PIX:Bradesco|IJ', 'pix:bradesco|ij'], ['pix:caixa|sp', 'pix:caixa|sp'], ['pix:itau|ij', 'pix:itau|ij']])('%s -> %s', (entrada, saida) => {
     expect(normalizarForma(entrada)).toBe(saida)
   })
-  it.each([[null], [''], ['cheque'], ['pix'], ['pix:'], ['pix:itau|sp'], ['pix:itau|ij'], ['pix:bradesco|ij|x'], [42]])('%s é recusada', (f) => {
+  it.each([[null], [''], ['cheque'], ['pix'], ['pix:'], ['pix:itau|sp'], ['pix:bradesco|ij|x'], [42]])('%s é recusada', (f) => {
     expect(normalizarForma(f)).toBeNull()
   })
-  it('as contas PIX são as 6 do MAPA_PIX do robô (sem Itaú, que o SisChef não tem mais)', () => {
-    expect(CONTAS_PIX).toHaveLength(6)
-    expect(CONTAS_PIX).toEqual(['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesco|sp', 'caixa|ij', 'caixa|sp'])
+  it('as contas PIX são as 6 do MAPA_PIX do robô mais o Itaú, mantido por decisão do Ivan em 11/11/2026', () => {
+    expect(CONTAS_PIX).toHaveLength(7)
+    expect(CONTAS_PIX).toEqual(['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesco|sp', 'itau|ij', 'caixa|ij', 'caixa|sp'])
   })
 })
 

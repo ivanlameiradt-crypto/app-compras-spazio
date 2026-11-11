@@ -81,9 +81,12 @@ export interface Deps {
 
 export interface Resultado { status: number; corpo: Record<string, unknown> }
 
-/** As contas PIX válidas (= cupom_formas_pagamento.MAPA_PIX do robô; o app as mostra em src/cupom/formasPagamento.ts). Sem 'itau|ij' desde 31/10/2026:
- *  o SisChef não tem mais a conta Itaú (robô PR 79) e o robô recusaria a nota depois de a reservar. */
-export const CONTAS_PIX = ['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesco|sp', 'caixa|ij', 'caixa|sp']
+/** As contas PIX válidas (= cupom_formas_pagamento.MAPA_PIX do robô; o app as mostra em src/cupom/formasPagamento.ts), MAIS 'itau|ij'.
+ *  O Itaú saiu do código em 31/10/2026 (o SisChef não mostrava mais a conta; robô PR 79), mas essa retirada nunca foi publicada e, em
+ *  11/11/2026, o Ivan decidiu MANTER o Itaú nesta função ("pode deixar a conta Itaú", "mantenha o Itaú"). O app não oferece o Itaú na tela
+ *  e o robô recusa 'pix:itau|ij' ANTES de abrir o SisChef (a nota volta como "precisa de você"); para voltar a usar, o robô e o app
+ *  precisam ganhar a conta de volta. */
+export const CONTAS_PIX = ['pangbank|ij', 'pangbank|sp', 'bradesco|ij', 'bradesco|sp', 'itau|ij', 'caixa|ij', 'caixa|sp']
 /** Uma tentativa 'lancando' mais velha que isto é dada como presa (o run caiu/foi cancelado) e pode ser reservada. */
 export const MINUTOS_TRAVA = 30
 const RE_CHAVE = /^\d{44}$/
