@@ -42,7 +42,9 @@ function emitirVersao(id: string): Plugin {
 export default defineConfig(({ command, mode }) => {
   if (command === 'build' && mode === 'production') exigirEnvDeProducao(mode)
   return {
-    base: '/app-compras-spazio/',
+    // Caminho RELATIVO: o mesmo pacote abre no endereço antigo (github.io/app-compras-spazio/) e no próprio (comprar.spazioburgerpizza.cloud, na raiz).
+    // O app usa HashRouter (a rota fica depois do #), então nada depende de uma pasta fixa.
+    base: './',
     // __BUILD_ID__ fica embutido no pacote; o app compara com o version.json da rede para trocar de versão sozinho.
     define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
     plugins: [
@@ -60,8 +62,8 @@ export default defineConfig(({ command, mode }) => {
           short_name: 'Comprar',
           description: 'Lançamento de compra e estoque da Spazio Gourmet e da Kūkan Sushi.',
           lang: 'pt-BR',
-          start_url: '/app-compras-spazio/',
-          scope: '/app-compras-spazio/',
+          start_url: './',
+          scope: './',
           display: 'standalone',
           background_color: '#FFD201',
           theme_color: '#231F20',
@@ -75,7 +77,7 @@ export default defineConfig(({ command, mode }) => {
         // clientsClaim: o service worker novo assume as telas JÁ abertas (sem isto, "sair e entrar" num app instalado
         // continuava no velho, porque o novo só assumiria ao fechar tudo). Com skipWaiting, ele troca na hora.
         // woff2 = a letra Archivo e png/svg = os ícones: ficam guardados no aparelho (o app funciona sem internet).
-        workbox: { navigateFallback: '/app-compras-spazio/index.html', clientsClaim: true, skipWaiting: true, globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
+        workbox: { navigateFallback: 'index.html', clientsClaim: true, skipWaiting: true, globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
       }),
       emitirVersao(BUILD_ID), // por último: grava version.json fora do precache
     ],

@@ -12,6 +12,7 @@ import { acharParecidas, ioDoSupabase, type ClienteConsulta } from './parecida.t
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ivanlameiradt-crypto.github.io',
+  'https://comprar.spazioburgerpizza.cloud',
   'http://localhost:5173',
   'http://localhost:4173',
 ])
