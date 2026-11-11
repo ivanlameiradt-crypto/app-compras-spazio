@@ -8,6 +8,7 @@ import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fi
 import { emailDoLogin, SENHA_PADRAO } from './login'
 import { mensagemDeErroDaFoto } from './foto'
 import { ehUnidadeDaLista } from './unidadesDaLista'
+import type { ProdutoHistorico } from './sugestaoCompra'
 import type {
   Abertura, AssociacaoApp, Compra, ConfirmacaoItemCupom, Cotacao, CupomRecente, DadosEnvio, Desempenho, EconomiaSemana, EntradaGerais, EntradaItem,
   HistoricoItem, IaStatus, ImagemIA, ItemCotacao, ItemPedidoEntrada, ItemRecebido, ItemSemana, LeituraIA, LeituraNotas,
@@ -1357,3 +1358,38 @@ export async function enviarCompraAvulsa(envio: EnvioCompraAvulsa): Promise<Resu
   if (error) throw await erroDaFuncao(error)
   return data as ResumoEnvioCupom
 }
+
+// ---------- Lista da semana (tela nova): histórico de compras do SisChef e contagem na loja
+const PAGINA_LEITURA = 1000
+/** O Supabase corta a leitura em 1000 linhas: lê de página em página até acabar. */
+async function lerTudo<T>(consulta: (de: number, ate: number) => PromiseLike<Resposta<T[]>>): Promise<T[]> {
+  const todas: T[] = []
+  for (let de = 0; ; de += PAGINA_LEITURA) {
+    const lote = checar(await consulta(de, de + PAGINA_LEITURA - 1)) ?? []
+    todas.push(...lote)
+    if (lote.length < PAGINA_LEITURA) return todas
+  }
+}
+/** Histórico de compras por produto (para `sugerirCompras`). */
+export async function historicoDeCompras(): Promise<ProdutoHistorico[]> {
+  const produtos = checar(await supabase.from('compra_historico_produto').select('produto_id, nome, unidade')) as
+    { produto_id: number; nome: string; unidade: string | null }[]
+  const linhas = await lerTudo<{ produto_id: number; data: string; fornecedor: string | null; qtd: number; preco_unit: number; custo_liquido: number }>(
+    (de, ate) => supabase.from('compra_historico').select('produto_id, data, fornecedor, qtd, preco_unit, custo_liquido')
+      .order('produto_id').order('pos').range(de, ate))
+  const porProduto = new Map<number, ProdutoHistorico>()
+  for (const p of produtos ?? []) porProduto.set(p.produto_id, { produtoId: p.produto_id, nome: p.nome, unidade: p.unidade, linhas: [] })
+  for (const l of linhas) {
+    const p = porProduto.get(l.produto_id)
+    if (p) p.linhas.push({ data: String(l.data).slice(0, 10), fornecedor: l.fornecedor, qtd: Number(l.qtd), precoUnit: Number(l.preco_unit), custoLiquido: Number(l.custo_liquido) })
+  }
+  return [...porProduto.values()]
+}
+/** Contagem feita na loja nesta semana: produto_id → quantidade. */
+export async function contagemDaSemana(semanaId: number): Promise<Map<number, number>> {
+  const r = checar(await supabase.from('compra_contagem').select('produto_id, qtd').eq('semana_id', semanaId)) as { produto_id: number; qtd: number }[]
+  return new Map((r ?? []).map((c) => [c.produto_id, Number(c.qtd)]))
+}
+/** Grava a contagem de um produto; `qtd` null apaga. */
+export const salvarContagem = (semana: number, produto: number, qtd: number | null) =>
+  chamar('compra_contagem_salvar', { p_semana: semana, p_produto: produto, p_qtd: qtd })

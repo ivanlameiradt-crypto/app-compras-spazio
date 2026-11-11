@@ -9,6 +9,7 @@ import Instalar from './auth/Instalar'
 import TelaAbertura from './components/marca/TelaAbertura'
 import { LogoComprar } from './components/marca/Comprar'
 import Revisao from './admin/Revisao'
+import ListaSemana from './admin/ListaSemana'
 import Cotacoes from './admin/Cotacoes'
 import Lancamentos from './admin/Lancamentos'
 import Resumo from './admin/Resumo'
@@ -85,6 +86,7 @@ function Telas({ usuario }: { usuario: Usuario }) {
       {admin && <Route path="/compra" element={<CompraHome />} />}
       {admin && <Route path="/nota-sefaz" element={<NotaSefaz />} />}
       {admin && <Route path="/lista" element={<Revisao usuario={usuario} />} />}
+      {admin && <Route path="/lista-semana" element={<ListaSemana />} />}
       {admin && <Route path="/cotacoes" element={<Cotacoes />} />}
       {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
       {admin && <Route path="/resumo" element={<Resumo />} />}
