@@ -19,9 +19,10 @@ import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
 import { unidadeDoProduto } from './unidadeEstoque'
 import { cnpjLidoSuspeito, formatarCnpj, fornecedorNaoEncontrado, nomeDoFornecedor } from './fornecedorRegras'
+import TituloDaTela from '../components/TituloDaTela'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
-  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓', EXCLUIDO: 'excluído',
+  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você', TESTE: 'teste ✓', EXCLUIDO: 'excluído',
 }
 
 /** Monta o pagamento a partir dos botões; null = ainda incompleto (PIX sem banco/empresa). */
@@ -333,7 +334,7 @@ export default function Cupom() {
 
   return (
     <section className="coluna cupom">
-      <h2>Lançar cupom</h2>
+      <TituloDaTela>Lançar cupom</TituloDaTela>
 
       {/* travado durante o envio (trocar foto/forma no meio apagaria a escolha do próximo cupom quando o envio terminasse) e durante o
           preparo da foto (duas capturas em seguida podem terminar fora de ordem, e a foto velha venceria) */}
@@ -405,8 +406,8 @@ export default function Cupom() {
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
                   onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && ` · ${valor}`}</span>
-                  <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
+                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && !envioRepetido(c) && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && ` · ${valor}`}</span>
+                  <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                 </button>
                 {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (
                   <p className={reenviados[c.id].classe} data-testid="reenviado">{reenviados[c.id].texto}</p>

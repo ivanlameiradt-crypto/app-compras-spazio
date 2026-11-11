@@ -9,6 +9,7 @@ import AConfirmar, { liquidoSemConversao } from './cadastros/AConfirmar'
 import Feriados from './cadastros/Feriados'
 import Mudancas from './cadastros/Mudancas'
 import Pessoas from './Pessoas'
+import TituloDaTela from '../components/TituloDaTela'
 
 type Aba = 'vendedores' | 'produtos' | 'confirmar' | 'feriados' | 'pessoas' | 'mudancas'
 const ABAS: { id: Aba; nome: string }[] = [
@@ -41,7 +42,7 @@ export default function Cadastros({ usuario }: { usuario: Usuario }) {
 
   return (
     <section>
-      <h2>Cadastros</h2>
+      <TituloDaTela>Cadastros</TituloDaTela>
       <p className="faixa">{FAIXA_VIRADA}</p>
       <nav className="menu subabas">
         {ABAS.map((a) => (

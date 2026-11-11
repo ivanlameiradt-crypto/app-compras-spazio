@@ -3,6 +3,7 @@ import * as api from '../lib/api'
 import type { HistoricoItem as Historico } from '../lib/tipos'
 import { mensagemDeErro } from '../lib/regras'
 import { ddmm, reais, textoPct } from '../lib/contas'
+import TituloDaTela from '../components/TituloDaTela'
 
 // Fase 2, Bloco E1 (DESIGN-fase-2.md E.6, "Histórico do item"): compras no SisChef, cotações e pedidos de um
 // produto. Abre do painel de Economia (ao tocar um item) e, na C1, do detalhe do produto em Cadastros.
@@ -28,7 +29,7 @@ export default function HistoricoItem(
   return (
     <section className="historico-item" role="dialog" aria-label={`Histórico de ${titulo}`}>
       <div className="cabecalho">
-        <h2>{titulo}</h2>
+        <TituloDaTela>{titulo}</TituloDaTela>
         {onFechar && <button className="link" onClick={onFechar}>Fechar</button>}
       </div>
       {erro && (

@@ -20,6 +20,7 @@ const CAMINHOS = {
   relogio: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5v5l3 2" /></>,
   alerta: <><path d="M12 4 21 19H3z" /><path d="M12 10v4" /><path d="M12 16.6v.4" /></>,
   esq: <path d="M15 5l-7 7 7 7" />,
+  fechar: <path d="M6 6l12 12M18 6 6 18" />,
   dir: <path d="M9 5l7 7-7 7" />,
   atualizar: <><path d="M20 11a8 8 0 0 0-14.5-4.4L4 8.5" /><path d="M4 4v4.5h4.5" /><path d="M4 13a8 8 0 0 0 14.5 4.4L20 15.5" /><path d="M20 20v-4.5h-4.5" /></>,
   compartilhar: <><path d="M12 15V4M8 7.5 12 3.5l4 4" /><path d="M6 11H5v9h14v-9h-1" /></>,

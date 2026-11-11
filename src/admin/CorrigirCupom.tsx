@@ -19,6 +19,7 @@ import { ehEmbalagemContada } from '../lib/unidadesDaLista'
 import AvisoPreco from './AvisoPreco'
 import { Origem } from './Origem'
 import { precoForaDoNormal } from './precoForaDoNormal'
+import { Icone } from '../components/Icones'
 
 interface Props {
   cupom: CupomRecente
@@ -397,7 +398,7 @@ function ItemConfirmadoNoResumo({ it, produto, conf, travado, aoEditar }: {
         <span className="confirmado">✓ {produto.nome}<Origem de="sischef" /></span>
         <span className="sub"> · {qtd(conf.quantidade)} {milheiro ? 'ML (milheiro)' : minusc(it.unidade_cupom)}{conf.entrada != null && <> → entram {qtd(linha.entrada)} {minusc(produto.unidade)}</>}</span>
       </span>
-      <button type="button" className="editar-item" disabled={travado} onClick={aoEditar}><span aria-hidden="true">✎</span> Editar</button>
+      <button type="button" className="editar-item" disabled={travado} onClick={aoEditar}><Icone nome="lancamentos" tamanho={18} /> Editar</button>
       {/* a última chance de ver o preço fora do normal antes de reenviar: o item confirmado sai da lista e só mora aqui */}
       <AvisoPreco aviso={precoForaDoNormal(linha.valorUnitario, produto.unidade, produto.compras)} testid="preco-fora-do-normal-resumo" />
     </div>
@@ -535,7 +536,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
                 </span>
                 <span className="sub item-estado" data-testid="item-estado">{e.produto ? `${e.produto.nome} · falta confirmar` : 'falta escolher o produto'}</span>
               </span>
-              <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
+              <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
             </button>
             <div id={idCorpo} className="item-corpo" data-testid="item-corpo" hidden={!aberto}>
               {abertos[i] !== undefined && (

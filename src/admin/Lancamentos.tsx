@@ -7,6 +7,7 @@ import type { Semana, Usuario } from '../lib/tipos'
 import {
   ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, lerNumero, mensagemDeErro,
 } from '../lib/regras'
+import TituloDaTela from '../components/TituloDaTela'
 
 export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const [fila, setFila] = useState<api.CompraNaFila[] | undefined>()
@@ -153,7 +154,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const deOutros = travando ? abertas.filter((a) => a.comprador !== usuario.email) : []
   return (
     <section>
-      <div className="cabecalho"><h2>Lançamentos</h2><span className="sub">{fila.length} compras</span></div>
+      <TituloDaTela>Lançamentos</TituloDaTela>
+      <p className="sub">{fila.length} compras</p>
       {erro && <p className="erro">{erro}</p>}
       {erroFila && (
         <p className="erro" data-testid="erro-fila">
@@ -164,7 +166,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
       {aviso && (
         <p className="aviso" data-testid="aviso">
           {aviso}{' '}
-          <button className="link" aria-label="Fechar aviso" onClick={() => setAviso('')}>✕</button>
+          <button className="link" aria-label="Fechar aviso" onClick={() => setAviso('')}><Icone nome="fechar" tamanho={20} /></button>
         </p>
       )}
       {erroAbertas && (
@@ -201,8 +203,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
           <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
           <div className="sub">
             {c.itens} itens · {formatarReais(Number(c.total_pago ?? 0))} ·{' '}
-            <span className="pill">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>{' '}
-            <span className={c.status === 'aprovada' ? 'pill ok' : 'pill'}>{ROTULO_STATUS[c.status]}</span>
+            <span className="pill neutro">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>{' '}
+            <span className={c.status === 'aprovada' ? 'pill ok' : 'pill atencao'}>{ROTULO_STATUS[c.status]}</span>
           </div>
           {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
           {cupomEmbutido[c.id] && <img src={cupomEmbutido[c.id]} alt="Foto do cupom fiscal" style={{ maxWidth: '100%', marginTop: 8 }} />}

@@ -21,6 +21,8 @@ import ExcluirCupom from './ExcluirCupom'
 import AvisoRepetida from './AvisoRepetida'
 import AvisoFalhaConferir from './AvisoFalhaConferir'
 import CuponsExcluidos from './CuponsExcluidos'
+import TituloDaTela from '../components/TituloDaTela'
+import { Icone } from '../components/Icones'
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
 const ACOES_FORNECEDOR = {
@@ -34,7 +36,7 @@ const novoId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16))
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
-  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançada ✓', REVISAR: 'precisa de você ⚠', TESTE: 'teste ✓', EXCLUIDO: 'excluída',
+  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançada ✓', REVISAR: 'precisa de você', TESTE: 'teste ✓', EXCLUIDO: 'excluída',
 }
 const INTERVALO_RECENTES_MS = 30_000
 
@@ -149,7 +151,7 @@ export default function CompraAvulsa() {
 
   return (
     <section className="coluna cupom compra-avulsa" data-testid="compra-avulsa">
-      <h2>Compras avulsas</h2>
+      <TituloDaTela>Compras avulsas</TituloDaTela>
       <p className="sub">Compra feita <b>sem cupom fiscal e sem nota fiscal</b>. Você digita o produto, a quantidade e o preço; o robô lança no SisChef como um pedido de compra: entra no estoque e, conforme a forma de pagamento, no financeiro.</p>
 
       <div className="etapa">
@@ -318,8 +320,8 @@ export default function CompraAvulsa() {
             return (
               <li key={c.id} data-testid="compra-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto} onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{ROTULO_ESTADO[c.estado]}</b> · {nome}{c.valor_a_pagar != null && ` · ${formatarReais(c.valor_a_pagar)}`}</span>
-                  <span className="seta" aria-hidden="true">{aberto ? '▾' : '▸'}</span>
+                  <span><b>{ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {nome}{c.valor_a_pagar != null && ` · ${formatarReais(c.valor_a_pagar)}`}</span>
+                  <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                 </button>
                 {repetidaDaCompra && (
                   <AvisoRepetida id={c.id} texto={repetidaDaCompra.texto} sobraMotivo={repetidaDaCompra.sobraMotivo} rotulo="compra avulsa" nome={nome}

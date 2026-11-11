@@ -8,6 +8,7 @@ import { Acompanhamento, marcacoesDaCompra } from './marcacoes'
 import EscolherLoja from './EscolherLoja'
 import QuadroItem from './QuadroItem'
 import FecharCompra from './FecharCompra'
+import TituloDaTela from '../components/TituloDaTela'
 
 interface CompraAberta { id: string; semanaId: number; loja: string }
 const CHAVE_COMPRA = 'compra-aberta'
@@ -255,7 +256,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
   return (
     <section>
       <div className="cabecalho">
-        <h2>Compra no {c.loja}</h2>
+        <TituloDaTela>Compra no {c.loja}</TituloDaTela>
         <button className="link" onClick={trocarDeLoja}>Trocar de loja</button>
       </div>
       {avisoTroca && <p className="erro">{avisoTroca}</p>}

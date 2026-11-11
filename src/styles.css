@@ -15,7 +15,10 @@
   --alerta: #a3261b; --alerta-fundo: #fdecea;
   --aviso-fundo: #fff1c2; --aviso-texto: #5b300e; --ok-fundo: #e6f4ea; --ok-texto: #1e6b3a;
   --barra-baixo: 80px;
-  color-scheme: light;
+  color-scheme: only light;
+  --i-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E");
+  --i-relogio: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5v5l3 2'/%3E%3C/svg%3E");
+  --i-alerta: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4 21 19H3z'/%3E%3Cpath d='M12 10v4'/%3E%3Cpath d='M12 16.6v.4'/%3E%3C/svg%3E");
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--fundo); color: var(--texto); font: 17px/1.45 'Archivo Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
@@ -65,6 +68,9 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
 .barra-topo::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 20px; background: var(--preto); clip-path: polygon(0 0, 100% 0, 50% 100%); }
 .barra-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .barra-links { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 16px; }
+/* O título da tela mora aqui dentro (celular e tablet): ver TituloDaTela. Vazio some. */
+.barra-titulo:empty { display: none; }
+.titulo-barra { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 800; color: #fff; }
 .link-claro { white-space: nowrap; background: none; border: 0; padding: 4px 0; min-height: 32px; color: #d9d5ce; font: inherit; font-size: 16px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; display: inline-flex; align-items: center; }
 .fantasma { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; border: 2px solid #fff; border-radius: 21px; background: transparent; color: #fff; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
 .fantasma:disabled { opacity: .6; cursor: default; }
@@ -85,14 +91,15 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
 .menu a.active, .menu button.ativa { background: var(--marca); color: var(--marca-texto); font-weight: 800; }
 .topo { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; }
 @media (min-width: 640px) {
-  .barra-topo { flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 32px 14px; }
+  .barra-topo { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 14px 32px 18px; }
+  .barra-titulo { order: 5; flex: 1 0 100%; }
   .barra-linha { display: contents; }
   .barra-linha .fantasma { order: 3; margin-left: auto; }
   .barra-links { order: 4; flex-wrap: nowrap; }
 }
 @media (min-width: 1280px) {
   .app { padding-bottom: 32px; }
-  .barra-topo { gap: 16px; padding: 12px 28px 12px; }
+  .barra-topo { flex-wrap: nowrap; gap: 16px; padding: 12px 28px 12px; }
   .barra-links { gap: 6px 16px; }
   .barra-topo::after { height: 12px; }
   .barra-abas { position: static; z-index: auto; order: 2; flex: 1; display: flex; justify-content: center; gap: 6px; background: transparent; border: 0; height: auto; padding: 0; }
@@ -273,8 +280,8 @@ a.botao { display: inline-flex; text-decoration: none; }
 /* A nota abre e fecha pelo TÍTULO (pedido do Ivan, 21/10/2026): fechada, só o título + uma etiqueta de estado; aberta, tudo o que havia antes. */
 .cupom details.nota-recolhivel > summary.nota-titulo { display: flex; align-items: center; gap: 8px; padding: 10px 0; cursor: pointer; list-style: none; font-size: 16px; -webkit-tap-highlight-color: transparent; }
 .cupom details.nota-recolhivel > summary.nota-titulo::-webkit-details-marker { display: none; }
-.cupom details.nota-recolhivel > summary.nota-titulo::before { content: '▸'; flex: none; width: 16px; color: var(--texto); font-size: 17px; line-height: 1; }
-.cupom details.nota-recolhivel[open] > summary.nota-titulo::before { content: '▾'; }
+.cupom details.nota-recolhivel > summary.nota-titulo::before { content: ''; flex: none; width: 9px; height: 9px; margin: 0 5px 0 2px; border-right: 3px solid var(--tinta); border-bottom: 3px solid var(--tinta); transform: rotate(-45deg); }
+.cupom details.nota-recolhivel[open] > summary.nota-titulo::before { transform: rotate(45deg); }
 .cupom details.nota-recolhivel > summary.nota-titulo .nota-titulo-texto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cupom details.nota-recolhivel > summary.nota-titulo .nota-etiqueta { flex: none; font-size: 14px; font-weight: 700; line-height: 1.2; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .cupom .nota-etiqueta.etq-erro { background: var(--alerta-fundo); color: var(--alerta); }
@@ -490,3 +497,17 @@ a.botao { display: inline-flex; text-decoration: none; }
 .resto button { min-height: 44px; padding: 0 14px; border-radius: 12px; border: 2px solid var(--tinta); background: var(--cartao); color: var(--texto); font: inherit; font-weight: 700; cursor: pointer; margin: 4px 8px 4px 0; }
 .resto button.sel { background: var(--marca); color: var(--marca-texto); font-weight: 800; }
 .receber > .botao { display: flex; width: 100%; min-height: 68px; font-size: 20px; margin-top: 14px; }
+
+/* Etapa B (10/11/2026): selos de estado com o desenho junto da cor e da palavra (ninguém depende só da cor). */
+.pill.ok::before, .pill.atencao::before, .cupom .nota-etiqueta::before { content: ''; flex: none; display: inline-block; width: 16px; height: 16px; background: currentColor;
+  -webkit-mask: var(--i-relogio) center / contain no-repeat; mask: var(--i-relogio) center / contain no-repeat; }
+.pill.ok::before, .cupom .nota-etiqueta.etq-ok::before { -webkit-mask-image: var(--i-check); mask-image: var(--i-check); }
+.cupom .nota-etiqueta.etq-erro::before { -webkit-mask-image: var(--i-alerta); mask-image: var(--i-alerta); }
+.tabela-cot .pill::before { vertical-align: -3px; margin-right: 6px; }
+.pill.neutro { background: var(--trilho); color: var(--texto); }
+/* ícones no meio do texto: ⚠ dos avisos amarelos, alerta ao lado de "precisa de você", setas das listas */
+.icone.no-texto { vertical-align: -4px; margin: 0 6px; }
+.amarelo > .icone.no-texto:first-child { margin-left: 0; }
+.seta .icone { transition: transform .15s; }
+.seta .icone.aberto { transform: rotate(90deg); }
+.link .icone, .editar-item .icone { margin-right: 2px; }

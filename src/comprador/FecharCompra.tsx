@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatarReais, lerNumero } from '../lib/regras'
 import { reduzirFoto } from '../lib/foto'
+import TituloDaTela from '../components/TituloDaTela'
 
 export default function FecharCompra({ loja, totalSugerido, onConfirmar, onVoltar }: {
   loja: string
@@ -33,7 +34,7 @@ export default function FecharCompra({ loja, totalSugerido, onConfirmar, onVolta
 
   return (
     <section className="coluna">
-      <h2>Fechar compra — {loja}</h2>
+      <TituloDaTela>Fechar compra — {loja}</TituloDaTela>
       <fieldset className="coluna" style={{ border: 0, padding: 0 }}>
         <label style={{ flexDirection: 'row', gap: 8 }}><input type="radio" name="nota" checked={comNota === true} onChange={() => setComNota(true)} />Com nota</label>
         <label style={{ flexDirection: 'row', gap: 8 }}><input type="radio" name="nota" checked={comNota === false} onChange={() => setComNota(false)} />Sem nota</label>

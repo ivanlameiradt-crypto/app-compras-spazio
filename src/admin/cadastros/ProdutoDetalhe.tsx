@@ -5,6 +5,7 @@ import * as api from '../../lib/api'
 import * as cad from '../../cadastros/api'
 import { textoFator } from '../../cadastros/regras'
 import { kgPorLitro as textoKg, soltarVendedor as textoSoltar } from '../../cadastros/textos'
+import { Icone } from '../../components/Icones'
 
 /** "R$" ou número com vírgula: o mesmo aviso da 1B (8.2) — o vendedor nunca vê preço. */
 const pareceValor = (t: string) => /r\$|\d\s*,\s*\d/i.test(t)
@@ -44,7 +45,7 @@ export default function ProdutoDetalhe({ produto, vendedores, aoVoltar, aoMudar 
 
   return (
     <div className="coluna">
-      <button className="link" onClick={aoVoltar}>← Voltar</button>
+      <button className="link" onClick={aoVoltar}><Icone nome="esq" tamanho={20} /> Voltar</button>
       <h3>{produto.produto}</h3>
       {erro && <p className="erro">{erro}</p>}
 
