@@ -60,8 +60,12 @@ export interface SugestaoProduto {
     outros: PrecoFornecedor[]
     /** O maior preço passa do dobro do menor: alguma compra foi lançada em outra unidade. Nunca chamar de melhor preço. */
     conferirUnidade: boolean
+    /** Por que conferirUnidade: o primeiro que valeu (preço entre fornecedores, preço entre as compras, quantidade fora do normal). */
+    motivoConferir: MotivoConferir | null
   }
 }
+
+export type MotivoConferir = 'preco_fornecedores' | 'preco_historico' | 'quantidade_historico'
 
 const DIA_MS = 86_400_000
 const diaUtc = (d: string): number => Date.parse(`${d}T00:00:00Z`)
@@ -77,10 +81,23 @@ function precos(linhas: LinhaCompra[], hoje: number, dias: number): SugestaoProd
     if (!atual || l.data > atual.data) ultimo.set(forn, { fornecedor: forn, custo: l.custoLiquido, data: l.data })
   }
   const lista = [...ultimo.values()].sort((a, b) => a.custo - b.custo || a.fornecedor.localeCompare(b.fornecedor))
-  if (lista.length === 0) return { melhor: null, outros: [], conferirUnidade: false }
+  if (lista.length === 0) return { melhor: null, outros: [], conferirUnidade: false, motivoConferir: null }
   const conferirUnidade = lista[lista.length - 1].custo > 2 * lista[0].custo
-  if (conferirUnidade) return { melhor: null, outros: lista, conferirUnidade }
-  return { melhor: lista[0], outros: lista.slice(1), conferirUnidade }
+  if (conferirUnidade) return { melhor: null, outros: lista, conferirUnidade, motivoConferir: 'preco_fornecedores' }
+  return { melhor: lista[0], outros: lista.slice(1), conferirUnidade, motivoConferir: null }
+}
+
+/** Erro de unidade dentro do próprio histórico (dentro da janela, qualquer fornecedor): preço > 2x o menor, ou uma quantidade > 10x a mediana (3+ compras). */
+function motivoNoHistorico(compras: LinhaCompra[]): MotivoConferir | null {
+  const custos = compras.map((c) => c.custoLiquido).filter((c) => c > 0)
+  if (custos.length > 1 && Math.max(...custos) > 2 * Math.min(...custos)) return 'preco_historico'
+  if (compras.length >= 3) {
+    const q = compras.map((c) => c.qtd).sort((a, b) => a - b)
+    const meio = q.length >> 1
+    const mediana = q.length % 2 ? q[meio] : (q[meio - 1] + q[meio]) / 2
+    if (mediana > 0 && q[q.length - 1] > 10 * mediana) return 'quantidade_historico'
+  }
+  return null
 }
 
 /** Sugestão por produto, do maior gasto semanal para o menor. Produto sem compra na janela fica de fora. */
@@ -112,6 +129,13 @@ export function sugerirCompras(produtos: ProdutoHistorico[], hoje: string, p: Pa
     const gasto = naJanela.reduce((s, l) => s + l.qtd * l.custoLiquido, 0)
     const mediaSemana = soma / semanas
     const esporadico = naJanela.length === 1
+    let fornecedores = precos(prod.linhas, tHoje, dias)
+    const motivo = fornecedores.motivoConferir ?? motivoNoHistorico(naJanela)
+    // o erro está nas compras do produto: a média não é confiável, então não há alvo nem melhor preço
+    if (motivo && !fornecedores.conferirUnidade) {
+      const todos = [...(fornecedores.melhor ? [fornecedores.melhor] : []), ...fornecedores.outros].sort((x, y) => x.custo - y.custo)
+      fornecedores = { melhor: null, outros: todos, conferirUnidade: true, motivoConferir: motivo }
+    }
     saida.push({
       produtoId: prod.produtoId,
       nome: prod.nome,
@@ -120,10 +144,10 @@ export function sugerirCompras(produtos: ProdutoHistorico[], hoje: string, p: Pa
       janelaEncolhida,
       compras: naJanela.length,
       mediaSemana,
-      alvo: esporadico ? null : mediaSemana * (1 + folga),
+      alvo: esporadico || fornecedores.conferirUnidade ? null : mediaSemana * (1 + folga),
       gastoSemana: gasto / semanas,
       esporadico,
-      fornecedores: precos(prod.linhas, tHoje, dias),
+      fornecedores,
     })
   }
 

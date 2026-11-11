@@ -7,7 +7,7 @@ import {
 const sug = (x: Partial<SugestaoProduto> = {}): SugestaoProduto => ({
   produtoId: 1, nome: 'X', unidade: 'kg', semanas: 8, janelaEncolhida: false, compras: 5, mediaSemana: 8, alvo: 10, gastoSemana: 100,
   esporadico: false, classe: 'A',
-  fornecedores: { melhor: { fornecedor: 'FORNECEDOR A', custo: 5, data: '2026-11-01' }, outros: [{ fornecedor: 'FORNECEDOR B', custo: 6, data: '2026-10-20' }], conferirUnidade: false },
+  fornecedores: { melhor: { fornecedor: 'FORNECEDOR A', custo: 5, data: '2026-11-01' }, outros: [{ fornecedor: 'FORNECEDOR B', custo: 6, data: '2026-10-20' }], conferirUnidade: false, motivoConferir: null },
   ...x,
 })
 
@@ -55,14 +55,28 @@ describe('montarLinha', () => {
   })
   it('melhor preço só quando há outros para comparar', () => {
     expect(montarLinha(item({}), sug(), 0, undefined).melhorPreco).toBe(true)
-    expect(montarLinha(item({}), sug({ fornecedores: { melhor: { fornecedor: 'A', custo: 5, data: '2026-11-01' }, outros: [], conferirUnidade: false } }), 0, undefined).melhorPreco).toBe(false)
+    expect(montarLinha(item({}), sug({ fornecedores: { melhor: { fornecedor: 'A', custo: 5, data: '2026-11-01' }, outros: [], conferirUnidade: false, motivoConferir: null } }), 0, undefined).melhorPreco).toBe(false)
   })
   it('conferirUnidade: aviso, nenhum selo de melhor preço, vai para Conferir', () => {
-    const l = montarLinha(item({ preco_estimado: 7 }), sug({ fornecedores: { melhor: null, outros: [{ fornecedor: 'A', custo: 3, data: '2026-11-01' }, { fornecedor: 'B', custo: 9, data: '2026-11-01' }], conferirUnidade: true } }), 0, undefined)
+    const l = montarLinha(item({ preco_estimado: 7 }), sug({ fornecedores: { melhor: null, outros: [{ fornecedor: 'A', custo: 3, data: '2026-11-01' }, { fornecedor: 'B', custo: 9, data: '2026-11-01' }], conferirUnidade: true, motivoConferir: 'preco_fornecedores' }, alvo: null }), 0, undefined)
     expect(l.avisoUnidade).toBe('Confira a unidade: os preços dos fornecedores estão muito diferentes')
     expect(l.melhorPreco).toBe(false)
     expect(l.conferir).toBe(true)
     expect(l.precoUnit).toBe(7)
+  })
+  it('unidade a conferir: sem cálculo automático ("contar"), mas o admin pode digitar', () => {
+    const conf = sug({ alvo: null, fornecedores: { melhor: null, outros: [], conferirUnidade: true, motivoConferir: 'quantidade_historico' } })
+    const l = montarLinha(item({ estoque: 0, qtd_sugerida: 4 }), conf, null, undefined)
+    expect(l.calculado).toBeNull()
+    expect(l.comprar).toBeNull()
+    expect(l.deVezEmQuando).toBe(false)
+    expect(montarLinha(item({ estoque: 0 }), conf, null, 6).comprar).toBe(6)
+  })
+  it('texto do aviso conforme o motivo', () => {
+    const com = (m: 'preco_fornecedores' | 'preco_historico' | 'quantidade_historico') => montarLinha(item({}), sug({ alvo: null, fornecedores: { melhor: null, outros: [], conferirUnidade: true, motivoConferir: m } }), null, undefined).avisoUnidade
+    expect(com('preco_fornecedores')).toBe('Confira a unidade: os preços dos fornecedores estão muito diferentes')
+    expect(com('preco_historico')).toBe('Confira a unidade: os preços deste produto estão muito diferentes entre as compras')
+    expect(com('quantidade_historico')).toBe('Confira a unidade: uma das compras tem quantidade muito fora do normal')
   })
   it('outros mostram a diferença em % sobre o melhor', () => {
     const l = montarLinha(item({}), sug(), 0, undefined)
@@ -130,8 +144,8 @@ describe('exibição, arredondamento e total', () => {
     expect(montarLinha(item({ unidade: 'un', estoque: 0 }), s, null, 12.5).comprar).toBe(12.5)
   })
   it('conferirUnidade fica fora do total e é contado', () => {
-    const conf = sug({ fornecedores: { melhor: null, outros: [{ fornecedor: 'A', custo: 3, data: '2026-11-01' }, { fornecedor: 'B', custo: 9, data: '2026-11-01' }], conferirUnidade: true } })
-    const a = montarLinha(item({ estoque: 0, preco_estimado: 7 }), conf, null, undefined)
+    const conf = sug({ fornecedores: { melhor: null, outros: [{ fornecedor: 'A', custo: 3, data: '2026-11-01' }, { fornecedor: 'B', custo: 9, data: '2026-11-01' }], conferirUnidade: true, motivoConferir: 'preco_fornecedores' }, alvo: null })
+    const a = montarLinha(item({ estoque: 0, preco_estimado: 7 }), conf, null, 3) // o admin digitou 3, mas o preço não é confiável
     const b = montarLinha(item({ id: 2, produto_id: 2, estoque: 0 }), sug(), null, undefined) // 10 x 5
     expect(totalEstimadoLista([a, b])).toBe(50)
     expect(itensForaDoTotal([a, b])).toBe(1)

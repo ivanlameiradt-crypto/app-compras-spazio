@@ -80,11 +80,11 @@ describe('sugerirCompras', () => {
   })
 
   it('compra sem fornecedor conta na média e no gasto, mas fica fora da lista de fornecedores', () => {
-    const [s] = sugerirCompras([prod(1, [l(1, 10, 0.5, null), l(3, 10, 0.4, ''), l(5, 20, 1, 'A')])], HOJE)
+    const [s] = sugerirCompras([prod(1, [l(1, 10, 0.5, null), l(3, 10, 0.4, ''), l(5, 20, 0.8, 'A')])], HOJE)
     expect(s.compras).toBe(3)
     expect(s.mediaSemana).toBeCloseTo(40 / 8, 9)
-    expect(s.gastoSemana).toBeCloseTo((5 + 4 + 20) / 8, 9)
-    expect(s.fornecedores).toEqual({ melhor: { fornecedor: 'A', custo: 1, data: dia(5) }, outros: [], conferirUnidade: false })
+    expect(s.gastoSemana).toBeCloseTo((5 + 4 + 16) / 8, 9)
+    expect(s.fornecedores).toEqual({ melhor: { fornecedor: 'A', custo: 0.8, data: dia(5) }, outros: [], conferirUnidade: false, motivoConferir: null })
   })
 
   it('parâmetros mudam janela e folga', () => {
@@ -107,5 +107,47 @@ describe('quantoComprar', () => {
     expect(quantoComprar(10, 15, null)).toBe(0)
     expect(quantoComprar(10.01, 0, null)).toBe(10.1)
     expect(quantoComprar(10.3, 0.1, null)).toBe(10.2)
+  })
+
+  describe('erro de unidade dentro do próprio histórico', () => {
+    it('motivo "preco_fornecedores" quando os fornecedores diferem em mais do dobro', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 5, 2.01, 'A'), l(5, 5, 1, 'B')])], HOJE)
+      expect(s.fornecedores.motivoConferir).toBe('preco_fornecedores')
+    })
+    it('um fornecedor só, preço lançado por caixa numa compra: conferirUnidade, motivo "preco_historico", sem alvo', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 67.17), l(8, 10, 1.1), l(15, 10, 1.2), l(22, 10, 1.1)])], HOJE)
+      expect(s.fornecedores.conferirUnidade).toBe(true)
+      expect(s.fornecedores.motivoConferir).toBe('preco_historico')
+      expect(s.fornecedores.melhor).toBeNull()
+      expect(s.alvo).toBeNull()
+    })
+    it('compra sem fornecedor também entra na checagem de preço', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 10, 3, null), l(8, 10, 1, null), l(15, 10, 1, 'A')])], HOJE)
+      expect(s.fornecedores.motivoConferir).toBe('preco_historico')
+    })
+    it('quantidade lançada em gramas: uma compra passa de 10x a mediana → "quantidade_historico", sem alvo', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 12000, 1), l(8, 12, 1), l(15, 10, 1), l(22, 15, 1)])], HOJE)
+      expect(s.fornecedores.conferirUnidade).toBe(true)
+      expect(s.fornecedores.motivoConferir).toBe('quantidade_historico')
+      expect(s.alvo).toBeNull()
+    })
+    it('quantidade: precisa de 3+ compras na janela; com 2 não aplica', () => {
+      const [s] = sugerirCompras([prod(1, [l(1, 1000, 1), l(8, 10, 1)])], HOJE)
+      expect(s.fornecedores.conferirUnidade).toBe(false)
+      expect(s.alvo).not.toBeNull()
+    })
+    it('exatamente 10x a mediana não dispara; compras fora da janela não contam', () => {
+      const [a] = sugerirCompras([prod(1, [l(1, 100, 1), l(8, 10, 1), l(15, 10, 1)])], HOJE)
+      expect(a.fornecedores.conferirUnidade).toBe(false)
+      const [b] = sugerirCompras([prod(1, [l(1, 10, 1), l(8, 10, 1), l(15, 10, 1), l(200, 9999, 90)])], HOJE)
+      expect(b.fornecedores.conferirUnidade).toBe(false)
+      expect(b.fornecedores.motivoConferir).toBeNull()
+    })
+    it('classe e ordem por gasto continuam calculadas mesmo com conferirUnidade', () => {
+      const r = sugerirCompras([prod(1, [l(1, 12000, 1), l(8, 12, 1), l(15, 10, 1)]), prod(2, [l(1, 1, 1), l(8, 1, 1)])], HOJE)
+      expect(r[0].produtoId).toBe(1)
+      expect(r[0].classe).toBe('A')
+      expect(r[0].gastoSemana).toBeGreaterThan(1000)
+    })
   })
 })

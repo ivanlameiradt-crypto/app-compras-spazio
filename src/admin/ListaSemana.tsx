@@ -165,8 +165,13 @@ export default function ListaSemana() {
           <div>
             <div className="sub">Compra estimada</div>
             <b data-testid="total">{formatarReais(total)}</b>
-            {foraDoTotal > 0 && <div className="sub">{foraDoTotal} {foraDoTotal === 1 ? 'item fora do total' : 'itens fora do total'}: confira a unidade</div>}
-            {editavel && resumo.faltam > 0 && <div className="sub">Faltam contar {resumo.faltam} dos principais</div>}
+            {(foraDoTotal > 0 || (editavel && resumo.faltam > 0)) && (
+              <div className="sub" style={{ fontSize: 14 }}>
+                {foraDoTotal > 0 && <span aria-label={`${foraDoTotal} ${foraDoTotal === 1 ? 'item fora do total' : 'itens fora do total'}: confira a unidade`}>Fora do total: {foraDoTotal}</span>}
+                {foraDoTotal > 0 && editavel && resumo.faltam > 0 && ' · '}
+                {editavel && resumo.faltam > 0 && <span aria-label={`Faltam contar ${resumo.faltam} dos principais`}>Faltam contar: {resumo.faltam}</span>}
+              </div>
+            )}
           </div>
           {editavel && <button className="botao" disabled={aprovando} onClick={() => void aprovar()}>{aprovando ? 'Aprovando…' : 'Aprovar lista'}</button>}
         </div>
@@ -211,10 +216,9 @@ function Cartao({ l, editavel, situacao, onContar, onAjustar }: {
       {l.avisoUnidade && <div className="selo">{l.avisoUnidade}</div>}
 
       <div className="sub" style={{ marginTop: 6 }}>
-        {l.deVezEmQuando
-          ? <>Compra de vez em quando · ponto de partida {qtdNaTela(item.qtd_sugerida, un)}</>
-          : <>Precisa ter <b>{qtdNaTela(l.alvo as number, un)}</b></>}
-        {' · '}Estoque no SisChef {qtdNaTela(item.estoque, un)}
+        {l.alvo !== null && <>Precisa ter <b>{qtdNaTela(l.alvo, un)}</b> · </>}
+        {l.deVezEmQuando && <>Compra de vez em quando · ponto de partida {qtdNaTela(item.qtd_sugerida, un)} · </>}
+        Estoque no SisChef {qtdNaTela(item.estoque, un)}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 8 }}>
@@ -233,7 +237,9 @@ function Cartao({ l, editavel, situacao, onContar, onAjustar }: {
       </div>
       {situacao?.salvando && <div className="sub" role="status">Guardando a contagem…</div>}
       {(erroCampo || situacao?.erro) && <div className="erro" role="alert">{erroCampo || situacao?.erro}</div>}
-      {l.comprar === null && <div className="sub">Conte o estoque para saber quanto comprar.</div>}
+      {l.comprar === null && (l.avisoUnidade
+        ? <div className="sub">Sem cálculo automático: confira a unidade e digite quanto comprar.</div>
+        : <div className="sub">Conte o estoque para saber quanto comprar.</div>)}
       {l.ajustado && (
         <div className="sub">
           Ajustado por você{l.calculado !== null && <> (o cálculo mandava {qtdNaTela(l.calculado, un)})</>}.{' '}

@@ -97,6 +97,17 @@ describe('Lista da semana', () => {
     expect(screen.queryByText('FARINHA DE TRIGO')).toBeNull()
   })
 
+  it('rodapé numa linha só: "Fora do total" e "Faltam contar", com texto completo para leitor de tela', async () => {
+    render(<ListaSemana />)
+    await screen.findByText('AZEITE')
+    const campo = within(screen.getByTestId('total').closest('.rodape') as HTMLElement)
+    expect(campo.getByText(/Faltam contar: 3/)).toHaveAttribute('aria-label', 'Faltam contar 3 dos principais')
+    // o azeite (unidade a conferir) não tem número até o admin digitar; digitando, ele conta como fora do total
+    await userEvent.type(screen.getByLabelText('Comprar AZEITE'), '4')
+    await userEvent.tab()
+    expect(await campo.findByText('Fora do total: 1')).toHaveAttribute('aria-label', '1 item fora do total: confira a unidade')
+  })
+
   it('a aba Principais limita a 20 itens', async () => {
     const muitos = Array.from({ length: 25 }, (_, k) => item({ id: k + 1, produto_id: k + 1, produto: `PRODUTO ${k + 1}`, unidade: 'kg', estoque: 0, preco_estimado: 1 }))
     m.itensDaSemana.mockResolvedValue(muitos)

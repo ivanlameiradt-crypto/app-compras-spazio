@@ -1,11 +1,15 @@
 // Lista da semana (tela nova): contas puras, sem banco e sem React. Une o item da semana, a sugestão do histórico
 // (lib/sugestaoCompra), a contagem feita na loja e o ajuste manual do admin.
 import type { ItemSemana } from '../lib/tipos'
-import type { SugestaoProduto } from '../lib/sugestaoCompra'
+import type { MotivoConferir, SugestaoProduto } from '../lib/sugestaoCompra'
 import { quantoComprar } from '../lib/sugestaoCompra'
 import { paraConferir } from '../lib/regras'
 
 export const AVISO_UNIDADE = 'Confira a unidade: os preços dos fornecedores estão muito diferentes'
+export const AVISO_UNIDADE_PRECO = 'Confira a unidade: os preços deste produto estão muito diferentes entre as compras'
+export const AVISO_UNIDADE_QUANTIDADE = 'Confira a unidade: uma das compras tem quantidade muito fora do normal'
+const avisoDoMotivo = (m: MotivoConferir | null | undefined): string =>
+  m === 'preco_historico' ? AVISO_UNIDADE_PRECO : m === 'quantidade_historico' ? AVISO_UNIDADE_QUANTIDADE : AVISO_UNIDADE
 export const TAMANHO_PRINCIPAIS = 20
 
 export interface OutroFornecedor { fornecedor: string; custo: number; data: string; diferencaPct: number | null }
@@ -56,10 +60,13 @@ export function avisoEstoqueNegativo(estoque: number, unidade?: string | null): 
 
 export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, contagem: number | null, manual: number | undefined | null): LinhaLista {
   const alvo = sug?.alvo ?? null
-  const deVezEmQuando = alvo === null
+  const conferirUnidade = !!sug?.fornecedores.conferirUnidade
+  const deVezEmQuando = alvo === null && !conferirUnidade
   const negativo = item.estoque < 0
   let calculado: number | null
-  if (alvo !== null) {
+  // unidade a conferir: a média não é confiável, então não há cálculo automático (o admin digita)
+  if (conferirUnidade) calculado = null
+  else if (alvo !== null) {
     calculado = quantoComprar(alvo, contagem, item.estoque)
     // em unidade (copo, lata) não existe meio: o calculado sobe para o inteiro
     if (calculado !== null && /^un$/i.test(item.unidade)) calculado = Math.ceil(Math.round(calculado * 1e6) / 1e6)
@@ -68,7 +75,6 @@ export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, conta
   const ajustado = manual != null
   const comprar = ajustado ? manual : calculado
   const forn = sug?.fornecedores ?? null
-  const conferirUnidade = !!forn?.conferirUnidade
   const melhor = forn?.melhor ?? null
   const melhorPreco = !!melhor && forn!.outros.length > 0 && !conferirUnidade
   const outros: OutroFornecedor[] = (forn?.outros ?? []).map((o) => ({
@@ -80,7 +86,7 @@ export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, conta
     item, sug, alvo, contagem, calculado, comprar, ajustado, deVezEmQuando, melhorPreco, melhor, outros,
     fornecedorTexto: forn && (forn.melhor || forn.outros.length > 0) ? null : item.fornecedor_ultima,
     precoUnit: melhor?.custo ?? item.preco_estimado,
-    avisoUnidade: conferirUnidade ? AVISO_UNIDADE : null,
+    avisoUnidade: conferirUnidade ? avisoDoMotivo(forn?.motivoConferir) : null,
     avisoEstoque: negativo ? avisoEstoqueNegativo(item.estoque, item.unidade) : null,
     conferir: conferirUnidade || semNumero || paraConferir([item]).length > 0,
   }
