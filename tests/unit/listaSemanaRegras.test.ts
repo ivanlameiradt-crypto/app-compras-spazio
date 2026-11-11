@@ -1,7 +1,7 @@
 import { item } from '../fabricas'
 import type { SugestaoProduto } from '../../src/lib/sugestaoCompra'
 import {
-  abaPrincipais, montarLinha, montarLinhas, resumoContagem, totalEstimadoLista, itensParaGravar,
+  abaPrincipais, itensForaDoTotal, montarLinha, nomeNaTela, numeroNaTela, qtdNaTela, montarLinhas, resumoContagem, totalEstimadoLista, itensParaGravar,
 } from '../../src/admin/listaSemanaRegras'
 
 const sug = (x: Partial<SugestaoProduto> = {}): SugestaoProduto => ({
@@ -111,5 +111,35 @@ describe('montarLinhas, abas, total, contagem', () => {
     const z = montarLinha(item({ id: 2, produto_id: 2, estoque: 20, qtd_aprovada: 4 }), sug({ produtoId: 2 }), null, undefined)
     const c = montarLinha(item({ id: 3, produto_id: 3, estoque: -1 }), sug({ produtoId: 3 }), null, undefined)
     expect(itensParaGravar([a, z, c])).toEqual([{ id: 1, qtd: 10, incluido: true }, { id: 2, qtd: 0, incluido: false }])
+  })
+})
+
+describe('exibição, arredondamento e total', () => {
+  it('números: kg com 1 casa, un inteira, milhar com ponto', () => {
+    expect(qtdNaTela(131.563, 'kg')).toBe('131,6 kg')
+    expect(numeroNaTela(12943, 'un')).toBe('12.943')
+    expect(numeroNaTela(-12943.4, 'un')).toBe('-12.943')
+    expect(numeroNaTela(2, 'kg')).toBe('2')
+    expect(numeroNaTela(1234.56, 'kg')).toBe('1.234,6')
+    expect(montarLinha(item({ estoque: -12943, unidade: 'un' }), sug(), null, undefined).avisoEstoque).toBe('O SisChef mostra -12.943. Esse número está errado, por isso vale a contagem.')
+  })
+  it('comprar calculado em un sobe para o inteiro; kg mantém 1 casa; manual vale como digitado', () => {
+    const s = sug({ alvo: 346.1 })
+    expect(montarLinha(item({ unidade: 'un', estoque: 0 }), s, null, undefined).comprar).toBe(347)
+    expect(montarLinha(item({ unidade: 'kg', estoque: 0 }), s, null, undefined).comprar).toBe(346.1)
+    expect(montarLinha(item({ unidade: 'un', estoque: 0 }), s, null, 12.5).comprar).toBe(12.5)
+  })
+  it('conferirUnidade fica fora do total e é contado', () => {
+    const conf = sug({ fornecedores: { melhor: null, outros: [{ fornecedor: 'A', custo: 3, data: '2026-11-01' }, { fornecedor: 'B', custo: 9, data: '2026-11-01' }], conferirUnidade: true } })
+    const a = montarLinha(item({ estoque: 0, preco_estimado: 7 }), conf, null, undefined)
+    const b = montarLinha(item({ id: 2, produto_id: 2, estoque: 0 }), sug(), null, undefined) // 10 x 5
+    expect(totalEstimadoLista([a, b])).toBe(50)
+    expect(itensForaDoTotal([a, b])).toBe(1)
+  })
+  it('nome sem o rabicho do cadastro', () => {
+    expect(nomeNaTela('MOSTARDA - INSUMO (KG)')).toBe('MOSTARDA')
+    expect(nomeNaTela('CEBOLA EM PÓ - INSUMOS (KG)')).toBe('CEBOLA EM PÓ')
+    expect(nomeNaTela('GUARDANAPO (UN)')).toBe('GUARDANAPO')
+    expect(nomeNaTela('COCA COLA 350 ML')).toBe('COCA COLA 350 ML')
   })
 })

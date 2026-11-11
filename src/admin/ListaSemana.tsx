@@ -3,17 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '../lib/api'
 import type { ItemSemana, Semana } from '../lib/tipos'
-import { formatarData, formatarQtd, formatarReais, mensagemDeErro } from '../lib/regras'
+import { formatarData, formatarReais, mensagemDeErro } from '../lib/regras'
 import { lerQuantidadeBr } from '../lib/quantidade'
 import { sugerirCompras, type ProdutoHistorico, type SugestaoProduto } from '../lib/sugestaoCompra'
 import TituloDaTela from '../components/TituloDaTela'
 import {
-  abaPrincipais, itensParaGravar, montarLinhas, resumoContagem, totalEstimadoLista, type LinhaLista,
+  abaPrincipais, itensForaDoTotal, itensParaGravar, montarLinhas, nomeNaTela, qtdNaTela, resumoContagem, totalEstimadoLista, type LinhaLista,
 } from './listaSemanaRegras'
 
 type Aba = 'principais' | 'todos' | 'conferir'
 
+/** Valor dentro de um campo de digitar: sem ponto de milhar, para o leitor de quantidade não se confundir. */
 const num = (v: number) => String(Math.round(v * 1000) / 1000).replace('.', ',')
+const porUnidade = (un: string) => (/^un$/i.test(un) ? 'a unidade' : `o ${un}`)
 export function hojeLocal(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -60,6 +62,7 @@ export default function ListaSemana() {
   const conferir = useMemo(() => linhas.filter((l) => l.conferir), [linhas])
   const resumo = useMemo(() => resumoContagem(linhas, sugestoes), [linhas, sugestoes])
   const total = useMemo(() => totalEstimadoLista(linhas), [linhas])
+  const foraDoTotal = useMemo(() => itensForaDoTotal(linhas), [linhas])
 
   if (estado === 'carregando') return <p className="centro">Carregando…</p>
   if (estado === 'erro') {
@@ -162,6 +165,7 @@ export default function ListaSemana() {
           <div>
             <div className="sub">Compra estimada</div>
             <b data-testid="total">{formatarReais(total)}</b>
+            {foraDoTotal > 0 && <div className="sub">{foraDoTotal} {foraDoTotal === 1 ? 'item fora do total' : 'itens fora do total'}: confira a unidade</div>}
             {editavel && resumo.faltam > 0 && <div className="sub">Faltam contar {resumo.faltam} dos principais</div>}
           </div>
           {editavel && <button className="botao" disabled={aprovando} onClick={() => void aprovar()}>{aprovando ? 'Aprovando…' : 'Aprovar lista'}</button>}
@@ -202,15 +206,15 @@ function Cartao({ l, editavel, situacao, onContar, onAjustar }: {
   const un = item.unidade
   return (
     <div className="cartao" data-produto={item.produto_id}>
-      <div className="nome">{item.produto}</div>
+      <div className="nome">{nomeNaTela(item.produto)}</div>
       {l.avisoEstoque && <div className="selo">{l.avisoEstoque}</div>}
       {l.avisoUnidade && <div className="selo">{l.avisoUnidade}</div>}
 
       <div className="sub" style={{ marginTop: 6 }}>
         {l.deVezEmQuando
-          ? <>Compra de vez em quando · ponto de partida {formatarQtd(item.qtd_sugerida, un)}</>
-          : <>Precisa ter <b>{formatarQtd(l.alvo as number, un)}</b></>}
-        {' · '}Estoque no SisChef {formatarQtd(item.estoque, un)}
+          ? <>Compra de vez em quando · ponto de partida {qtdNaTela(item.qtd_sugerida, un)}</>
+          : <>Precisa ter <b>{qtdNaTela(l.alvo as number, un)}</b></>}
+        {' · '}Estoque no SisChef {qtdNaTela(item.estoque, un)}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 8 }}>
@@ -223,7 +227,8 @@ function Cartao({ l, editavel, situacao, onContar, onAjustar }: {
           Comprar
           <input type="text" inputMode="decimal" value={comprar} disabled={!editavel} aria-label={`Comprar ${item.produto}`}
             placeholder={l.comprar === null ? 'contar' : ''}
-            onChange={(e) => setComprar(e.target.value)} onBlur={sairComprar} style={{ minHeight: 48 }} />
+            onChange={(e) => setComprar(e.target.value)} onBlur={sairComprar}
+            style={{ minHeight: 48, ...(l.comprar !== null && !l.ajustado ? { background: 'var(--marca)', color: 'var(--marca-texto)', fontWeight: 700 } : {}) }} />
         </label>
       </div>
       {situacao?.salvando && <div className="sub" role="status">Guardando a contagem…</div>}
@@ -231,21 +236,21 @@ function Cartao({ l, editavel, situacao, onContar, onAjustar }: {
       {l.comprar === null && <div className="sub">Conte o estoque para saber quanto comprar.</div>}
       {l.ajustado && (
         <div className="sub">
-          Ajustado por você{l.calculado !== null && <> (o cálculo mandava {formatarQtd(l.calculado, un)})</>}.{' '}
+          Ajustado por você{l.calculado !== null && <> (o cálculo mandava {qtdNaTela(l.calculado, un)})</>}.{' '}
           {editavel && <button className="link" onClick={() => onAjustar(l, null)}>Voltar ao calculado</button>}
         </div>
       )}
 
       <div className="sub" style={{ marginTop: 6 }}>
         {l.melhor && (
-          <div>
+          <div style={{ color: 'var(--texto)' }}>
             {l.melhorPreco && <span className="pill ok">Melhor preço</span>}{' '}
-            {l.melhor.fornecedor}: {formatarReais(l.melhor.custo)} em {formatarData(l.melhor.data)}
+            <b>{l.melhor.fornecedor}</b>: <b>{formatarReais(l.melhor.custo)} {porUnidade(un)}</b> em {formatarData(l.melhor.data)}
           </div>
         )}
         {l.outros.map((o) => (
-          <div key={o.fornecedor}>
-            {o.fornecedor}: {formatarReais(o.custo)} em {formatarData(o.data)}
+          <div key={o.fornecedor} style={{ color: 'var(--suave)' }}>
+            {o.fornecedor}: {formatarReais(o.custo)} {porUnidade(un)} em {formatarData(o.data)}
             {o.diferencaPct !== null && <> ({o.diferencaPct > 0 ? '+' : ''}{o.diferencaPct}%)</>}
           </div>
         ))}

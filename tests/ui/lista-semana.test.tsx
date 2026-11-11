@@ -155,7 +155,7 @@ describe('Lista da semana', () => {
     await userEvent.tab()
     expect(c.getByText(/Ajustado por você/)).toBeInTheDocument()
     expect(campo).toHaveValue('99')
-    expect(sp(screen.getByTestId('total').textContent)).toContain('542,70') // 99 × R$ 5 da farinha + o azeite (calculado, preço de última compra)
+    expect(sp(screen.getByTestId('total').textContent)).toContain('495,00') // 99 × R$ 5; o azeite (unidade a conferir) fica fora do total
     await userEvent.click(c.getByRole('button', { name: 'Voltar ao calculado' }))
     expect(c.queryByText(/Ajustado por você/)).toBeNull()
   })

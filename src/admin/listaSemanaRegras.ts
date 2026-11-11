@@ -32,10 +32,26 @@ export interface LinhaLista {
   conferir: boolean
 }
 
-const arred = (n: number) => Math.round(n * 1000) / 1000
 
-export function avisoEstoqueNegativo(estoque: number): string {
-  return `O SisChef mostra ${String(arred(estoque)).replace('.', ',')}. Esse número está errado, por isso vale a contagem.`
+/** Número na tela: unidade (un) sempre inteira; kg e L com no máximo 1 casa; milhar com ponto ("12.943"). */
+export function numeroNaTela(v: number, unidade?: string | null): string {
+  const un = /^un$/i.test(String(unidade ?? '').trim())
+  const n = un ? Math.round(v) : Math.round(v * 10) / 10
+  return (Object.is(n, -0) ? 0 : n).toLocaleString('pt-BR', { maximumFractionDigits: un ? 0 : 1, useGrouping: true })
+}
+export const qtdNaTela = (v: number, unidade: string): string => `${numeroNaTela(v, unidade)} ${unidade}`
+
+/** Nome sem o rabicho do cadastro: " - INSUMOS", " - INSUMO" e "(KG)"/"(UN)" no fim. Só para exibir. */
+export function nomeNaTela(nome: string): string {
+  let n = nome.trim()
+  for (let k = 0; k < 3; k++) {
+    n = n.replace(/\s*\((?:kg|un|l)\)\s*$/i, '').replace(/\s*-\s*insumos?\s*$/i, '').trim()
+  }
+  return n
+}
+
+export function avisoEstoqueNegativo(estoque: number, unidade?: string | null): string {
+  return `O SisChef mostra ${numeroNaTela(estoque, unidade)}. Esse número está errado, por isso vale a contagem.`
 }
 
 export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, contagem: number | null, manual: number | undefined | null): LinhaLista {
@@ -43,7 +59,11 @@ export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, conta
   const deVezEmQuando = alvo === null
   const negativo = item.estoque < 0
   let calculado: number | null
-  if (alvo !== null) calculado = quantoComprar(alvo, contagem, item.estoque)
+  if (alvo !== null) {
+    calculado = quantoComprar(alvo, contagem, item.estoque)
+    // em unidade (copo, lata) não existe meio: o calculado sobe para o inteiro
+    if (calculado !== null && /^un$/i.test(item.unidade)) calculado = Math.ceil(Math.round(calculado * 1e6) / 1e6)
+  }
   else calculado = negativo && contagem === null ? 0 : item.qtd_sugerida
   const ajustado = manual != null
   const comprar = ajustado ? manual : calculado
@@ -61,7 +81,7 @@ export function montarLinha(item: ItemSemana, sug: SugestaoProduto | null, conta
     fornecedorTexto: forn && (forn.melhor || forn.outros.length > 0) ? null : item.fornecedor_ultima,
     precoUnit: melhor?.custo ?? item.preco_estimado,
     avisoUnidade: conferirUnidade ? AVISO_UNIDADE : null,
-    avisoEstoque: negativo ? avisoEstoqueNegativo(item.estoque) : null,
+    avisoEstoque: negativo ? avisoEstoqueNegativo(item.estoque, item.unidade) : null,
     conferir: conferirUnidade || semNumero || paraConferir([item]).length > 0,
   }
 }
@@ -92,9 +112,14 @@ export function resumoContagem(linhas: LinhaLista[], sugestoes: SugestaoProduto[
   return { contados, total: p.length, faltam: p.length - contados }
 }
 
-/** Soma de comprar × preço (do melhor fornecedor, ou o último preço). "Contar" não entra. */
+/** Soma de comprar × preço (do melhor fornecedor, ou o último preço). "Contar" e item com unidade a conferir (preço não confiável) não entram. */
 export function totalEstimadoLista(linhas: LinhaLista[]): number {
-  return linhas.reduce((s, l) => (l.comprar !== null && l.comprar > 0 ? s + l.comprar * (l.precoUnit ?? 0) : s), 0)
+  return linhas.reduce((s, l) => (l.comprar !== null && l.comprar > 0 && !l.avisoUnidade ? s + l.comprar * (l.precoUnit ?? 0) : s), 0)
+}
+
+/** Quantos itens a comprar ficaram fora do total por causa da unidade. */
+export function itensForaDoTotal(linhas: LinhaLista[]): number {
+  return linhas.filter((l) => l.comprar !== null && l.comprar > 0 && l.avisoUnidade).length
 }
 
 /** O que gravar ao aprovar: quantidade de cada item (incluído se > 0). Item em "contar" sem número não é tocado. */
