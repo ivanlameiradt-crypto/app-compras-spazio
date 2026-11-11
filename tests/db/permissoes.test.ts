@@ -45,6 +45,8 @@ const DO_APP = [
   'marcar_lancada(uuid)',
   'nomes_equipe()',
   'registrar_item(uuid,uuid,bigint,numeric,numeric,text)',
+  // contagem da prateleira da lista da semana (11/11/2026, 20261228000001)
+  'compra_contagem_salvar(bigint,bigint,numeric)',
   // Fase 1B: aba Cotações (admin), etiquetas (usuário ativo) e a prévia do vendedor
   'cot_cancelar(bigint)',
   'cot_confirmar_envio(bigint)',
