@@ -123,7 +123,7 @@ describe('App', () => {
     const barra = (await screen.findByRole('navigation', { name: 'Seções' })) as HTMLElement
     await waitFor(() => expect(within(within(barra).getByRole('link', { name: /Lançamentos/ })).getByText('3')).toHaveClass('contador'))
     expect(within(barra).getAllByText('3')).toHaveLength(1)
-    expect(within(within(barra).getByRole('link', { name: /^Compra/ })).queryByText('3')).not.toBeInTheDocument()
+    expect(within(within(barra).getByRole('link', { name: 'Compra' })).queryByText('3')).not.toBeInTheDocument()
   })
 
   it('/comprar continua existindo para o admin (só saiu da grade do menu Compra)', async () => {
