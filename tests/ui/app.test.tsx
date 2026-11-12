@@ -66,11 +66,20 @@ describe('App', () => {
     expect(within(topo).queryByText(/nota SEFAZ/)).not.toBeInTheDocument()                                          // e o nome antigo sumiu
     expect(within(topo).queryByText(/Lançamento de fiscal/)).not.toBeInTheDocument()                                // nem o de algumas horas atrás (com o "de")
     // a aba Compra (rota padrão do admin) abre o menu em grade com as telas de compra (findBy: espera o redirect p/ /compra)
-    expect(await screen.findByRole('link', { name: 'Cotações' })).toHaveAttribute('href', '#/cotacoes')
+    expect(await screen.findByRole('link', { name: 'Pedidos' })).toHaveAttribute('href', '#/pedidos')
     expect(screen.getByRole('link', { name: 'Lançamentos' })).toHaveAttribute('href', '#/lancamentos')
     // a tela que se chamava "Comprar" passou a "Fazer compra" (o app inteiro é o Comprar; nome do Ivan, 10/11/2026)
     expect(screen.getByRole('link', { name: 'Fazer compra' })).toHaveAttribute('href', '#/comprar')
     expect(screen.queryByRole('link', { name: 'Comprar' })).not.toBeInTheDocument()
+  })
+
+  it('/cotacoes (rota antiga) leva para /pedidos, com o título Pedidos e o "Menu Compra" para voltar', async () => {
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    window.location.hash = '#/cotacoes'
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: /^Pedidos/ })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/pedidos')
+    expect(screen.getByRole('link', { name: 'Menu Compra' })).toHaveAttribute('href', '#/compra')
   })
 
   it('comprador não vê a aba Cotações', async () => {

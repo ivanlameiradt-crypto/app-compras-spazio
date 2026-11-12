@@ -87,7 +87,8 @@ function Telas({ usuario }: { usuario: Usuario }) {
       {admin && <Route path="/nota-sefaz" element={<NotaSefaz />} />}
       {admin && <Route path="/lista" element={<Revisao usuario={usuario} />} />}
       {admin && <Route path="/lista-semana" element={<ListaSemana />} />}
-      {admin && <Route path="/cotacoes" element={<Cotacoes />} />}
+      {admin && <Route path="/pedidos" element={<Cotacoes />} />}
+      {admin && <Route path="/cotacoes" element={<Navigate to="/pedidos" replace />} />}
       {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
       {admin && <Route path="/resumo" element={<Resumo />} />}
       {admin && <Route path="/economia" element={<Economia />} />}

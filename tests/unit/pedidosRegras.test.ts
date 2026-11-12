@@ -1,14 +1,16 @@
 // Pedidos (etapa 4 da Compra): compra na loja agrupada por fornecedor e resumo da tela. Dados INVENTADOS.
 import { gruposDeLoja, resumoPedidos, SEM_FORNECEDOR } from '../../src/admin/pedidosRegras'
 import { sugerirCompras } from '../../src/lib/sugestaoCompra'
+import type { LinhaCompra } from '../../src/lib/sugestaoCompra'
 import type { ItemSemVendedor } from '../../src/lib/tipos'
-import { item, linha } from '../fabricas'
+import { item } from '../fabricas'
 
 const sv = (p: Partial<ItemSemVendedor>): ItemSemVendedor => ({
   item_semana_id: 1, produto_id: 1, produto: 'X', nome: 'X', unidade: 'kg', qtd: 1, motivo: 'nunca_comprado', fornecedor: null, vendedor_id: null, ...p,
 })
 const hoje = '2026-11-12'
-const hist = (produtoId: number, linhas: ReturnType<typeof linha>[]) => ({ produtoId, nome: `P${produtoId}`, unidade: 'kg', linhas })
+const linha = (p: Partial<LinhaCompra>): LinhaCompra => ({ data: '2026-11-05', fornecedor: null, qtd: 1, precoUnit: 1, custoLiquido: 1, ...p })
+const hist = (produtoId: number, linhas: LinhaCompra[]) => ({ produtoId, nome: `P${produtoId}`, unidade: 'kg', linhas })
 
 describe('gruposDeLoja', () => {
   it('usa o melhor fornecedor do histórico e calcula qtd × preço', () => {
