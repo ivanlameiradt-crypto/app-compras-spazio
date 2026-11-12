@@ -12,8 +12,7 @@ import Revisao from './admin/Revisao'
 import ListaSemana from './admin/ListaSemana'
 import Cotacoes from './admin/Cotacoes'
 import Lancamentos from './admin/Lancamentos'
-import Resumo from './admin/Resumo'
-import Economia from './admin/Economia'
+import Resultados from './admin/Resultados'
 import Pessoas from './admin/Pessoas'
 import Cadastros from './admin/Cadastros'
 import Historico from './admin/Historico'
@@ -90,8 +89,9 @@ function Telas({ usuario }: { usuario: Usuario }) {
       {admin && <Route path="/pedidos" element={<Cotacoes />} />}
       {admin && <Route path="/cotacoes" element={<Navigate to="/pedidos" replace />} />}
       {admin && <Route path="/lancamentos" element={<Lancamentos usuario={usuario} />} />}
-      {admin && <Route path="/resumo" element={<Resumo />} />}
-      {admin && <Route path="/economia" element={<Economia />} />}
+      {admin && <Route path="/resultados" element={<Resultados />} />}
+      {admin && <Route path="/resumo" element={<Navigate to="/resultados" replace />} />}
+      {admin && <Route path="/economia" element={<Navigate to="/resultados?aba=economia" replace />} />}
       {admin && <Route path="/cadastros" element={<Cadastros usuario={usuario} />} />}
       {admin && <Route path="/cadastros/produto/:id" element={<Cadastros usuario={usuario} />} />}
       {admin && <Route path="/historico" element={<Historico />} />}

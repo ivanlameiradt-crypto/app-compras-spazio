@@ -64,7 +64,7 @@ describe('Lista da semana', () => {
     const antes = (c.getByLabelText('Comprar FARINHA DE TRIGO') as HTMLInputElement).value
     await userEvent.type(c.getByLabelText('Contei FARINHA DE TRIGO'), '1,5')
     await userEvent.tab()
-    expect(m.salvarContagem).toHaveBeenCalledWith(7, 1, 1.5)
+    await waitFor(() => expect(m.salvarContagem).toHaveBeenCalledWith(7, 1, 1.5))
     await waitFor(() => expect(screen.getByText(/Contagem rápida: 1 de 3 contados/)).toBeInTheDocument())
     await waitFor(() => expect(c.getByLabelText('Comprar FARINHA DE TRIGO')).not.toHaveValue(antes)) // contar 1,5 em vez de estoque 0
   })
@@ -76,7 +76,8 @@ describe('Lista da semana', () => {
     expect(campo).toHaveValue('2')
     await userEvent.clear(campo)
     await userEvent.tab()
-    expect(m.salvarContagem).toHaveBeenCalledWith(7, 1, null)
+    // o salvamento sai um instante depois de o campo perder o foco: espera em vez de conferir na hora
+    await waitFor(() => expect(m.salvarContagem).toHaveBeenCalledWith(7, 1, null))
   })
 
   it('estoque negativo sem contagem mostra aviso e "contar", sem número', async () => {

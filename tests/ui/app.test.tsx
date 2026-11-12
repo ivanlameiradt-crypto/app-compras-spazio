@@ -55,22 +55,83 @@ describe('App', () => {
     expect(await screen.findByRole('link', { name: /lançamentos/i })).toBeInTheDocument()
   })
 
-  it('Fase 1 app unificado: topo tem 4 abas e a Compra abre o menu em grade com as telas de compra', async () => {
+  it('Fase 1 app unificado: a barra tem 5 abas e a Compra abre o menu em grade com 4 telas (etapa 5, 12/11/2026)', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     render(<App />)
-    // 4 abas no topo: Compra · Lançamento de cupom · Lançamento fiscal (a nota da SEFAZ; renomeada em 06/10) · Compras avulsas (10/10)
+    // 5 abas na barra: Compra · Lançamentos (a fila, que saiu do menu Compra em 12/11) · Lançamento de cupom · Lançamento fiscal (a nota da SEFAZ; renomeada em 06/10) · Compras avulsas (10/10)
     const topo = (await screen.findByRole('link', { name: 'Lançamento de cupom' })).closest('nav') as HTMLElement
-    expect([...topo.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/compra', '#/cupom', '#/nota-sefaz', '#/compra-avulsa'])
-    expect(within(topo).getByRole('link', { name: /Lançamento fiscal/ })).toHaveAttribute('href', '#/nota-sefaz')   // o nome da 3ª aba
-    expect(within(topo).getByRole('link', { name: /Compras avulsas/ })).toHaveAttribute('href', '#/compra-avulsa')   // a 4ª: compra sem cupom e sem nota
+    expect([...topo.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/compra', '#/lancamentos', '#/cupom', '#/nota-sefaz', '#/compra-avulsa'])
+    expect(within(topo).getByRole('link', { name: 'Lançamentos' })).toHaveAttribute('href', '#/lancamentos')        // a aba nova: a fila de compras esperando lançamento
+    expect(within(topo).getByRole('link', { name: /Lançamento fiscal/ })).toHaveAttribute('href', '#/nota-sefaz')   // o nome da 4ª aba
+    expect(within(topo).getByRole('link', { name: /Compras avulsas/ })).toHaveAttribute('href', '#/compra-avulsa')   // a 5ª: compra sem cupom e sem nota
     expect(within(topo).queryByText(/nota SEFAZ/)).not.toBeInTheDocument()                                          // e o nome antigo sumiu
     expect(within(topo).queryByText(/Lançamento de fiscal/)).not.toBeInTheDocument()                                // nem o de algumas horas atrás (com o "de")
-    // a aba Compra (rota padrão do admin) abre o menu em grade com as telas de compra (findBy: espera o redirect p/ /compra)
-    expect(await screen.findByRole('link', { name: 'Pedidos' })).toHaveAttribute('href', '#/pedidos')
-    expect(screen.getByRole('link', { name: 'Lançamentos' })).toHaveAttribute('href', '#/lancamentos')
-    // a tela que se chamava "Comprar" passou a "Fazer compra" (o app inteiro é o Comprar; nome do Ivan, 10/11/2026)
-    expect(screen.getByRole('link', { name: 'Fazer compra' })).toHaveAttribute('href', '#/comprar')
+    // a aba Compra (rota padrão do admin) abre o menu em grade com 4 telas: Lista · Pedidos · Receber · Resultados (findBy: espera o redirect p/ /compra)
+    const grade = (await screen.findByRole('navigation', { name: 'Telas de compra' })) as HTMLElement
+    expect([...grade.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/lista-semana', '#/pedidos', '#/receber', '#/resultados'])
+    expect(within(grade).getByRole('link', { name: 'Resultados' })).toHaveAttribute('href', '#/resultados')
+    // o que saiu da grade: Lançamentos (virou aba), Resumo e Economia (viraram Resultados), Cadastros (virou "Ajustes") e Fazer compra (o cartão Pedidos leva a ela)
+    for (const nome of ['Lançamentos', 'Resumo', 'Economia', 'Cadastros', 'Fazer compra']) {
+      expect(within(grade).queryByRole('link', { name: nome })).not.toBeInTheDocument()
+    }
+    // "Ajustes": link discreto abaixo da grade, para os Cadastros
+    expect(screen.getByRole('link', { name: 'Ajustes (produtos, vendedores, feriados)' })).toHaveAttribute('href', '#/cadastros')
     expect(screen.queryByRole('link', { name: 'Comprar' })).not.toBeInTheDocument()
+  })
+
+  it('/resumo (rota antiga) leva para /resultados, aba Semana, com o título Resultados e o "Menu Compra"', async () => {
+    const api = vi.mocked(await import('../../src/lib/api'))
+    api.listarSemanas.mockResolvedValue([])
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    window.location.hash = '#/resumo'
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Resultados' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/resultados')
+    expect(screen.getByRole('tab', { name: 'Semana' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('link', { name: 'Menu Compra' })).toHaveAttribute('href', '#/compra')
+  })
+
+  it('/economia (rota antiga) leva para /resultados?aba=economia, na aba Economia', async () => {
+    const api = vi.mocked(await import('../../src/lib/api'))
+    api.painelEconomia.mockResolvedValue(null)
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    window.location.hash = '#/economia'
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Resultados' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/resultados?aba=economia')
+    expect(screen.getByRole('tab', { name: 'Economia' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText(/O painel ainda não foi instalado no banco/)).toBeInTheDocument()
+  })
+
+  it('/lancamentos acende a aba Lançamentos e não oferece "Menu Compra" (é aba própria, não subtela da Compra)', async () => {
+    const api = vi.mocked(await import('../../src/lib/api'))
+    api.filaLancamentos.mockResolvedValue([])
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    window.location.hash = '#/lancamentos'
+    render(<App />)
+    const barra = (await screen.findByRole('navigation', { name: 'Seções' })) as HTMLElement
+    expect(within(barra).getByRole('link', { name: 'Lançamentos' })).toHaveClass('ativo')
+    expect(within(barra).getByRole('link', { name: 'Compra' })).not.toHaveClass('ativo')
+    expect(screen.queryByRole('link', { name: 'Menu Compra' })).not.toBeInTheDocument()
+  })
+
+  it('o contador vermelho das compras fechadas esperando aprovação fica na aba Lançamentos, não na Compra', async () => {
+    const api = vi.mocked(await import('../../src/lib/api'))
+    api.contarAguardando.mockResolvedValue(3)
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    render(<App />)
+    const barra = (await screen.findByRole('navigation', { name: 'Seções' })) as HTMLElement
+    await waitFor(() => expect(within(within(barra).getByRole('link', { name: /Lançamentos/ })).getByText('3')).toHaveClass('contador'))
+    expect(within(barra).getAllByText('3')).toHaveLength(1)
+    expect(within(within(barra).getByRole('link', { name: 'Compra' })).queryByText('3')).not.toBeInTheDocument()
+  })
+
+  it('/comprar continua existindo para o admin (só saiu da grade do menu Compra)', async () => {
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    window.location.hash = '#/comprar'
+    render(<App />)
+    await screen.findByRole('navigation', { name: 'Seções' })
+    expect(window.location.hash).toBe('#/comprar')
   })
 
   it('/cotacoes (rota antiga) leva para /pedidos, com o título Pedidos e o "Menu Compra" para voltar', async () => {

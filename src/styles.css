@@ -74,14 +74,23 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
 .link-claro { white-space: nowrap; background: none; border: 0; padding: 4px 0; min-height: 32px; color: #d9d5ce; font: inherit; font-size: 16px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; display: inline-flex; align-items: center; }
 .fantasma { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; border: 2px solid #fff; border-radius: 21px; background: transparent; color: #fff; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
 .fantasma:disabled { opacity: .6; cursor: default; }
-/* Navegação: no celular e no tablet é a barra de baixo (até 4 destinos, o atual leva uma faixa amarela); no computador vai para dentro da barra preta. */
-.barra-abas { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: #fff; border-top: 1px solid var(--linha); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); height: calc(var(--barra-baixo) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
+/* Navegação: no celular e no tablet é a barra de baixo (até 5 destinos, o atual leva uma faixa amarela); no computador vai para dentro da barra preta. */
+.barra-abas { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: #fff; border-top: 1px solid var(--linha); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); height: calc(var(--barra-baixo) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
 .barra-abas.duas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .barra-abas a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0 4px; border-top: 4px solid transparent; color: var(--texto); text-decoration: none; font-size: 14px; font-weight: 600; text-align: center; line-height: 1.15; }
 .barra-abas a.ativo { border-top-color: var(--amarelo); font-weight: 800; }
 .aba-icone { position: relative; display: inline-flex; }
+/* Celular (até 639 px): 5 abas dividem a largura (75 px cada num aparelho de 375; "Lançamentos" em negrito, 12 px e largura normal da Archivo mede 83 px).
+   A letra encolhe para 12 px e fica mais estreita (a Archivo tem eixo de largura), o rótulo quebra em 2 linhas e nenhuma palavra é cortada. Perfil comprador (.duas) não muda. */
+@media (max-width: 639px) {
+  .barra-abas:not(.duas) a { font-size: 12px; font-stretch: 80%; padding: 0 1px; overflow-wrap: anywhere; }
+}
+@media (max-width: 359px) {
+  .barra-abas:not(.duas) a { font-size: 11px; font-stretch: 78%; }
+}
 .contador { margin-left: 8px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: #d6141a; color: #fff; font-size: 14px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
 .aba-icone .contador { position: absolute; top: -8px; right: -16px; margin: 0; box-shadow: 0 0 0 2px #fff; }
+.ajustes { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 4px; color: var(--suave); font-size: 16px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .voltar-menu { display: inline-flex; align-items: center; gap: 6px; margin: 0 20px 8px; min-height: 44px; color: var(--tinta); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .conteudo { width: 100%; max-width: 760px; margin: 0 auto; padding: 0 20px 24px; }
 .centro, .vazio { text-align: center; color: var(--suave); padding: 32px 16px; }
@@ -108,6 +117,12 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
   .barra-abas .contador { top: -10px; right: -14px; box-shadow: 0 0 0 2px var(--preto); }
   .barra-abas a.ativo .contador { box-shadow: 0 0 0 2px var(--amarelo); }
   .rodape { bottom: 0 !important; }
+}
+/* 1280 a 1479 px: as 5 abas em fila precisam de ~1435 px ao lado do logo, do "Atualizar" e dos links (sem isso a página ganha rolagem lateral). Aqui elas descem
+   para uma 2ª linha da própria barra preta, centralizadas; de 1480 px em diante ficam todas na linha de cima. */
+@media (min-width: 1280px) and (max-width: 1479px) {
+  .barra-topo { flex-wrap: wrap; row-gap: 8px; }
+  .barra-abas { order: 5; flex: 1 0 100%; }
 }
 
 /* ---- Entrar e telas parecidas ---- */
@@ -225,6 +240,7 @@ a.botao { display: inline-flex; text-decoration: none; }
 .campo-entrega { margin-top: 8px; }
 
 /* Fase 2, Bloco E1 — painel de economia (segue a skill dataviz: cores por token, legível em claro e escuro) */
+.abas-resultados { display: flex; gap: 8px; padding: 4px 0 8px; }
 .economia .chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; -webkit-overflow-scrolling: touch; }
 .chip { font: inherit; font-size: 16px; font-weight: 700; min-height: 48px; padding: 8px 16px; border-radius: 999px; border: 2px solid var(--tinta); background: var(--cartao); color: var(--texto); cursor: pointer; white-space: nowrap; }
 .chip.ativo, .chip[aria-selected='true'] { background: var(--marca); color: var(--marca-texto); border-color: var(--tinta); font-weight: 800; }
