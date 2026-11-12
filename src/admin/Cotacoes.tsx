@@ -346,17 +346,21 @@ function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
                   <span className="produto-loja">{l.nome} · {qtdNaTela(l.qtd, l.unidade)}</span>
                   <span className="valor-loja">{l.valor === null ? 'sem preço' : formatarReais(l.valor)}</span>
                 </div>
-                <div className="sub pequeno">{textoMotivo(s.motivo, s.fornecedor, inativo ? rotuloVendedor(inativo.empresa) : null)}</div>
-                <label className="sub pequeno">Pedir a:
-                  <select aria-label={`Pedir ${l.nome} a`} value="" disabled={ctx.ocupado || ctx.vendedoresAtivos.length === 0}
-                    onChange={(e) => {
-                      const v = Number(e.target.value)
-                      if (v) void ctx.acao(chave, () => api.definirVendedor(s.produto_id, v))
-                    }}>
-                    <option value="">escolha o vendedor…</option>
-                    {ctx.vendedoresAtivos.map((v) => <option key={v.id} value={v.id}>{v.empresa}</option>)}
-                  </select>
-                </label>
+                {/* fechado por padrão: no celular cada produto ocupa uma linha; quem quer passar o item a um vendedor abre */}
+                <details className="pedir-vendedor">
+                  <summary>Pedir a um vendedor</summary>
+                  <div className="sub pequeno">Hoje sem vendedor: {textoMotivo(s.motivo, s.fornecedor, inativo ? rotuloVendedor(inativo.empresa) : null)}</div>
+                  <label className="sub pequeno">Pedir a:
+                    <select aria-label={`Pedir ${l.nome} a`} value="" disabled={ctx.ocupado || ctx.vendedoresAtivos.length === 0}
+                      onChange={(e) => {
+                        const v = Number(e.target.value)
+                        if (v) void ctx.acao(chave, () => api.definirVendedor(s.produto_id, v))
+                      }}>
+                      <option value="">escolha o vendedor…</option>
+                      {ctx.vendedoresAtivos.map((v) => <option key={v.id} value={v.id}>{v.empresa}</option>)}
+                    </select>
+                  </label>
+                </details>
                 {ctx.erro(chave) && <p className="erro" role="alert">{ctx.erro(chave)}</p>}
               </div>
             )

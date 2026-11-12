@@ -527,3 +527,7 @@ a.botao { display: inline-flex; text-decoration: none; }
 .cartao-loja .subtotal-loja { padding: 10px 0; }
 .cartao-loja a.botao { width: 100%; box-sizing: border-box; }
 .resumo-pedidos { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 20px; padding: 14px 16px; border-radius: 14px; border: 2px solid var(--tinta); font-size: 18px; font-weight: 600; }
+.pedir-vendedor > summary { font-size: 13px; color: var(--suave); cursor: pointer; padding: 6px 0; min-height: 32px; text-decoration: underline; list-style: none; }
+.pedir-vendedor > summary::-webkit-details-marker { display: none; }
+.pedir-vendedor[open] > summary { color: inherit; }
+.cartao-loja .item-loja > .linha, .cartao-loja .subtotal-loja { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: 12px; }
