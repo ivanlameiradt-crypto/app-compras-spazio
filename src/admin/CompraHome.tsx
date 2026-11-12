@@ -1,19 +1,17 @@
 // Aba "Compra": menu em grade (no lugar da antiga barra de rolagem lateral). Cada botão abre uma das telas
-// de compra que já existem; o Layout mostra "← Menu Compra" para voltar aqui.
+// de compra; o Layout mostra "← Menu Compra" para voltar aqui.
+// Etapa 5 do redesenho (12/11/2026): de 8 telas para 4 (Lista · Pedidos · Receber · Resultados). Saíram da grade: Lançamentos (virou aba própria da
+// barra de baixo), Resumo e Economia (viraram as duas abas de "Resultados"), Cadastros (virou o link "Ajustes", abaixo da grade) e Fazer compra
+// (o cartão "Fazer esta compra agora", em Pedidos, leva a ela; a rota /comprar e a barra do comprador continuam).
 import { Link } from 'react-router-dom'
 import { Icone, type NomeIcone } from '../components/Icones'
 import TituloDaTela from '../components/TituloDaTela'
 
-// "Fazer compra" é a tela de antes chamada "Comprar" (rota /comprar): o app inteiro passou a se chamar "Comprar" (nome dado pelo Ivan em 10/11/2026).
 const TELAS: { to: string; rotulo: string; ic: NomeIcone }[] = [
   { to: '/lista-semana', rotulo: 'Lista', ic: 'lista' },
   { to: '/pedidos', rotulo: 'Pedidos', ic: 'cotacoes' },
   { to: '/receber', rotulo: 'Receber', ic: 'receber' },
-  { to: '/lancamentos', rotulo: 'Lançamentos', ic: 'lancamentos' },
-  { to: '/resumo', rotulo: 'Resumo', ic: 'resumo' },
-  { to: '/economia', rotulo: 'Economia', ic: 'economia' },
-  { to: '/cadastros', rotulo: 'Cadastros', ic: 'cadastros' },
-  { to: '/comprar', rotulo: 'Fazer compra', ic: 'carrinho' },
+  { to: '/resultados', rotulo: 'Resultados', ic: 'resumo' },
 ]
 
 export default function CompraHome() {
@@ -28,6 +26,10 @@ export default function CompraHome() {
           </Link>
         ))}
       </nav>
+      <Link to="/cadastros" className="ajustes">
+        <Icone nome="engrenagem" tamanho={20} />
+        Ajustes (produtos, vendedores, feriados)
+      </Link>
     </section>
   )
 }

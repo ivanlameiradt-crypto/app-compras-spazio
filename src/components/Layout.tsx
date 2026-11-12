@@ -9,10 +9,13 @@ import { LogoComprar } from './marca/Comprar'
 import { Icone, type NomeIcone } from './Icones'
 import { SlotDoTitulo } from './TituloDaTela'
 
-// As 4 abas do topo (admin; "Compras avulsas" desde 10/10/2026). "Compra" guarda todo o fluxo atual (Lista, Cotações, Receber, Lançamentos,
-// Resumo, Economia, Cadastros, Comprar) num menu em grade; Cupom e Fiscal (a nota da SEFAZ) são cada um sua tela.
-const ABAS: readonly { chave: 'compra' | 'cupom' | 'sefaz' | 'avulsa'; to: string; rotulo: string; ic: NomeIcone }[] = [
+// As 5 abas da barra (admin; "Compras avulsas" desde 10/10/2026, "Lançamentos" desde 12/11/2026). "Compra" guarda o fluxo da compra num menu em
+// grade de 4 telas (Lista, Pedidos, Receber, Resultados) mais o link "Ajustes" (Cadastros); Lançamentos (a fila de compras esperando lançamento),
+// Cupom e Fiscal (a nota da SEFAZ) e Compras avulsas são cada um sua tela.
+type ChaveAba = 'compra' | 'lancamentos' | 'cupom' | 'sefaz' | 'avulsa'
+const ABAS: readonly { chave: ChaveAba; to: string; rotulo: string; ic: NomeIcone }[] = [
   { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: 'carrinho' },
+  { chave: 'lancamentos', to: '/lancamentos', rotulo: 'Lançamentos', ic: 'lancamentos' },
   { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: 'cupom' },
   { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', ic: 'fiscal' },
   { chave: 'avulsa', to: '/compra-avulsa', rotulo: 'Compras avulsas', ic: 'sacola' },
@@ -24,8 +27,9 @@ const ABAS_COMPRADOR: readonly { to: string; rotulo: string; ic: NomeIcone }[] =
   { to: '/receber', rotulo: 'Receber', ic: 'receber' },
 ]
 
-/** Qual aba fica acesa para a rota atual: Cupom e Nota SEFAZ só nas suas; todo o resto é Compra. */
-function abaAtual(pathname: string): 'compra' | 'cupom' | 'sefaz' | 'avulsa' {
+/** Qual aba fica acesa para a rota atual: Lançamentos, Cupom, Nota SEFAZ e Compras avulsas só nas suas; todo o resto é Compra. */
+function abaAtual(pathname: string): ChaveAba {
+  if (pathname.startsWith('/lancamentos')) return 'lancamentos'
   if (pathname.startsWith('/cupom')) return 'cupom'
   if (pathname.startsWith('/compra-avulsa')) return 'avulsa'
   if (pathname.startsWith('/nota-sefaz')) return 'sefaz'
@@ -78,7 +82,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
               <Link key={a.chave} to={a.to} className={aba === a.chave ? 'ativo' : undefined} aria-current={aba === a.chave ? 'page' : undefined}>
                 <span className="aba-icone">
                   <Icone nome={a.ic} tamanho={26} />
-                  {a.chave === 'compra' && aguardando > 0 && <span className="contador">{aguardando}</span>}
+                  {a.chave === 'lancamentos' && aguardando > 0 && <span className="contador">{aguardando}</span>}
                 </span>
                 <span>{a.rotulo}</span>
               </Link>
