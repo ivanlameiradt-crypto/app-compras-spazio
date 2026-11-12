@@ -7,7 +7,7 @@ import TituloDaTela from '../components/TituloDaTela'
 // "Fazer compra" é a tela de antes chamada "Comprar" (rota /comprar): o app inteiro passou a se chamar "Comprar" (nome dado pelo Ivan em 10/11/2026).
 const TELAS: { to: string; rotulo: string; ic: NomeIcone }[] = [
   { to: '/lista-semana', rotulo: 'Lista', ic: 'lista' },
-  { to: '/cotacoes', rotulo: 'Cotações', ic: 'cotacoes' },
+  { to: '/pedidos', rotulo: 'Pedidos', ic: 'cotacoes' },
   { to: '/receber', rotulo: 'Receber', ic: 'receber' },
   { to: '/lancamentos', rotulo: 'Lançamentos', ic: 'lancamentos' },
   { to: '/resumo', rotulo: 'Resumo', ic: 'resumo' },

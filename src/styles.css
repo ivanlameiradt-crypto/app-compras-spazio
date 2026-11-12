@@ -515,3 +515,19 @@ a.botao { display: inline-flex; text-decoration: none; }
 /* Terminar pedido (11/11/2026): nota pela metade que o robo sabe continuar */
 .terminar-pedido { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .terminar-pedido p { margin: 0; }
+
+/* Pedidos: cartões de "Compra na loja" (etapa 4 da Compra, 12/11/2026) */
+.cartao-loja .selo-loja { font-size: 14px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--aviso-fundo); color: var(--aviso-texto); white-space: nowrap; }
+.cartao-loja .linha { align-items: flex-start; }
+.cartao-loja .produto-loja { min-width: 0; overflow-wrap: anywhere; }
+.cartao-loja .valor-loja { white-space: nowrap; font-weight: 700; }
+.cartao-loja .item-loja { padding: 8px 0; border-bottom: 1px solid var(--linha); display: flex; flex-direction: column; gap: 2px; }
+.cartao-loja .item-loja select { display: block; margin-top: 4px; font-size: 16px; padding: 6px 8px; max-width: 100%; }
+.cartao-loja .pequeno { font-size: 14px; }
+.cartao-loja .subtotal-loja { padding: 10px 0; }
+.cartao-loja a.botao { width: 100%; box-sizing: border-box; }
+.resumo-pedidos { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 20px; padding: 14px 16px; border-radius: 14px; border: 2px solid var(--tinta); font-size: 18px; font-weight: 600; }
+.pedir-vendedor > summary { font-size: 13px; color: var(--suave); cursor: pointer; padding: 6px 0; min-height: 32px; text-decoration: underline; list-style: none; }
+.pedir-vendedor > summary::-webkit-details-marker { display: none; }
+.pedir-vendedor[open] > summary { color: inherit; }
+.cartao-loja .item-loja > .linha, .cartao-loja .subtotal-loja { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: 12px; }

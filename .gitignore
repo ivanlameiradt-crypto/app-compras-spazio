@@ -6,3 +6,4 @@ dist/
 supabase/.temp/
 # testes com dados reais ficam no repositório privado (compra-semanal/tests/app_real); rede de segurança
 tests/db/privado/
+tsconfig.tsbuildinfo

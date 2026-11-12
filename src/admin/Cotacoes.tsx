@@ -4,8 +4,10 @@
 // Nenhum window.open depois de await (Safari/iOS e o App instalado bloqueiam, como em Lançamentos): ação que grava e
 // depois abre o WhatsApp é feita em dois toques, e o segundo é um <a href="https://wa.me/…"> de verdade.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import * as api from '../lib/api'
-import { formatarData, mensagemDeErro } from '../lib/regras'
+import { formatarData, formatarReais, mensagemDeErro } from '../lib/regras'
+import { sugerirCompras, type ProdutoHistorico } from '../lib/sugestaoCompra'
 import type {
   Cotacao, ItemAtravessado, ItemCotacao, ItemForaDaCotacao, ItemSemana, Pedido, Preparo, ResumoCotacao, Semana, Vendedor,
 } from '../lib/tipos'
@@ -19,6 +21,9 @@ import { BotoesCopiar, LinkWhatsApp } from './cotacoes/Copiar'
 import { prontaSemSinal } from './cotacoes/estado'
 import { textoMotivo } from './cotacoes/formato'
 import TituloDaTela from '../components/TituloDaTela'
+import { hojeLocal } from './ListaSemana'
+import { qtdNaTela } from './listaSemanaRegras'
+import { gruposDeLoja, resumoPedidos, type GrupoLoja } from './pedidosRegras'
 
 const INTERVALO = 30_000
 
@@ -35,21 +40,39 @@ interface Dados {
   codigos: Record<number, string>
   pedidos: Record<number, Pedido | null>
   itensSemana: ItemSemana[]
+  /** compras do SisChef para achar o fornecedor da compra na loja; [] se não carregou (a tela segue com os outros caminhos) */
+  historico: ProdutoHistorico[]
   atualizadoEm: Date
+}
+
+/**
+ * O histórico só ajuda a compra na loja: se falhar, a tela não cai. Ele muda uma vez por dia (o robô grava de madrugada),
+ * então é lido uma vez por abertura da tela e reaproveitado nas atualizações de 30 s (são ~1.600 linhas: reler a cada
+ * 30 s gastaria tráfego do banco à toa). Leitura que falhou ou veio vazia é tentada de novo na atualização seguinte.
+ */
+async function lerHistorico(guardado: { atual: ProdutoHistorico[] }): Promise<ProdutoHistorico[]> {
+  if (guardado.atual.length > 0) return guardado.atual
+  try {
+    guardado.atual = (await api.historicoDeCompras()) ?? []
+  } catch {
+    guardado.atual = []
+  }
+  return guardado.atual
 }
 
 /**
  * `retidas` (id da cotação → semana): cotações de semanas anteriores em que o Ivan acabou de gravar o pedido ou o
  * "Obrigado". Elas saem da lista das vivas, mas a tela precisa delas até o segundo toque (o link do WhatsApp).
  */
-async function lerTudo(retidas: Map<number, number>): Promise<Dados> {
+async function lerTudo(retidas: Map<number, number>, historicoGuardado: { atual: ProdutoHistorico[] }): Promise<Dados> {
   const semana = await api.semanaEmCompra()
   const preparo = semana ? await api.prepararCotacoes(semana.id) : null
-  const [vendedores, daSemana, vivas, itensSemana] = await Promise.all([
+  const [vendedores, daSemana, vivas, itensSemana, historico] = await Promise.all([
     api.listarVendedores(),
     semana ? api.cotacoesDaSemana(semana.id) : Promise.resolve([] as Cotacao[]),
     api.cotacoesAnterioresVivas(semana ? semana.id : null),
     semana ? api.itensDaSemana(semana.id) : Promise.resolve([] as ItemSemana[]),
+    semana ? lerHistorico(historicoGuardado) : Promise.resolve([] as ProdutoHistorico[]),
   ])
   const faltando = [...retidas].filter(([id, s]) => s !== semana?.id && !(vivas ?? []).some((c) => c.id === id))
   const extras = faltando.length === 0 ? [] : (await Promise.all([...new Set(faltando.map(([, s]) => s))]
@@ -69,7 +92,7 @@ async function lerTudo(retidas: Map<number, number>): Promise<Dados> {
   return {
     semana, preparo, vendedores: vendedores ?? [], daSemana: daSemana ?? [], anteriores: anteriores ?? [],
     substituidas: substituidas ?? [], itens: itens ?? [],
-    resumos: resumos ?? [], codigos: codigos ?? {}, pedidos, itensSemana: itensSemana ?? [], atualizadoEm: new Date(),
+    resumos: resumos ?? [], codigos: codigos ?? {}, pedidos, itensSemana: itensSemana ?? [], historico, atualizadoEm: new Date(),
   }
 }
 
@@ -85,12 +108,14 @@ export default function Cotacoes() {
   // cotações de semanas anteriores com pedido/"Obrigado" gravado nesta sessão (ver lerTudo)
   const retidas = useRef(new Map<number, number>())
   const ultimos = useRef<Dados | undefined>(undefined)
+  // histórico de compras lido uma vez por abertura da tela (ver lerHistorico)
+  const historicoGuardado = useRef<{ atual: ProdutoHistorico[] }>({ atual: [] })
   // no máximo uma leitura por vez; pedidos que chegam no meio viram uma única leitura extra
   const leitura = useRef<{ emAndamento: Promise<void> | null; pendente: boolean }>({ emAndamento: null, pendente: false })
 
   const lerUmaVez = useCallback(async () => {
     try {
-      const d = await lerTudo(retidas.current)
+      const d = await lerTudo(retidas.current, historicoGuardado.current)
       if (!montada.current) return
       ultimos.current = d
       setDados(d)
@@ -100,7 +125,7 @@ export default function Cotacoes() {
       setErroCarga(mensagemDeErro(e))
       setDados((atual) => atual ?? {
         semana: null, preparo: null, vendedores: [], daSemana: [], anteriores: [], substituidas: [], itens: [], resumos: [], codigos: {},
-        pedidos: {}, itensSemana: [], atualizadoEm: new Date(),
+        pedidos: {}, itensSemana: [], historico: [], atualizadoEm: new Date(),
       })
     }
   }, [])
@@ -213,7 +238,7 @@ export default function Cotacoes() {
     <ContextoCotacoes.Provider value={ctx}>
       <section className="cotacoes">
         <div className="cabecalho">
-          <TituloDaTela>Cotações{semana ? ` · semana ${formatarData(semana.data_referencia)}` : ''}</TituloDaTela>
+          <TituloDaTela>Pedidos{semana ? ` · semana ${formatarData(semana.data_referencia)}` : ''}</TituloDaTela>
           <a className="link" href="#/historico">Histórico</a>
           <button className="botao secundario" disabled={ocupado} onClick={() => void atualizar()}>Atualizar</button>
         </div>
@@ -227,6 +252,7 @@ export default function Cotacoes() {
         {dados.anteriores.filter((c) => c.status !== 'cancelada' && c.status !== 'substituida').length > 0 && (
           <Anteriores dados={dados} />
         )}
+        {semana && preparo && <ResumoDoRodape dados={dados} preparo={preparo} />}
         <p className="sub rodape-cotacoes" data-testid="rodape">
           Atualizado às {horaBr(horaLocal(dados.atualizadoEm))}. As respostas aparecem aqui ao atualizar (sozinho a cada 30 s).
           O e-mail avisa nas coletas de seg a sex (8h17, 12h17, 16h17); o GitHub costuma atrasar de 5 a 30 min.
@@ -252,6 +278,7 @@ async function checarSaude(codigo: string | null, itens: number): Promise<string
 }
 
 function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) {
+  const grupos = useGruposDeLoja(dados, preparo)
   const cotacoesDe = (vendedorId: number) => {
     const cartao = preparo.cartoes.find((c) => c.vendedor_id === vendedorId)
     const ids = cartao?.cotacoes ?? []
@@ -259,7 +286,7 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
   }
   return (
     <>
-      <SemVendedor preparo={preparo} />
+      <CompraNaLoja grupos={grupos} />
       <ForaDaCotacao titulo="Fora da cotação já enviada" linhas={preparo.fora_da_enviada} dados={dados}
         botao={(rotulo, versao) => `Gerar v${versao} para ${rotulo} incluindo`} />
       <ForaDaCotacao titulo="Depois do pedido" linhas={preparo.depois_do_resultado} dados={dados}
@@ -276,33 +303,75 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
   )
 }
 
-function SemVendedor({ preparo }: { preparo: Preparo }) {
+/** Grupos de "Compra na loja": itens sem vendedor por fornecedor (histórico → fornecedor do item → última compra). */
+function useGruposDeLoja(dados: Dados, preparo: Preparo): GrupoLoja[] {
+  const sugestoes = useMemo(() => (dados.historico.length > 0 ? sugerirCompras(dados.historico, hojeLocal()) : []), [dados.historico])
+  return useMemo(() => gruposDeLoja(preparo.sem_vendedor, dados.itensSemana, sugestoes), [preparo.sem_vendedor, dados.itensSemana, sugestoes])
+}
+
+/** Rodapé da tela: "N fornecedores · M produtos" e o total estimado (cotações pelo estimado do cartão + loja). */
+function ResumoDoRodape({ dados, preparo }: { dados: Dados; preparo: Preparo }) {
+  const grupos = useGruposDeLoja(dados, preparo)
+  const cartoes = preparo.cartoes.filter((c) => dados.vendedores.some((v) => v.id === c.vendedor_id))
+  const r = resumoPedidos(cartoes, grupos)
+  if (r.fornecedores === 0) return null
+  return (
+    <div className="resumo-pedidos" data-testid="resumo-pedidos">
+      <span>{r.fornecedores} {r.fornecedores === 1 ? 'fornecedor' : 'fornecedores'} · {r.produtos} {r.produtos === 1 ? 'produto' : 'produtos'}</span>
+      <strong>Total estimado: {formatarReais(r.total)}</strong>
+    </div>
+  )
+}
+
+/** Itens sem vendedor, um cartão por fornecedor: o Ivan compra na loja (tela Fazer compra) ou escolhe um vendedor para o item. */
+function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
   const ctx = useCotacoes()
-  if (preparo.sem_vendedor.length === 0) return null
+  if (grupos.length === 0) return null
   return (
     <>
-      <div className="grupo">Sem vendedor ({preparo.sem_vendedor.length})</div>
-      {preparo.sem_vendedor.map((s) => {
-        const inativo = s.vendedor_id != null ? ctx.vendedor(s.vendedor_id) : undefined
-        const chave = `p${s.produto_id}`
-        return (
-          <div key={s.item_semana_id} className="cartao" data-testid={`sem-vendedor-${s.produto_id}`}>
-            <div className="nome">{s.nome}</div>
-            <div className="sub">{numeroBr(s.qtd)} {s.unidade} · {textoMotivo(s.motivo, s.fornecedor, inativo ? rotuloVendedor(inativo.empresa) : null)}</div>
-            <label>Pedir a:
-              <select aria-label={`Pedir ${s.nome} a`} value="" disabled={ctx.ocupado || ctx.vendedoresAtivos.length === 0}
-                onChange={(e) => {
-                  const v = Number(e.target.value)
-                  if (v) void ctx.acao(chave, () => api.definirVendedor(s.produto_id, v))
-                }}>
-                <option value="">escolha o vendedor…</option>
-                {ctx.vendedoresAtivos.map((v) => <option key={v.id} value={v.id}>{v.empresa}</option>)}
-              </select>
-            </label>
-            {ctx.erro(chave) && <p className="erro" role="alert">{ctx.erro(chave)}</p>}
+      <div className="grupo">Compra na loja</div>
+      {grupos.map((g) => (
+        <div key={g.nome} className="cartao cartao-loja" data-testid={`loja-${g.nome}`}>
+          <div className="linha">
+            <span className="nome">{g.nome}</span>
+            <span className="selo-loja">Compra na loja</span>
           </div>
-        )
-      })}
+          {g.itens.map((l) => {
+            const s = l.origem
+            const inativo = s.vendedor_id != null ? ctx.vendedor(s.vendedor_id) : undefined
+            const chave = `p${s.produto_id}`
+            return (
+              <div key={s.item_semana_id} className="item-loja" data-testid={`sem-vendedor-${s.produto_id}`}>
+                <div className="linha">
+                  <span className="produto-loja">{l.nome} · {qtdNaTela(l.qtd, l.unidade)}</span>
+                  <span className="valor-loja">{l.valor === null ? 'sem preço' : formatarReais(l.valor)}</span>
+                </div>
+                {/* fechado por padrão: no celular cada produto ocupa uma linha; quem quer passar o item a um vendedor abre */}
+                <details className="pedir-vendedor">
+                  <summary>Pedir a um vendedor</summary>
+                  <div className="sub pequeno">Hoje sem vendedor: {textoMotivo(s.motivo, s.fornecedor, inativo ? rotuloVendedor(inativo.empresa) : null)}</div>
+                  <label className="sub pequeno">Pedir a:
+                    <select aria-label={`Pedir ${l.nome} a`} value="" disabled={ctx.ocupado || ctx.vendedoresAtivos.length === 0}
+                      onChange={(e) => {
+                        const v = Number(e.target.value)
+                        if (v) void ctx.acao(chave, () => api.definirVendedor(s.produto_id, v))
+                      }}>
+                      <option value="">escolha o vendedor…</option>
+                      {ctx.vendedoresAtivos.map((v) => <option key={v.id} value={v.id}>{v.empresa}</option>)}
+                    </select>
+                  </label>
+                </details>
+                {ctx.erro(chave) && <p className="erro" role="alert">{ctx.erro(chave)}</p>}
+              </div>
+            )
+          })}
+          <div className="linha subtotal-loja">
+            <span>Subtotal{g.semPreco > 0 ? ` (${g.semPreco} sem preço)` : ''}</span>
+            <strong>{formatarReais(g.subtotal)}</strong>
+          </div>
+          <Link className="botao secundario" to="/comprar">Fazer esta compra agora</Link>
+        </div>
+      ))}
     </>
   )
 }

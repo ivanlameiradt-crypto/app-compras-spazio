@@ -1,6 +1,7 @@
 // Aba Cotações (spec 8.2; contrato 8.3; testes 15.4). A api é simulada por um "banco" em memória que as ações mudam,
 // para a tela reler como no App de verdade. Dados INVENTADOS (repositório público).
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render as renderSemRota, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import Cotacoes from '../../src/admin/Cotacoes'
@@ -11,6 +12,8 @@ import {
 import { cotacao, itemCotacao, PREPARADA, preparo, resumo, vendedor } from '../fabricas'
 
 vi.mock('../../src/lib/api')
+// a tela tem <Link> (Fazer esta compra agora): precisa de um roteador em volta
+const render = (ui: React.ReactElement) => renderSemRota(ui, { wrapper: MemoryRouter })
 const m = vi.mocked(api)
 
 const CODIGO = 'q7Lm2vT9xKp4RsW8nB3yZc6Hd1FjA5eG'
@@ -462,12 +465,13 @@ describe('Cotações — blocos da semana', () => {
     expect(textoDoLink(abrir)).toContain(`#c=${CODIGO}`)
   })
 
-  it('Sem vendedor: motivo e "Pedir a:"', async () => {
+  it('Compra na loja: motivo e "Pedir a:"', async () => {
     comRascunho()
     banco.preparo.sem_vendedor = [{ item_semana_id: 150, produto_id: 50, produto: 'ALHO - INSUMOS (KG)', nome: 'ALHO', unidade: 'kg', qtd: 2, motivo: 'nunca_comprado', fornecedor: null, vendedor_id: null }]
     render(<Cotacoes />)
     const bloco = await screen.findByTestId('sem-vendedor-50')
-    expect(bloco).toHaveTextContent('2 kg · nunca comprado')
+    expect(bloco).toHaveTextContent('ALHO · 2 kg')
+    expect(bloco).toHaveTextContent('nunca comprado')
     await userEvent.selectOptions(within(bloco).getByRole('combobox', { name: 'Pedir ALHO a' }), '1')
     expect(m.definirVendedor).toHaveBeenCalledWith(50, 1)
   })
