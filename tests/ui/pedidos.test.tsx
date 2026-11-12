@@ -80,7 +80,7 @@ describe('Pedidos', () => {
     expect(mercado.getByTestId('sem-vendedor-51')).toHaveTextContent(/R\$\s*12,00/)
     expect(mercado.getByText('Subtotal').closest('.linha')).toHaveTextContent(/R\$\s*52,00/)
     // o motivo continua visível, em letra menor
-    expect(mercado.getByText('nunca comprado')).toBeInTheDocument()
+    expect(mercado.getByText('Hoje sem vendedor: nunca comprado')).toBeInTheDocument()
     expect(mercado.getByText('Hoje sem vendedor: fornecedor sem vendedor cadastrado: Mercado Um')).toBeInTheDocument()
     // o fornecedor do histórico ganha dos outros caminhos (preço = o do histórico)
     const atacado = within(screen.getByTestId('loja-ATACADO NORTE'))
