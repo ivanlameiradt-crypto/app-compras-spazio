@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import * as api from '../../src/lib/api'
@@ -49,7 +49,8 @@ describe('Resultados: Semana (Resumo) e Economia numa tela só', () => {
     expect(await screen.findByRole('button', { name: 'Encerrar semana' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Semana' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Economia' })).toHaveAttribute('aria-selected', 'false')
-    expect(m.itensDaSemana).toHaveBeenCalledWith(7)
+    // a leitura dos itens termina um instante depois de o botão aparecer: espera em vez de conferir na hora
+    await waitFor(() => expect(m.itensDaSemana).toHaveBeenCalledWith(7))
     expect(m.painelEconomia).not.toHaveBeenCalled()
   })
 
