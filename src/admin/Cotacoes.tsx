@@ -45,20 +45,26 @@ interface Dados {
   atualizadoEm: Date
 }
 
-/** O histórico só ajuda a compra na loja: se falhar, a tela não cai. */
-async function lerHistorico(): Promise<ProdutoHistorico[]> {
+/**
+ * O histórico só ajuda a compra na loja: se falhar, a tela não cai. Ele muda uma vez por dia (o robô grava de madrugada),
+ * então é lido uma vez por abertura da tela e reaproveitado nas atualizações de 30 s (são ~1.600 linhas: reler a cada
+ * 30 s gastaria tráfego do banco à toa). Leitura que falhou ou veio vazia é tentada de novo na atualização seguinte.
+ */
+async function lerHistorico(guardado: { atual: ProdutoHistorico[] }): Promise<ProdutoHistorico[]> {
+  if (guardado.atual.length > 0) return guardado.atual
   try {
-    return (await api.historicoDeCompras()) ?? []
+    guardado.atual = (await api.historicoDeCompras()) ?? []
   } catch {
-    return []
+    guardado.atual = []
   }
+  return guardado.atual
 }
 
 /**
  * `retidas` (id da cotação → semana): cotações de semanas anteriores em que o Ivan acabou de gravar o pedido ou o
  * "Obrigado". Elas saem da lista das vivas, mas a tela precisa delas até o segundo toque (o link do WhatsApp).
  */
-async function lerTudo(retidas: Map<number, number>): Promise<Dados> {
+async function lerTudo(retidas: Map<number, number>, historicoGuardado: { atual: ProdutoHistorico[] }): Promise<Dados> {
   const semana = await api.semanaEmCompra()
   const preparo = semana ? await api.prepararCotacoes(semana.id) : null
   const [vendedores, daSemana, vivas, itensSemana, historico] = await Promise.all([
@@ -66,7 +72,7 @@ async function lerTudo(retidas: Map<number, number>): Promise<Dados> {
     semana ? api.cotacoesDaSemana(semana.id) : Promise.resolve([] as Cotacao[]),
     api.cotacoesAnterioresVivas(semana ? semana.id : null),
     semana ? api.itensDaSemana(semana.id) : Promise.resolve([] as ItemSemana[]),
-    semana ? lerHistorico() : Promise.resolve([] as ProdutoHistorico[]),
+    semana ? lerHistorico(historicoGuardado) : Promise.resolve([] as ProdutoHistorico[]),
   ])
   const faltando = [...retidas].filter(([id, s]) => s !== semana?.id && !(vivas ?? []).some((c) => c.id === id))
   const extras = faltando.length === 0 ? [] : (await Promise.all([...new Set(faltando.map(([, s]) => s))]
@@ -102,12 +108,14 @@ export default function Cotacoes() {
   // cotações de semanas anteriores com pedido/"Obrigado" gravado nesta sessão (ver lerTudo)
   const retidas = useRef(new Map<number, number>())
   const ultimos = useRef<Dados | undefined>(undefined)
+  // histórico de compras lido uma vez por abertura da tela (ver lerHistorico)
+  const historicoGuardado = useRef<{ atual: ProdutoHistorico[] }>({ atual: [] })
   // no máximo uma leitura por vez; pedidos que chegam no meio viram uma única leitura extra
   const leitura = useRef<{ emAndamento: Promise<void> | null; pendente: boolean }>({ emAndamento: null, pendente: false })
 
   const lerUmaVez = useCallback(async () => {
     try {
-      const d = await lerTudo(retidas.current)
+      const d = await lerTudo(retidas.current, historicoGuardado.current)
       if (!montada.current) return
       ultimos.current = d
       setDados(d)

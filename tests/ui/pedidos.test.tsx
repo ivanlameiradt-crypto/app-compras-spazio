@@ -127,6 +127,15 @@ describe('Pedidos', () => {
     await waitFor(() => expect(screen.getByTestId('resumo-pedidos')).toBeInTheDocument())
   })
 
+  it('o histórico é lido uma vez só: o botão Atualizar relê as cotações, não o histórico', async () => {
+    tela()
+    await screen.findByTestId('loja-ATACADO NORTE')
+    const leituras = m.prepararCotacoes.mock.calls.length
+    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
+    await waitFor(() => expect(m.prepararCotacoes.mock.calls.length).toBeGreaterThan(leituras))
+    expect(m.historicoDeCompras).toHaveBeenCalledTimes(1)
+  })
+
   it('sem item sem vendedor, não há seção de loja', async () => {
     m.prepararCotacoes.mockResolvedValue(preparo({ cartoes: [{ vendedor_id: 1, itens: 2, estimado: 100, cotacoes: [7] }] }))
     tela()
