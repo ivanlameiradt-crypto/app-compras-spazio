@@ -249,7 +249,7 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
           {editavel && (anterior
             ? (
               <a className="botao" href="#/resultados" style={{ textDecoration: 'none', textAlign: 'center' }}>
-                Antes, encerre a semana {formatarData(anterior.semana.data_referencia)} (Resumo)
+                Antes, encerre a semana {formatarData(anterior.semana.data_referencia)} (Resultados)
               </a>
             )
             : <button className="botao" onClick={aprovar}>Aprovar lista</button>)}

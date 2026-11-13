@@ -258,13 +258,13 @@ describe('Revisão — aba Conferir, negativos e semana anterior (Fase 1A)', () 
     expect(confirmar).toHaveBeenCalledWith('Aprovar a lista e liberar para os compradores?')
   })
 
-  it('outra semana em compra: o botão vira "Antes, encerre a semana dd/mm (Resumo)" e mostra a compra aberta que trava', async () => {
+  it('outra semana em compra: o botão vira "Antes, encerre a semana dd/mm (Resultados)" e mostra a compra aberta que trava', async () => {
     m.semanaEmCompra.mockResolvedValue(anterior)
     m.comprasAbertas.mockResolvedValue([
       { id: 'c9', loja: 'FEIRA', comprador: 'joao@spazio.com', comprador_nome: 'João', aberta_em: '2026-09-16T13:05:00Z' },
     ])
     render(<Revisao usuario={admin} />)
-    const atalho = await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resumo)' })
+    const atalho = await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resultados)' })
     expect(atalho).toHaveAttribute('href', '#/resultados')
     expect(screen.queryByRole('button', { name: 'Aprovar lista' })).not.toBeInTheDocument()
     expect(m.comprasAbertas).toHaveBeenCalledWith(6)
@@ -303,7 +303,7 @@ describe('Revisão — aba Conferir, negativos e semana anterior (Fase 1A)', () 
   it('outra semana em compra sem compra aberta: só o atalho para o Resumo', async () => {
     m.semanaEmCompra.mockResolvedValue(anterior)
     render(<Revisao usuario={admin} />)
-    expect(await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resumo)' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resultados)' })).toBeInTheDocument()
     expect(within(screen.getByTestId('semana-anterior')).queryByText(/Compra aberta/)).not.toBeInTheDocument()
     expect(within(screen.getByTestId('semana-anterior')).queryByRole('link', { name: /Lançamentos/ })).not.toBeInTheDocument()
   })
