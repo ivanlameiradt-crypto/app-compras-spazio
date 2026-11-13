@@ -14,7 +14,7 @@ import { cnpjDaChave, formatarCnpj, fornecedorNovoNaNota, nomeDoFornecedor } fro
 import CadastrarFornecedor from './CadastrarFornecedor'
 import { unidadeDoProduto } from './unidadeEstoque'
 import FreteDaNota, { type FreteConfirmado } from './FreteDaNota'
-import type { ItemParaRateio } from './freteRegras'
+import { freteGravado, type ItemParaRateio } from './freteRegras'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
@@ -460,8 +460,10 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [datasSemanais, setDatasSemanais] = useState<string[]>([])
   const [editandoData, setEditandoData] = useState(false)
   // Frete (pedido do Ivan, 09/10): "Com frete" escolhido e o frete já confirmado; vai junto com o Lançar. Com frete escolhido e ainda não confirmado, o Lançar fica travado.
-  const [comFrete, setComFrete] = useState(false)
-  const [frete, setFrete] = useState<FreteConfirmado | null>(null)
+  // Nota que já tem frete gravado (foi lançada com frete e voltou para a fila) abre com ele marcado e confirmado, à vista: antes abria em "Sem frete" e o
+  // relançamento ia sem o frete (A4, 13/11/2026). Vale só na abertura: depois manda o que o Ivan escolher na tela ("Mudar" ou "Sem frete").
+  const [frete, setFrete] = useState<FreteConfirmado | null>(() => freteGravado(nota.frete_valor, nota.frete_tipo))
+  const [comFrete, setComFrete] = useState(frete !== null)
   const fretePendente = comFrete && frete === null
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
   // Itens cujo preço por unidade de estoque (total da linha ÷ o que entra no estoque) não se parece com o das últimas compras do produto (pedido do Ivan, 29/10/2026): só avisa, nunca trava.

@@ -714,11 +714,12 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     ['mensagem "column ... does not exist"', { message: 'column cot_nfe.forma_pagamento does not exist' }],
   ])('migração ainda não aplicada (%s): cai para as colunas antigas e a aba segue funcionando', async (_n, erro) => {
     const falha = cadeia({ data: null, error: erro, status: 400 })
-    const falha2 = cadeia({ data: null, error: erro, status: 400 })  // o 2º degrau (sem a decisão do app) ainda tem as colunas novas: também falha
+    const falha2 = cadeia({ data: null, error: erro, status: 400 })  // o 2º degrau (sem o frete) e o 3º (sem a decisão do app) ainda têm as colunas novas: também falham
+    const falha3 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(antiga)
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(3)
+    expect(from).toHaveBeenCalledTimes(4)
     expect(falha.select.mock.calls[0][0]).toContain(COLUNA_NOVA)
     expect(antiga.select.mock.calls[0][0]).not.toContain('forma_pagamento')
     expect(antiga.select.mock.calls[0][0]).toContain('nf_sischef, itens')
@@ -729,9 +730,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('"Últimos lançamentos" (notasLancadas) tem o mesmo fallback', async () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
+      .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: [{ ...linha, situacao: 'lancada' }], error: null, status: 200 }))
     const r = await notasLancadas()
-    expect(from).toHaveBeenCalledTimes(3)
+    expect(from).toHaveBeenCalledTimes(4)
     expect(r[0]).toMatchObject({ situacao: 'lancada', lancamento_estado: null })
   })
 
@@ -873,8 +875,9 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     const erro = { code: '42703', message: 'column cot_nfe.descartada_em does not exist' }
     const falha = cadeia({ data: null, error: erro, status: 400 })
     const falha2 = cadeia({ data: null, error: erro, status: 400 })
+    const falha3 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(antiga)
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
     const r = await notasALancar()
     expect(falha.is).toHaveBeenCalledWith('descartada_em', null)
     expect(antiga.is).not.toHaveBeenCalled()
@@ -926,9 +929,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('só a migração da decisão do app (associacoes_app) ainda não aplicada: cai para as colunas SEM ela e mantém forma, estado, boletos e o filtro do descarte', async () => {
     const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
     const semDecisao = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', lancamento_estado: 'revisar', parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: '10.5' }] }], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
+    const falhaFrete = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
+    from.mockReturnValueOnce(falhaFrete).mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(from).toHaveBeenCalledTimes(3)
     expect(falha.select.mock.calls[0][0]).toContain('associacoes_app')
     const colunas = semDecisao.select.mock.calls[0][0] as string
     expect(colunas).not.toContain('associacoes_app')
@@ -937,6 +941,32 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     expect(semDecisao.is).toHaveBeenCalledWith('descartada_em', null)                       // o descarte continua filtrando
     expect(r[0]).toMatchObject({ forma_pagamento: 'boleto', lancamento_estado: 'revisar', associacoes_app: null })
     expect(r[0].parcelas).toEqual([{ numero: '001', vencimento: '2026-11-05', valor: 10.5 }])
+  })
+
+  // A4 (13/11/2026): o frete gravado no Lançar (frete_valor + frete_tipo) não chegava à tela; ao reabrir, a nota voltava em "Sem frete"
+  it('A4: lê o frete gravado na nota (frete_valor como número, frete_tipo); sem frete = null', async () => {
+    const c = cadeia({ data: [
+      { ...linha, frete_valor: '475.00', frete_tipo: '1' },
+      { ...linha, chave: 'e'.repeat(44), frete_valor: null, frete_tipo: null },
+      { ...linha, chave: 'f'.repeat(44) },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(c.select.mock.calls[0][0]).toContain('frete_valor, frete_tipo')
+    expect(r.map((n) => [n.frete_valor, n.frete_tipo])).toEqual([[475, '1'], [null, null], [null, null]])
+  })
+
+  it('A4: só a migração do frete ainda não aplicada: cai para as colunas SEM o frete e mantém a decisão do app', async () => {
+    const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.frete_valor does not exist' }, status: 400 })
+    const semFrete = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', associacoes_app: { '1': { produto_id: 7, produto_nome: 'X' } } }], error: null, status: 200 })
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(semFrete)
+    const r = await notasALancar()
+    expect(from).toHaveBeenCalledTimes(2)
+    const colunas = semFrete.select.mock.calls[0][0] as string
+    expect(colunas).not.toContain('frete_valor')
+    expect(colunas).toContain('associacoes_app')
+    expect(r[0]).toMatchObject({ frete_valor: null, frete_tipo: null })
+    expect(r[0].associacoes_app).toMatchObject({ '1': { produto_id: 7 } })
   })
 
   it('lê a decisão do app (associacoes_app): só as bem formadas, com o código como número; vazio, lista ou lixo = null', async () => {

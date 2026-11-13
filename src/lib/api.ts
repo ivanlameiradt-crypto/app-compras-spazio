@@ -600,7 +600,9 @@ const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, v
 // As colunas novas (migrações 20261206000001 e 20261207000001 — esta traz `parcelas`) só existem depois de aplicada: sem elas a leitura cai para as antigas.
 /** Até a migração do descarte (20261209000001): sem a coluna da decisão do app (20261210000001), que é a mais nova. */
 const COLUNAS_NOTA_SEM_ASSOCIACAO = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais, descartada_em, descartada_motivo`
-const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_ASSOCIACAO}, associacoes_app`
+/** Até a migração da decisão do app (20261210000001): sem o frete gravado (20261218000001), que é a mais nova. */
+const COLUNAS_NOTA_SEM_FRETE = `${COLUNAS_NOTA_SEM_ASSOCIACAO}, associacoes_app`
+const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_FRETE}, frete_valor, frete_tipo`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -619,6 +621,9 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   descartada_em: n.descartada_em ?? null,
   descartada_motivo: n.descartada_motivo ?? null,
   associacoes_app: associacoesLidas(n.associacoes_app),
+  // o frete gravado no último "Lançar" (A4, 13/11/2026): a tela reabre a nota já com ele; numeric pode chegar como texto
+  frete_valor: n.frete_valor == null ? null : Number(n.frete_valor),
+  frete_tipo: n.frete_tipo ?? null,
 })
 /** Decisões do app como vêm do banco (jsonb) -> só as bem formadas, com o código como número. Vazio ou estragado = null. */
 function associacoesLidas(x: unknown): Record<string, AssociacaoApp> | null {
@@ -651,9 +656,10 @@ type RespostaNotas = { data: unknown; error: { message: string; code?: string } 
  * `consulta` qual das duas tentativas é: com as colunas antigas ela também não pode filtrar pelas colunas do descarte.
  */
 async function lerNotas(consulta: (colunas: string, novas: boolean) => PromiseLike<RespostaNotas>): Promise<NotaSefazLista[]> {
-  // Degraus: tudo (com a decisão do app) -> sem a decisão do app (descarte já existe) -> só as colunas antigas. Cada degrau só é tentado se o anterior
+  // Degraus: tudo (com o frete gravado) -> sem o frete -> sem a decisão do app (descarte já existe) -> só as colunas antigas. Cada degrau só é tentado se o anterior
   // falhou por coluna inexistente (migração ainda não aplicada); qualquer outro erro vale como está.
   let r = await consulta(COLUNAS_NOTA, true)
+  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_FRETE, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_ASSOCIACAO, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_ANTIGAS, false)
   if (r.error) {
