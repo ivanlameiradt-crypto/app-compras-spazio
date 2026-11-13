@@ -605,6 +605,16 @@ describe('Sub-fase 3: cupom', () => {
       from.mockReturnValueOnce(consulta({ data: ULTIMOS, error: null })).mockReturnValueOnce(consulta({ data: null, error: { message: 'sem rede' } }))
       await expect(cuponsRecentes()).rejects.toThrow('sem rede')
     })
+
+    // Revisão do PR 92 (S2): o envio REPETIDO ("já lançado em outro envio") fica em REVISAR para sempre e não pede ação: não pode voltar para a lista para sempre.
+    it('o envio repetido antigo NÃO volta pela leitura dos em aberto; o REVISAR antigo de verdade volta; o repetido que está entre os últimos continua lá', async () => {
+      const repetido = (id: string, criado_em: string) => ({ ...linha(id, 'REVISAR', criado_em), motivo: 'cupom JÁ LANÇADO em outro envio (pedido 163377089)' })
+      const ultimos = consulta({ data: [linha('n2', 'LANCADO', '2026-11-13T12:00:00Z'), repetido('rn', '2026-11-12T12:00:00Z')], error: null })
+      const abertos = consulta({ data: [repetido('rn', '2026-11-12T12:00:00Z'), repetido('rv', '2026-10-03T12:00:00Z'), linha('v1', 'REVISAR', '2026-10-01T12:00:00Z')], error: null })
+      from.mockReturnValueOnce(ultimos).mockReturnValueOnce(abertos)
+      const r = await cuponsRecentes(2)
+      expect(r.map((c) => c.id)).toEqual(['n2', 'rn', 'v1'])
+    })
   })
 
   it('cuponsExcluidos: só EXCLUIDO da origem pedida, o mais novo primeiro, com o motivo e a data; valor_a_pagar vira número', async () => {

@@ -1,6 +1,6 @@
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
-import { REPETIDA_PREFIXO } from '../admin/cupomRegras'
+import { REPETIDA_PREFIXO, envioRepetido } from '../admin/cupomRegras'
 import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/CadastrarProduto'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
@@ -1300,6 +1300,7 @@ const LIMITE_EM_ABERTO = 200
  * A lista de envios de UMA origem (13/11/2026): os `limite` últimos MAIS todos os parados e os da fila, sem repetir, do mais novo ao mais antigo.
  * Antes vinham só os 10 últimos, e um cupom "precisa de você" mais antigo que isso sumia da tela. Os excluídos ficam de fora (têm a lista própria).
  * Se a leitura dos em aberto falhar, a lista inteira falha: a tela avisa, em vez de esconder um envio que espera o Ivan.
+ * O envio REPETIDO ("já lançado em outro envio") fica em REVISAR para sempre e não pede ação: ele NÃO vem pela leitura dos em aberto (só aparece enquanto está entre os últimos).
  */
 async function enviosRecentes(avulsa: boolean, limite: number): Promise<CupomRecente[]> {
   const daOrigem = () => { const q = supabase.from('cupom').select(COLUNAS_CUPOM); return avulsa ? q.eq('origem', 'avulsa') : q.neq('origem', 'avulsa') }
@@ -1308,7 +1309,7 @@ async function enviosRecentes(avulsa: boolean, limite: number): Promise<CupomRec
     daOrigem().in('estado', ESTADOS_EM_ABERTO).order('criado_em', { ascending: false }).limit(LIMITE_EM_ABERTO),
   ])
   const porId = new Map<string, CupomRecente>()
-  for (const c of [...(checar(ultimos) as CupomRecente[]), ...(checar(abertos) as CupomRecente[])]) if (!porId.has(c.id)) porId.set(c.id, c)
+  for (const c of [...(checar(ultimos) as CupomRecente[]), ...(checar(abertos) as CupomRecente[]).filter((c) => !envioRepetido(c))]) if (!porId.has(c.id)) porId.set(c.id, c)
   return [...porId.values()].sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).map(lerCupom)
 }
 
