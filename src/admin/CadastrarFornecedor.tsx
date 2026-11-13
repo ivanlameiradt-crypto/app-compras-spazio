@@ -29,6 +29,8 @@ interface Props {
   /** Aba "Compras avulsas" (10/10/2026): não há cupom para reenviar. Pronto o cadastro, o botão vira "Usar este fornecedor" e entrega os dados a quem chamou. Aqui `cupom.id` é o identificador da compra e o pedido de cadastro leva
    *  `avulsa_id` (02/11/2026; antes ia como `cupom_id` e o servidor respondia 404). */
   aoUsar?: (f: { cnpj: string; razao: string; fantasia: string }) => void
+  /** Compra avulsa (13/11/2026): quem abriu o cadastro por engano volta para a busca de fornecedor. Só com isto o botão "Voltar para a busca" aparece (no cupom e na nota não há busca para onde voltar). */
+  aoVoltar?: () => void
   /** Nota fiscal (31/10/2026, Plast Mais 8928): o fornecedor da NOTA não está no SisChef. Aqui `cupom.id` é a CHAVE da nota; a razão social já vem da nota (`cupom.emitente_nome`) e,
    *  pronto o cadastro, o Ivan toca em "Lançar" na própria nota: não há cupom para reenviar. O botão só pede à tela de cima que releia a nota (`aoReenviar`). */
   paraNota?: boolean
@@ -46,7 +48,7 @@ const mensagem = (e: unknown, padrao: string): string => (e instanceof Error && 
 /** O motivo do robô pronto para vir antes de outra frase: sem espaços sobrando e SEMPRE terminando em ponto (o motivo "…antes de tentar de novo" vinha sem ponto e a frase seguinte emendava: "…de novo Nada foi…"). */
 const frasePontuada = (t: string): string => { const s = t.trim(); return /[.!?]$/.test(s) ? s : `${s}.` }
 
-export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarregar, intervaloMs = 5000, aoUsar, paraNota = false, recusadaEm = null, ocupado = false }: Props) {
+export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarregar, intervaloMs = 5000, aoUsar, aoVoltar, paraNota = false, recusadaEm = null, ocupado = false }: Props) {
   const lido = fornecedorNaoEncontrado(cupom.motivo)
   const [cnpj, setCnpj] = useState(formatarCnpj(lido?.cnpj || cupom.emitente_cnpj || ''))
   const [razao, setRazao] = useState(lido?.nome ?? (paraNota ? (cupom.emitente_nome ?? '') : ''))    // a razão social: é ela (e o CNPJ) que vai ao SisChef
@@ -256,6 +258,12 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarr
         </>
       )}
       {erro && <p className="erro" role="alert" data-testid="erro-fornecedor">{erro}</p>}
+      {/* some enquanto o robô cadastra e depois de pronto (13/11, revisão do PR 92): voltar ali jogaria fora o acompanhamento do cadastro */}
+      {aoVoltar && !cadastrando && !pronto && (
+        <div className="acoes">
+          <button type="button" className="botao secundario" disabled={enviando} onClick={aoVoltar} data-testid="voltar-para-a-busca">Voltar para a busca</button>
+        </div>
+      )}
     </div>
   )
 }

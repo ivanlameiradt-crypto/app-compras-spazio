@@ -19,6 +19,34 @@ function acoes(over: Partial<AcoesFornecedor> = {}): AcoesFornecedor {
 }
 const abrir = (a: AcoesFornecedor, aoReenviar = vi.fn()) => render(<CadastrarFornecedor cupom={CUPOM} acoes={a} aoReenviar={aoReenviar} intervaloMs={20} />)
 
+// Reanálise de 13/11 (B2): na compra avulsa, quem abre o cadastro por engano precisa de um jeito de voltar para a busca.
+describe('CadastrarFornecedor: "Voltar para a busca" (B2)', () => {
+  it('com `aoVoltar` mostra o botão e o toque avisa quem chamou; sem ele (cupom e nota) o botão não existe', async () => {
+    const aoVoltar = vi.fn()
+    const { unmount } = render(<CadastrarFornecedor cupom={{ id: 'e1', motivo: null }} acoes={acoes()} aoReenviar={vi.fn()} aoUsar={vi.fn()} aoVoltar={aoVoltar} intervaloMs={20} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar para a busca' }))
+    expect(aoVoltar).toHaveBeenCalledTimes(1)
+    unmount()
+    abrir(acoes())
+    expect(screen.queryByRole('button', { name: 'Voltar para a busca' })).not.toBeInTheDocument()
+  })
+
+  // Revisão do PR 92 (S1): voltar no meio do cadastro jogava fora o acompanhamento do robô.
+  it('durante "Cadastrando no SisChef…" e depois de "✓ Fornecedor cadastrado" o botão não fica disponível', async () => {
+    const a = acoes()
+    render(<CadastrarFornecedor cupom={{ id: 'e1', motivo: null }} acoes={a} aoReenviar={vi.fn()} aoUsar={vi.fn()} aoVoltar={vi.fn()} intervaloMs={20} />)
+    await userEvent.type(screen.getByLabelText('CNPJ'), '63540861000182')
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    expect(screen.getByRole('button', { name: 'Voltar para a busca' })).toBeEnabled()          // preenchendo: ainda dá para voltar
+    await userEvent.click(await screen.findByTestId('cadastrar'))
+    expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Voltar para a busca' })).not.toBeInTheDocument()
+    vi.mocked(a.statusDoCadastro).mockResolvedValue({ estado: 'CADASTRADO', motivo: null })
+    expect(await screen.findByTestId('cadastro-pronto')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Voltar para a busca' })).not.toBeInTheDocument()
+  })
+})
+
 describe('CadastrarFornecedor', () => {
   it('abre com o CNPJ do cupom formatado e sem os campos até buscar', async () => {
     abrir(acoes())

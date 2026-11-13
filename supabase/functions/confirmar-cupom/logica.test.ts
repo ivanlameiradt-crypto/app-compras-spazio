@@ -680,7 +680,9 @@ describe('o servidor não confia na tela — conversão e chaves de aprendizado 
     const deps = fakeDeps({ cupom: cupom({ itens }) })
     const r = await tratar(pedido(), IVAN, deps)
     expect(r.status).toBe(400)
-    expect(r.corpo.erro).toBe('os itens 1 e 2 têm a mesma descrição no cupom e produtos diferentes: desmarque "Lembrar" em um deles')
+    // 13/11 (B5): a caixinha "Lembrar" não existe mais na tela; a saída que a tela oferece é escolher o mesmo produto nos dois itens (pelo "Editar")
+    expect(r.corpo.erro).toBe('os itens 1 e 2 têm a mesma descrição no cupom e produtos diferentes: escolha o mesmo produto nos dois (toque em "Editar" no item para trocar)')
+    expect(r.corpo.erro).not.toMatch(/Lembrar/)
     nadaGravado(deps)
   })
 

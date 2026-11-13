@@ -4,6 +4,7 @@
 // espelho da conta que a Edge Function confirmar-cupom refaz do zero (mesma fórmula e mesma tolerância do robô). O botão só habilita quando a
 // soma bate porque o servidor recusaria de qualquer jeito — é melhor o Ivan ver a diferença e corrigir o peso agora do que receber um erro depois.
 import { Fragment, useId, useMemo, useState } from 'react'
+import { useNaoEnviado } from '../lib/naoEnviado'
 import * as api from '../lib/api'
 import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
@@ -26,6 +27,8 @@ interface Props {
   /** A lista de insumos do app; null = ainda carregando. */
   catalogo: ProdutoCatalogo[] | null
   catalogoFalhou: boolean
+  /** A lista de produtos não carregou: refaz só essa leitura (13/11/2026; antes a tela mandava atualizar a página, e o que já estava confirmado se perdia). */
+  aoTentarCatalogo?: () => void
   /** O servidor aceitou: o cupom voltou à fila (quem mostra a mensagem e recarrega os "Últimos envios" é a tela de cima). */
   aoReenviar: (r: RespostaConfirmacaoCupom) => void
   /** E5: o servidor recusou por "POSSÍVEL REPETIDA" e gravou o aviso no motivo do cupom: a tela de cima recarrega os "Últimos envios" e o cartão passa a mostrar o aviso com os dois botões. */
@@ -97,8 +100,8 @@ function confirmacaoDe(it: ItemCupomRecente, e: EstadoItem): Confirmada | null {
 
 /** A caixa de UM item pendente: escolher o produto → quantidade(s) → "Confirmar este item". Confirmado (22/10/2026), o item SAI desta lista e passa a morar no resumo do fim
  *  ("Conferência da soma"), com o ✓ e o "Editar" (era "Trocar" até 21/10); o "Editar" reabre esta mesma caixa ali, na linha do resumo (estado.editando). */
-function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado, novos, registrarNovo }: {
-  cupom: CupomRecente; it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null; catalogoFalhou: boolean
+function CaixaItem({ cupom, it, catalogo, catalogoFalhou, aoTentarCatalogo, estado, mudar, travado, novos, registrarNovo }: {
+  cupom: CupomRecente; it: ItemCupomRecente; catalogo: ProdutoCatalogo[] | null; catalogoFalhou: boolean; aoTentarCatalogo?: () => void
   estado: EstadoItem; mudar: (e: Partial<EstadoItem>) => void
   /** Reenvio em curso: nada pode mudar por baixo do que está sendo mandado. */
   travado: boolean
@@ -181,7 +184,12 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, estado, mudar, travado
   return (
     <div className="associar">
       {catalogo === null && !catalogoFalhou && <p className="sub">Carregando a lista de produtos…</p>}
-      {catalogoFalhou && <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p>}
+      {catalogoFalhou && (
+        <>
+          <p className="erro" role="alert">Não consegui carregar a lista de produtos.{aoTentarCatalogo ? ' Confira a internet e toque em “Tentar de novo”.' : ' Atualize a página.'}</p>
+          {aoTentarCatalogo && <button type="button" className="botao secundario" onClick={aoTentarCatalogo} data-testid="tentar-lista-produtos">Tentar de novo</button>}
+        </>
+      )}
 
       {catalogo !== null && !estado.produto && (
         <>
@@ -421,8 +429,11 @@ function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalog
   )
 }
 
-export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenviar, aoRecarregar }: Props) {
+export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoTentarCatalogo, aoReenviar, aoRecarregar }: Props) {
   const [estados, setEstados] = useState<Record<number, EstadoItem>>({})
+  // Dados não enviados (13/11/2026): algum item tem produto escolhido (ou está confirmado ou em edição) e ainda não reenviou; "Escolher outro" esvazia a caixa e desmarca: o "Atualizar" do topo e as abas perguntam antes de sair
+  const [enviado, setEnviado] = useState(false)
+  useNaoEnviado(`corrigir-cupom:${cupom.id}`, !enviado && Object.values(estados).some((e) => e.produto !== null || e.confirmado || e.editando))
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos cadastrados agora pelo app (de qualquer item): valem na busca de todas as caixas
@@ -466,7 +477,9 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
     if (soConfirmar) {
       setEnviando(true); setErro('')
       try {
-        aoReenviar(await api.confirmarCupom(cupom.id, [], true))
+        const r = await api.confirmarCupom(cupom.id, [], true)
+        setEnviado(true)
+        aoReenviar(r)
       } catch (e) {
         setErro(e instanceof Error ? e.message : 'Não consegui confirmar agora. Tente de novo.')
         if (ehErroRepetida(e)) aoRecarregar?.()
@@ -489,7 +502,9 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
     }
     setEnviando(true); setErro('')
     try {
-      aoReenviar(await api.confirmarCupom(cupom.id, itens))
+      const r = await api.confirmarCupom(cupom.id, itens)
+      setEnviado(true)
+      aoReenviar(r)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui reenviar agora. Tente de novo.') // o que ele digitou fica: é só tocar de novo
       if (ehErroRepetida(e)) aoRecarregar?.()
@@ -540,7 +555,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
             </button>
             <div id={idCorpo} className="item-corpo" data-testid="item-corpo" hidden={!aberto}>
               {abertos[i] !== undefined && (
-                <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={e} mudar={(x) => mudar(i, x)}
+                <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoTentarCatalogo={aoTentarCatalogo} estado={e} mudar={(x) => mudar(i, x)}
                   travado={enviando} novos={novos} registrarNovo={registrarNovo} />
               )}
             </div>
@@ -567,7 +582,7 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
               )}
               {e?.editando && !e.confirmado && (
                 <div className="resumo-edicao" data-testid="resumo-edicao">
-                  <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} estado={e} mudar={(x) => mudar(l.indice, x)} travado={enviando}
+                  <CaixaItem cupom={cupom} it={it} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoTentarCatalogo={aoTentarCatalogo} estado={e} mudar={(x) => mudar(l.indice, x)} travado={enviando}
                     novos={novos} registrarNovo={registrarNovo} />
                 </div>
               )}

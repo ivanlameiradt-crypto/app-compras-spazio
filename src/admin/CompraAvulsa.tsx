@@ -23,6 +23,7 @@ import AvisoFalhaConferir from './AvisoFalhaConferir'
 import CuponsExcluidos from './CuponsExcluidos'
 import TituloDaTela from '../components/TituloDaTela'
 import { Icone } from '../components/Icones'
+import { useNaoEnviado } from '../lib/naoEnviado'
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
 const ACOES_FORNECEDOR = {
@@ -60,6 +61,8 @@ export default function CompraAvulsa() {
   const [catalogoFalhou, setCatalogoFalhou] = useState(false) // sem a lista não dá para dizer "produto não cadastrado": nada de oferecer cadastro
   const [forma, setForma] = useState<FormaCupom | null>(null)
   const [contaPix, setContaPix] = useState<string | null>(null)
+  // a forma foi escolhida NESTA compra? (depois de um envio a forma fica marcada para a próxima, mas aí não há nada digitado a perder)
+  const [formaMexida, setFormaMexida] = useState(false)
   const [conhecidos, setConhecidos] = useState<FornecedorConhecido[] | null>(null)
   const [buscaForn, setBuscaForn] = useState('')
   const [fornecedor, setFornecedor] = useState<FornecedorConhecido | null>(null)
@@ -84,13 +87,19 @@ export default function CompraAvulsa() {
     Promise.resolve(api.cuponsExcluidos('avulsa')).then((l) => setExcluidos(l ?? [])).catch(() => undefined)
   }, [])
 
+  /** Lê a lista de produtos; também é o "Tentar de novo" de quando a leitura falha (13/11/2026: antes a tela mandava atualizar a página e o que estava digitado se perdia). */
+  const carregarCatalogo = useCallback(() => {
+    setCatalogoFalhou(false)
+    api.catalogoProdutos().then((c) => setCatalogo(c)).catch(() => setCatalogoFalhou(true))
+  }, [])
+
   useEffect(() => {
     let vivo = true
-    api.catalogoProdutos().then((c) => { if (vivo) setCatalogo(c) }).catch(() => { if (vivo) setCatalogoFalhou(true) })
+    carregarCatalogo()
     api.fornecedoresConhecidos().then((f) => { if (vivo) setConhecidos(f) }).catch(() => { if (vivo) setConhecidos([]) })
     carregarRecentes()
     return () => { vivo = false }
-  }, [carregarRecentes])
+  }, [carregarRecentes, carregarCatalogo])
 
   // enquanto há compra na fila, olha de novo a cada 30 s (o robô leva de 2 a 3 minutos)
   const naFila = recentes.some((c) => c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO')
@@ -101,6 +110,10 @@ export default function CompraAvulsa() {
   }, [naFila, carregarRecentes])
 
   useEffect(() => { setRepetida(null) }, [linhas, forma, contaPix, fornecedor])
+
+  // Dados não enviados (13/11/2026): com forma escolhida, fornecedor (ou o cadastro dele aberto) ou algo digitado num item, o "Atualizar" do topo e as abas perguntam antes de sair
+  const algoDigitado = formaMexida || cadastrando || fornecedor !== null || linhas.some((l) => l.produtoId !== null || l.busca.trim() !== '' || l.quantidade.trim() !== '' || l.preco.trim() !== '')
+  useNaoEnviado('compra-avulsa', algoDigitado)
 
   const pagamento = montarPagamento(forma, contaPix)
   const problema = useMemo(() => problemaDaCompra(linhas), [linhas])
@@ -138,7 +151,7 @@ export default function CompraAvulsa() {
             : 'Compra enviada. O robô lança no SisChef em 2 ou 3 minutos; acompanhe em “Últimas compras avulsas”.',
       })
       // pronta para a próxima compra: itens e fornecedor limpos (a forma de pagamento fica, é comum repetir), identificador novo
-      setLinhas([linhaVazia(1)]); setProxima(2); setFornecedor(null); setBuscaForn(''); setConfirmando(false); setEnvioId(novoId())
+      setLinhas([linhaVazia(1)]); setProxima(2); setFornecedor(null); setBuscaForn(''); setConfirmando(false); setEnvioId(novoId()); setFormaMexida(false)
       setRepetida(null)
       carregarRecentes()
     } catch (e) {
@@ -159,7 +172,7 @@ export default function CompraAvulsa() {
         <div className="chips" role="group" aria-label="Forma de pagamento">
           {FORMAS.map((f) => (
             <button key={f.forma} type="button" className={`chip${forma === f.forma ? ' ativo' : ''}`} aria-pressed={forma === f.forma} disabled={enviando}
-              onClick={() => { setForma(f.forma); setContaPix(null); setConfirmando(false) }}>{f.rotulo}</button>
+              onClick={() => { setForma(f.forma); setContaPix(null); setConfirmando(false); setFormaMexida(true) }}>{f.rotulo}</button>
           ))}
         </div>
         {forma === 'pix' && (
@@ -168,7 +181,7 @@ export default function CompraAvulsa() {
             <div className="chips" role="group" aria-label="Banco e empresa do PIX">
               {CONTAS_PIX.map((c) => (
                 <button key={c.conta} type="button" className={`chip${contaPix === c.conta ? ' ativo' : ''}`} aria-pressed={contaPix === c.conta} disabled={enviando}
-                  onClick={() => { setContaPix(c.conta); setConfirmando(false) }}>{c.rotulo}</button>
+                  onClick={() => { setContaPix(c.conta); setConfirmando(false); setFormaMexida(true) }}>{c.rotulo}</button>
               ))}
             </div>
           </>
@@ -185,7 +198,7 @@ export default function CompraAvulsa() {
             <button type="button" className="link" disabled={enviando} onClick={() => { setFornecedor(null); setBuscaForn(''); setConfirmando(false) }}>Trocar</button>
           </p>
         ) : cadastrando ? (
-          <CadastrarFornecedor cupom={{ id: envioId, motivo: null }} acoes={ACOES_FORNECEDOR} aoReenviar={() => undefined}
+          <CadastrarFornecedor cupom={{ id: envioId, motivo: null }} acoes={ACOES_FORNECEDOR} aoReenviar={() => undefined} aoVoltar={() => setCadastrando(false)}
             aoUsar={(f) => { setFornecedor({ cnpj: f.cnpj, razao: f.razao, fantasia: f.fantasia }); setCadastrando(false); setConfirmando(false) }} />
         ) : (
           <>
@@ -234,7 +247,12 @@ export default function CompraAvulsa() {
                     </label>
                     {l.busca.trim() !== '' && (
                       catalogo === null ? (
-                        catalogoFalhou ? <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p> : <p className="sub">Carregando a lista de produtos…</p>
+                        catalogoFalhou ? (
+                          <>
+                            <p className="erro" role="alert">Não consegui carregar a lista de produtos. Confira a internet e toque em “Tentar de novo”.</p>
+                            <button type="button" className="botao secundario" onClick={carregarCatalogo} data-testid="tentar-lista-produtos">Tentar de novo</button>
+                          </>
+                        ) : <p className="sub">Carregando a lista de produtos…</p>
                       ) : (
                         <>
                           {achados.length > 0 && (
@@ -248,7 +266,7 @@ export default function CompraAvulsa() {
                           )}
                           {/* sem resultado: aviso + botão; com resultados: só o botão discreto, sempre à mão (pedido do Ivan, 13/10) */}
                           <ProdutoNaoCadastrado descricaoDoItem={l.busca} acoes={ACOES_PRODUTO} origem={{ tipo: 'avulsa', item: i }} discreto={achados.length > 0}
-                            aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '' }) }} />
+                            aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '', unidade: novo.unidade }) }} />
                         </>
                       )
                     )}

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import * as api from '../lib/api'
 import type { Usuario } from '../lib/tipos'
@@ -8,6 +8,7 @@ import { conferirVersao, recarregarPagina } from '../lib/atualizacao'
 import { LogoComprar } from './marca/Comprar'
 import { Icone, type NomeIcone } from './Icones'
 import { SlotDoTitulo } from './TituloDaTela'
+import { podeSair } from '../lib/naoEnviado'
 
 // As 5 abas da barra (admin; "Compras avulsas" desde 10/10/2026, "Lançamentos" desde 12/11/2026). "Compra" guarda o fluxo da compra num menu em
 // grade de 4 telas (Lista, Pedidos, Receber, Resultados) mais o link "Ajustes" (Cadastros); Lançamentos (a fila de compras esperando lançamento),
@@ -45,12 +46,16 @@ export default function Layout({ usuario, offline = false, children }: { usuario
   // se saiu versão nova, troca já (a tela fica a mesma); se não, recarrega a tela para ler os dados de novo (rascunhos como as parcelas ficam guardados no aparelho).
   async function atualizar() {
     if (atualizando) return
+    // 13/11/2026: recarregar joga fora o que foi digitado e ainda não enviado (compra avulsa, correção de cupom): com dados pendentes, pergunta antes; "Cancelar" não faz nada
+    if (!podeSair()) return
     setAtualizando(true)
     const r = await conferirVersao('manual')
     if (r !== 'aplicando') recarregarPagina()
   }
   const loc = useLocation()
   const aba = abaAtual(loc.pathname)
+  // Trocar de aba desmonta a tela e o que foi digitado some: com dados não enviados a aba pergunta antes (13/11/2026). A aba da própria tela não sai dela: não pergunta.
+  const aoTrocarDeAba = (e: MouseEvent, destino: string) => { if (destino !== loc.pathname && !podeSair()) e.preventDefault() }
   // numa tela de Compra que não é o próprio menu em grade → oferece voltar para o menu
   const emSubtelaCompra = admin && aba === 'compra' && loc.pathname !== '/compra'
   useEffect(() => {
@@ -84,7 +89,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
               const comContador = a.chave === 'lancamentos' && aguardando > 0
               const classes = [aba === a.chave ? 'ativo' : '', comContador ? 'com-contador' : ''].filter(Boolean).join(' ')
               return (
-                <Link key={a.chave} to={a.to} className={classes || undefined} aria-current={aba === a.chave ? 'page' : undefined}>
+                <Link key={a.chave} to={a.to} className={classes || undefined} aria-current={aba === a.chave ? 'page' : undefined} onClick={(e) => aoTrocarDeAba(e, a.to)}>
                   <span className="aba-icone">
                     <Icone nome={a.ic} tamanho={26} />
                     {comContador && <span className="contador">{aguardando}</span>}
@@ -97,7 +102,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
         ) : (
           <nav className="barra-abas duas" aria-label="Seções">
             {ABAS_COMPRADOR.map((a) => (
-              <NavLink key={a.to} to={a.to} className={({ isActive }) => (isActive ? 'ativo' : undefined)}>
+              <NavLink key={a.to} to={a.to} className={({ isActive }) => (isActive ? 'ativo' : undefined)} onClick={(e) => aoTrocarDeAba(e, a.to)}>
                 <span className="aba-icone"><Icone nome={a.ic} tamanho={26} /></span>
                 <span>{a.rotulo}</span>
               </NavLink>
