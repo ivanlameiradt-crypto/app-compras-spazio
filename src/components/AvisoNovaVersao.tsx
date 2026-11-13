@@ -3,7 +3,7 @@ import { aplicarNovaVersao, useNovaVersao } from '../lib/atualizacao'
 /**
  * Faixa discreta "Tem uma versão nova do app." + botão Atualizar. Regra do dono (13/11/2026): o app NUNCA recarrega sozinho com a pessoa trabalhando
  * (ela pode estar digitando, lançando ou comprando): ele só avisa — ao voltar do fundo, com o app em uso e quando a internet volta — e a troca só acontece
- * quando a pessoa CLICA em Atualizar (a tela em que ela está se mantém). A única troca sem clique é na abertura do app (lib/atualizacao.ts), antes de digitar algo.
+ * quando a pessoa CLICA em Atualizar (a tela em que ela está se mantém). A única troca sem clique é na abertura do app (lib/atualizacao.ts), e só se a resposta vier em até 3 s e a pessoa ainda não tiver mexido na página.
  * role="status": o leitor de tela avisa sem tirar a pessoa do lugar onde está.
  */
 export default function AvisoNovaVersao() {
