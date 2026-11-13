@@ -147,4 +147,16 @@ describe('Correção de cupom marca "tenho dados não enviados" (B4)', () => {
     unmount()
     expect(temNaoEnviado()).toBe(false)
   })
+
+  // Revisão do PR 92 (S4): a marca ficava presa depois de "Escolher outro" (a caixa volta a ficar vazia: não há mais nada a perder).
+  it('"Escolher outro" esvazia a caixa e desmarca', async () => {
+    const { unmount } = render(<CorrigirCupom cupom={CUPOM} catalogo={CATALOGO} catalogoFalhou={false} aoReenviar={vi.fn()} />)
+    await userEvent.click(screen.getByTestId('item-cabecalho'))
+    await userEvent.type(screen.getByLabelText('Produto do SisChef'), 'tomate')
+    await userEvent.click(await screen.findByRole('button', { name: /TOMATE ITALIANO OU SALADETE/ }))
+    expect(temNaoEnviado()).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Escolher outro' }))
+    expect(temNaoEnviado()).toBe(false)
+    unmount()
+  })
 })

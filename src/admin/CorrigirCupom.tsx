@@ -431,9 +431,9 @@ function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalog
 
 export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoTentarCatalogo, aoReenviar, aoRecarregar }: Props) {
   const [estados, setEstados] = useState<Record<number, EstadoItem>>({})
-  // Dados não enviados (13/11/2026): mexeu em algum item e ainda não reenviou: o "Atualizar" do topo e as abas perguntam antes de sair
+  // Dados não enviados (13/11/2026): algum item tem produto escolhido (ou está confirmado ou em edição) e ainda não reenviou; "Escolher outro" esvazia a caixa e desmarca: o "Atualizar" do topo e as abas perguntam antes de sair
   const [enviado, setEnviado] = useState(false)
-  useNaoEnviado(`corrigir-cupom:${cupom.id}`, !enviado && Object.keys(estados).length > 0)
+  useNaoEnviado(`corrigir-cupom:${cupom.id}`, !enviado && Object.values(estados).some((e) => e.produto !== null || e.confirmado || e.editando))
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos cadastrados agora pelo app (de qualquer item): valem na busca de todas as caixas
