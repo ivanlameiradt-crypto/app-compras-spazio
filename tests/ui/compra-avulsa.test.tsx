@@ -198,6 +198,59 @@ describe('CompraAvulsa', () => {
       expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('entra em KG')
       expect(screen.getByTestId('quantidade-avulsa')).toBeInTheDocument()
     })
+
+    // Reanálise de 13/11 (B1): o produto vindo do cadastro entrava na linha SEM a unidade, e a quantidade era lida pela regra errada (em "un" o ponto é milhar; em kg é decimal).
+    describe('a quantidade do produto recém-cadastrado é lida na unidade DELE (B1)', () => {
+      /** Cadastra um produto novo pela linha (busca já vazia) e toca em "Usar este produto". */
+      async function cadastrarEUsar(unidade: 'UN' | 'KG') {
+        m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1' })
+        m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? { id: 'ped-1', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [],
+          descricao: 'MAIONESE HELLMANNS 3KG - INSUMOS', grupo: 'ESTOQUE CONTROLADO', unidade, criado_em: '2026-10-14T12:00:00Z', atualizado_em: '2026-10-14T12:02:00Z' } : null))
+        await userEvent.type(screen.getByTestId('busca-produto'), 'maionese hellmanns 3kg')
+        await userEvent.click(await screen.findByTestId('abrir-cadastro-produto'))
+        await userEvent.selectOptions(screen.getByTestId('grupo-produto'), 'ESTOQUE CONTROLADO')
+        await userEvent.selectOptions(screen.getByTestId('unidade-produto'), unidade)
+        await userEvent.click(screen.getByTestId('cadastrar-produto-botao'))
+        await userEvent.click(await screen.findByTestId('usar-produto-novo'))
+      }
+      async function formaEFornecedor() {
+        await userEvent.click(screen.getByRole('button', { name: 'Dinheiro à vista' }))
+        await userEvent.type(screen.getByTestId('busca-fornecedor'), 'ata')
+        await userEvent.click(await within(await screen.findByTestId('achados-fornecedor')).findByRole('button', { name: /ATACADÃO/ }))
+      }
+      async function lancarELerQuantidade(): Promise<number> {
+        await userEvent.click(screen.getByTestId('lancar-avulsa'))
+        await userEvent.click(screen.getByTestId('confirmar-lancamento'))
+        await waitFor(() => expect(m.enviarCompraAvulsa).toHaveBeenCalledTimes(1))
+        return m.enviarCompraAvulsa.mock.calls[0][0].itens[0].quantidade
+      }
+
+      it('produto novo em UN: "2.000" vale 2000 (dois mil), no total da tela e no que vai ao servidor', async () => {
+        render(<CompraAvulsa />)
+        await formaEFornecedor()
+        await cadastrarEUsar('UN')
+        expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('entra em UN')
+        await userEvent.type(screen.getByTestId('quantidade-avulsa'), '2.000')
+        await userEvent.type(screen.getByTestId('preco-avulsa'), '0,10')
+        expect(screen.getByTestId('total-geral')).toHaveTextContent('R$ 200,00')      // 2000 × 0,10 (lido como 2 daria R$ 0,20)
+        expect(await lancarELerQuantidade()).toBe(2000)
+      }, 60000)
+
+      it('depois de "Trocar" um produto em UN por um produto novo em KG: "2.500" vale 2,5 kg (não 2500)', async () => {
+        render(<CompraAvulsa />)
+        await formaEFornecedor()
+        await userEvent.type(screen.getByTestId('busca-produto'), 'embalagem')
+        await userEvent.click(await within(await screen.findByTestId('achados')).findByRole('button'))
+        expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('entra em UN')
+        await userEvent.click(within(screen.getByTestId('produto-escolhido')).getByRole('button', { name: 'Trocar' }))
+        await cadastrarEUsar('KG')
+        expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('entra em KG')
+        await userEvent.type(screen.getByTestId('quantidade-avulsa'), '2.500')
+        await userEvent.type(screen.getByTestId('preco-avulsa'), '10,00')
+        expect(screen.getByTestId('total-geral')).toHaveTextContent('R$ 25,00')       // 2,5 × 10 (lido como 2500 daria R$ 25.000,00)
+        expect(await lancarELerQuantidade()).toBe(2.5)
+      }, 60000)
+    })
   })
 })
 

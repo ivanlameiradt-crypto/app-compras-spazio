@@ -248,7 +248,7 @@ export default function CompraAvulsa() {
                           )}
                           {/* sem resultado: aviso + botão; com resultados: só o botão discreto, sempre à mão (pedido do Ivan, 13/10) */}
                           <ProdutoNaoCadastrado descricaoDoItem={l.busca} acoes={ACOES_PRODUTO} origem={{ tipo: 'avulsa', item: i }} discreto={achados.length > 0}
-                            aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '' }) }} />
+                            aoUsar={(novo) => { setCatalogo((c) => [...(c ?? []).filter((x) => x.produto_id !== novo.produto_id), novo]); mudar(l.chave, { produtoId: novo.produto_id, busca: '', unidade: novo.unidade }) }} />
                         </>
                       )
                     )}
