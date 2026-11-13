@@ -111,8 +111,8 @@ export default function CompraAvulsa() {
 
   useEffect(() => { setRepetida(null) }, [linhas, forma, contaPix, fornecedor])
 
-  // Dados não enviados (13/11/2026): com forma escolhida, fornecedor ou algo digitado num item, o "Atualizar" do topo e as abas perguntam antes de sair
-  const algoDigitado = formaMexida || fornecedor !== null || linhas.some((l) => l.produtoId !== null || l.busca.trim() !== '' || l.quantidade.trim() !== '' || l.preco.trim() !== '')
+  // Dados não enviados (13/11/2026): com forma escolhida, fornecedor (ou o cadastro dele aberto) ou algo digitado num item, o "Atualizar" do topo e as abas perguntam antes de sair
+  const algoDigitado = formaMexida || cadastrando || fornecedor !== null || linhas.some((l) => l.produtoId !== null || l.busca.trim() !== '' || l.quantidade.trim() !== '' || l.preco.trim() !== '')
   useNaoEnviado('compra-avulsa', algoDigitado)
 
   const pagamento = montarPagamento(forma, contaPix)

@@ -160,3 +160,16 @@ describe('Correção de cupom marca "tenho dados não enviados" (B4)', () => {
     unmount()
   })
 })
+
+// Revisão do PR 92 (S5): o cadastro de fornecedor aberto em preenchimento também é coisa digitada que se perde ao trocar de aba.
+describe('Compra avulsa com o cadastro de fornecedor aberto (S5)', () => {
+  it('abrir "Fornecedor novo: cadastrar" e tocar em outra aba pergunta antes; "Cancelar" mantém o cadastro aberto', async () => {
+    confirmar.mockReturnValue(false)
+    render(<MemoryRouter initialEntries={['/compra-avulsa']}><Layout usuario={ADMIN}><CompraAvulsa /><Onde /></Layout></MemoryRouter>)
+    await userEvent.click(screen.getByTestId('cadastrar-fornecedor-novo'))
+    await userEvent.click(aba('Lançamento de cupom'))
+    expect(confirmar).toHaveBeenCalledWith(PERGUNTA_NAO_ENVIADO)
+    expect(screen.getByTestId('onde')).toHaveTextContent('/compra-avulsa')
+    expect(screen.getByTestId('cadastrar-fornecedor')).toBeInTheDocument()
+  })
+})
