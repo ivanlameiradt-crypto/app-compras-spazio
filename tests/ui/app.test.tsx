@@ -126,6 +126,31 @@ describe('App', () => {
     expect(within(within(barra).getByRole('link', { name: 'Compra' })).queryByText('3')).not.toBeInTheDocument()
   })
 
+  // Em tela larga (≥ 1280 px) ícone e nome ficam lado a lado e a bolinha vermelha passa 14 px do ícone, mais que o espaço de 8 px entre os dois: ela cobria a
+  // 1ª letra do nome. A aba que TEM bolinha ganha a classe "com-contador" (o CSS dá mais espaço só a ela e só em tela larga); as outras não mudam.
+  it('só a aba com o contador vermelho ganha a classe com-contador (espaço extra em tela larga para a bolinha não cobrir a letra)', async () => {
+    const api = vi.mocked(await import('../../src/lib/api'))
+    api.contarAguardando.mockResolvedValue(3)
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    render(<App />)
+    const barra = (await screen.findByRole('navigation', { name: 'Seções' })) as HTMLElement
+    await waitFor(() => expect(within(barra).getByRole('link', { name: /Lançamentos/ })).toHaveClass('com-contador'))
+    const comClasse = [...barra.querySelectorAll('a.com-contador')]
+    expect(comClasse).toHaveLength(1)
+    expect(comClasse[0]).toHaveAttribute('href', '#/lancamentos')
+  })
+
+  it('sem nada aguardando não há contador e nenhuma aba tem a classe com-contador', async () => {
+    const api = vi.mocked(await import('../../src/lib/api'))
+    api.contarAguardando.mockResolvedValue(0)
+    estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
+    render(<App />)
+    const barra = (await screen.findByRole('navigation', { name: 'Seções' })) as HTMLElement
+    await waitFor(() => expect(api.contarAguardando).toHaveBeenCalled())
+    expect(barra.querySelectorAll('.contador')).toHaveLength(0)
+    expect(barra.querySelectorAll('a.com-contador')).toHaveLength(0)
+  })
+
   it('/comprar continua existindo para o admin (só saiu da grade do menu Compra)', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     window.location.hash = '#/comprar'

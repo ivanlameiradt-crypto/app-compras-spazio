@@ -116,6 +116,10 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
   .barra-abas a.ativo { background: var(--amarelo); color: var(--preto); font-weight: 800; }
   .barra-abas .contador { top: -10px; right: -14px; box-shadow: 0 0 0 2px var(--preto); }
   .barra-abas a.ativo .contador { box-shadow: 0 0 0 2px var(--amarelo); }
+  /* A bolinha vermelha passa 14 px da borda direita do ícone (mais o anel de 2 px) e o espaço normal entre ícone e nome é 8 px: ela cobria a 1ª letra do nome. A aba que tem
+     bolinha (classe com-contador, posta pelo Layout) afasta o nome 22 px do ícone (sobra 6 px de folga, com 1, 2 ou 3 dígitos, pois a bolinha cresce para a esquerda).
+     Só aqui: abaixo de 1280 px o nome fica embaixo do ícone e nada se sobrepõe. */
+  .barra-abas a.com-contador { gap: 22px; }
   .rodape { bottom: 0 !important; }
 }
 /* 1280 a 1479 px: as 5 abas em fila precisam de ~1435 px ao lado do logo, do "Atualizar" e dos links (sem isso a página ganha rolagem lateral). Aqui elas descem
