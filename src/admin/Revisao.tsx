@@ -248,7 +248,7 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
           </div>
           {editavel && (anterior
             ? (
-              <a className="botao" href="#/resumo" style={{ textDecoration: 'none', textAlign: 'center' }}>
+              <a className="botao" href="#/resultados" style={{ textDecoration: 'none', textAlign: 'center' }}>
                 Antes, encerre a semana {formatarData(anterior.semana.data_referencia)} (Resumo)
               </a>
             )
