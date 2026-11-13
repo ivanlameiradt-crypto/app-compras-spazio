@@ -562,14 +562,49 @@ describe('Sub-fase 3: cupom', () => {
   })
 
   it('as duas listas deixam de fora os envios EXCLUÍDOS (eles têm a lista própria)', async () => {
+    // (13/11) cada lista faz duas leituras: os últimos (sem os excluídos) e os em aberto (REVISAR, PENDENTE, PROCESSANDO: nenhum é excluído)
     const a = consulta({ data: [], error: null })
-    from.mockReturnValueOnce(a)
+    from.mockReturnValue(a)
     await cuponsRecentes()
     expect(a.neq).toHaveBeenCalledWith('estado', 'EXCLUIDO')
+    expect(a.in).toHaveBeenCalledWith('estado', expect.not.arrayContaining(['EXCLUIDO']))
     const b = consulta({ data: [], error: null })
-    from.mockReturnValueOnce(b)
+    from.mockReturnValue(b)
     await comprasAvulsasRecentes()
     expect(b.neq).toHaveBeenCalledWith('estado', 'EXCLUIDO')
+    expect(b.in).toHaveBeenCalledWith('estado', expect.not.arrayContaining(['EXCLUIDO']))
+  })
+
+  // Reanálise de 13/11 (B3): a lista trazia só os 10 últimos; um cupom parado ("precisa de você") ou na fila mais antigo que isso sumia da tela.
+  describe('as listas trazem SEMPRE os parados e os da fila, além dos últimos (B3)', () => {
+    const linha = (id: string, estado: string, criado_em: string) => ({ id, estado, emitente_nome: 'ATACADAO', valor_a_pagar: '10.00', criado_em, motivo: null, teste: false, itens: null })
+    const ULTIMOS = [linha('n2', 'LANCADO', '2026-11-13T12:00:00Z'), linha('n1', 'REVISAR', '2026-11-12T12:00:00Z')]
+    const ABERTOS = [linha('n1', 'REVISAR', '2026-11-12T12:00:00Z'), linha('v2', 'PENDENTE', '2026-10-02T12:00:00Z'), linha('v1', 'REVISAR', '2026-10-01T12:00:00Z')]
+
+    it('cuponsRecentes: junta os últimos com TODOS os REVISAR, PENDENTE e PROCESSANDO, sem repetir, do mais novo ao mais antigo', async () => {
+      const ultimos = consulta({ data: ULTIMOS, error: null }), abertos = consulta({ data: ABERTOS, error: null })
+      from.mockReturnValueOnce(ultimos).mockReturnValueOnce(abertos)
+      const r = await cuponsRecentes(2)
+      expect(r.map((c) => c.id)).toEqual(['n2', 'n1', 'v2', 'v1'])            // o parado antigo (v1) e o da fila antigo (v2) aparecem; n1 não repete
+      expect(r[2]).toMatchObject({ valor_a_pagar: 10, itens: [] })            // os que vêm da 2ª leitura passam pela mesma conversão
+      expect(ultimos.limit).toHaveBeenCalledWith(2)
+      expect(abertos.in).toHaveBeenCalledWith('estado', ['REVISAR', 'PENDENTE', 'PROCESSANDO'])
+      expect(abertos.neq).toHaveBeenCalledWith('origem', 'avulsa')           // a mesma regra da lista: cupom de um lado, avulsa do outro
+    })
+
+    it('comprasAvulsasRecentes: a mesma coisa, só com as compras avulsas', async () => {
+      const ultimos = consulta({ data: ULTIMOS, error: null }), abertos = consulta({ data: ABERTOS, error: null })
+      from.mockReturnValueOnce(ultimos).mockReturnValueOnce(abertos)
+      const r = await comprasAvulsasRecentes(2)
+      expect(r.map((c) => c.id)).toEqual(['n2', 'n1', 'v2', 'v1'])
+      expect(abertos.in).toHaveBeenCalledWith('estado', ['REVISAR', 'PENDENTE', 'PROCESSANDO'])
+      expect(abertos.eq).toHaveBeenCalledWith('origem', 'avulsa')
+    })
+
+    it('a leitura dos parados falhou: a lista inteira falha (melhor avisar do que esconder um cupom que precisa de você)', async () => {
+      from.mockReturnValueOnce(consulta({ data: ULTIMOS, error: null })).mockReturnValueOnce(consulta({ data: null, error: { message: 'sem rede' } }))
+      await expect(cuponsRecentes()).rejects.toThrow('sem rede')
+    })
   })
 
   it('cuponsExcluidos: só EXCLUIDO da origem pedida, o mais novo primeiro, com o motivo e a data; valor_a_pagar vira número', async () => {

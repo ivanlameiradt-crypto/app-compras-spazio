@@ -1291,18 +1291,35 @@ const lerCupom = (c: CupomRecente): CupomRecente => ({
   itens: Array.isArray(c.itens) ? c.itens : [], // JSONB pode vir null; a UI espera lista
 })
 
+/** Os estados que ainda pedem alguma coisa: parado esperando o Ivan (REVISAR) ou na fila do robô (PENDENTE, PROCESSANDO). Estes aparecem SEMPRE na lista, por mais antigos que sejam. */
+const ESTADOS_EM_ABERTO: CupomRecente['estado'][] =['REVISAR', 'PENDENTE', 'PROCESSANDO']
+/** Teto de segurança da leitura dos em aberto (num dia normal são poucos; o teto só evita uma resposta gigante se algo sair do normal). */
+const LIMITE_EM_ABERTO = 200
+
+/**
+ * A lista de envios de UMA origem (13/11/2026): os `limite` últimos MAIS todos os parados e os da fila, sem repetir, do mais novo ao mais antigo.
+ * Antes vinham só os 10 últimos, e um cupom "precisa de você" mais antigo que isso sumia da tela. Os excluídos ficam de fora (têm a lista própria).
+ * Se a leitura dos em aberto falhar, a lista inteira falha: a tela avisa, em vez de esconder um envio que espera o Ivan.
+ */
+async function enviosRecentes(avulsa: boolean, limite: number): Promise<CupomRecente[]> {
+  const daOrigem = () => { const q = supabase.from('cupom').select(COLUNAS_CUPOM); return avulsa ? q.eq('origem', 'avulsa') : q.neq('origem', 'avulsa') }
+  const [ultimos, abertos] = await Promise.all([
+    daOrigem().neq('estado', 'EXCLUIDO').order('criado_em', { ascending: false }).limit(limite),
+    daOrigem().in('estado', ESTADOS_EM_ABERTO).order('criado_em', { ascending: false }).limit(LIMITE_EM_ABERTO),
+  ])
+  const porId = new Map<string, CupomRecente>()
+  for (const c of [...(checar(ultimos) as CupomRecente[]), ...(checar(abertos) as CupomRecente[])]) if (!porId.has(c.id)) porId.set(c.id, c)
+  return [...porId.values()].sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).map(lerCupom)
+}
+
 /** "Últimos envios" do cupom: só leitura, por RLS de admin (e_admin() do Plano 1). numeric pode chegar como texto. As compras AVULSAS (origem 'avulsa') têm a lista própria. */
 export async function cuponsRecentes(limite = 10): Promise<CupomRecente[]> {
-  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).neq('origem', 'avulsa').neq('estado', 'EXCLUIDO')
-    .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
-  return r.map(lerCupom)
+  return enviosRecentes(false, limite)
 }
 
 /** "Últimas compras avulsas" (10/10/2026): as linhas `cupom` de origem 'avulsa' (compra sem cupom e sem nota), mais novas primeiro. */
 export async function comprasAvulsasRecentes(limite = 10): Promise<CupomRecente[]> {
-  const r = checar(await supabase.from('cupom').select(COLUNAS_CUPOM).eq('origem', 'avulsa').neq('estado', 'EXCLUIDO')
-    .order('criado_em', { ascending: false }).limit(limite)) as CupomRecente[]
-  return r.map(lerCupom)
+  return enviosRecentes(true, limite)
 }
 
 /** As colunas de "excluídos" (migração 20261225000001): o motivo e quando o Ivan excluiu. */
