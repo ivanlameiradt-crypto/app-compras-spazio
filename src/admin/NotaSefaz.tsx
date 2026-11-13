@@ -817,6 +817,8 @@ export default function NotaSefaz() {
   const [seguidas, setSeguidas] = useState<Record<string, number>>({}) // notas seguidas em boleto por CNPJ (fornecedor aprendido)
   const [falha, setFalha] = useState(false)
   const [carregando, setCarregando] = useState(true)
+  const pedidoDeCarga = useRef(0) // número da carga mais nova das notas
+  const cargaAVistaPendente = useRef(false) // há uma carga não silenciosa (a primeira ou a do botão) ainda sem resposta aplicada
   const [expandido, setExpandido] = useState<string | null>(null) // qual lançada está aberta mostrando o detalhe
   // Lista de insumos do app (itens_semana) para escolher o produto de um item sem produto. Só é lida quando alguma nota tem esse tipo de item.
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
@@ -853,17 +855,25 @@ export default function NotaSefaz() {
 
   // Devolve a promessa para o "Lançar" esperar a lista nova (a nota passa a 'lancando') antes de liberar o botão.
   // `silencioso` (releitura automática / depois do Lançar): uma falha passageira não esconde a lista que já está na tela.
+  // Cada carga leva um número; só a MAIS NOVA mexe na tela (revisão do PR 91). Sem isso, a resposta atrasada de uma carga antiga destravava o "Tentar de novo"
+  // no meio da carga do botão, ou a falha atrasada dela escondia a lista que a releitura mais nova já tinha trazido.
   function carregar(silencioso = false): Promise<void> {
-    if (!silencioso) setCarregando(true)
+    const pedido = ++pedidoDeCarga.current
+    const aMaisNova = (): boolean => pedido === pedidoDeCarga.current
+    if (!silencioso) { setCarregando(true); cargaAVistaPendente.current = true }
     // O padrão por fornecedor é só uma sugestão: se falhar, a tela segue sem ele (Boleto).
     const padrao = Promise.resolve(api.formasPadraoPorFornecedor()).catch(() => ({}))
     const aprendidos = Promise.resolve(api.lancamentosSeguidosEmBoleto()).catch(() => ({}))
     // As descartadas também são só um complemento: se a leitura delas falhar, a lista de notas a lançar segue normal.
     const descartadasLidas = Promise.resolve(api.notasDescartadas()).catch(() => [] as NotaSefazLista[])
     return Promise.all([api.notasALancar(), api.notasLancadas(), padrao, aprendidos, descartadasLidas])
-      .then(([a, l, p, s, d]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setDescartadas(d ?? []); setFalha(false) })
-      .catch(() => { if (!silencioso) setFalha(true) })
-      .finally(() => setCarregando(false))
+      .then(([a, l, p, s, d]) => {
+        if (!aMaisNova()) return
+        setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setDescartadas(d ?? []); setFalha(false)
+      })
+      // a silenciosa que tomou o lugar de uma carga à vista (a primeira, ou a do botão) herda o aviso de falha dela: senão a tela ficaria vazia, sem aviso
+      .catch(() => { if (aMaisNova() && (!silencioso || cargaAVistaPendente.current)) setFalha(true) })
+      .finally(() => { if (aMaisNova()) { cargaAVistaPendente.current = false; setCarregando(false) } })
   }
   useEffect(() => { void carregar() }, [])
 
