@@ -258,7 +258,8 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarr
         </>
       )}
       {erro && <p className="erro" role="alert" data-testid="erro-fornecedor">{erro}</p>}
-      {aoVoltar && (
+      {/* some enquanto o robô cadastra e depois de pronto (13/11, revisão do PR 92): voltar ali jogaria fora o acompanhamento do cadastro */}
+      {aoVoltar && !cadastrando && !pronto && (
         <div className="acoes">
           <button type="button" className="botao secundario" disabled={enviando} onClick={aoVoltar} data-testid="voltar-para-a-busca">Voltar para a busca</button>
         </div>

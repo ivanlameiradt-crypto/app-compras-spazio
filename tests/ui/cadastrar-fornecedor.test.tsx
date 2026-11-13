@@ -30,6 +30,21 @@ describe('CadastrarFornecedor: "Voltar para a busca" (B2)', () => {
     abrir(acoes())
     expect(screen.queryByRole('button', { name: 'Voltar para a busca' })).not.toBeInTheDocument()
   })
+
+  // Revisão do PR 92 (S1): voltar no meio do cadastro jogava fora o acompanhamento do robô.
+  it('durante "Cadastrando no SisChef…" e depois de "✓ Fornecedor cadastrado" o botão não fica disponível', async () => {
+    const a = acoes()
+    render(<CadastrarFornecedor cupom={{ id: 'e1', motivo: null }} acoes={a} aoReenviar={vi.fn()} aoUsar={vi.fn()} aoVoltar={vi.fn()} intervaloMs={20} />)
+    await userEvent.type(screen.getByLabelText('CNPJ'), '63540861000182')
+    await userEvent.click(screen.getByTestId('buscar-cnpj'))
+    expect(screen.getByRole('button', { name: 'Voltar para a busca' })).toBeEnabled()          // preenchendo: ainda dá para voltar
+    await userEvent.click(await screen.findByTestId('cadastrar'))
+    expect(await screen.findByTestId('cadastrando')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Voltar para a busca' })).not.toBeInTheDocument()
+    vi.mocked(a.statusDoCadastro).mockResolvedValue({ estado: 'CADASTRADO', motivo: null })
+    expect(await screen.findByTestId('cadastro-pronto')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Voltar para a busca' })).not.toBeInTheDocument()
+  })
 })
 
 describe('CadastrarFornecedor', () => {
