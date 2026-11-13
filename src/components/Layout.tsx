@@ -78,15 +78,21 @@ export default function Layout({ usuario, offline = false, children }: { usuario
         <div className="barra-titulo" ref={setSlotTitulo} />
         {admin ? (
           <nav className="barra-abas" aria-label="Seções">
-            {ABAS.map((a) => (
-              <Link key={a.chave} to={a.to} className={aba === a.chave ? 'ativo' : undefined} aria-current={aba === a.chave ? 'page' : undefined}>
-                <span className="aba-icone">
-                  <Icone nome={a.ic} tamanho={26} />
-                  {a.chave === 'lancamentos' && aguardando > 0 && <span className="contador">{aguardando}</span>}
-                </span>
-                <span>{a.rotulo}</span>
-              </Link>
-            ))}
+            {ABAS.map((a) => {
+              // Só a aba Lançamentos tem a bolinha vermelha (quantas compras esperam aprovação). A aba que tem bolinha ganha "com-contador": em tela larga o CSS
+              // afasta o nome do ícone (a bolinha passa 14 px do ícone e o espaço normal é 8 px: cobria a 1ª letra). No celular a classe não muda nada.
+              const comContador = a.chave === 'lancamentos' && aguardando > 0
+              const classes = [aba === a.chave ? 'ativo' : '', comContador ? 'com-contador' : ''].filter(Boolean).join(' ')
+              return (
+                <Link key={a.chave} to={a.to} className={classes || undefined} aria-current={aba === a.chave ? 'page' : undefined}>
+                  <span className="aba-icone">
+                    <Icone nome={a.ic} tamanho={26} />
+                    {comContador && <span className="contador">{aguardando}</span>}
+                  </span>
+                  <span>{a.rotulo}</span>
+                </Link>
+              )
+            })}
           </nav>
         ) : (
           <nav className="barra-abas duas" aria-label="Seções">

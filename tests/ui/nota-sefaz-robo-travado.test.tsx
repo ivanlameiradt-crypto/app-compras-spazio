@@ -67,8 +67,9 @@ describe('NotaSefaz — nota "lançando" cujo robô pode ter caído (07/10: a ex
     render(<NotaSefaz />)
     await screen.findByTestId('nota-a-lancar')
     await userEvent.click(botaoVerificar())
-    const status = await screen.findByTestId('status-nota')
-    expect(status).toHaveTextContent('Precisa de você: O robô não chegou a começar')
+    // a caixa de status já existia (com o texto de "lançando"): findBy acharia a velha; espera o texto novo da releitura
+    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('Precisa de você: O robô não chegou a começar'))
+    const status = screen.getByTestId('status-nota')
     expect(status).toHaveTextContent('Nada foi criado no SisChef; pode lançar de novo.')
     expect(screen.queryByRole('button', { name: 'Verificar o robô' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()
@@ -83,7 +84,8 @@ describe('NotaSefaz — nota "lançando" cujo robô pode ter caído (07/10: a ex
     render(<NotaSefaz />)
     await screen.findByTestId('nota-a-lancar')
     await userEvent.click(botaoVerificar())
-    expect(await screen.findByTestId('status-nota')).toHaveTextContent('Ficou pela metade')
+    // a caixa de status já existia (com o texto de "lançando"): findBy acharia a velha; espera o texto novo da releitura
+    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('Ficou pela metade'))
     expect(screen.getByRole('button', { name: 'Lançar' })).toBeDisabled()
   })
 

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import Resumo, { avisosEncerrar, linhaEconomia } from '../../src/admin/Resumo'
@@ -70,7 +70,8 @@ describe('Resumo', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Cancelar' }))
     expect(window.confirm).toHaveBeenCalled()
     expect(m.cancelarCompra).toHaveBeenCalledWith('c1')
-    expect(screen.queryByText(/ATACADÃO/)).not.toBeInTheDocument()
+    // a compra sai da tela depois que a chamada termina: espera em vez de conferir na hora
+    await waitFor(() => expect(screen.queryByText(/ATACADÃO/)).not.toBeInTheDocument())
   })
 
   it('I2: erro ao cancelar (compra com item marcado) aparece na tela', async () => {

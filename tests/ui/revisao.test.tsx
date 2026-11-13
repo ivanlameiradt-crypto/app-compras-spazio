@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import * as cad from '../../src/cadastros/api'
@@ -84,7 +84,8 @@ describe('Revisão da lista', () => {
     const cartao = (await screen.findByText('COCA COLA 350 ML')).closest('.cartao') as HTMLElement
     await userEvent.click(within(cartao).getByRole('button', { name: 'Mais' }))
     expect(await screen.findByText(/enquanto ela está em rascunho/)).toBeInTheDocument()
-    expect(within(cartao).getByRole('textbox')).toHaveValue('52')
+    // o campo volta ao valor antigo num efeito, depois de a tela redesenhar: espera em vez de conferir na hora
+    await waitFor(() => expect(within(cartao).getByRole('textbox')).toHaveValue('52'))
   })
 
   it('aprovar libera a lista e trava edição', async () => {
@@ -257,14 +258,14 @@ describe('Revisão — aba Conferir, negativos e semana anterior (Fase 1A)', () 
     expect(confirmar).toHaveBeenCalledWith('Aprovar a lista e liberar para os compradores?')
   })
 
-  it('outra semana em compra: o botão vira "Antes, encerre a semana dd/mm (Resumo)" e mostra a compra aberta que trava', async () => {
+  it('outra semana em compra: o botão vira "Antes, encerre a semana dd/mm (Resultados)" e mostra a compra aberta que trava', async () => {
     m.semanaEmCompra.mockResolvedValue(anterior)
     m.comprasAbertas.mockResolvedValue([
       { id: 'c9', loja: 'FEIRA', comprador: 'joao@spazio.com', comprador_nome: 'João', aberta_em: '2026-09-16T13:05:00Z' },
     ])
     render(<Revisao usuario={admin} />)
-    const atalho = await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resumo)' })
-    expect(atalho).toHaveAttribute('href', '#/resumo')
+    const atalho = await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resultados)' })
+    expect(atalho).toHaveAttribute('href', '#/resultados')
     expect(screen.queryByRole('button', { name: 'Aprovar lista' })).not.toBeInTheDocument()
     expect(m.comprasAbertas).toHaveBeenCalledWith(6)
     const bloco = screen.getByTestId('semana-anterior')
@@ -302,7 +303,7 @@ describe('Revisão — aba Conferir, negativos e semana anterior (Fase 1A)', () 
   it('outra semana em compra sem compra aberta: só o atalho para o Resumo', async () => {
     m.semanaEmCompra.mockResolvedValue(anterior)
     render(<Revisao usuario={admin} />)
-    expect(await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resumo)' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Antes, encerre a semana 15/09 (Resultados)' })).toBeInTheDocument()
     expect(within(screen.getByTestId('semana-anterior')).queryByText(/Compra aberta/)).not.toBeInTheDocument()
     expect(within(screen.getByTestId('semana-anterior')).queryByRole('link', { name: /Lançamentos/ })).not.toBeInTheDocument()
   })

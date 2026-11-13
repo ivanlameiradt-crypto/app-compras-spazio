@@ -46,14 +46,16 @@ describe('Lançamentos', () => {
     render(<Lancamentos usuario={admin} />)
     await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Aprovar' }))
     expect(m.aprovarCompra).toHaveBeenCalledWith('c1')
-    expect(within(await cartao('ATACADÃO')).getByText('Pronta para lançar')).toBeInTheDocument()
+    // o cartão é redesenhado depois que a chamada termina: espera em vez de conferir na hora
+    await waitFor(async () => expect(within(await cartao('ATACADÃO')).getByText('Pronta para lançar')).toBeInTheDocument())
   })
 
   it('aprovada pode ser marcada como lançada e sai da fila', async () => {
     render(<Lancamentos usuario={admin} />)
     await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
     expect(m.marcarLancada).toHaveBeenCalledWith('c2')
-    expect(screen.queryByText(/MATEUS/)).not.toBeInTheDocument()
+    // a fila é redesenhada depois que a chamada termina: espera em vez de conferir na hora
+    await waitFor(() => expect(screen.queryByText(/MATEUS/)).not.toBeInTheDocument())
   })
 
   it('ver itens mostra a tabela e permite corrigir', async () => {
@@ -89,8 +91,9 @@ describe('Lançamentos', () => {
     render(<Lancamentos usuario={admin} />)
     await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Corrigir total/nota' }))
     expect(m.corrigirCompra).toHaveBeenCalledWith('c1', false, 1250)
-    expect(within(await cartao('ATACADÃO')).getByText('Sem nota')).toBeInTheDocument()
-    expect(within(await cartao('ATACADÃO')).getByText(/R\$ 1\.250,00/)).toBeInTheDocument()
+    // o cartão é redesenhado depois que a chamada termina: espera em vez de conferir na hora
+    await waitFor(async () => expect(within(await cartao('ATACADÃO')).getByText('Sem nota')).toBeInTheDocument())
+    await waitFor(async () => expect(within(await cartao('ATACADÃO')).getByText(/R\$ 1\.250,00/)).toBeInTheDocument())
   })
 
   it('Corrigir total/nota com total inválido: avisa "Total inválido." e não chama corrigir_compra', async () => {
