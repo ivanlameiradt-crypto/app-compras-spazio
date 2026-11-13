@@ -51,11 +51,43 @@ describe('Lançamentos', () => {
   })
 
   it('aprovada pode ser marcada como lançada e sai da fila', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<Lancamentos usuario={admin} />)
     await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
     expect(m.marcarLancada).toHaveBeenCalledWith('c2')
     // a fila é redesenhada depois que a chamada termina: espera em vez de conferir na hora
     await waitFor(() => expect(screen.queryByText(/MATEUS/)).not.toBeInTheDocument())
+    expect(confirmar).toHaveBeenCalledWith('Esta compra já foi lançada no SisChef? Depois de marcar, ela sai desta lista.')
+  })
+
+  it('A1 (13/11/2026): Marcar como lançada pede confirmação; cancelar não grava nada e a compra continua na fila', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
+    expect(confirmar).toHaveBeenCalledTimes(1)
+    expect(m.marcarLancada).not.toHaveBeenCalled()
+    expect(screen.getByText(/MATEUS/)).toBeInTheDocument()
+  })
+
+  it('A1 (13/11/2026): enquanto o Aprovar grava, os botões do cartão ficam travados; o segundo toque não marca como lançada', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let liberar!: () => void
+    m.aprovarCompra.mockReturnValue(new Promise<void>((r) => { liberar = r }))
+    render(<Lancamentos usuario={admin} />)
+    const c = await cartao('ATACADÃO')
+    await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+    // gravando: os três botões do cartão ficam desabilitados; os do outro cartão continuam livres
+    expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+    expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeDisabled()
+    expect(within(c).getByRole('button', { name: 'Ver itens' })).toBeDisabled()
+    expect(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i })).toBeEnabled()
+    await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+    expect(m.aprovarCompra).toHaveBeenCalledTimes(1)
+    liberar()
+    const marcar = await within(c).findByRole('button', { name: /marcar como lançada/i })
+    await waitFor(() => expect(marcar).toBeEnabled())
+    expect(m.marcarLancada).not.toHaveBeenCalled()
+    expect(confirmar).not.toHaveBeenCalled()
   })
 
   it('ver itens mostra a tabela e permite corrigir', async () => {

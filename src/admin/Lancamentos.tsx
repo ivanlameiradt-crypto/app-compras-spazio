@@ -1,5 +1,5 @@
 import { lerQuantidadeBr } from '../lib/quantidade'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ehMilharAmbiguo, lerPrecoUnitario } from '../lib/dinheiro'
 import * as api from '../lib/api'
 import { Icone } from '../components/Icones'
@@ -22,6 +22,10 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   // item 1 da análise de 07/11/2026: a releitura da fila depois de uma ação falhou (a lista pode estar velha); antes ficava calado
   const [erroFila, setErroFila] = useState('')
   const [cupomEmbutido, setCupomEmbutido] = useState<Record<string, string>>({})
+  // A1 (13/11/2026): cartões com uma ação gravando. Os botões do cartão ficam travados até a resposta chegar, senão o segundo toque no
+  // mesmo lugar (o "Aprovar" vira "Marcar como lançada no SisChef") tirava a compra da fila sem querer.
+  const [ocupados, setOcupados] = useState<ReadonlySet<string>>(new Set())
+  const ocupadosAgora = useRef(new Set<string>()) // a trava vale já no clique, antes de a tela redesenhar
 
   useEffect(() => {
     api.filaLancamentos().then(setFila).catch((e) => { setErro(mensagemDeErro(e)); setFila([]) })
@@ -45,17 +49,29 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   async function acao(f: () => Promise<void>) {
     try { await f(); setErro('') } catch (e) { setErro(mensagemDeErro(e)) }
   }
+  /** Como `acao`, mas trava os botões do cartão da compra `id` enquanto roda; toque repetido no meio é ignorado. */
+  async function acaoNoCartao(id: string, f: () => Promise<void>) {
+    if (ocupadosAgora.current.has(id)) return
+    ocupadosAgora.current.add(id)
+    setOcupados(new Set(ocupadosAgora.current))
+    try { await acao(f) } finally {
+      ocupadosAgora.current.delete(id)
+      setOcupados(new Set(ocupadosAgora.current))
+    }
+  }
   // relê a fila depois de uma ação (a compra fechada entra nela); se falhar, avisa em vez de deixar a lista velha em silêncio (item 1, 07/11/2026)
   const relerFila = () => api.filaLancamentos().then((f) => { setFila(f); setErroFila('') }).catch((e) => setErroFila(mensagemDeErro(e)))
-  const aprovar = (id: string) => acao(async () => {
+  const aprovar = (id: string) => acaoNoCartao(id, async () => {
     await api.aprovarCompra(id)
     setFila((l) => l?.map((c) => (c.id === id ? { ...c, status: 'aprovada' } : c)))
   })
-  const lancada = (id: string) => acao(async () => {
+  const lancada = (id: string) => acaoNoCartao(id, async () => {
+    // sair da fila não tem "desfazer" na tela: pergunta antes de gravar (A1, 13/11/2026)
+    if (!window.confirm('Esta compra já foi lançada no SisChef? Depois de marcar, ela sai desta lista.')) return
     await api.marcarLancada(id)
     setFila((l) => l?.filter((c) => c.id !== id))
   })
-  const verItens = (id: string) => acao(async () => {
+  const verItens = (id: string) => acaoNoCartao(id, async () => {
     if (aberta === id) { setAberta(null); return }
     setLinhas(await api.itensDaCompra(id))
     setAberta(id)
@@ -73,7 +89,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
     await api.corrigirItemCompra(l.id, q, p)
     setLinhas((ls) => ls.map((x) => (x.id === l.id ? { ...x, qtd: q, preco_unit: p } : x)))
   })
-  const corrigirTotal = (c: api.CompraNaFila) => acao(async () => {
+  const corrigirTotal = (c: api.CompraNaFila) => acaoNoCartao(c.id, async () => {
     const textoNota = window.prompt('Com nota ou sem nota? Digite "com" ou "sem".', c.com_nota ? 'com' : 'sem')
     if (textoNota === null) return // cancelou: não mexe em nada
     const comNota = /^com/i.test(textoNota.trim())
@@ -224,11 +240,11 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             </table>
           )}
           <div className="linha" style={{ marginTop: 8 }}>
-            <button className="botao secundario" onClick={() => verItens(c.id)}>{aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
-            <button className="botao secundario" onClick={() => corrigirTotal(c)}>Corrigir total/nota</button>
+            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}>{aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
+            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}>Corrigir total/nota</button>
             {c.status === 'fechada'
-              ? <button className="botao" onClick={() => aprovar(c.id)}>Aprovar</button>
-              : <button className="botao" onClick={() => lancada(c.id)}>Marcar como lançada no SisChef</button>}
+              ? <button className="botao" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>Aprovar</button>
+              : <button className="botao" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>Marcar como lançada no SisChef</button>}
           </div>
         </div>
       ))}
