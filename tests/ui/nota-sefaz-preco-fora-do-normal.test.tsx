@@ -82,7 +82,10 @@ describe('NotaSefaz — preço fora do normal: o ketchup sachê a R$ 28,60 (pre�
 
   it('no painel, o aviso fica no item certo (o do ketchup) e o item normal (o óleo) não tem nenhum', async () => {
     await abrir(nota())
-    const [doOleo, doKetchup] = await within(await screen.findByTestId('conferir')).findAllByTestId('conferir-item')
+    // o aviso entra depois da 1ª desenhada dos itens (e os itens podem ser trocados na tela): acha os itens DE NOVO a cada tentativa
+    const itensAgora = () => within(screen.getByTestId('conferir')).getAllByTestId('conferir-item')
+    await waitFor(() => expect(within(itensAgora()[1]).getByTestId('preco-fora-do-normal')).toHaveTextContent('Preço fora do normal: R$ 28,60 por UN.'))
+    const [doOleo, doKetchup] = itensAgora()
     expect(within(doKetchup).getByTestId('preco-fora-do-normal')).toHaveTextContent('Preço fora do normal: R$ 28,60 por UN.')
     expect(within(doKetchup).getByTestId('preco-fora-do-normal')).toHaveTextContent('Confira a embalagem (fardo, caixa, pacote) e a conversão.')
     expect(within(doOleo).queryByTestId('preco-fora-do-normal')).not.toBeInTheDocument()

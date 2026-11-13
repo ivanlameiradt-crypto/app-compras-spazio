@@ -204,8 +204,11 @@ describe('Comprar', () => {
     falhar(new Error('TypeError: Failed to fetch'))
     await new Promise((r) => setTimeout(r, 30))
     expect(screen.getByText('1 de 2 itens')).toBeInTheDocument()
-    const cache = JSON.parse(localStorage.getItem('cache-comprar') ?? 'null')
-    expect(cache.linhas).toEqual([expect.objectContaining({ compra_id: 'c1', item_semana_id: 1, qtd: 52 })])
+    // o cache é regravado depois que a fila e os erros são lidos (IndexedDB): espera em vez de ler na hora
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem('cache-comprar') ?? 'null')
+      expect(cache.linhas).toEqual([expect.objectContaining({ compra_id: 'c1', item_semana_id: 1, qtd: 52 })])
+    })
   })
 
   it('resposta velha que chega depois não desfaz a tela', async () => {

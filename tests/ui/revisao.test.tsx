@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import * as cad from '../../src/cadastros/api'
@@ -84,7 +84,8 @@ describe('Revisão da lista', () => {
     const cartao = (await screen.findByText('COCA COLA 350 ML')).closest('.cartao') as HTMLElement
     await userEvent.click(within(cartao).getByRole('button', { name: 'Mais' }))
     expect(await screen.findByText(/enquanto ela está em rascunho/)).toBeInTheDocument()
-    expect(within(cartao).getByRole('textbox')).toHaveValue('52')
+    // o campo volta ao valor antigo num efeito, depois de a tela redesenhar: espera em vez de conferir na hora
+    await waitFor(() => expect(within(cartao).getByRole('textbox')).toHaveValue('52'))
   })
 
   it('aprovar libera a lista e trava edição', async () => {

@@ -117,7 +117,8 @@ describe('NotaSefaz — item que já vem associado do SisChef com UN DIFERE: o I
     await userEvent.clear(campo); await userEvent.type(campo, '2')
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenLastCalledWith(CHAVE, 3, 2))
-    await userEvent.click(await creme().findByRole('button', { name: 'Editar' }))
+    // creme() procura a linha na hora: com a tela ainda se redesenhando depois do Confirmar ela some um instante, então a busca inteira é refeita até aparecer
+    await userEvent.click(await waitFor(() => creme().getByRole('button', { name: 'Editar' })))
     await userEvent.click(screen.getByRole('button', { name: 'Desfazer a conversão' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenLastCalledWith(CHAVE, 3, null))
   })

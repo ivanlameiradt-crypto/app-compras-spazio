@@ -1386,8 +1386,10 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
       expect(screen.queryByText(/Quanto vale 1/)).not.toBeInTheDocument()                // unidades iguais (UN × UN): não pede conversão
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
       await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, OLEO, null))   // sem conversão: null explícito (a RPC tem 4 parâmetros)
-      const item = (await painel()).getByTestId('conferir-item')
-      await waitFor(() => expect(within(item).getByTestId('item-confirmado')).toBeInTheDocument())  // o ✓ de confirmado
+      // o item é redesenhado depois do Confirmar: acha o item DE NOVO a cada tentativa (o de antes pode ter sido trocado na tela)
+      const itemAgora = () => within(screen.getByTestId('conferir')).getByTestId('conferir-item')
+      await waitFor(() => expect(within(itemAgora()).getByTestId('item-confirmado')).toBeInTheDocument())  // o ✓ de confirmado
+      const item = itemAgora()
       expect(within(item).getByTestId('item-confirmado')).toHaveAccessibleName('produto confirmado no app')
       expect(item).toHaveTextContent('ÓLEO DE SOJA - INSUMOS (UN)')
       expect(item).toHaveTextContent(`confirmado no app · cód. ${OLEO}`)
@@ -2184,8 +2186,10 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
           render(<NotaSefaz />)
           await escolherSugestao()
           await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
-          const item = (await painel()).getByTestId('conferir-item')
-          await waitFor(() => expect(within(item).getByTestId('item-confirmado')).toBeInTheDocument())
+          // o item é redesenhado depois do Confirmar: acha o item DE NOVO a cada tentativa (o de antes pode ter sido trocado na tela)
+          const itemAgora = () => within(screen.getByTestId('conferir')).getByTestId('conferir-item')
+          await waitFor(() => expect(within(itemAgora()).getByTestId('item-confirmado')).toBeInTheDocument())
+          const item = itemAgora()
           expect(within(item).queryByRole('alert')).not.toBeInTheDocument()
           expect(item).toHaveTextContent('NUGGETS SUPREME - INSUMOS (KG)')                // o ✓ mostra o nome corrigido da lista, não o do SisChef
         })

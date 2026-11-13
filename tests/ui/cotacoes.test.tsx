@@ -753,7 +753,8 @@ describe('Cotações — cartão com resposta', () => {
     banco.itens = banco.itens.map((i) => ({ ...i, preco_digitado: 3, preco_convertido: 3, rev: 2 }))
     mudarCot(7, { gerais_rev: 2, pagamento: 'boleto 28 d' })
     await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    expect(await screen.findByTestId('condicoes')).toHaveTextContent('boleto 28 d')
+    // a caixa já existia com o texto antigo (findBy acharia a velha): espera o texto novo da releitura
+    await waitFor(() => expect(screen.getByTestId('condicoes')).toHaveTextContent('boleto 28 d'))
     await userEvent.click(screen.getByRole('button', { name: 'Limpar respostas do link antigo' }))
     expect(m.responderComoAdmin).toHaveBeenCalledWith(7, expect.any(String), [{ numero: 1, rev_lida: 1, estado: 'sem_resposta' }], {
       rev_lida: 1, pagamento: null, validade: null, pedido_minimo: null, frete: null, entrega: null, observacao: null,

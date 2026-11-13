@@ -47,6 +47,12 @@ beforeEach(() => {
 
 const cartaoDe = async (nome: string) => within((await screen.findByText(nome)).closest('.cartao') as HTMLElement)
 
+type Rerender = ReturnType<typeof render>['rerender']
+/** Chame logo depois de os dados aparecerem e ANTES de digitar. A 1ª desenhada com dados deixa para o React alguns efeitos pendentes (os `useEffect` que copiam o número
+ *  para o campo); se um deles rodar DEPOIS de o teste digitar, ele devolve o campo ao valor antigo e o salvamento nunca acontece (visto no GitHub e reproduzido com o
+ *  agendador do React atrasado). Redesenhar força o React a rodar os efeitos pendentes agora; esperar o `expect` com `waitFor` não resolve, porque o gesto não se repete. */
+const assentar = (rerender: Rerender) => rerender(<ListaSemana />)
+
 describe('Lista da semana', () => {
   it('mostra o item com precisa ter, melhor preço, diferença dos outros e comprar', async () => {
     render(<ListaSemana />)
@@ -59,8 +65,9 @@ describe('Lista da semana', () => {
   })
 
   it('digitar a contagem chama a api ao sair do campo e recalcula', async () => {
-    render(<ListaSemana />)
+    const { rerender } = render(<ListaSemana />)
     const c = await cartaoDe('FARINHA DE TRIGO')
+    assentar(rerender)
     const antes = (c.getByLabelText('Comprar FARINHA DE TRIGO') as HTMLInputElement).value
     await userEvent.type(c.getByLabelText('Contei FARINHA DE TRIGO'), '1,5')
     await userEvent.tab()
@@ -71,9 +78,10 @@ describe('Lista da semana', () => {
 
   it('campo vazio apaga a contagem', async () => {
     m.contagemDaSemana.mockResolvedValue(new Map([[1, 2]]))
-    render(<ListaSemana />)
+    const { rerender } = render(<ListaSemana />)
     const campo = await screen.findByLabelText('Contei FARINHA DE TRIGO')
     expect(campo).toHaveValue('2')
+    assentar(rerender)
     await userEvent.clear(campo)
     await userEvent.tab()
     // o salvamento sai um instante depois de o campo perder o foco: espera em vez de conferir na hora
@@ -99,8 +107,9 @@ describe('Lista da semana', () => {
   })
 
   it('rodapé numa linha só: "Fora do total" e "Faltam contar", com texto completo para leitor de tela', async () => {
-    render(<ListaSemana />)
+    const { rerender } = render(<ListaSemana />)
     await screen.findByText('AZEITE')
+    assentar(rerender)
     const campo = within(screen.getByTestId('total').closest('.rodape') as HTMLElement)
     expect(campo.getByText(/Faltam contar: 3/)).toHaveAttribute('aria-label', 'Faltam contar 3 dos principais')
     // o azeite (unidade a conferir) não tem número até o admin digitar; digitando, ele conta como fora do total
@@ -142,16 +151,18 @@ describe('Lista da semana', () => {
 
   it('erro ao guardar a contagem fica visível', async () => {
     m.salvarContagem.mockRejectedValue(new Error('sem rede'))
-    render(<ListaSemana />)
+    const { rerender } = render(<ListaSemana />)
     const c = await cartaoDe('FARINHA DE TRIGO')
+    assentar(rerender)
     await userEvent.type(c.getByLabelText('Contei FARINHA DE TRIGO'), '2')
     await userEvent.tab()
     expect(await c.findByText(/Não consegui guardar a contagem. sem rede/)).toBeInTheDocument()
   })
 
   it('número digitado errado mostra erro e não chama a api', async () => {
-    render(<ListaSemana />)
+    const { rerender } = render(<ListaSemana />)
     const c = await cartaoDe('FARINHA DE TRIGO')
+    assentar(rerender)
     await userEvent.type(c.getByLabelText('Contei FARINHA DE TRIGO'), 'abc')
     await userEvent.tab()
     expect(c.getByText(/Digite só o número/)).toBeInTheDocument()
@@ -159,8 +170,9 @@ describe('Lista da semana', () => {
   })
 
   it('ajuste manual vence o cálculo e dá para voltar ao calculado', async () => {
-    render(<ListaSemana />)
+    const { rerender } = render(<ListaSemana />)
     const c = await cartaoDe('FARINHA DE TRIGO')
+    assentar(rerender)
     const campo = c.getByLabelText('Comprar FARINHA DE TRIGO')
     await userEvent.clear(campo)
     await userEvent.type(campo, '99')

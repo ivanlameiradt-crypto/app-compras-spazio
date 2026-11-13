@@ -52,7 +52,7 @@ describe('NotaSefaz — "Editar" em todo item associado: embalagem de várias un
     expect(caixa.getByLabelText(ROTULO_UN)).toHaveValue('')                            // vazio: quem define é o Ivan
     expect(caixa.getByLabelText(ROTULO_UN)).toHaveFocus()                              // o cursor já está no campo (no celular o teclado aparece)
     expect(caixa.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
-    expect(caixa.getByTestId('conversao-item-sugestao')).toHaveTextContent('168UN')
+    expect(await caixa.findByTestId('conversao-item-sugestao')).toHaveTextContent('168UN')   // a sugestão entra um instante depois de a caixa abrir: espera
     await userEvent.click(caixa.getByRole('button', { name: 'usar 168' }))
     expect(caixa.getByLabelText(ROTULO_UN)).toHaveValue('168')
     expect(m.converterItem).not.toHaveBeenCalled()                                     // sugerir não grava
