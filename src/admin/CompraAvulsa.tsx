@@ -23,6 +23,7 @@ import AvisoFalhaConferir from './AvisoFalhaConferir'
 import CuponsExcluidos from './CuponsExcluidos'
 import TituloDaTela from '../components/TituloDaTela'
 import { Icone } from '../components/Icones'
+import { useNaoEnviado } from '../lib/naoEnviado'
 
 /** As ações da caixa "Cadastrar fornecedor" (rede pelo api): as mesmas do cupom. Sem cupom para reenviar (a caixa usa `aoUsar`). */
 const ACOES_FORNECEDOR = {
@@ -60,6 +61,8 @@ export default function CompraAvulsa() {
   const [catalogoFalhou, setCatalogoFalhou] = useState(false) // sem a lista não dá para dizer "produto não cadastrado": nada de oferecer cadastro
   const [forma, setForma] = useState<FormaCupom | null>(null)
   const [contaPix, setContaPix] = useState<string | null>(null)
+  // a forma foi escolhida NESTA compra? (depois de um envio a forma fica marcada para a próxima, mas aí não há nada digitado a perder)
+  const [formaMexida, setFormaMexida] = useState(false)
   const [conhecidos, setConhecidos] = useState<FornecedorConhecido[] | null>(null)
   const [buscaForn, setBuscaForn] = useState('')
   const [fornecedor, setFornecedor] = useState<FornecedorConhecido | null>(null)
@@ -102,6 +105,10 @@ export default function CompraAvulsa() {
 
   useEffect(() => { setRepetida(null) }, [linhas, forma, contaPix, fornecedor])
 
+  // Dados não enviados (13/11/2026): com forma escolhida, fornecedor ou algo digitado num item, o "Atualizar" do topo e as abas perguntam antes de sair
+  const algoDigitado = formaMexida || fornecedor !== null || linhas.some((l) => l.produtoId !== null || l.busca.trim() !== '' || l.quantidade.trim() !== '' || l.preco.trim() !== '')
+  useNaoEnviado('compra-avulsa', algoDigitado)
+
   const pagamento = montarPagamento(forma, contaPix)
   const problema = useMemo(() => problemaDaCompra(linhas), [linhas])
   const total = totalGeral(linhas)
@@ -138,7 +145,7 @@ export default function CompraAvulsa() {
             : 'Compra enviada. O robô lança no SisChef em 2 ou 3 minutos; acompanhe em “Últimas compras avulsas”.',
       })
       // pronta para a próxima compra: itens e fornecedor limpos (a forma de pagamento fica, é comum repetir), identificador novo
-      setLinhas([linhaVazia(1)]); setProxima(2); setFornecedor(null); setBuscaForn(''); setConfirmando(false); setEnvioId(novoId())
+      setLinhas([linhaVazia(1)]); setProxima(2); setFornecedor(null); setBuscaForn(''); setConfirmando(false); setEnvioId(novoId()); setFormaMexida(false)
       setRepetida(null)
       carregarRecentes()
     } catch (e) {
@@ -159,7 +166,7 @@ export default function CompraAvulsa() {
         <div className="chips" role="group" aria-label="Forma de pagamento">
           {FORMAS.map((f) => (
             <button key={f.forma} type="button" className={`chip${forma === f.forma ? ' ativo' : ''}`} aria-pressed={forma === f.forma} disabled={enviando}
-              onClick={() => { setForma(f.forma); setContaPix(null); setConfirmando(false) }}>{f.rotulo}</button>
+              onClick={() => { setForma(f.forma); setContaPix(null); setConfirmando(false); setFormaMexida(true) }}>{f.rotulo}</button>
           ))}
         </div>
         {forma === 'pix' && (
@@ -168,7 +175,7 @@ export default function CompraAvulsa() {
             <div className="chips" role="group" aria-label="Banco e empresa do PIX">
               {CONTAS_PIX.map((c) => (
                 <button key={c.conta} type="button" className={`chip${contaPix === c.conta ? ' ativo' : ''}`} aria-pressed={contaPix === c.conta} disabled={enviando}
-                  onClick={() => { setContaPix(c.conta); setConfirmando(false) }}>{c.rotulo}</button>
+                  onClick={() => { setContaPix(c.conta); setConfirmando(false); setFormaMexida(true) }}>{c.rotulo}</button>
               ))}
             </div>
           </>

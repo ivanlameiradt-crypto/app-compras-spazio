@@ -4,6 +4,7 @@
 // espelho da conta que a Edge Function confirmar-cupom refaz do zero (mesma fórmula e mesma tolerância do robô). O botão só habilita quando a
 // soma bate porque o servidor recusaria de qualquer jeito — é melhor o Ivan ver a diferença e corrigir o peso agora do que receber um erro depois.
 import { Fragment, useId, useMemo, useState } from 'react'
+import { useNaoEnviado } from '../lib/naoEnviado'
 import * as api from '../lib/api'
 import { formatarReais } from '../lib/regras'
 import type { ConfirmacaoItemCupom, CupomRecente, ItemCupomRecente, ProdutoCatalogo, RespostaConfirmacaoCupom } from '../lib/tipos'
@@ -423,6 +424,9 @@ function ItemConhecidoNoResumo({ it, catalogo }: { it: ItemCupomRecente; catalog
 
 export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenviar, aoRecarregar }: Props) {
   const [estados, setEstados] = useState<Record<number, EstadoItem>>({})
+  // Dados não enviados (13/11/2026): mexeu em algum item e ainda não reenviou: o "Atualizar" do topo e as abas perguntam antes de sair
+  const [enviado, setEnviado] = useState(false)
+  useNaoEnviado(`corrigir-cupom:${cupom.id}`, !enviado && Object.keys(estados).length > 0)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [novos, setNovos] = useState<ProdutoCatalogo[]>([]) // produtos cadastrados agora pelo app (de qualquer item): valem na busca de todas as caixas
@@ -466,7 +470,9 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
     if (soConfirmar) {
       setEnviando(true); setErro('')
       try {
-        aoReenviar(await api.confirmarCupom(cupom.id, [], true))
+        const r = await api.confirmarCupom(cupom.id, [], true)
+        setEnviado(true)
+        aoReenviar(r)
       } catch (e) {
         setErro(e instanceof Error ? e.message : 'Não consegui confirmar agora. Tente de novo.')
         if (ehErroRepetida(e)) aoRecarregar?.()
@@ -489,7 +495,9 @@ export default function CorrigirCupom({ cupom, catalogo, catalogoFalhou, aoReenv
     }
     setEnviando(true); setErro('')
     try {
-      aoReenviar(await api.confirmarCupom(cupom.id, itens))
+      const r = await api.confirmarCupom(cupom.id, itens)
+      setEnviado(true)
+      aoReenviar(r)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui reenviar agora. Tente de novo.') // o que ele digitou fica: é só tocar de novo
       if (ehErroRepetida(e)) aoRecarregar?.()
