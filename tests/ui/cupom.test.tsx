@@ -1353,9 +1353,23 @@ describe('Cupom — corrigir o cupom parado dentro do app: produto + quantidade 
     naFila()
     render(<Cupom />)
     const itens = await itensDaCaixa()
-    expect(await within(itens[0]).findByRole('alert')).toHaveTextContent('Não consegui carregar a lista de produtos. Atualize a página.')
+    expect(await within(itens[0]).findByRole('alert')).toHaveTextContent('Não consegui carregar a lista de produtos.')
     expect(within(itens[0]).queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
     expect(reenviar()).toBeDisabled()
+  })
+
+  // Reanálise de 13/11 (B5): a tela mandava "Atualize a página" (e perder o que já foi confirmado); agora o botão refaz só a carga da lista.
+  it('a lista de produtos não carregou: "Tentar de novo" refaz a carga e, dando certo, o item volta a ter a busca', async () => {
+    m.catalogoProdutos.mockRejectedValueOnce(new Error('rede'))
+    naFila()
+    render(<Cupom />)
+    const itens = await itensDaCaixa()
+    const aviso = await within(itens[0]).findByRole('alert')
+    expect(aviso).not.toHaveTextContent('Atualize a página')
+    await userEvent.click(within(itens[0]).getByRole('button', { name: 'Tentar de novo' }))
+    expect(await within(itens[0]).findByLabelText('Produto do SisChef')).toBeInTheDocument()
+    expect(within(itens[0]).queryByRole('alert')).not.toBeInTheDocument()
+    expect(m.catalogoProdutos).toHaveBeenCalledTimes(2)
   })
 })
 

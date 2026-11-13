@@ -202,6 +202,20 @@ describe('CompraAvulsa', () => {
       expect(screen.queryByTestId('abrir-cadastro-produto')).not.toBeInTheDocument()
     })
 
+    // Reanálise de 13/11 (B5): a tela mandava "Atualize a página" (e perder o que já foi digitado); agora o botão refaz só a carga da lista.
+    it('a lista de produtos não carregou: "Tentar de novo" refaz a carga e a busca passa a achar o produto, sem perder o que foi digitado', async () => {
+      m.catalogoProdutos.mockRejectedValueOnce(new Error('rede'))
+      render(<CompraAvulsa />)
+      await userEvent.type(screen.getByTestId('busca-produto'), 'tomate')
+      const aviso = await screen.findByRole('alert')
+      expect(aviso).not.toHaveTextContent('Atualize a página')
+      await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+      expect(await within(await screen.findByTestId('achados')).findByRole('button')).toHaveTextContent('TOMATE ITALIANO')
+      expect(screen.getByTestId('busca-produto')).toHaveValue('tomate')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(m.catalogoProdutos).toHaveBeenCalledTimes(2)
+    })
+
     it('cadastrado: "Usar este produto" põe o produto na linha, na unidade da lista, pedindo quantidade e preço', async () => {
       m.pedirCadastroProduto.mockResolvedValue({ cadastro_id: 'ped-1' })
       m.statusDoCadastroProduto.mockImplementation(async (q) => ('id' in q ? { id: 'ped-1', estado: 'CADASTRADO', produto_id: 3924999, motivo: null, candidatos: [],

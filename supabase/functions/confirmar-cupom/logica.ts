@@ -357,14 +357,14 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     }
   }
   // Dois itens do mesmo cupom com a MESMA chave de aprendizado (mesmo código de barras, ou mesma descrição deste fornecedor): com produtos
-  // diferentes o 2º gravaria por cima do 1º em silêncio — melhor recusar e deixar o Ivan desmarcar um "Lembrar"; com o mesmo produto basta uma linha.
+  // diferentes o 2º gravaria por cima do 1º em silêncio — melhor recusar e pedir o MESMO produto nos dois (a caixinha "Lembrar" saiu da tela em 08/10; texto trocado em 13/11); com o mesmo produto basta uma linha.
   const chaveDe = (l: LinhaAprendizado) => l.codigo_barras ?? `${l.emitente_cnpj}|${l.descricao_norm}`
   const porChave = new Map<string, { linha: LinhaAprendizado; indice: number }>()
   for (const a of aprendizados) {
     const outro = porChave.get(chaveDe(a.linha))
     if (!outro) { porChave.set(chaveDe(a.linha), a); continue }
     if (outro.linha.insumo_id !== a.linha.insumo_id) {
-      return { status: 400, corpo: { erro: `os itens ${outro.indice + 1} e ${a.indice + 1} têm a mesma descrição no cupom e produtos diferentes: desmarque "Lembrar" em um deles` } }
+      return { status: 400, corpo: { erro: `os itens ${outro.indice + 1} e ${a.indice + 1} têm a mesma descrição no cupom e produtos diferentes: escolha o mesmo produto nos dois (toque em "Editar" no item para trocar)` } }
     }
   }
   const linhasDeAprendizado = [...porChave.values()].map((a) => a.linha)

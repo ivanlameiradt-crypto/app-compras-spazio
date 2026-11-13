@@ -87,13 +87,19 @@ export default function CompraAvulsa() {
     Promise.resolve(api.cuponsExcluidos('avulsa')).then((l) => setExcluidos(l ?? [])).catch(() => undefined)
   }, [])
 
+  /** Lê a lista de produtos; também é o "Tentar de novo" de quando a leitura falha (13/11/2026: antes a tela mandava atualizar a página e o que estava digitado se perdia). */
+  const carregarCatalogo = useCallback(() => {
+    setCatalogoFalhou(false)
+    api.catalogoProdutos().then((c) => setCatalogo(c)).catch(() => setCatalogoFalhou(true))
+  }, [])
+
   useEffect(() => {
     let vivo = true
-    api.catalogoProdutos().then((c) => { if (vivo) setCatalogo(c) }).catch(() => { if (vivo) setCatalogoFalhou(true) })
+    carregarCatalogo()
     api.fornecedoresConhecidos().then((f) => { if (vivo) setConhecidos(f) }).catch(() => { if (vivo) setConhecidos([]) })
     carregarRecentes()
     return () => { vivo = false }
-  }, [carregarRecentes])
+  }, [carregarRecentes, carregarCatalogo])
 
   // enquanto há compra na fila, olha de novo a cada 30 s (o robô leva de 2 a 3 minutos)
   const naFila = recentes.some((c) => c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO')
@@ -241,7 +247,12 @@ export default function CompraAvulsa() {
                     </label>
                     {l.busca.trim() !== '' && (
                       catalogo === null ? (
-                        catalogoFalhou ? <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p> : <p className="sub">Carregando a lista de produtos…</p>
+                        catalogoFalhou ? (
+                          <>
+                            <p className="erro" role="alert">Não consegui carregar a lista de produtos. Confira a internet e toque em “Tentar de novo”.</p>
+                            <button type="button" className="botao secundario" onClick={carregarCatalogo} data-testid="tentar-lista-produtos">Tentar de novo</button>
+                          </>
+                        ) : <p className="sub">Carregando a lista de produtos…</p>
                       ) : (
                         <>
                           {achados.length > 0 && (

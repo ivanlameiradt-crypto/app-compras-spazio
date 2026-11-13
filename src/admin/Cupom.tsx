@@ -233,6 +233,9 @@ export default function Cupom() {
   // e UMA vez: a lista muda pouco e cada leitura é pesada (molde: NotaSefaz).
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
   const [catalogoFalhou, setCatalogoFalhou] = useState(false)
+  // "Tentar de novo" da lista de produtos (13/11/2026): cada toque refaz a leitura que falhou, sem recarregar a página
+  const [tentativaCatalogo, setTentativaCatalogo] = useState(0)
+  const tentarCatalogo = () => { setCatalogoFalhou(false); setTentativaCatalogo((n) => n + 1) }
   // aviso por cupom depois de "Reenviar para lançar": preso ao id (a lista recarrega e o cupom muda de estado) e mostrado só enquanto ele está na fila
   // — quando vira "lançado ✓" ou volta a REVISAR com outro motivo, o aviso velho contradiria o estado novo
   const [reenviados, setReenviados] = useState<Record<string, AvisoReenvio>>({})
@@ -273,7 +276,7 @@ export default function Cupom() {
       .then((c) => { if (vivo) { setCatalogo(c ?? []); setCatalogoFalhou(false) } })
       .catch(() => { if (vivo) setCatalogoFalhou(true) })
     return () => { vivo = false }
-  }, [precisaCatalogo, catalogo])
+  }, [precisaCatalogo, catalogo, tentativaCatalogo])
 
   /** O servidor aceitou a correção: guarda o aviso deste cupom e recarrega a lista (ele volta como "na fila"). */
   function aoReenviar(id: string, r: RespostaConfirmacaoCupom) {
@@ -427,7 +430,7 @@ export default function Cupom() {
                   <CadastrarFornecedor cupom={c} acoes={ACOES_FORNECEDOR} aoRecarregar={carregarRecentes} aoReenviar={() => { setReenviados((m) => ({ ...m, [c.id]: { classe: 'ok', texto: 'Reenviado: o cupom entrou na fila e o robô lança em 2 ou 3 minutos.' } })); carregarRecentes() }} />
                 )}
                 {corrigivel(c) && (
-                  <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoReenviar={(r) => aoReenviar(c.id, r)} aoRecarregar={carregarRecentes} />
+                  <CorrigirCupom cupom={c} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoTentarCatalogo={tentarCatalogo} aoReenviar={(r) => aoReenviar(c.id, r)} aoRecarregar={carregarRecentes} />
                 )}
                 {aberto && <AvisoCnpjSuspeito cnpj={c.emitente_cnpj} />}
                 {/* Lançado em: dia e hora do lançamento (pedido do Ivan, 07/10, igual ao da aba fiscal). Só cupom LANCADO: o robô grava atualizado_em ao
