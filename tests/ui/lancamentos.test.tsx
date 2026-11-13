@@ -137,6 +137,16 @@ describe('Lançamentos', () => {
     expect(within(await cartao('ATACADÃO')).getByText('Com nota')).toBeInTheDocument()
   })
 
+  it('A2 (13/11/2026): Corrigir total/nota com resposta que não é "com" nem "sem": avisa e não grava (antes virava "Sem nota" calado)', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('cm').mockReturnValueOnce('4310,55')
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Corrigir total/nota' }))
+    expect(await screen.findByText('Responda "com" ou "sem" nota. Nada foi alterado.')).toBeInTheDocument()
+    expect(m.corrigirCompra).not.toHaveBeenCalled()
+    expect(window.prompt).toHaveBeenCalledTimes(1) // nem pergunta o total
+    expect(within(await cartao('ATACADÃO')).getByText('Com nota')).toBeInTheDocument()
+  })
+
   it('I4: cancelar o prompt do total não muda nada', async () => {
     vi.spyOn(window, 'prompt').mockReturnValueOnce('com').mockReturnValueOnce(null)
     render(<Lancamentos usuario={admin} />)

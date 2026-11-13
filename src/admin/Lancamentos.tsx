@@ -92,7 +92,9 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const corrigirTotal = (c: api.CompraNaFila) => acaoNoCartao(c.id, async () => {
     const textoNota = window.prompt('Com nota ou sem nota? Digite "com" ou "sem".', c.com_nota ? 'com' : 'sem')
     if (textoNota === null) return // cancelou: não mexe em nada
-    const comNota = /^com/i.test(textoNota.trim())
+    // a mesma regra do "Fechar pelo comprador": só "com" ou "sem"; outra coisa não pode virar "Sem nota" calado (A2, 13/11/2026)
+    const comNota = /^com/i.test(textoNota.trim()) ? true : /^sem/i.test(textoNota.trim()) ? false : null
+    if (comNota === null) throw new Error('Responda "com" ou "sem" nota. Nada foi alterado.')
     const textoTotal = window.prompt('Total pago', String(c.total_pago ?? 0).replace('.', ','))
     if (textoTotal === null) return // cancelou
     const total = lerNumero(textoTotal)
