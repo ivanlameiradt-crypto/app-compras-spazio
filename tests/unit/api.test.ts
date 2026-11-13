@@ -500,36 +500,49 @@ describe('Sub-fase 3: cupom', () => {
     await expect(confirmarCupom('aaf54e6f-0000-4000-8000-000000000001', [{ indice: 0, insumo_id: '3484974', quantidade: 2, lembrar: true }])).rejects.toThrow(erro)
   })
 
-  // A3 (13/11/2026): antes a tela mostrava o texto cru em inglês do supabase-js ("Failed to send a request to the Edge Function")
-  describe('A3: erro de Edge Function sem resposta do servidor sai em português', () => {
-    const SEM_RESPOSTA = 'Sem internet ou servidor fora do ar. Nada foi perdido: toque de novo.'
+  // A3 (13/11/2026): antes a tela mostrava o texto cru em inglês do supabase-js ("Failed to send a request to the Edge Function").
+  // R1 (revisão do PR 91): o aviso não promete "nada foi perdido" (o servidor pode ter gravado) e separa "sem resposta" de "o servidor recusou".
+  describe('A3: erro de Edge Function sem o texto do servidor sai em português', () => {
+    const SEM_RESPOSTA = 'Sem resposta do servidor (internet ou servidor fora do ar). Confira se a ação aparece na lista antes de repetir.'
+    const RECUSOU = 'O servidor recusou o pedido. Atualize a tela e tente de novo; se continuar, avise o Ivan.'
     const itens = [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }]
     const ID_CUPOM = 'aaf54e6f-0000-4000-8000-000000000001'
+    const semCorpo = (status: number) => ({ status, json: async () => { throw new SyntaxError('Unexpected token <') } }) as unknown as Response
+    const http = (context: Response) => invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context } })
 
-    it('sem internet (o pedido nem saiu): "Failed to send a request to the Edge Function" vira o aviso em português', async () => {
+    it('sem resposta nenhuma (o pedido não chegou ou a resposta não voltou): aviso de "sem resposta", sem prometer que nada foi perdido', async () => {
       invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
       const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
       expect((e as Error).message).toBe(SEM_RESPOSTA)
+      expect((e as Error).message).not.toMatch(/nada foi perdido/i)
       await expect(criarAcesso({ login: 'joao', nome: 'João', papel: 'comprador', senha: '123456' })).rejects.toThrow(SEM_RESPOSTA)
       await expect(enviarCupom('cupom/abc.jpg', { forma: 'sem_cartao' })).rejects.toThrow(SEM_RESPOSTA)
-    })
-
-    it('servidor fora do ar (resposta sem o JSON da função, ou sem corpo): "non-2xx status code" e o erro do relay viram o mesmo aviso', async () => {
-      const html = { status: 502, json: async () => { throw new SyntaxError('Unexpected token <') } } as unknown as Response
-      invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context: html } })
-      await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow(SEM_RESPOSTA)
-      const semErro = { status: 500, json: async () => ({ outra: 'coisa' }) } as unknown as Response
-      invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context: semErro } })
-      await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow(SEM_RESPOSTA)
       invoke.mockResolvedValue({ data: null, error: new Error('Relay Error invoking the Edge Function') })
       await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow(SEM_RESPOSTA)
     })
 
-    it('a mensagem em português que o servidor devolve no corpo continua igual, e um erro desconhecido não é trocado', async () => {
-      const context = { status: 400, json: async () => ({ erro: 'a soma dos itens não bate com o total do cupom' }) } as unknown as Response
-      invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context } })
+    it.each([500, 502, 503, 504])('servidor fora do ar (status %i sem o JSON da função): o mesmo aviso de "sem resposta"', async (status) => {
+      http(semCorpo(status))
+      await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow(SEM_RESPOSTA)
+      http({ status, json: async () => ({ outra: 'coisa' }) } as unknown as Response)
       const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
-      expect((e as Error).message).toBe('a soma dos itens não bate com o total do cupom')
+      expect((e as Error).message).toBe(SEM_RESPOSTA)
+    })
+
+    it.each([400, 401, 403, 404, 409, 422])('o servidor respondeu %i sem corpo legível: "o servidor recusou" (repetir igual não resolve)', async (status) => {
+      http(semCorpo(status))
+      const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
+      expect((e as Error).message).toBe(RECUSOU)
+      http({ status, json: async () => ({ outra: 'coisa' }) } as unknown as Response)
+      await expect(criarAcesso({ login: 'joao', nome: 'João', papel: 'comprador', senha: '123456' })).rejects.toThrow(RECUSOU)
+    })
+
+    it('a mensagem em português que o servidor devolve no corpo continua igual (com qualquer status), e um erro desconhecido não é trocado', async () => {
+      for (const status of [400, 409, 503]) {
+        http({ status, json: async () => ({ erro: 'a soma dos itens não bate com o total do cupom' }) } as unknown as Response)
+        const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
+        expect((e as Error).message).toBe('a soma dos itens não bate com o total do cupom')
+      }
       invoke.mockResolvedValue({ data: null, error: new Error('algo que eu não conheço') })
       await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow('algo que eu não conheço')
     })

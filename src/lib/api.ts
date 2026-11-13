@@ -50,24 +50,33 @@ export async function entrarComSenha(login: string, senha: string): Promise<void
   if (error) throw new Error(error.message)
 }
 
-/** Os textos crus (em inglês) do supabase-js quando a Edge Function não devolveu a resposta dela: o pedido nem saiu (sem internet), o relay falhou ou veio um status de erro sem o JSON da função. */
-const SEM_RESPOSTA_DA_FUNCAO = /Failed to send a request to the Edge Function|Relay Error invoking the Edge Function|Edge Function returned a non-2xx status code/i
-const TEXTO_SEM_RESPOSTA = 'Sem internet ou servidor fora do ar. Nada foi perdido: toque de novo.'
+/** Os textos crus (em inglês) do supabase-js quando a Edge Function não devolveu o texto dela: o pedido não chegou ou a resposta não voltou, o relay falhou ou veio um status de erro sem o JSON da função. */
+const SEM_TEXTO_DA_FUNCAO = /Failed to send a request to the Edge Function|Relay Error invoking the Edge Function|Edge Function returned a non-2xx status code/i
+/** Sem resposta (ou servidor fora do ar, status 500 ou mais): NÃO dá para saber se o servidor gravou; por isso o aviso manda conferir antes de repetir, sem prometer que nada foi perdido. */
+const TEXTO_SEM_RESPOSTA = 'Sem resposta do servidor (internet ou servidor fora do ar). Confira se a ação aparece na lista antes de repetir.'
+/** O servidor respondeu recusando (status 4xx) e não disse o motivo de um jeito legível: repetir igual não resolve. */
+const TEXTO_RECUSOU = 'O servidor recusou o pedido. Atualize a tela e tente de novo; se continuar, avise o Ivan.'
 /**
- * Extrai a mensagem que a Edge Function devolveu no corpo (JSON) do erro, quando dá pra ler: essa já vem em português e passa como está.
- * Sem ela (sem internet, servidor fora do ar), o texto cru em inglês do supabase-js vira um aviso em português (A3, 13/11/2026).
+ * A mensagem de um erro de Edge Function, para a tela (A3 de 13/11/2026, separada na revisão do PR 91):
+ * (b) o servidor devolveu o texto dele no corpo (JSON `erro`, já em português): passa como está, com qualquer status;
+ * (c) o servidor respondeu 4xx sem corpo legível: "o servidor recusou";
+ * (a) sem resposta nenhuma, ou status 500 ou mais sem o texto dele: "sem resposta do servidor";
+ * qualquer outro erro que eu não conheço fica com o texto que tem.
  */
 async function mensagemDaFuncao(erro: unknown): Promise<string> {
-  const contexto = (erro as { context?: Response }).context
+  const contexto = (erro as { context?: Response } | null)?.context
   if (contexto && typeof contexto.json === 'function') {
     try {
       const corpo = await contexto.json()
       if (corpo && typeof corpo.erro === 'string') return corpo.erro
-    } catch { /* corpo não era JSON: segue com a mensagem padrão */ }
+    } catch { /* corpo não era JSON: segue pelo status */ }
   }
+  const status = typeof contexto?.status === 'number' ? contexto.status : undefined
+  if (status !== undefined && status >= 400 && status < 500) return TEXTO_RECUSOU
+  if (status !== undefined && status >= 500) return TEXTO_SEM_RESPOSTA
   const cru = (erro as { message?: unknown } | null)?.message
   const texto = erro instanceof Error ? erro.message : typeof cru === 'string' ? cru : String(erro)
-  return SEM_RESPOSTA_DA_FUNCAO.test(texto) ? TEXTO_SEM_RESPOSTA : texto
+  return SEM_TEXTO_DA_FUNCAO.test(texto) ? TEXTO_SEM_RESPOSTA : texto
 }
 
 /**
