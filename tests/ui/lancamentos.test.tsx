@@ -120,6 +120,27 @@ describe('Lançamentos', () => {
     expect(screen.queryByText(/Sem resposta/)).not.toBeInTheDocument()
   })
 
+  it('R3 (revisão do PR 91): dois toques seguidos no Aprovar, antes de a tela redesenhar, gravam uma vez só (a trava vale já no clique)', async () => {
+    m.aprovarCompra.mockReturnValue(new Promise<void>(() => {}))
+    render(<Lancamentos usuario={admin} />)
+    const botao = within(await cartao('ATACADÃO')).getByRole('button', { name: 'Aprovar' })
+    // os dois cliques no MESMO act, sem esperar entre eles: o botão ainda não foi redesenhado como desabilitado
+    await act(async () => { fireEvent.click(botao); fireEvent.click(botao) })
+    expect(m.aprovarCompra).toHaveBeenCalledTimes(1)
+  })
+
+  it('R3: o Aprovar que falha mostra o erro e solta os botões do cartão', async () => {
+    m.aprovarCompra.mockRejectedValue(new Error('semana já encerrada'))
+    render(<Lancamentos usuario={admin} />)
+    const c = await cartao('ATACADÃO')
+    await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+    expect(await screen.findByText('semana já encerrada')).toBeInTheDocument()
+    await waitFor(() => expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeEnabled())
+    expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeEnabled()
+    expect(within(c).getByRole('button', { name: 'Ver itens' })).toBeEnabled()
+    expect(within(c).getByText('Aguardando aprovação')).toBeInTheDocument() // continua esperando aprovação
+  })
+
   it('ver itens mostra a tabela e permite corrigir', async () => {
     vi.spyOn(window, 'prompt').mockReturnValueOnce('50').mockReturnValueOnce('2,90')
     render(<Lancamentos usuario={admin} />)
