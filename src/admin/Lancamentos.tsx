@@ -9,6 +9,11 @@ import {
 } from '../lib/regras'
 import TituloDaTela from '../components/TituloDaTela'
 
+/** Prazo de uma gravação do cartão: sem resposta até aqui, a trava do cartão é solta com um aviso (revisão do PR 91). */
+const PRAZO_DA_ACAO_MS = 20_000
+/** Qual botão do cartão está rodando: é ele que mostra "Gravando…" (os outros só ficam desabilitados). */
+type AcaoDoCartao = 'itens' | 'total' | 'aprovar' | 'lancada'
+
 export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const [fila, setFila] = useState<api.CompraNaFila[] | undefined>()
   const [abertas, setAbertas] = useState<api.CompraAbertaParaFechar[]>([])
@@ -24,8 +29,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   const [cupomEmbutido, setCupomEmbutido] = useState<Record<string, string>>({})
   // A1 (13/11/2026): cartões com uma ação gravando. Os botões do cartão ficam travados até a resposta chegar, senão o segundo toque no
   // mesmo lugar (o "Aprovar" vira "Marcar como lançada no SisChef") tirava a compra da fila sem querer.
-  const [ocupados, setOcupados] = useState<ReadonlySet<string>>(new Set())
-  const ocupadosAgora = useRef(new Set<string>()) // a trava vale já no clique, antes de a tela redesenhar
+  const [ocupados, setOcupados] = useState<ReadonlyMap<string, AcaoDoCartao>>(new Map())
+  const ocupadosAgora = useRef(new Map<string, AcaoDoCartao>()) // a trava vale já no clique, antes de a tela redesenhar
 
   useEffect(() => {
     api.filaLancamentos().then(setFila).catch((e) => { setErro(mensagemDeErro(e)); setFila([]) })
@@ -49,31 +54,43 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   async function acao(f: () => Promise<void>) {
     try { await f(); setErro('') } catch (e) { setErro(mensagemDeErro(e)) }
   }
-  /** Como `acao`, mas trava os botões do cartão da compra `id` enquanto roda; toque repetido no meio é ignorado. */
-  async function acaoNoCartao(id: string, f: () => Promise<void>) {
+  /** Como `acao`, mas trava os botões do cartão da compra `id` enquanto roda (o botão `qual` mostra que está gravando); toque repetido no meio é ignorado. */
+  async function acaoNoCartao(id: string, qual: AcaoDoCartao, f: () => Promise<void>) {
     if (ocupadosAgora.current.has(id)) return
-    ocupadosAgora.current.add(id)
-    setOcupados(new Set(ocupadosAgora.current))
+    ocupadosAgora.current.set(id, qual)
+    setOcupados(new Map(ocupadosAgora.current))
     try { await acao(f) } finally {
       ocupadosAgora.current.delete(id)
-      setOcupados(new Set(ocupadosAgora.current))
+      setOcupados(new Map(ocupadosAgora.current))
     }
+  }
+  /**
+   * Espera a gravação até o prazo; sem resposta, desiste com um aviso e a trava do cartão é solta (senão o cartão ficava travado para sempre com a rede pendurada).
+   * O prazo conta só a chamada ao servidor: o tempo que a pessoa leva nas perguntas (confirmar, digitar o total) fica de fora. Como o servidor pode ter gravado
+   * mesmo sem a resposta chegar, o aviso manda conferir a lista, e a fila é relida.
+   */
+  function comPrazo<T>(chamada: Promise<T>): Promise<T> {
+    let relogio: ReturnType<typeof setTimeout> | undefined
+    const prazo = new Promise<never>((_ok, ko) => {
+      relogio = setTimeout(() => { void relerFila(); ko(new Error('Sem resposta. Confira a lista antes de tocar de novo.')) }, PRAZO_DA_ACAO_MS)
+    })
+    return Promise.race([chamada, prazo]).finally(() => clearTimeout(relogio))
   }
   // relê a fila depois de uma ação (a compra fechada entra nela); se falhar, avisa em vez de deixar a lista velha em silêncio (item 1, 07/11/2026)
   const relerFila = () => api.filaLancamentos().then((f) => { setFila(f); setErroFila('') }).catch((e) => setErroFila(mensagemDeErro(e)))
-  const aprovar = (id: string) => acaoNoCartao(id, async () => {
-    await api.aprovarCompra(id)
+  const aprovar = (id: string) => acaoNoCartao(id, 'aprovar', async () => {
+    await comPrazo(api.aprovarCompra(id))
     setFila((l) => l?.map((c) => (c.id === id ? { ...c, status: 'aprovada' } : c)))
   })
-  const lancada = (id: string) => acaoNoCartao(id, async () => {
+  const lancada = (id: string) => acaoNoCartao(id, 'lancada', async () => {
     // sair da fila não tem "desfazer" na tela: pergunta antes de gravar (A1, 13/11/2026)
     if (!window.confirm('Esta compra já foi lançada no SisChef? Depois de marcar, ela sai desta lista.')) return
-    await api.marcarLancada(id)
+    await comPrazo(api.marcarLancada(id))
     setFila((l) => l?.filter((c) => c.id !== id))
   })
-  const verItens = (id: string) => acaoNoCartao(id, async () => {
+  const verItens = (id: string) => acaoNoCartao(id, 'itens', async () => {
     if (aberta === id) { setAberta(null); return }
-    setLinhas(await api.itensDaCompra(id))
+    setLinhas(await comPrazo(api.itensDaCompra(id)))
     setAberta(id)
   })
   const corrigir = (l: api.LinhaDetalhada) => acao(async () => {
@@ -89,7 +106,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
     await api.corrigirItemCompra(l.id, q, p)
     setLinhas((ls) => ls.map((x) => (x.id === l.id ? { ...x, qtd: q, preco_unit: p } : x)))
   })
-  const corrigirTotal = (c: api.CompraNaFila) => acaoNoCartao(c.id, async () => {
+  const corrigirTotal = (c: api.CompraNaFila) => acaoNoCartao(c.id, 'total', async () => {
     const textoNota = window.prompt('Com nota ou sem nota? Digite "com" ou "sem".', c.com_nota ? 'com' : 'sem')
     if (textoNota === null) return // cancelou: não mexe em nada
     // a mesma regra do "Fechar pelo comprador": só "com" ou "sem"; outra coisa não pode virar "Sem nota" calado (A2, 13/11/2026)
@@ -99,7 +116,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
     if (textoTotal === null) return // cancelou
     const total = lerNumero(textoTotal)
     if (total === null) throw new Error('Total inválido.') // setErro aqui seria apagado pelo setErro('') de acao
-    await api.corrigirCompra(c.id, comNota, total)
+    await comPrazo(api.corrigirCompra(c.id, comNota, total))
     setFila((l) => l?.map((x) => (x.id === c.id ? { ...x, com_nota: comNota, total_pago: total } : x)))
   })
   const cupom = (c: api.CompraNaFila) => acao(async () => {
@@ -242,11 +259,11 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             </table>
           )}
           <div className="linha" style={{ marginTop: 8 }}>
-            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}>{aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
-            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}>Corrigir total/nota</button>
+            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}>{ocupados.get(c.id) === 'itens' ? 'Carregando…' : aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
+            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}>{ocupados.get(c.id) === 'total' ? 'Gravando…' : 'Corrigir total/nota'}</button>
             {c.status === 'fechada'
-              ? <button className="botao" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>Aprovar</button>
-              : <button className="botao" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>Marcar como lançada no SisChef</button>}
+              ? <button className="botao" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
+              : <button className="botao" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
           </div>
         </div>
       ))}

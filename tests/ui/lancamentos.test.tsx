@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import Lancamentos from '../../src/admin/Lancamentos'
@@ -76,18 +76,48 @@ describe('Lançamentos', () => {
     render(<Lancamentos usuario={admin} />)
     const c = await cartao('ATACADÃO')
     await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
-    // gravando: os três botões do cartão ficam desabilitados; os do outro cartão continuam livres
-    expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+    // gravando: os três botões do cartão ficam desabilitados (o que foi tocado diz "Gravando…"); os do outro cartão continuam livres
+    expect(within(c).getByRole('button', { name: 'Gravando…' })).toBeDisabled()
+    expect(within(c).queryByRole('button', { name: 'Aprovar' })).not.toBeInTheDocument()
     expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeDisabled()
     expect(within(c).getByRole('button', { name: 'Ver itens' })).toBeDisabled()
     expect(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i })).toBeEnabled()
-    await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+    await userEvent.click(within(c).getByRole('button', { name: 'Gravando…' }))
     expect(m.aprovarCompra).toHaveBeenCalledTimes(1)
     liberar()
     const marcar = await within(c).findByRole('button', { name: /marcar como lançada/i })
     await waitFor(() => expect(marcar).toBeEnabled())
     expect(m.marcarLancada).not.toHaveBeenCalled()
     expect(confirmar).not.toHaveBeenCalled()
+  })
+
+  it('R2 (revisão do PR 91): ação sem resposta em 20 s solta a trava do cartão e avisa para conferir a lista', async () => {
+    m.aprovarCompra.mockReturnValue(new Promise<void>(() => {})) // o servidor nunca responde
+    render(<Lancamentos usuario={admin} />)
+    const c = await cartao('ATACADÃO')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+      await act(async () => {})
+      expect(within(c).getByRole('button', { name: 'Gravando…' })).toBeDisabled()
+      await act(async () => { vi.advanceTimersByTime(19_000) })
+      expect(within(c).getByRole('button', { name: 'Gravando…' })).toBeDisabled() // ainda dentro do prazo
+      await act(async () => { vi.advanceTimersByTime(1_500) })
+      expect(screen.getByText('Sem resposta. Confira a lista antes de tocar de novo.')).toBeInTheDocument()
+      expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeEnabled()
+      expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeEnabled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('R2: o tempo que a pessoa leva para responder a pergunta não conta no prazo (o prazo é só o da gravação)', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
+    expect(m.marcarLancada).toHaveBeenCalledWith('c2')
+    await waitFor(() => expect(screen.queryByText(/MATEUS/)).not.toBeInTheDocument())
+    expect(screen.queryByText(/Sem resposta/)).not.toBeInTheDocument()
   })
 
   it('ver itens mostra a tabela e permite corrigir', async () => {
