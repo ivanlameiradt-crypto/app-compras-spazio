@@ -956,7 +956,13 @@ export default function NotaSefaz() {
       <p className="sub">Modo: eu disparo — você confere e manda lançar (o automático vem depois).</p>
 
       <div className="grupo">Notas a lançar</div>
-      {falha && <p className="erro" role="alert">Não consegui carregar as notas.</p>}
+      {falha && (
+        <p className="erro" role="alert">
+          Não consegui carregar as notas.{' '}
+          {/* A5 (13/11/2026): antes o aviso não tinha saída; o botão refaz a carga (travado enquanto ela roda) */}
+          <button type="button" className="link" disabled={carregando} onClick={() => { void carregar() }}>Tentar de novo</button>
+        </p>
+      )}
       {!falha && (aLancar.length === 0
         ? <p className="sub">{carregando ? 'Carregando…' : 'Nenhuma nota pendente da SEFAZ agora.'}</p>
         : (
