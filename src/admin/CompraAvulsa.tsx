@@ -185,7 +185,7 @@ export default function CompraAvulsa() {
             <button type="button" className="link" disabled={enviando} onClick={() => { setFornecedor(null); setBuscaForn(''); setConfirmando(false) }}>Trocar</button>
           </p>
         ) : cadastrando ? (
-          <CadastrarFornecedor cupom={{ id: envioId, motivo: null }} acoes={ACOES_FORNECEDOR} aoReenviar={() => undefined}
+          <CadastrarFornecedor cupom={{ id: envioId, motivo: null }} acoes={ACOES_FORNECEDOR} aoReenviar={() => undefined} aoVoltar={() => setCadastrando(false)}
             aoUsar={(f) => { setFornecedor({ cnpj: f.cnpj, razao: f.razao, fantasia: f.fantasia }); setCadastrando(false); setConfirmando(false) }} />
         ) : (
           <>

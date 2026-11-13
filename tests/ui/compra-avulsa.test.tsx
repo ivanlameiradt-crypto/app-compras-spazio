@@ -132,6 +132,26 @@ describe('CompraAvulsa', () => {
     expect(screen.getByTestId('fornecedor-escolhido')).toHaveTextContent('BOM PÃO')
   }, 15000)
 
+  // Reanálise de 13/11 (B2): quem tocava em "Fornecedor novo: cadastrar" por engano não tinha como voltar.
+  it('"Voltar para a busca" fecha o cadastro de fornecedor, devolve a busca e mantém os itens já digitados', async () => {
+    m.statusDoCadastroFornecedor.mockResolvedValue(null)
+    render(<CompraAvulsa />)
+    await userEvent.type(screen.getByTestId('busca-produto'), 'tomate')
+    await userEvent.click(await within(await screen.findByTestId('achados')).findByRole('button'))
+    await userEvent.type(screen.getByTestId('quantidade-avulsa'), '12,5')
+    await userEvent.type(screen.getByTestId('preco-avulsa'), '8,90')
+    await userEvent.click(screen.getByTestId('cadastrar-fornecedor-novo'))
+    expect(screen.getByTestId('cadastrar-fornecedor')).toBeInTheDocument()
+    expect(screen.queryByTestId('busca-fornecedor')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar para a busca' }))
+    expect(screen.queryByTestId('cadastrar-fornecedor')).not.toBeInTheDocument()
+    expect(screen.getByTestId('busca-fornecedor')).toBeInTheDocument()
+    expect(screen.getByTestId('cadastrar-fornecedor-novo')).toBeInTheDocument()
+    expect(screen.getByTestId('produto-escolhido')).toHaveTextContent('TOMATE ITALIANO')   // os itens ficam
+    expect(screen.getByTestId('quantidade-avulsa')).toHaveValue('12,5')
+    expect(screen.getByTestId('preco-avulsa')).toHaveValue('8,90')
+  }, 30000)
+
   it('últimas compras: mostra o estado, o nome (fantasia) e o detalhe com a unidade do banco; compra parada mostra o motivo', async () => {
     m.comprasAvulsasRecentes.mockResolvedValue([
       recente(),
@@ -178,7 +198,7 @@ describe('CompraAvulsa', () => {
       m.catalogoProdutos.mockRejectedValue(new Error('rede'))
       render(<CompraAvulsa />)
       await userEvent.type(screen.getByTestId('busca-produto'), 'maionese')
-      expect(await screen.findByText('Não consegui carregar a lista de produtos. Atualize a página.')).toBeInTheDocument()
+      expect(await screen.findByText(/Não consegui carregar a lista de produtos\./)).toBeInTheDocument()
       expect(screen.queryByTestId('abrir-cadastro-produto')).not.toBeInTheDocument()
     })
 
