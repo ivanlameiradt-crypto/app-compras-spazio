@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import Lancamentos from '../../src/admin/Lancamentos'
@@ -51,11 +51,94 @@ describe('Lançamentos', () => {
   })
 
   it('aprovada pode ser marcada como lançada e sai da fila', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<Lancamentos usuario={admin} />)
     await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
     expect(m.marcarLancada).toHaveBeenCalledWith('c2')
     // a fila é redesenhada depois que a chamada termina: espera em vez de conferir na hora
     await waitFor(() => expect(screen.queryByText(/MATEUS/)).not.toBeInTheDocument())
+    expect(confirmar).toHaveBeenCalledWith('Esta compra já foi lançada no SisChef? Depois de marcar, ela sai desta lista.')
+  })
+
+  it('A1 (13/11/2026): Marcar como lançada pede confirmação; cancelar não grava nada e a compra continua na fila', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
+    expect(confirmar).toHaveBeenCalledTimes(1)
+    expect(m.marcarLancada).not.toHaveBeenCalled()
+    expect(screen.getByText(/MATEUS/)).toBeInTheDocument()
+  })
+
+  it('A1 (13/11/2026): enquanto o Aprovar grava, os botões do cartão ficam travados; o segundo toque não marca como lançada', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let liberar!: () => void
+    m.aprovarCompra.mockReturnValue(new Promise<void>((r) => { liberar = r }))
+    render(<Lancamentos usuario={admin} />)
+    const c = await cartao('ATACADÃO')
+    await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+    // gravando: os três botões do cartão ficam desabilitados (o que foi tocado diz "Gravando…"); os do outro cartão continuam livres
+    expect(within(c).getByRole('button', { name: 'Gravando…' })).toBeDisabled()
+    expect(within(c).queryByRole('button', { name: 'Aprovar' })).not.toBeInTheDocument()
+    expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeDisabled()
+    expect(within(c).getByRole('button', { name: 'Ver itens' })).toBeDisabled()
+    expect(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i })).toBeEnabled()
+    await userEvent.click(within(c).getByRole('button', { name: 'Gravando…' }))
+    expect(m.aprovarCompra).toHaveBeenCalledTimes(1)
+    liberar()
+    const marcar = await within(c).findByRole('button', { name: /marcar como lançada/i })
+    await waitFor(() => expect(marcar).toBeEnabled())
+    expect(m.marcarLancada).not.toHaveBeenCalled()
+    expect(confirmar).not.toHaveBeenCalled()
+  })
+
+  it('R2 (revisão do PR 91): ação sem resposta em 20 s solta a trava do cartão e avisa para conferir a lista', async () => {
+    m.aprovarCompra.mockReturnValue(new Promise<void>(() => {})) // o servidor nunca responde
+    render(<Lancamentos usuario={admin} />)
+    const c = await cartao('ATACADÃO')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+      await act(async () => {})
+      expect(within(c).getByRole('button', { name: 'Gravando…' })).toBeDisabled()
+      await act(async () => { vi.advanceTimersByTime(19_000) })
+      expect(within(c).getByRole('button', { name: 'Gravando…' })).toBeDisabled() // ainda dentro do prazo
+      await act(async () => { vi.advanceTimersByTime(1_500) })
+      expect(screen.getByText('Sem resposta. Confira a lista antes de tocar de novo.')).toBeInTheDocument()
+      expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeEnabled()
+      expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeEnabled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('R2: o tempo que a pessoa leva para responder a pergunta não conta no prazo (o prazo é só o da gravação)', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('MATEUS')).getByRole('button', { name: /marcar como lançada/i }))
+    expect(m.marcarLancada).toHaveBeenCalledWith('c2')
+    await waitFor(() => expect(screen.queryByText(/MATEUS/)).not.toBeInTheDocument())
+    expect(screen.queryByText(/Sem resposta/)).not.toBeInTheDocument()
+  })
+
+  it('R3 (revisão do PR 91): dois toques seguidos no Aprovar, antes de a tela redesenhar, gravam uma vez só (a trava vale já no clique)', async () => {
+    m.aprovarCompra.mockReturnValue(new Promise<void>(() => {}))
+    render(<Lancamentos usuario={admin} />)
+    const botao = within(await cartao('ATACADÃO')).getByRole('button', { name: 'Aprovar' })
+    // os dois cliques no MESMO act, sem esperar entre eles: o botão ainda não foi redesenhado como desabilitado
+    await act(async () => { fireEvent.click(botao); fireEvent.click(botao) })
+    expect(m.aprovarCompra).toHaveBeenCalledTimes(1)
+  })
+
+  it('R3: o Aprovar que falha mostra o erro e solta os botões do cartão', async () => {
+    m.aprovarCompra.mockRejectedValue(new Error('semana já encerrada'))
+    render(<Lancamentos usuario={admin} />)
+    const c = await cartao('ATACADÃO')
+    await userEvent.click(within(c).getByRole('button', { name: 'Aprovar' }))
+    expect(await screen.findByText('semana já encerrada')).toBeInTheDocument()
+    await waitFor(() => expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeEnabled())
+    expect(within(c).getByRole('button', { name: 'Corrigir total/nota' })).toBeEnabled()
+    expect(within(c).getByRole('button', { name: 'Ver itens' })).toBeEnabled()
+    expect(within(c).getByText('Aguardando aprovação')).toBeInTheDocument() // continua esperando aprovação
   })
 
   it('ver itens mostra a tabela e permite corrigir', async () => {
@@ -102,6 +185,16 @@ describe('Lançamentos', () => {
     await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Corrigir total/nota' }))
     expect(await screen.findByText('Total inválido.')).toBeInTheDocument()
     expect(m.corrigirCompra).not.toHaveBeenCalled()
+    expect(within(await cartao('ATACADÃO')).getByText('Com nota')).toBeInTheDocument()
+  })
+
+  it('A2 (13/11/2026): Corrigir total/nota com resposta que não é "com" nem "sem": avisa e não grava (antes virava "Sem nota" calado)', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('cm').mockReturnValueOnce('4310,55')
+    render(<Lancamentos usuario={admin} />)
+    await userEvent.click(within(await cartao('ATACADÃO')).getByRole('button', { name: 'Corrigir total/nota' }))
+    expect(await screen.findByText('Responda "com" ou "sem" nota. Nada foi alterado.')).toBeInTheDocument()
+    expect(m.corrigirCompra).not.toHaveBeenCalled()
+    expect(window.prompt).toHaveBeenCalledTimes(1) // nem pergunta o total
     expect(within(await cartao('ATACADÃO')).getByText('Com nota')).toBeInTheDocument()
   })
 

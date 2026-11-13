@@ -500,10 +500,52 @@ describe('Sub-fase 3: cupom', () => {
     await expect(confirmarCupom('aaf54e6f-0000-4000-8000-000000000001', [{ indice: 0, insumo_id: '3484974', quantidade: 2, lembrar: true }])).rejects.toThrow(erro)
   })
 
-  it('confirmarCupom: erro sem corpo JSON fica com a mensagem padrão do supabase-js', async () => {
-    invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
-    await expect(confirmarCupom('aaf54e6f-0000-4000-8000-000000000001', [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }]))
-      .rejects.toThrow('Failed to send a request to the Edge Function')
+  // A3 (13/11/2026): antes a tela mostrava o texto cru em inglês do supabase-js ("Failed to send a request to the Edge Function").
+  // R1 (revisão do PR 91): o aviso não promete "nada foi perdido" (o servidor pode ter gravado) e separa "sem resposta" de "o servidor recusou".
+  describe('A3: erro de Edge Function sem o texto do servidor sai em português', () => {
+    const SEM_RESPOSTA = 'Sem resposta do servidor (internet ou servidor fora do ar). Confira se a ação aparece na lista antes de repetir.'
+    const RECUSOU = 'O servidor recusou o pedido. Atualize a tela e tente de novo; se continuar, avise o Ivan.'
+    const itens = [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }]
+    const ID_CUPOM = 'aaf54e6f-0000-4000-8000-000000000001'
+    const semCorpo = (status: number) => ({ status, json: async () => { throw new SyntaxError('Unexpected token <') } }) as unknown as Response
+    const http = (context: Response) => invoke.mockResolvedValue({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context } })
+
+    it('sem resposta nenhuma (o pedido não chegou ou a resposta não voltou): aviso de "sem resposta", sem prometer que nada foi perdido', async () => {
+      invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
+      const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
+      expect((e as Error).message).toBe(SEM_RESPOSTA)
+      expect((e as Error).message).not.toMatch(/nada foi perdido/i)
+      await expect(criarAcesso({ login: 'joao', nome: 'João', papel: 'comprador', senha: '123456' })).rejects.toThrow(SEM_RESPOSTA)
+      await expect(enviarCupom('cupom/abc.jpg', { forma: 'sem_cartao' })).rejects.toThrow(SEM_RESPOSTA)
+      invoke.mockResolvedValue({ data: null, error: new Error('Relay Error invoking the Edge Function') })
+      await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow(SEM_RESPOSTA)
+    })
+
+    it.each([500, 502, 503, 504])('servidor fora do ar (status %i sem o JSON da função): o mesmo aviso de "sem resposta"', async (status) => {
+      http(semCorpo(status))
+      await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow(SEM_RESPOSTA)
+      http({ status, json: async () => ({ outra: 'coisa' }) } as unknown as Response)
+      const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
+      expect((e as Error).message).toBe(SEM_RESPOSTA)
+    })
+
+    it.each([400, 401, 403, 404, 409, 422])('o servidor respondeu %i sem corpo legível: "o servidor recusou" (repetir igual não resolve)', async (status) => {
+      http(semCorpo(status))
+      const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
+      expect((e as Error).message).toBe(RECUSOU)
+      http({ status, json: async () => ({ outra: 'coisa' }) } as unknown as Response)
+      await expect(criarAcesso({ login: 'joao', nome: 'João', papel: 'comprador', senha: '123456' })).rejects.toThrow(RECUSOU)
+    })
+
+    it('a mensagem em português que o servidor devolve no corpo continua igual (com qualquer status), e um erro desconhecido não é trocado', async () => {
+      for (const status of [400, 409, 503]) {
+        http({ status, json: async () => ({ erro: 'a soma dos itens não bate com o total do cupom' }) } as unknown as Response)
+        const e = await confirmarCupom(ID_CUPOM, itens).catch((x: unknown) => x)
+        expect((e as Error).message).toBe('a soma dos itens não bate com o total do cupom')
+      }
+      invoke.mockResolvedValue({ data: null, error: new Error('algo que eu não conheço') })
+      await expect(confirmarCupom(ID_CUPOM, itens)).rejects.toThrow('algo que eu não conheço')
+    })
   })
 
   it('subirFotoCupom sobe ao bucket cupons; "já existe" não é erro', async () => {
@@ -738,11 +780,12 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     ['mensagem "column ... does not exist"', { message: 'column cot_nfe.forma_pagamento does not exist' }],
   ])('migração ainda não aplicada (%s): cai para as colunas antigas e a aba segue funcionando', async (_n, erro) => {
     const falha = cadeia({ data: null, error: erro, status: 400 })
-    const falha2 = cadeia({ data: null, error: erro, status: 400 })  // o 2º degrau (sem a decisão do app) ainda tem as colunas novas: também falha
+    const falha2 = cadeia({ data: null, error: erro, status: 400 })  // o 2º degrau (sem o frete) e o 3º (sem a decisão do app) ainda têm as colunas novas: também falham
+    const falha3 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(antiga)
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(3)
+    expect(from).toHaveBeenCalledTimes(4)
     expect(falha.select.mock.calls[0][0]).toContain(COLUNA_NOVA)
     expect(antiga.select.mock.calls[0][0]).not.toContain('forma_pagamento')
     expect(antiga.select.mock.calls[0][0]).toContain('nf_sischef, itens')
@@ -753,9 +796,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('"Últimos lançamentos" (notasLancadas) tem o mesmo fallback', async () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
+      .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: [{ ...linha, situacao: 'lancada' }], error: null, status: 200 }))
     const r = await notasLancadas()
-    expect(from).toHaveBeenCalledTimes(3)
+    expect(from).toHaveBeenCalledTimes(4)
     expect(r[0]).toMatchObject({ situacao: 'lancada', lancamento_estado: null })
   })
 
@@ -897,8 +941,9 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     const erro = { code: '42703', message: 'column cot_nfe.descartada_em does not exist' }
     const falha = cadeia({ data: null, error: erro, status: 400 })
     const falha2 = cadeia({ data: null, error: erro, status: 400 })
+    const falha3 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(antiga)
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
     const r = await notasALancar()
     expect(falha.is).toHaveBeenCalledWith('descartada_em', null)
     expect(antiga.is).not.toHaveBeenCalled()
@@ -950,9 +995,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('só a migração da decisão do app (associacoes_app) ainda não aplicada: cai para as colunas SEM ela e mantém forma, estado, boletos e o filtro do descarte', async () => {
     const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
     const semDecisao = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', lancamento_estado: 'revisar', parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: '10.5' }] }], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
+    const falhaFrete = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
+    from.mockReturnValueOnce(falhaFrete).mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(from).toHaveBeenCalledTimes(3)
     expect(falha.select.mock.calls[0][0]).toContain('associacoes_app')
     const colunas = semDecisao.select.mock.calls[0][0] as string
     expect(colunas).not.toContain('associacoes_app')
@@ -961,6 +1007,32 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     expect(semDecisao.is).toHaveBeenCalledWith('descartada_em', null)                       // o descarte continua filtrando
     expect(r[0]).toMatchObject({ forma_pagamento: 'boleto', lancamento_estado: 'revisar', associacoes_app: null })
     expect(r[0].parcelas).toEqual([{ numero: '001', vencimento: '2026-11-05', valor: 10.5 }])
+  })
+
+  // A4 (13/11/2026): o frete gravado no Lançar (frete_valor + frete_tipo) não chegava à tela; ao reabrir, a nota voltava em "Sem frete"
+  it('A4: lê o frete gravado na nota (frete_valor como número, frete_tipo); sem frete = null', async () => {
+    const c = cadeia({ data: [
+      { ...linha, frete_valor: '475.00', frete_tipo: '1' },
+      { ...linha, chave: 'e'.repeat(44), frete_valor: null, frete_tipo: null },
+      { ...linha, chave: 'f'.repeat(44) },
+    ], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(c.select.mock.calls[0][0]).toContain('frete_valor, frete_tipo')
+    expect(r.map((n) => [n.frete_valor, n.frete_tipo])).toEqual([[475, '1'], [null, null], [null, null]])
+  })
+
+  it('A4: só a migração do frete ainda não aplicada: cai para as colunas SEM o frete e mantém a decisão do app', async () => {
+    const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.frete_valor does not exist' }, status: 400 })
+    const semFrete = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', associacoes_app: { '1': { produto_id: 7, produto_nome: 'X' } } }], error: null, status: 200 })
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(semFrete)
+    const r = await notasALancar()
+    expect(from).toHaveBeenCalledTimes(2)
+    const colunas = semFrete.select.mock.calls[0][0] as string
+    expect(colunas).not.toContain('frete_valor')
+    expect(colunas).toContain('associacoes_app')
+    expect(r[0]).toMatchObject({ frete_valor: null, frete_tipo: null })
+    expect(r[0].associacoes_app).toMatchObject({ '1': { produto_id: 7 } })
   })
 
   it('lê a decisão do app (associacoes_app): só as bem formadas, com o código como número; vazio, lista ou lixo = null', async () => {

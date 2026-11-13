@@ -116,6 +116,57 @@ describe('NotaSefaz com frete', () => {
     expect(m.lancarNota).toHaveBeenCalledWith(CHAVE_SP, 'boleto', undefined, { valor: 300, tipo: '1' })
   })
 
+  // A4 (13/11/2026): a nota relançada depois de um erro voltava em "Sem frete" e o relançamento ia sem o frete que já tinha sido confirmado
+  it('A4: nota que já tem frete gravado abre com "Com frete" marcado e o frete confirmado; o Lançar leva o mesmo frete', async () => {
+    m.notasALancar.mockResolvedValue([{ ...nota(), frete_valor: 300, frete_tipo: '2' }])
+    render(<NotaSefaz />)
+    await screen.findByTestId('nota-a-lancar')
+    expect(screen.getByTestId('com-frete')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('frete-confirmado')).toHaveTextContent('Frete confirmado: R$ 300,00 (19,79% da nota)')
+    expect(screen.queryByTestId('frete-pendente')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Lançar' }))
+    expect(screen.getByText(/com frete de R\$ 300,00/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    expect(m.lancarNota).toHaveBeenCalledWith(CHAVE_SP, 'boleto', undefined, { valor: 300, tipo: '2' })
+  })
+
+  it('A4: com o frete gravado na tela, "Mudar" abre o valor e o tipo que estavam gravados, e "Sem frete" tira o frete do lançamento', async () => {
+    m.notasALancar.mockResolvedValue([{ ...nota(), frete_valor: 300, frete_tipo: '2' }])
+    render(<NotaSefaz />)
+    await screen.findByTestId('nota-a-lancar')
+    await userEvent.click(screen.getByTestId('mudar-frete'))
+    expect(screen.getByTestId('valor-frete')).toHaveValue('300,00')
+    expect(screen.getByTestId('tipo-frete')).toHaveValue('2')
+    await userEvent.click(screen.getByTestId('sem-frete'))
+    await userEvent.click(screen.getByRole('button', { name: 'Lançar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    expect(m.lancarNota).toHaveBeenCalledWith(CHAVE_SP, 'boleto')
+  })
+
+  it('A4: frete gravado estragado (tipo que o SisChef não tem) não é levado adiante: a nota abre em "Sem frete"', async () => {
+    m.notasALancar.mockResolvedValue([{ ...nota(), frete_valor: 300, frete_tipo: '7' }])
+    render(<NotaSefaz />)
+    await screen.findByTestId('nota-a-lancar')
+    expect(screen.getByTestId('sem-frete')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByTestId('frete-confirmado')).not.toBeInTheDocument()
+  })
+
+  // R4 (revisão do PR 91): nota que não pode ser lançada agora não pode dizer "pronta para lançar com o frete" nem oferecer Mudar / Sem frete
+  it('R4: pedido aberto no SisChef com o frete (nota travada) e frete gravado: mostra só "Frete informado", sem botões', async () => {
+    m.notasALancar.mockResolvedValue([{
+      ...nota(), frete_valor: 300, frete_tipo: '1', lancamento_estado: 'erro',
+      lancamento_motivo: 'pedido 164117311 aberto na tela de pagamento com o frete de R$ 300,00 distribuído entre os itens; falta lançar o boleto do frete',
+    }])
+    render(<NotaSefaz />)
+    await screen.findByTestId('nota-a-lancar')
+    expect(screen.getByTestId('frete-informado')).toHaveTextContent('Frete informado: R$ 300,00')
+    expect(screen.queryByText(/pronta para lançar com o frete/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('frete-confirmado')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('mudar-frete')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sem-frete')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('com-frete')).not.toBeInTheDocument()
+  })
+
   it('"Sem frete" (o padrão) lança como sempre: o 4º argumento nem existe', async () => {
     render(<NotaSefaz />)
     await screen.findByTestId('nota-a-lancar')

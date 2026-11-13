@@ -1,4 +1,4 @@
-import { codigoUfDaChave, lerFrete, notaDeForaDoPara, ratearFrete, siglaDaChave, unidadesDoPacote } from '../../src/admin/freteRegras'
+import { codigoUfDaChave, freteGravado, lerFrete, notaDeForaDoPara, ratearFrete, siglaDaChave, unidadesDoPacote } from '../../src/admin/freteRegras'
 
 const CHAVE_SP = '35261008637193000106550010001207101371230333' // Tamarozzi (SP)
 const CHAVE_PA = '15261003995515011363550020000892841000892852' // Mateus (PA)
@@ -15,6 +15,24 @@ describe('estado do emitente pela chave da nota', () => {
     expect(notaDeForaDoPara(CHAVE_SP)).toBe(true)
     expect(notaDeForaDoPara(CHAVE_PA)).toBe(false)
     expect(notaDeForaDoPara('123')).toBe(false)
+  })
+})
+
+describe('freteGravado — o frete que já está gravado na nota (A4, 13/11/2026)', () => {
+  it('valor e tipo válidos: devolve o frete confirmado (o valor numeric pode chegar como texto)', () => {
+    expect(freteGravado(300, '1')).toEqual({ valor: 300, tipo: '1' })
+    expect(freteGravado('475.00', '2')).toEqual({ valor: 475, tipo: '2' })
+  })
+
+  it('sem frete gravado, valor que não é número maior que zero ou tipo que o SisChef não tem: null (a nota abre em "Sem frete")', () => {
+    expect(freteGravado(null, null)).toBeNull()
+    expect(freteGravado(undefined, undefined)).toBeNull()
+    expect(freteGravado(300, null)).toBeNull()
+    expect(freteGravado(null, '1')).toBeNull()
+    expect(freteGravado(0, '1')).toBeNull()
+    expect(freteGravado(-5, '1')).toBeNull()
+    expect(freteGravado('abc', '1')).toBeNull()
+    expect(freteGravado(300, '7')).toBeNull()
   })
 })
 

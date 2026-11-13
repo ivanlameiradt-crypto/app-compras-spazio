@@ -41,6 +41,17 @@ export const notaDeForaDoPara = (chave: string | null | undefined): boolean => {
 
 const round2 = (v: number): number => Math.round(v * 100) / 100
 
+/**
+ * O frete que JÁ ESTÁ gravado na nota (colunas frete_valor + frete_tipo, gravadas pelo "Lançar"), no formato do frete confirmado da tela; null = sem frete gravado.
+ * Só vale inteiro: valor maior que zero E um tipo que o SisChef tem. Qualquer outra coisa é tratada como "sem frete" (não levo adiante um frete estragado). A4, 13/11/2026.
+ */
+export function freteGravado(valor: unknown, tipo: unknown): { valor: number; tipo: string } | null {
+  if (valor == null || valor === '' || typeof tipo !== 'string') return null
+  const v = Number(valor)
+  if (!Number.isFinite(v) || !(v > 0) || !TIPOS_DE_FRETE.some((t) => t.valor === tipo)) return null
+  return { valor: round2(v), tipo }
+}
+
 /** O que o Ivan digita ("300", "300,00", "1.250,5", "1.250" = mil duzentos e cinquenta: regra de dinheiro de lib/regras.lerNumero) como valor do frete; só vale maior que zero. */
 export function lerFrete(texto: string): number | null {
   const n = lerDinheiro(texto)
