@@ -1,16 +1,18 @@
 import { aplicarNovaVersao, useNovaVersao } from '../lib/atualizacao'
 
 /**
- * Faixa "Há uma versão nova do app": aparece quando o app, EM USO, descobre que saiu versão nova (a troca automática só acontece na abertura e ao voltar do
- * fundo, para não apagar o que o Ivan está digitando). Tocar em Atualizar agora troca na hora, mantendo a tela em que ele está.
+ * Faixa discreta "Tem uma versão nova do app." + botão Atualizar. Regra do dono (13/11/2026): o app NUNCA recarrega sozinho com a pessoa trabalhando
+ * (ela pode estar digitando, lançando ou comprando): ele só avisa — ao voltar do fundo, com o app em uso e quando a internet volta — e a troca só acontece
+ * quando a pessoa CLICA em Atualizar (a tela em que ela está se mantém). A única troca sem clique é na abertura do app (lib/atualizacao.ts), e só se a resposta vier em até 3 s e a pessoa ainda não tiver mexido na página.
+ * role="status": o leitor de tela avisa sem tirar a pessoa do lugar onde está.
  */
 export default function AvisoNovaVersao() {
   const nova = useNovaVersao()
   if (!nova) return null
   return (
     <p className="faixa nova-versao" role="status" data-testid="aviso-nova-versao">
-      Há uma versão nova do app.{' '}
-      <button type="button" className="link" onClick={() => void aplicarNovaVersao(nova)}>Atualizar agora</button>
+      <span>Tem uma versão nova do app.</span>
+      <button type="button" className="link" onClick={() => void aplicarNovaVersao(nova)}>Atualizar</button>
     </p>
   )
 }

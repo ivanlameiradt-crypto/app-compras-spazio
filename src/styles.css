@@ -154,6 +154,10 @@ input[aria-invalid='true'] { border-color: var(--alerta); }
 .botao-arquivo input[type='file'] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; min-height: 0; padding: 0; border: 0; }
 .botao-arquivo:focus-within { outline: 3px solid var(--amarelo); outline-offset: 2px; box-shadow: 0 0 0 2px var(--preto); }
 .faixa { margin: 0 20px 12px; padding: 10px 14px; border-radius: 12px; background: var(--aviso-fundo); color: var(--aviso-texto); font-size: 16px; font-weight: 600; }
+/* Faixa "Tem uma versão nova do app." (13/11): texto e botão lado a lado, discreta; as margens respeitam o recorte/cantos do celular (viewport-fit=cover), principalmente com o aparelho deitado. */
+.faixa.nova-versao { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; padding-top: 2px; padding-bottom: 2px; margin-left: max(20px, env(safe-area-inset-left)); margin-right: max(20px, env(safe-area-inset-right)); }
+/* botão da faixa: área de toque de pelo menos 44 px (a faixa ficou com pouco padding vertical para continuar discreta) */
+.faixa.nova-versao .link { min-height: 44px; min-width: 44px; padding: 8px 12px; justify-content: center; }
 .erro { color: var(--alerta); }
 .aviso { color: var(--suave); font-size: 16px; }
 .cabecalho { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 8px 0; }
