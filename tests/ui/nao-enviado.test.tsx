@@ -159,6 +159,24 @@ describe('Correção de cupom marca "tenho dados não enviados" (B4)', () => {
     expect(temNaoEnviado()).toBe(false)
     unmount()
   })
+
+  // Revisão do PR 92 (S6): reenviou com sucesso e a caixa ainda está na tela (a lista de cima ainda não recarregou): não há mais nada a perder.
+  it('reenviar com sucesso desmarca, mesmo com a caixa ainda montada', async () => {
+    m.confirmarCupom.mockResolvedValue({ cupom_id: 'c1', estado: 'PENDENTE', resumo: 'enviado para lançar', disparo_ok: true })
+    const aoReenviar = vi.fn()
+    const { unmount } = render(<CorrigirCupom cupom={CUPOM} catalogo={CATALOGO} catalogoFalhou={false} aoReenviar={aoReenviar} />)
+    await userEvent.click(screen.getByTestId('item-cabecalho'))
+    await userEvent.type(screen.getByLabelText('Produto do SisChef'), 'tomate')
+    await userEvent.click(await screen.findByRole('button', { name: /TOMATE ITALIANO OU SALADETE/ }))
+    const confirmarItem = screen.queryByRole('button', { name: 'Confirmar este item' })
+    if (confirmarItem) await userEvent.click(confirmarItem)
+    expect(temNaoEnviado()).toBe(true)
+    await userEvent.click(screen.getByTestId('reenviar'))
+    await waitFor(() => expect(aoReenviar).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('corrigir-cupom')).toBeInTheDocument()       // a caixa continua na tela
+    expect(temNaoEnviado()).toBe(false)
+    unmount()
+  })
 })
 
 // Revisão do PR 92 (S5): o cadastro de fornecedor aberto em preenchimento também é coisa digitada que se perde ao trocar de aba.
