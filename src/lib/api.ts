@@ -1293,8 +1293,8 @@ const lerCupom = (c: CupomRecente): CupomRecente => ({
 
 /** Os estados que ainda pedem alguma coisa: parado esperando o Ivan (REVISAR) ou na fila do robô (PENDENTE, PROCESSANDO). Estes aparecem SEMPRE na lista, por mais antigos que sejam. */
 const ESTADOS_EM_ABERTO: CupomRecente['estado'][] =['REVISAR', 'PENDENTE', 'PROCESSANDO']
-/** Teto de segurança da leitura dos em aberto (num dia normal são poucos; o teto só evita uma resposta gigante se algo sair do normal). */
-const LIMITE_EM_ABERTO = 200
+/** Teto da leitura dos em aberto (num dia normal são poucos). Baixo de propósito: a lista se relê a cada 30 s enquanto há fila e cada cupom vem completo (itens): teto alto gastaria a franquia de tráfego (Egress) do Supabase. */
+const LIMITE_EM_ABERTO = 50
 
 /**
  * A lista de envios de UMA origem (13/11/2026): os `limite` últimos MAIS todos os parados e os da fila, sem repetir, do mais novo ao mais antigo.

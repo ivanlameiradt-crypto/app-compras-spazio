@@ -615,6 +615,14 @@ describe('Sub-fase 3: cupom', () => {
       const r = await cuponsRecentes(2)
       expect(r.map((c) => c.id)).toEqual(['n2', 'rn', 'v1'])
     })
+
+    // Revisão do PR 92 (S3): a lista se atualiza sozinha a cada 30 s enquanto há fila; o teto da 2ª leitura é baixo para não gastar a franquia de tráfego do Supabase.
+    it('a leitura dos em aberto tem teto de 50 linhas', async () => {
+      const ultimos = consulta({ data: [], error: null }), abertos = consulta({ data: [], error: null })
+      from.mockReturnValueOnce(ultimos).mockReturnValueOnce(abertos)
+      await cuponsRecentes()
+      expect(abertos.limit).toHaveBeenCalledWith(50)
+    })
   })
 
   it('cuponsExcluidos: só EXCLUIDO da origem pedida, o mais novo primeiro, com o motivo e a data; valor_a_pagar vira número', async () => {
