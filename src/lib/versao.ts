@@ -15,13 +15,14 @@ export function precisaAtualizar(
 
 /** De onde veio a conferência de versão: abertura do app, volta do fundo (depois de um tempo longe), checagem periódica com o app em uso, ou o botão Atualizar. */
 export type OrigemConferencia = 'abertura' | 'voltou' | 'periodica' | 'manual'
-/** O que fazer com a versão nova: nada, trocar já (recarrega) ou só AVISAR (faixa "Atualizar agora"; o Ivan escolhe a hora). */
+/** O que fazer com a versão nova: nada, trocar já (recarrega) ou só AVISAR (faixa "Tem uma versão nova do app" + botão Atualizar; a pessoa escolhe a hora). */
 export type AcaoVersaoNova = 'nada' | 'aplicar' | 'avisar'
 
 /**
- * Troca sozinha só quando é seguro: na abertura (ainda não digitou nada), ao voltar do fundo depois de um tempo e quando o Ivan toca em Atualizar. Com o app
- * EM USO (checagem periódica) a troca no meio do trabalho podia apagar o que ele estava digitando: aí só aparece a faixa "Há uma versão nova — Atualizar
- * agora". A trava anti-loop continua: versão para a qual já se tentou trocar e não assentou não é repetida (nem avisada), salvo no botão (pedido explícito).
+ * Regra do dono (13/11/2026): o app NUNCA recarrega sozinho com a pessoa trabalhando, para ninguém perder o que está digitando, um lançamento ou uma
+ * compra em andamento. Só troca sozinho na ABERTURA (a página acabou de abrir, nada foi digitado: decisão de 07/10 de ele não precisar "sair e entrar")
+ * e quando a pessoa CLICA em Atualizar (botão do topo ou da faixa). Ao voltar do fundo e com o app em uso (checagem periódica) só aparece a faixa.
+ * A trava anti-loop continua: versão para a qual já se tentou trocar e não assentou não é repetida (nem avisada), salvo no botão (pedido explícito).
  */
 export function acaoParaVersaoNova(
   origem: OrigemConferencia,
@@ -32,5 +33,5 @@ export function acaoParaVersaoNova(
   if (!versaoServidor || versaoServidor === versaoRodando) return 'nada'
   if (origem === 'manual') return 'aplicar'
   if (versaoServidor === jaTentou) return 'nada'
-  return origem === 'periodica' ? 'avisar' : 'aplicar'
+  return origem === 'abertura' ? 'aplicar' : 'avisar'
 }
