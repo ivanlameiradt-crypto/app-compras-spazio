@@ -151,6 +151,22 @@ describe('NotaSefaz com frete', () => {
     expect(screen.queryByTestId('frete-confirmado')).not.toBeInTheDocument()
   })
 
+  // R4 (revisão do PR 91): nota que não pode ser lançada agora não pode dizer "pronta para lançar com o frete" nem oferecer Mudar / Sem frete
+  it('R4: pedido aberto no SisChef com o frete (nota travada) e frete gravado: mostra só "Frete informado", sem botões', async () => {
+    m.notasALancar.mockResolvedValue([{
+      ...nota(), frete_valor: 300, frete_tipo: '1', lancamento_estado: 'erro',
+      lancamento_motivo: 'pedido 164117311 aberto na tela de pagamento com o frete de R$ 300,00 distribuído entre os itens; falta lançar o boleto do frete',
+    }])
+    render(<NotaSefaz />)
+    await screen.findByTestId('nota-a-lancar')
+    expect(screen.getByTestId('frete-informado')).toHaveTextContent('Frete informado: R$ 300,00')
+    expect(screen.queryByText(/pronta para lançar com o frete/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('frete-confirmado')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('mudar-frete')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sem-frete')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('com-frete')).not.toBeInTheDocument()
+  })
+
   it('"Sem frete" (o padrão) lança como sempre: o 4º argumento nem existe', async () => {
     render(<NotaSefaz />)
     await screen.findByTestId('nota-a-lancar')

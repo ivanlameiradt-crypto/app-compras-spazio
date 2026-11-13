@@ -21,6 +21,8 @@ interface Props {
   confirmado: FreteConfirmado | null
   aoMudar: (frete: FreteConfirmado | null) => void
   desabilitado?: boolean
+  /** A nota NÃO pode ser lançada agora (o robô está nela, ou o pedido ficou aberto no SisChef): o frete que foi junto aparece só como informação, sem "Mudar" nem "Sem frete". */
+  soLeitura?: boolean
 }
 
 const pct = (v: number): string => `${v.toFixed(2).replace('.', ',')}%`
@@ -33,7 +35,7 @@ function PrecoPorUnidadeSolta({ item }: { item: { descricao: string; precoFinal:
   return <b data-testid="preco-por-unidade">Preço de cada unidade (pacote de {n}): {unitario(item.precoFinal / n)} <span className="sub">= {unitario(item.precoFinal)} ÷ {n}</span></b>
 }
 
-export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTrocarModo, confirmado, aoMudar, desabilitado = false }: Props) {
+export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTrocarModo, confirmado, aoMudar, desabilitado = false, soLeitura = false }: Props) {
   const [texto, setTexto] = useState(confirmado ? confirmado.valor.toFixed(2).replace('.', ',') : '')
   const [tipo, setTipo] = useState(confirmado?.tipo ?? TIPO_DE_FRETE_PADRAO)
   const [erro, setErro] = useState('')
@@ -53,6 +55,16 @@ export default function FreteDaNota({ chave, valorNota, itens, comFrete, aoTroca
     if (valor === null) { setErro('Digite o valor do frete (maior que zero).'); return }
     setErro('')
     aoMudar({ valor, tipo })
+  }
+
+  // Nota travada com frete: nada de "pronta para lançar" nem de botões que não valem agora (revisão do PR 91)
+  if (soLeitura && confirmado) {
+    return (
+      <div className="frete-nota" data-testid="frete-nota">
+        <div className="grupo">Frete</div>
+        <p className="sub" data-testid="frete-informado">Frete informado: <b>{formatarReais(confirmado.valor)}</b></p>
+      </div>
+    )
   }
 
   return (

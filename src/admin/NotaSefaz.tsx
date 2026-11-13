@@ -650,7 +650,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}
       {bloqueios.map((b) => <div key={b} className={b === AVISO_FALTA_CONVERSAO ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
 
-      <FreteDaNota chave={nota.chave} valorNota={nota.valor_nf} itens={itensParaFrete(nota)} comFrete={comFrete} aoTrocarModo={(v) => { setComFrete(v); if (!v) setFrete(null) }} confirmado={frete} aoMudar={setFrete} desabilitado={enviando || confirmando} />
+      <FreteDaNota chave={nota.chave} valorNota={nota.valor_nf} itens={itensParaFrete(nota)} comFrete={comFrete} aoTrocarModo={(v) => { setComFrete(v); if (!v) setFrete(null) }} confirmado={frete} aoMudar={setFrete} desabilitado={enviando || confirmando} soLeitura={robotOuMetade} />
       {fretePendente && <div className="amarelo" data-testid="frete-pendente">Confirme o frete (ou marque “Sem frete”) para poder lançar.</div>}
 
       {soEstoque ? (
