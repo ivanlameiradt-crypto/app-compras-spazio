@@ -405,10 +405,10 @@ describe('CompraAvulsa — compra repetida (E5)', () => {
   })
 
   it('o reenvio "é outra compra" que também falha (sem internet): mostra o erro e o aviso continua à mão para tentar de novo', async () => {
-    m.enviarCompraAvulsa.mockRejectedValueOnce(new Error(FRASE)).mockRejectedValueOnce(new Error('Failed to send a request'))
+    m.enviarCompraAvulsa.mockRejectedValueOnce(new Error(FRASE)).mockRejectedValueOnce(new Error('Sem resposta do servidor'))
     await enviarAteRecusar()
     await userEvent.click(within(await screen.findByTestId('aviso-repetida-avulsa')).getByRole('button', { name: 'É outra compra: lançar mesmo assim' }))
-    expect(await screen.findByTestId('erro-avulsa')).toHaveTextContent('Failed to send a request')
+    expect(await screen.findByTestId('erro-avulsa')).toHaveTextContent('Sem resposta do servidor')
     expect(screen.getByTestId('aviso-repetida-avulsa')).toBeInTheDocument()
   })
 
