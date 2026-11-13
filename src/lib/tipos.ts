@@ -508,6 +508,9 @@ export interface NotaSefazLista {
   descartada_motivo?: string | null
   /** Decisões do Ivan no app para itens sem produto, por número do item na NF ("1", "2"…). null/ausente = nenhuma. Migração 20261210000001. */
   associacoes_app?: Record<string, AssociacaoApp> | null
+  /** O frete que foi junto no último "Lançar" desta nota (os dois vêm juntos; null/ausente = sem frete). Migração 20261218000001. */
+  frete_valor?: number | null
+  frete_tipo?: string | null
 }
 export type EstadoQtdNf = 'sem_nf' | 'igual' | 'a_mais' | 'a_menos'
 export type EstadoPrecoNf = 'sem_nf' | 'igual' | 'acima' | 'abaixo' | 'confira' | 'nao_conferivel'

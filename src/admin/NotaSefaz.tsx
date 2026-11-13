@@ -14,7 +14,7 @@ import { cnpjDaChave, formatarCnpj, fornecedorNovoNaNota, nomeDoFornecedor } fro
 import CadastrarFornecedor from './CadastrarFornecedor'
 import { unidadeDoProduto } from './unidadeEstoque'
 import FreteDaNota, { type FreteConfirmado } from './FreteDaNota'
-import type { ItemParaRateio } from './freteRegras'
+import { freteGravado, type ItemParaRateio } from './freteRegras'
 import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
@@ -460,8 +460,10 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [datasSemanais, setDatasSemanais] = useState<string[]>([])
   const [editandoData, setEditandoData] = useState(false)
   // Frete (pedido do Ivan, 09/10): "Com frete" escolhido e o frete já confirmado; vai junto com o Lançar. Com frete escolhido e ainda não confirmado, o Lançar fica travado.
-  const [comFrete, setComFrete] = useState(false)
-  const [frete, setFrete] = useState<FreteConfirmado | null>(null)
+  // Nota que já tem frete gravado (foi lançada com frete e voltou para a fila) abre com ele marcado e confirmado, à vista: antes abria em "Sem frete" e o
+  // relançamento ia sem o frete (A4, 13/11/2026). Vale só na abertura: depois manda o que o Ivan escolher na tela ("Mudar" ou "Sem frete").
+  const [frete, setFrete] = useState<FreteConfirmado | null>(() => freteGravado(nota.frete_valor, nota.frete_tipo))
+  const [comFrete, setComFrete] = useState(frete !== null)
   const fretePendente = comFrete && frete === null
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
   // Itens cujo preço por unidade de estoque (total da linha ÷ o que entra no estoque) não se parece com o das últimas compras do produto (pedido do Ivan, 29/10/2026): só avisa, nunca trava.
@@ -648,7 +650,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {/* falta só a conversão (produto já confirmado no app) é amarelo: resolve-se aqui na caixa; o resto é vermelho */}
       {bloqueios.map((b) => <div key={b} className={b === AVISO_FALTA_CONVERSAO ? 'amarelo' : 'erro'} data-testid="bloqueio-nota">{b}</div>)}
 
-      <FreteDaNota chave={nota.chave} valorNota={nota.valor_nf} itens={itensParaFrete(nota)} comFrete={comFrete} aoTrocarModo={(v) => { setComFrete(v); if (!v) setFrete(null) }} confirmado={frete} aoMudar={setFrete} desabilitado={enviando || confirmando} />
+      <FreteDaNota chave={nota.chave} valorNota={nota.valor_nf} itens={itensParaFrete(nota)} comFrete={comFrete} aoTrocarModo={(v) => { setComFrete(v); if (!v) setFrete(null) }} confirmado={frete} aoMudar={setFrete} desabilitado={enviando || confirmando} soLeitura={robotOuMetade} />
       {fretePendente && <div className="amarelo" data-testid="frete-pendente">Confirme o frete (ou marque “Sem frete”) para poder lançar.</div>}
 
       {soEstoque ? (
@@ -815,6 +817,8 @@ export default function NotaSefaz() {
   const [seguidas, setSeguidas] = useState<Record<string, number>>({}) // notas seguidas em boleto por CNPJ (fornecedor aprendido)
   const [falha, setFalha] = useState(false)
   const [carregando, setCarregando] = useState(true)
+  const pedidoDeCarga = useRef(0) // número da carga mais nova das notas
+  const cargaAVistaPendente = useRef(false) // há uma carga não silenciosa (a primeira ou a do botão) ainda sem resposta aplicada
   const [expandido, setExpandido] = useState<string | null>(null) // qual lançada está aberta mostrando o detalhe
   // Lista de insumos do app (itens_semana) para escolher o produto de um item sem produto. Só é lida quando alguma nota tem esse tipo de item.
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
@@ -851,17 +855,25 @@ export default function NotaSefaz() {
 
   // Devolve a promessa para o "Lançar" esperar a lista nova (a nota passa a 'lancando') antes de liberar o botão.
   // `silencioso` (releitura automática / depois do Lançar): uma falha passageira não esconde a lista que já está na tela.
+  // Cada carga leva um número; só a MAIS NOVA mexe na tela (revisão do PR 91). Sem isso, a resposta atrasada de uma carga antiga destravava o "Tentar de novo"
+  // no meio da carga do botão, ou a falha atrasada dela escondia a lista que a releitura mais nova já tinha trazido.
   function carregar(silencioso = false): Promise<void> {
-    if (!silencioso) setCarregando(true)
+    const pedido = ++pedidoDeCarga.current
+    const aMaisNova = (): boolean => pedido === pedidoDeCarga.current
+    if (!silencioso) { setCarregando(true); cargaAVistaPendente.current = true }
     // O padrão por fornecedor é só uma sugestão: se falhar, a tela segue sem ele (Boleto).
     const padrao = Promise.resolve(api.formasPadraoPorFornecedor()).catch(() => ({}))
     const aprendidos = Promise.resolve(api.lancamentosSeguidosEmBoleto()).catch(() => ({}))
     // As descartadas também são só um complemento: se a leitura delas falhar, a lista de notas a lançar segue normal.
     const descartadasLidas = Promise.resolve(api.notasDescartadas()).catch(() => [] as NotaSefazLista[])
     return Promise.all([api.notasALancar(), api.notasLancadas(), padrao, aprendidos, descartadasLidas])
-      .then(([a, l, p, s, d]) => { setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setDescartadas(d ?? []); setFalha(false) })
-      .catch(() => { if (!silencioso) setFalha(true) })
-      .finally(() => setCarregando(false))
+      .then(([a, l, p, s, d]) => {
+        if (!aMaisNova()) return
+        setALancar(a); setLancadas(l); setPadroes(p ?? {}); setSeguidas(s ?? {}); setDescartadas(d ?? []); setFalha(false)
+      })
+      // a silenciosa que tomou o lugar de uma carga à vista (a primeira, ou a do botão) herda o aviso de falha dela: senão a tela ficaria vazia, sem aviso
+      .catch(() => { if (aMaisNova() && (!silencioso || cargaAVistaPendente.current)) setFalha(true) })
+      .finally(() => { if (aMaisNova()) { cargaAVistaPendente.current = false; setCarregando(false) } })
   }
   useEffect(() => { void carregar() }, [])
 
@@ -954,7 +966,13 @@ export default function NotaSefaz() {
       <p className="sub">Modo: eu disparo — você confere e manda lançar (o automático vem depois).</p>
 
       <div className="grupo">Notas a lançar</div>
-      {falha && <p className="erro" role="alert">Não consegui carregar as notas.</p>}
+      {falha && (
+        <p className="erro" role="alert">
+          Não consegui carregar as notas.{' '}
+          {/* A5 (13/11/2026): antes o aviso não tinha saída; o botão refaz a carga (travado enquanto ela roda) */}
+          <button type="button" className="link" disabled={carregando} onClick={() => { void carregar() }}>Tentar de novo</button>
+        </p>
+      )}
       {!falha && (aLancar.length === 0
         ? <p className="sub">{carregando ? 'Carregando…' : 'Nenhuma nota pendente da SEFAZ agora.'}</p>
         : (
