@@ -50,7 +50,13 @@ export async function entrarComSenha(login: string, senha: string): Promise<void
   if (error) throw new Error(error.message)
 }
 
-/** Extrai a mensagem que a Edge Function devolveu no corpo (JSON) do erro, quando dá pra ler. */
+/** Os textos crus (em inglês) do supabase-js quando a Edge Function não devolveu a resposta dela: o pedido nem saiu (sem internet), o relay falhou ou veio um status de erro sem o JSON da função. */
+const SEM_RESPOSTA_DA_FUNCAO = /Failed to send a request to the Edge Function|Relay Error invoking the Edge Function|Edge Function returned a non-2xx status code/i
+const TEXTO_SEM_RESPOSTA = 'Sem internet ou servidor fora do ar. Nada foi perdido: toque de novo.'
+/**
+ * Extrai a mensagem que a Edge Function devolveu no corpo (JSON) do erro, quando dá pra ler: essa já vem em português e passa como está.
+ * Sem ela (sem internet, servidor fora do ar), o texto cru em inglês do supabase-js vira um aviso em português (A3, 13/11/2026).
+ */
 async function mensagemDaFuncao(erro: unknown): Promise<string> {
   const contexto = (erro as { context?: Response }).context
   if (contexto && typeof contexto.json === 'function') {
@@ -59,7 +65,9 @@ async function mensagemDaFuncao(erro: unknown): Promise<string> {
       if (corpo && typeof corpo.erro === 'string') return corpo.erro
     } catch { /* corpo não era JSON: segue com a mensagem padrão */ }
   }
-  return erro instanceof Error ? erro.message : String(erro)
+  const cru = (erro as { message?: unknown } | null)?.message
+  const texto = erro instanceof Error ? erro.message : typeof cru === 'string' ? cru : String(erro)
+  return SEM_RESPOSTA_DA_FUNCAO.test(texto) ? TEXTO_SEM_RESPOSTA : texto
 }
 
 /**
