@@ -8,6 +8,8 @@
 --   3) cot_nfe_associar_lembrado(p_chave, p_n, p_produto_id, p_conversao): a gravação AUTOMÁTICA do app. Mesmas travas de cot_nfe_associar, grava com
 --      origem 'lembrado' e SÓ se o item ainda não tem decisão e não foi recusado (nunca sobrescreve). true = gravou; false = não precisou.
 --   4) cot_nfe_recusar_lembrado(p_chave, p_n): guarda o n em lembrado_recusado (o Ivan trocou ou desfez a associação automática).
+--   5) cot_nfe_lembrado_calcular(p_cnpj): a consulta INTERNA usada por 2 e 3 (ninguém executa direto: sem grant). A 3 se defende sozinha: só grava se o produto,
+--      a conversão e a unidade forem os lembrados e o preço por unidade da nota estiver entre 0,8× e 1,2× o preco_ref (a mesma faixa do robô).
 --
 -- POR QUÊ
 --   A descrição do item muda a cada compra (ex.: OLIVEIRA E OLIVEIRA, CÓD. FOR 0009085, "...SH 32,7000" / "SH 35,1600"), então o SisChef não reconhece o item e a
@@ -18,7 +20,7 @@
 --   • Só entra decisão do IVAN: com produto_id e origem que NÃO é 'sischef' (só conversão) nem 'lembrado' (feita sozinha pelo app).
 --   • Só devolve a linha se TODAS as decisões concordam no MESMO produto_id e na MESMA conversão (sem conversão = sem conversão). Divergiu = nada.
 --   • preco_ref = total da linha ÷ quantidade da nota (itens[].valor ÷ itens[].qtd, 4 casas) da decisão mais recente; sem os dois = null. Mesma conta do robô.
---   • unidade = a unidade do produto gravada na decisão mais recente. ultima_em = lancada_em da nota mais recente (sem lancada_em = null; nunca outra data).
+--   • vezes = quantas NOTAS (chaves distintas). unidade = a unidade do produto da decisão mais recente, em maiúsculas. ultima_em = lancada_em da nota mais recente (sem lancada_em = null; nunca outra data).
 --   • CNPJ da nota = coalesce(cnpj_emitente, substr(chave, 7, 14)), como a tela.
 --
 -- QUEM FAZ O QUÊ: as três funções são do admin logado (exigir_admin); executam só para authenticated.
@@ -31,31 +33,26 @@ alter table public.cot_nfe
 
 grant select on public.cot_nfe to service_role;
 
-create or replace function public.cot_nfe_produto_lembrado(p_cnpj text) returns jsonb
-language plpgsql stable security definer set search_path = public as $$
-declare v_cnpj text;
-begin
-  perform exigir_admin();
-  v_cnpj := regexp_replace(coalesce(p_cnpj, ''), '[^0-9]', '', 'g');
-  if v_cnpj !~ '^[0-9]{14}$' then
-    raise exception 'CNPJ inválido: informe os 14 dígitos do emitente';
-  end if;
-  return coalesce((
+create or replace function public.cot_nfe_lembrado_calcular(p_cnpj text) returns jsonb
+language sql stable set search_path = public as $$
+  select coalesce((
+
     with decisoes as (
       select btrim((regexp_match(coalesce(it.e ->> 'descricao', ''), '^\s*C[OÓ]D\.?\s*FOR\.?:?\s*(\S+)', 'i'))[1]) as cod_forn,
              upper(btrim(coalesce(it.e ->> 'unidade_sischef', ''))) as unidade_nota,
              (d.v ->> 'produto_id')::bigint as produto_id,
              nullif(btrim(coalesce(d.v ->> 'produto_nome', '')), '') as produto_nome,
-             nullif(lower(btrim(coalesce(d.v ->> 'unidade', ''))), '') as unidade,
+             nullif(upper(btrim(coalesce(d.v ->> 'unidade', ''))), '') as unidade,
              case when jsonb_typeof(d.v -> 'conversao') = 'number' and (d.v ->> 'conversao')::numeric > 0 then (d.v ->> 'conversao')::numeric end as conversao,
              case when jsonb_typeof(it.e -> 'valor') = 'number' and jsonb_typeof(it.e -> 'qtd') = 'number'
                        and (it.e ->> 'valor')::numeric > 0 and (it.e ->> 'qtd')::numeric > 0
                   then round((it.e ->> 'valor')::numeric / (it.e ->> 'qtd')::numeric, 4) end as preco,
-             n.lancada_em as em
+             n.lancada_em as em,
+             n.chave as chave
         from cot_nfe n
         cross join lateral jsonb_each(coalesce(n.associacoes_app, '{}'::jsonb)) as d(k, v)
         cross join lateral (select t.e from jsonb_array_elements(coalesce(n.itens, '[]'::jsonb)) as t(e) where t.e ->> 'n' = d.k limit 1) as it
-       where coalesce(n.cnpj_emitente, substr(n.chave, 7, 14)) = v_cnpj
+       where coalesce(n.cnpj_emitente, substr(n.chave, 7, 14)) = p_cnpj
          and n.situacao = 'lancada'
          and jsonb_typeof(d.v) = 'object'
          and lower(btrim(coalesce(d.v ->> 'origem', ''))) not in ('sischef', 'lembrado')
@@ -68,7 +65,7 @@ begin
              (array_agg(unidade order by em desc nulls last))[1] as unidade,
              (array_agg(preco order by em desc nulls last))[1] as preco_ref,
              min(conversao) as conversao,
-             count(*) as vezes,
+             count(distinct chave) as vezes,
              max(em) as ultima_em
         from decisoes
        where cod_forn is not null and cod_forn <> '' and unidade_nota <> ''
@@ -80,7 +77,19 @@ begin
                                         'unidade', g.unidade, 'conversao', g.conversao, 'preco_ref', g.preco_ref, 'vezes', g.vezes, 'ultima_em', g.ultima_em)
                      order by g.cod_forn collate "C", g.unidade_nota collate "C")
       from grupos g
-  ), '[]'::jsonb);
+  ), '[]'::jsonb)
+$$;
+
+create or replace function public.cot_nfe_produto_lembrado(p_cnpj text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v_cnpj text;
+begin
+  perform exigir_admin();
+  v_cnpj := regexp_replace(coalesce(p_cnpj, ''), '[^0-9]', '', 'g');
+  if v_cnpj !~ '^[0-9]{14}$' then
+    raise exception 'CNPJ inválido: informe os 14 dígitos do emitente';
+  end if;
+  return cot_nfe_lembrado_calcular(v_cnpj);
 end $$;
 
 create or replace function public.cot_nfe_associar_lembrado(p_chave text, p_n integer, p_produto_id bigint, p_conversao numeric) returns boolean
@@ -92,6 +101,8 @@ declare
   v_unidade text;
   v_depois jsonb;
   v_planilha text;
+  v_lemb jsonb;
+  v_preco numeric;
 begin
   perform exigir_admin();
   if p_produto_id is null then raise exception 'informe o produto'; end if;
@@ -130,6 +141,22 @@ begin
   select lower(pl.unidade) into v_planilha from produto_planilha pl where pl.produto_id = p_produto_id;
   if v_planilha is not null then v_unidade := v_planilha; end if;
 
+  select l.e into v_lemb
+    from jsonb_array_elements(cot_nfe_lembrado_calcular(coalesce(v_nf.cnpj_emitente, substr(v_nf.chave, 7, 14)))) as l(e)
+   where l.e ->> 'cod_forn' = btrim((regexp_match(coalesce(v_item ->> 'descricao', ''), '^\s*C[OÓ]D\.?\s*FOR\.?:?\s*(\S+)', 'i'))[1])
+     and l.e ->> 'unidade_nota' = upper(btrim(coalesce(v_item ->> 'unidade_sischef', '')))
+   limit 1;
+  if v_lemb is null then return false; end if;
+  if (v_lemb ->> 'produto_id')::bigint <> p_produto_id then return false; end if;
+  if (v_lemb ->> 'conversao')::numeric is distinct from p_conversao then return false; end if;
+  if coalesce(v_lemb ->> 'unidade', '') = '' or v_lemb ->> 'unidade' <> upper(btrim(coalesce(v_unidade, ''))) then return false; end if;
+  if jsonb_typeof(v_item -> 'valor') <> 'number' or jsonb_typeof(v_item -> 'qtd') <> 'number'
+     or (v_item ->> 'valor')::numeric <= 0 or (v_item ->> 'qtd')::numeric <= 0 or coalesce((v_lemb ->> 'preco_ref')::numeric, 0) <= 0 then
+    return false;
+  end if;
+  v_preco := (v_item ->> 'valor')::numeric / (v_item ->> 'qtd')::numeric;
+  if v_preco < 0.8 * (v_lemb ->> 'preco_ref')::numeric or v_preco > 1.2 * (v_lemb ->> 'preco_ref')::numeric then return false; end if;
+
   v_nome := regexp_replace(btrim(v_nome), '\s+', ' ', 'g');
   v_depois := jsonb_build_object('produto_id', p_produto_id, 'produto_nome', v_nome, 'unidade', v_unidade, 'origem', 'lembrado',
                                  'conversao', p_conversao, 'por', email_atual(), 'em', cot_agora());
@@ -152,6 +179,7 @@ begin
   update cot_nfe set lembrado_recusado = coalesce(lembrado_recusado, '[]'::jsonb) || to_jsonb(p_n), atualizado_em = cot_agora() where chave = p_chave;
 end $$;
 
+revoke execute on function public.cot_nfe_lembrado_calcular(text) from public, anon, authenticated;
 revoke execute on function public.cot_nfe_produto_lembrado(text) from public, anon, authenticated;
 grant execute on function public.cot_nfe_produto_lembrado(text) to authenticated;
 revoke execute on function public.cot_nfe_associar_lembrado(text, integer, bigint, numeric) from public, anon, authenticated;

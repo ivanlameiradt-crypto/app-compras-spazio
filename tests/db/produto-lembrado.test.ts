@@ -38,8 +38,10 @@ const ler = async (db: PGlite, cnpj = CNPJ, quem = ADMIN) => (await como(db, que
 const autoAssociar = async (db: PGlite, chave: string, n = 1, produto = 101, conv: number | null = 12, quem = ADMIN) =>
   (await como(db, quem, 'select cot_nfe_associar_lembrado($1, $2, $3, $4) as r', [chave, n, produto, conv]))[0].r
 const recusar = (db: PGlite, chave: string, n = 1, quem = ADMIN) => como(db, quem, 'select cot_nfe_recusar_lembrado($1, $2)', [chave, n])
-const insumo = (db: PGlite) => db.exec(`insert into semanas (data_referencia, status) values ('2026-11-09', 'em_compra');
-  insert into itens_semana (semana_id, produto_id, produto, bebida, unidade, estoque, situacao, incluido) select id, 101, 'GUARANA DIET LATA', true, 'un', 1, 'Repor', true from semanas`)
+const insumo = (db: PGlite, produto = 101, unidade = 'un') => db.exec(`insert into semanas (data_referencia, status) values ('2026-11-09', 'em_compra') on conflict do nothing;
+  insert into itens_semana (semana_id, produto_id, produto, bebida, unidade, estoque, situacao, incluido) select id, ${produto}, 'GUARANA DIET LATA', true, '${unidade}', 1, 'Repor', true from semanas limit 1`)
+/** Uma nota LANÇADA em que o Ivan escolheu o produto 101 × 12 (37,50 por CX): é o que o banco lembra. */
+const lembrar = (db: PGlite) => nota(db, { itens: [GUARANA('0', { valor: 75, qtd: 2 })], assoc: DEC(12, 101, 'lista', 'un') })
 const assocDe = async (db: PGlite, chave: string) => (await db.query<{ a: Record<string, Record<string, unknown>> | null; r: number[] | null }>('select associacoes_app a, lembrado_recusado r from cot_nfe where chave = $1', [chave])).rows[0]
 
 describe('cot_nfe_produto_lembrado', () => {
@@ -49,7 +51,7 @@ describe('cot_nfe_produto_lembrado', () => {
     await nota(db, { itens: [GUARANA('35,1600', { valor: 75, qtd: 2 })], assoc: DEC(), lancada: '2026-11-08T15:00:00Z' })
     const r = await ler(db)
     expect(r).toHaveLength(1)
-    expect(r[0]).toMatchObject({ cod_forn: '0009085', unidade_nota: 'CX', produto_id: 3324211, produto_nome: 'GUARANÁ DIET LATA', unidade: 'un', conversao: 12, preco_ref: 37.5, vezes: 2 })
+    expect(r[0]).toMatchObject({ cod_forn: '0009085', unidade_nota: 'CX', produto_id: 3324211, produto_nome: 'GUARANÁ DIET LATA', unidade: 'UN', conversao: 12, preco_ref: 37.5, vezes: 2 })
     expect(new Date(r[0].ultima_em).toISOString()).toBe('2026-11-08T15:00:00.000Z')
   })
   it('só uma nota lançada já vale; sem valor ou quantidade na linha o preço fica nulo', async () => {
@@ -137,10 +139,72 @@ describe('cot_nfe_produto_lembrado', () => {
   })
 })
 
+describe('cot_nfe_associar_lembrado se defende sozinha (confere o lembrado no banco)', () => {
+  it.each([
+    ['produto diferente do lembrado', 102, 12, 75],
+    ['conversão diferente', 101, 6, 75],
+    ['conversão nula com a lembrada 12', 101, null, 75],
+    ['preço fora da faixa (fardo vizinho, 1,5×)', 101, 12, 112.5],
+    ['preço abaixo da faixa', 101, 12, 59],
+  ])('%s: false, nada gravado', async (_n, produto, conv, valor) => {
+    const db = await banco()
+    await insumo(db); await insumo(db, 102)
+    await lembrar(db)
+    const chave = await nota(db, { situacao: 'na_fila', itens: [GUARANA('1', { valor: valor as number, qtd: 2 })] })
+    expect(await autoAssociar(db, chave, 1, produto as number, conv as number | null)).toBe(false)
+    expect((await assocDe(db, chave)).a).toBeNull()
+  })
+  it('sem nada lembrado: false', async () => {
+    const db = await banco()
+    await insumo(db)
+    const chave = await nota(db, { situacao: 'na_fila', itens: [GUARANA('1')] })
+    expect(await autoAssociar(db, chave)).toBe(false)
+  })
+  it('unidade do produto no catálogo diferente da lembrada: false', async () => {
+    const db = await banco()
+    await insumo(db, 101, 'kg')
+    await lembrar(db)
+    const chave = await nota(db, { situacao: 'na_fila', itens: [GUARANA('1')] })
+    expect(await autoAssociar(db, chave)).toBe(false)
+  })
+  it('vezes conta NOTAS: dois itens do mesmo código na mesma nota lançada = 1', async () => {
+    const db = await banco()
+    await nota(db, { itens: [GUARANA('1'), { ...GUARANA('2'), n: 2 }], assoc: { ...DEC(), '2': DEC()['1'] } })
+    expect((await ler(db))[0].vezes).toBe(1)
+  })
+  it('caso real OLIVEIRA (unidade "un" minúscula, catálogo "UN"): os DOIS itens da nota nova associam sozinhos; o fardo de 6 não', async () => {
+    const db = await banco()
+    await insumo(db, 3324211, 'un')
+    await db.query(`insert into produto_planilha (produto_id, unidade) values (3324211, 'UN')`) // a unidade do SisChef na planilha do Ivan: UN
+    const desc = 'CÓD. FOR: 0009085 GUARANA CHP ANTARCTICA DIET LATA 350ML SH '
+    await nota(db, { itens: [{ n: 1, descricao: `${desc}32,7000`, unidade: 'CX', valor: 32.7, qtd: 1 }],
+      assoc: { '1': { produto_id: 3324211, produto_nome: 'GUARANÁ ANTARC. S/ AÇÚCAR 350 ML', unidade: 'un', conversao: 12, origem: 'lista' } } })
+    const r = await ler(db)
+    expect(r[0]).toMatchObject({ cod_forn: '0009085', unidade_nota: 'CX', unidade: 'UN', conversao: 12, preco_ref: 32.7, vezes: 1 })
+    const nova = await nota(db, { situacao: 'na_fila', itens: [
+      { n: 1, descricao: `${desc}35,1600`, unidade: 'CX', valor: 35.16, qtd: 1 },
+      { n: 2, descricao: `${desc}32,3500`, unidade: 'CX', valor: 32.35, qtd: 1 },
+      { n: 3, descricao: `${desc}16,3500`, unidade: 'CX', valor: 16.35, qtd: 1 },
+    ] })
+    expect(await autoAssociar(db, nova, 1, 3324211, 12)).toBe(true)
+    expect(await autoAssociar(db, nova, 2, 3324211, 12)).toBe(true)
+    expect(await autoAssociar(db, nova, 3, 3324211, 12)).toBe(false)
+    const a = (await assocDe(db, nova)).a!
+    expect(Object.keys(a).sort()).toEqual(['1', '2'])
+    expect(a['1']).toMatchObject({ produto_id: 3324211, conversao: 12, origem: 'lembrado' })
+  })
+  it('a consulta interna não é executável por ninguém de fora', async () => {
+    const db = await banco()
+    await expect(como(db, ADMIN, 'select cot_nfe_lembrado_calcular($1)', [CNPJ])).rejects.toThrow(/permission denied/)
+    await expect(chamar(db, 'anon', 'cot_nfe_lembrado_calcular($1)', [CNPJ])).rejects.toThrow()
+  })
+})
+
 describe('cot_nfe_associar_lembrado e cot_nfe_recusar_lembrado', () => {
   it('grava com origem lembrado, a conversão e o nome da lista de insumos', async () => {
     const db = await banco()
     await insumo(db)
+    await lembrar(db)
     const chave = await nota(db, { situacao: 'na_fila', itens: [GUARANA('1')] })
     expect(await autoAssociar(db, chave)).toBe(true)
     const d = (await assocDe(db, chave)).a!['1']
@@ -183,10 +247,11 @@ describe('cot_nfe_associar_lembrado e cot_nfe_recusar_lembrado', () => {
   it('a gravação automática não entra no aprendizado depois que a nota é lançada', async () => {
     const db = await banco()
     await insumo(db)
+    await lembrar(db)
     const chave = await nota(db, { situacao: 'na_fila', itens: [GUARANA('1')] })
     expect(await autoAssociar(db, chave)).toBe(true)
     await db.query(`update cot_nfe set situacao = 'lancada', lancada_em = now() where chave = $1`, [chave])
-    expect(await ler(db)).toEqual([])
+    expect((await ler(db)).map((x: { vezes: number }) => x.vezes)).toEqual([1]) // só a nota do Ivan conta
   })
   it('a coluna lembrado_recusado: nula por padrão, só lista, e o service_role (backup) lê', async () => {
     const db = await banco()
