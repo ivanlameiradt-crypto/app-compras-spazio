@@ -1,9 +1,12 @@
 // Regras puras da aba "Lançamento fiscal" (Fase 3; até 06/10/2026 "Lançamento de nota SEFAZ"): "Como pagar", memória por fornecedor, bloqueios e textos.
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
-import { conversaoDaDecisao, fardoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
-import { conversoesDesnecessarias, explicarMotivoDoRobo, motivoPassageiro, motivoSemPrefixoTecnico, motivoXmlNaoLido, type MotivoPassageiro } from './motivoDoRobo'
-import type { ConversaoDesnecessaria } from './motivoDoRobo'
+import { conversaoDaDecisao, embalagemPeloNome, fardoPeloNome, leituraDaEntrada, pesoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
+import { ehEmbalagemContada } from '../lib/unidadesDaLista'
+import {
+  boletosDaNotaPrevalecem, conversoesDesnecessarias, conversoesPedidasPeloRobo, explicarMotivoDoRobo, formaRecusadaPeloRobo, motivoPassageiro, motivoSemPrefixoTecnico, motivoXmlNaoLido, semSinalDeLancamento, type MotivoPassageiro,
+} from './motivoDoRobo'
+import type { BoletoDoRobo, ConversaoDesnecessaria, FormaLembrada, FraseConversao } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
@@ -315,6 +318,126 @@ export function planoTirarConversao(n: NotaSefazLista): PlanoTirarConversao | nu
     }
   }
   return { itens: lido.itens, resto: lido.resto, alvos, notaDepois: { ...n, associacoes_app: depois } }
+}
+
+// ---------- sugestões com NÚMERO PRONTO (etapas 4 a 6 do inventário dos erros do robô, 14/11/2026; pedido do Ivan, leigo)
+// O robô devolveu a nota ("revisar") porque falta ou está errado um número que o app tira de uma fonte CERTA: o nome do produto na nota ("168UN", "395G"), os boletos que a própria nota traz ou a forma de
+// pagamento que o app lembra deste fornecedor. A faixa mostra o número com a conta e um botão que o aceita (grava pelas funções que já existem e lança junto, sob as mesmas travas do botão Lançar).
+// REGRA DURA: com dúvida entre dois valores, ou sem a prova de que nada foi criado no SisChef, o plano é null e a tela mostra o que mostrava antes.
+
+/** Um item cuja conversão o toque vai gravar. `via`: "associar" regrava o MESMO produto escolhido no app com a conversão (cot_nfe_associar); "converter" grava a conversão de um item que já vem associado do SisChef
+ *  (cot_nfe_converter_item). `gravado`: o número sugerido já está gravado (falta só lançar). */
+export interface SugestaoConversao extends FraseConversao { via: 'associar' | 'converter'; produtoId: number; gravado: boolean }
+export interface PlanoConversaoSugerida {
+  sugestoes: SugestaoConversao[]
+  /** O que o motivo diz além disto ('' = só isto): com outro problema na nota, o toque só grava o número, não lança. */
+  resto: string
+  /** A nota como fica depois de gravar (para saber, antes, se o Lançar vai estar liberado). */
+  notaDepois: NotaSefazLista
+}
+const nomeDaNota = (descricao: string): string => descricao.replace(/^\s*C[OÓ]D\.?\s*FOR\.?:?\s*\S+\s*(?:##)?\s*/i, '').replace(/\s*-\s*INSUMOS\s*$/i, '').replace(/\s+/g, ' ').trim()
+/** Ketchup (ou catchup) em sachê, como o robô o reconhece (regra_ketchup.eh_ketchup_sachet). */
+const ehKetchupSachet = (descricao: string): boolean => {
+  const t = descricao.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+  return /KETCHUP|CATCHUP/.test(t) && /SACH|(?<![A-Z0-9])SCH?(?![A-Z0-9])/.test(t)
+}
+/** O número do NOME para um item com UN DIFERE: a embalagem ("168UN", "C/ 12") quando o produto é contado em unidades, ou o peso ("395G") quando a nota está em UN e o produto em KG. Dúvida (dois números, outra
+ *  unidade, produto em CT/PCT, as duas leituras discordando) = null. */
+function numeroDoNomeDoItem(it: ItemNotaSefaz): { numero: number; trecho: string } | null {
+  const unidadeProduto = rotuloUnidade(it.unidade_sischef)
+  if (unidadeProduto === '' || ehEmbalagemContada(unidadeProduto)) return null
+  const embalagem = embalagemPeloNome(it.descricao, it.unidade_sischef)
+  const peso = rotuloUnidade(it.unidade_nota) === 'UN' && unidadeProduto === 'KG' ? pesoPeloNome(it.descricao, 'UN') : null
+  if (embalagem && peso && embalagem.fator !== peso.kg) return null
+  if (embalagem) return { numero: embalagem.fator, trecho: embalagem.trecho }
+  return peso ? { numero: peso.kg, trecho: peso.trecho } : null
+}
+function sugestaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz, numero: number, trecho: string, aceitaOutroGravado: boolean): SugestaoConversao | null {
+  if (it.n == null || !Number.isInteger(it.n) || it.n <= 0) return null
+  const d = n.associacoes_app?.[String(it.n)] ?? null
+  const produtoDoApp = Number(d?.produto_id)
+  const decididoNoApp = d != null && (d.origem ?? '').trim().toLowerCase() !== 'sischef' && Number.isInteger(produtoDoApp) && produtoDoApp > 0
+  const produtoId = decididoNoApp ? produtoDoApp : Number(it.produto_id)
+  if (!Number.isInteger(produtoId) || produtoId <= 0) return null
+  const produtoNome = ((decididoNoApp ? d?.produto_nome : it.produto_nome) ?? '').trim() || (it.produto_nome ?? '').trim()
+  if (produtoNome === '') return null
+  const qtd = Number(it.qtd)
+  if (it.qtd == null || !(qtd > 0)) return null
+  if (it.qtd_nota != null && Number(it.qtd_nota) !== qtd) return null // o SisChef já converteu a linha sozinho: a conta da tela não é a da nota
+  const antes = conversaoDaDecisao(d)
+  if (antes != null && antes !== numero && !aceitaOutroGravado) return null
+  const leitura = leituraDaEntrada(qtd, null, numero, decididoNoApp ? d?.unidade : it.unidade_sischef)
+  if (leitura == null) return null
+  return { n: it.n, nome: nomeDaNota(it.descricao), produtoNome, numero, trecho, conta: leitura.conta, antes: antes != null && antes !== numero ? antes : null, via: decididoNoApp ? 'associar' : 'converter', produtoId, gravado: antes === numero }
+}
+/**
+ * O robô parou pedindo uma conversão (UN DIFERE sem conversão, ou o ketchup sachê com o fator errado) e o NOME do item diz o número? Então o plano do botão "Usar N e lançar", com a conta à vista. Todos os itens que
+ * o robô apontou precisam ter um número seguro, senão null. O ketchup só vale se o número que o robô diz é o MESMO que o nome do item diz e só há UM item de ketchup assim na nota.
+ */
+export function planoConversaoSugerida(n: NotaSefazLista): PlanoConversaoSugerida | null {
+  if (n.lancamento_estado !== 'revisar') return null
+  const texto = (n.lancamento_motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!semSinalDeLancamento(texto)) return null
+  const pedido = conversoesPedidasPeloRobo(texto)
+  if (!pedido) return null
+  const sugestoes: SugestaoConversao[] = []
+  const juntar = (s: SugestaoConversao | null): boolean => {
+    if (s == null) return false
+    const ja = sugestoes.find((x) => x.n === s.n)
+    if (ja) return ja.numero === s.numero
+    sugestoes.push(s)
+    return true
+  }
+  for (const cod of pedido.cods) {
+    const itens = n.itens.filter((x) => codForDoItem(x) === cod)
+    if (itens.length !== 1) return null
+    const doNome = numeroDoNomeDoItem(itens[0])
+    if (doNome == null || !juntar(sugestaoDoItem(n, itens[0], doNome.numero, doNome.trecho, false))) return null
+  }
+  for (const fator of pedido.fatores) {
+    const candidatos = n.itens.filter((x) => ehKetchupSachet(x.descricao) && embalagemPeloNome(x.descricao, 'UN')?.fator === fator)
+    if (candidatos.length !== 1) return null
+    const trecho = embalagemPeloNome(candidatos[0].descricao, 'UN')?.trecho ?? String(fator)
+    if (!juntar(sugestaoDoItem(n, candidatos[0], fator, trecho, true))) return null
+  }
+  if (sugestoes.length === 0) return null
+  const depois: Record<string, AssociacaoApp> = { ...(n.associacoes_app ?? {}) }
+  for (const s of sugestoes) {
+    const d = depois[String(s.n)]
+    depois[String(s.n)] = d ? { ...d, conversao: s.numero } : { produto_id: s.produtoId, produto_nome: s.produtoNome, unidade: null, conversao: s.numero, origem: s.via === 'converter' ? 'sischef' : 'app' }
+  }
+  return { sugestoes, resto: pedido.resto, notaDepois: { ...n, associacoes_app: depois } }
+}
+
+/** Usar os boletos da nota: o robô disse que o XML já traz boletos e que as parcelas digitadas eram outras; o app tem os MESMOS boletos e a soma deles fecha com o valor da nota. */
+export interface PlanoBoletosDaNota { boletos: BoletoDoRobo[]; parcelas: ParcelaNota[]; soma: number; resto: string }
+export function planoBoletosDaNota(n: NotaSefazLista): PlanoBoletosDaNota | null {
+  if (n.lancamento_estado !== 'revisar') return null
+  const texto = (n.lancamento_motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!semSinalDeLancamento(texto)) return null
+  const lido = boletosDaNotaPrevalecem(texto)
+  if (!lido || ehPagamentoSemanal(n)) return null
+  const fin = resumoFinanceiro(n)
+  if (!fin.bate) return null
+  const chave = (valor: number, vencimento: string | null): string => `${Math.round(valor * 100)}|${(vencimento ?? '').slice(0, 10)}`
+  const doApp = fin.parcelas.map((p) => chave(p.valor, p.vencimento)).sort()
+  const doRobo = lido.boletos.map((b) => chave(b.valor, b.vencimento)).sort()
+  if (doApp.length !== doRobo.length || doApp.some((x, i) => x !== doRobo[i])) return null
+  return { boletos: lido.boletos, parcelas: fin.parcelas, soma: fin.soma, resto: lido.resto }
+}
+
+/** A forma que o app lembra deste fornecedor, quando o robô recusou a forma da nota. Banco e aparelho lembrando formas DIFERENTES = dúvida = null. Só Boleto, Dinheiro e Tesouraria (Pix e cartão nunca vêm sozinhos). */
+export function planoFormaLembrada(n: NotaSefazLista, padroes: Record<string, string> | undefined): FormaLembrada | null {
+  if (n.lancamento_estado !== 'revisar') return null
+  const texto = (n.lancamento_motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!semSinalDeLancamento(texto)) return null
+  const recusada = formaRecusadaPeloRobo(texto)
+  if (!recusada) return null
+  const doBanco = formaPadraoDoFornecedor(n, padroes)
+  const doAparelho = formaLembrada(n.emitente)
+  if (doBanco && doAparelho && doBanco !== doAparelho) return null
+  const forma = doBanco ?? doAparelho
+  return forma ? { forma, rotulo: rotuloForma(forma), origem: doBanco ? 'banco' : 'aparelho', resto: recusada.resto } : null
 }
 
 /** Item sem produto no SisChef cuja decisão do app está INCOMPLETA: é o que ainda TRAVA o Lançar (etapa 2). `falta` diz o que fazer no app; as unidades
