@@ -2,7 +2,8 @@
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
 import { conversaoDaDecisao, fardoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
-import { explicarMotivoDoRobo, motivoSemPrefixoTecnico, motivoXmlNaoLido } from './motivoDoRobo'
+import { conversoesDesnecessarias, explicarMotivoDoRobo, motivoSemPrefixoTecnico, motivoXmlNaoLido } from './motivoDoRobo'
+import type { ConversaoDesnecessaria } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
@@ -271,6 +272,45 @@ export const decisaoCompleta = (it: ItemNotaSefaz, d: AssociacaoApp | null): boo
 export function itemPedeAcao(n: NotaSefazLista, it: ItemNotaSefaz): boolean {
   if (itemSemProduto(it)) return faltaNaDecisao(it, decisaoDoItem(n, it)) != null
   return itemPedeConversao(n, it) && conversaoDeItemAssociado(n, it) == null
+}
+
+// ---------- "Tirar a conversão e lançar de novo" (pedido do Ivan, 14/11/2026)
+/** Um item cuja conversão o toque vai apagar: `via` diz por qual função do banco — "associar" regrava o MESMO produto sem o número (item escolhido no app: cot_nfe_associar);
+ *  "converter" apaga a conversão de um item que já vem associado do SisChef (decisão de origem "sischef": cot_nfe_converter_item, que só apaga as dessa origem). */
+export interface AlvoTirarConversao extends ConversaoDesnecessaria { via: 'associar' | 'converter'; produtoId: number }
+export interface PlanoTirarConversao {
+  /** Os itens que o robô apontou (para a frase). */
+  itens: ConversaoDesnecessaria[]
+  /** O que o motivo diz além disto ('' = só isto): com outro problema na nota, o toque só tira o número, não lança. */
+  resto: string
+  /** Os itens que AINDA têm o número gravado no app; vazio = já foi tirado (falta só lançar). */
+  alvos: AlvoTirarConversao[]
+  /** A nota como fica depois do toque (para saber, antes de gravar, se o Lançar vai estar liberado). */
+  notaDepois: NotaSefazLista
+}
+/**
+ * O robô devolveu a nota dizendo que o número informado na conversão de um item não serve, porque a nota e o produto já estão na mesma unidade (Long Way, 14/11/2026: o 0,24 do
+ * pacote de 240 g)? Então o plano do botão "Tirar a conversão e lançar de novo": quais itens ainda têm o número e por onde apagá-lo. Fora desse caso, null.
+ */
+export function planoTirarConversao(n: NotaSefazLista): PlanoTirarConversao | null {
+  if (n.lancamento_estado !== 'revisar') return null
+  const lido = conversoesDesnecessarias(n.lancamento_motivo)
+  if (!lido) return null
+  const depois: Record<string, AssociacaoApp> = { ...(n.associacoes_app ?? {}) }
+  const alvos: AlvoTirarConversao[] = []
+  for (const c of lido.itens) {
+    const d = n.associacoes_app?.[String(c.n)]
+    const produtoId = Number(d?.produto_id)
+    if (d == null || conversaoDaDecisao(d) == null || !Number.isInteger(produtoId) || produtoId <= 0) continue
+    if ((d.origem ?? '').trim().toLowerCase() === 'sischef') {
+      alvos.push({ ...c, via: 'converter', produtoId })
+      delete depois[String(c.n)]
+    } else {
+      alvos.push({ ...c, via: 'associar', produtoId })
+      depois[String(c.n)] = { ...d, conversao: null }
+    }
+  }
+  return { itens: lido.itens, resto: lido.resto, alvos, notaDepois: { ...n, associacoes_app: depois } }
 }
 
 /** Item sem produto no SisChef cuja decisão do app está INCOMPLETA: é o que ainda TRAVA o Lançar (etapa 2). `falta` diz o que fazer no app; as unidades

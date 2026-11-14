@@ -64,6 +64,51 @@ const RE_ITEM_NO_TEXTO = /item C[OÓ]D\.? FOR/gi
 // era o SisChef só ter o RESUMO da nota (a SEFAZ entrega o XML completo horas depois); digitar as parcelas NÃO resolve (testado 2×), o robô não lança com o resumo.
 const RE_XML_NAO_LIDO = /não consegui ler o XML da nota/i
 
+// "item 5 (CÓD. FOR: 2894 LONG WAY GUIOZA LW LEGUMES 240G): a nota e o produto estão na mesma unidade (UN) no SisChef e o número informado (0,24) não é de embalagem (embalagem é maior
+// que 1 e vale para UN, PCT, CX ou FD): no app, toque em Editar neste item, deixe a conversão vazia e lance de novo (ou associe no SisChef)" (nfe_decisoes_app.conferir_conversoes).
+// O Ivan digitou um número de conversão que não precisava (14/11/2026: o peso do pacote, 0,24). O "item 5" é o número do item na nota, o mesmo `n` da decisão do app.
+// O nome entre parênteses não pode atravessar para outro item ("; item 7 (…"): o robô junta um motivo por item com "; ".
+const RE_CONVERSAO_DESNECESSARIA = /item (\d+) \(((?:(?!; item \d+ \().)*?)\): a nota e o produto estão na mesma unidade \(([^()]*)\) no SisChef e o número informado \(([\d.,]+)\) não é de embalagem(?: \(embalagem é maior que 1[^()]*\))?(?:: no app, toque em Editar neste item, deixe a conversão vazia e lance de novo(?: \(ou associe no SisChef\))?)?/gi
+
+/** Um item em que o número informado na conversão não serve (a nota e o produto já estão na mesma unidade). */
+export interface ConversaoDesnecessaria {
+  /** Número do item na nota (o `n` da decisão do app). */
+  n: number
+  /** O nome como a nota o traz, sem o "CÓD. FOR: N" e sem o "- INSUMOS". */
+  nome: string
+  /** A unidade que o robô leu no SisChef ("UN"). */
+  unidade: string
+  /** O número informado, como o robô o escreveu ("0,24"). */
+  numero: string
+}
+export interface MotivoConversaoDesnecessaria {
+  itens: ConversaoDesnecessaria[]
+  /** O que o motivo do robô diz ALÉM disto (outro problema na mesma nota), sem o começo técnico; '' = o motivo é só este. */
+  resto: string
+}
+/** Reconhece no motivo do robô os itens com "o número informado não é de embalagem" (um ou vários, separados por "; "). Sem nenhum, null. */
+export function conversoesDesnecessarias(motivo: string | null | undefined): MotivoConversaoDesnecessaria | null {
+  const t = (motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  const itens: ConversaoDesnecessaria[] = []
+  for (const a of t.matchAll(RE_CONVERSAO_DESNECESSARIA)) {
+    const n = Number(a[1])
+    if (!Number.isInteger(n) || n <= 0 || itens.some((x) => x.n === n)) continue
+    const nome = a[2].replace(/^\s*C[OÓ]D\.?\s*FOR:?\s*\S+\s*(?:##)?\s*/i, '').replace(/\s*-\s*INSUMOS\s*$/i, '').replace(/\s+/g, ' ').trim()
+    itens.push({ n, nome: nome || `item ${n}`, unidade: a[3].trim(), numero: a[4] })
+  }
+  if (itens.length === 0) return null
+  const resto = t.replace(RE_CONVERSAO_DESNECESSARIA, '').replace(PREFIXO_ANTES_DO_PEDIDO, '').replace(/(?:\s*;\s*)+/g, '; ').replace(/^[;\s]+|[;\s]+$/g, '')
+  return { itens, resto }
+}
+/** O porquê em uma frase curta, sem termo técnico. */
+const porqueConversaoDesnecessaria = (c: ConversaoDesnecessaria): string =>
+  `Item ${c.n} (${c.nome}): o número ${c.numero} que foi informado não serve como conversão, porque a nota e o produto já estão na mesma unidade.`
+/** A frase da faixa da nota: o porquê e a recomendação (o botão "Tirar a conversão e lançar de novo" fica logo abaixo). */
+export const fraseConversaoDesnecessaria = (c: ConversaoDesnecessaria): string => `${porqueConversaoDesnecessaria(c)} Recomendo tirar esse número.`
+/** A frase depois de o número ter sido tirado (falta só lançar). */
+export const fraseConversaoTirada = (c: ConversaoDesnecessaria): string => `Item ${c.n} (${c.nome}): o número ${c.numero} já foi tirado. Agora toque em Lançar.`
+
 /**
  * O motivo do robô explicado ao Ivan, ou null quando nenhuma regra reconhece o texto (a tela então mostra o texto do robô). Cada explicação diz o produto pelo
  * nome (com `itens` da nota), o que aconteceu e o que fazer. Sempre que o robô para antes de gerar o pedido, nada foi lançado: a explicação começa por aí na tela.
@@ -89,6 +134,15 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
         fazer: `Veja qual é o certo. Se cada unidade tem ${comUnidade(porUnidade, un)}, toque em Editar no ${nome} e informe ${formatar(porUnidade)}. `
           + `Se o certo é ${comUnidade(noApp, un)}, corrija a conversão do produto no SisChef. Depois lance de novo.`,
       }
+    }
+  }
+
+  const semPrecisar = conversoesDesnecessarias(t)
+  if (semPrecisar && semPrecisar.resto === '') {
+    const um = semPrecisar.itens.length === 1
+    return {
+      porque: semPrecisar.itens.map(porqueConversaoDesnecessaria).join(' '),
+      fazer: um ? 'Tire esse número (deixe a conversão vazia) e lance de novo.' : 'Tire esses números (deixe a conversão vazia em cada item) e lance de novo.',
     }
   }
 
