@@ -189,7 +189,7 @@ function fraseDaParte(parte: string): string | null {
  * O envio parou por falha PASSAGEIRA do robô e o próprio texto prova que nada foi criado no SisChef: devolve a frase curta e o que fazer; senão null (nunca oferece repetir na dúvida).
  * Só vale para REVISAR sem pedido no SisChef, com itens e todos com produto (o resto é outro caso), e sem o aviso de repetida/falha de conferência misturado.
  */
-export function motivoPassageiroDoCupom(c: CupomRecente): { problema: string; solucao: string; semBotao?: true } | null {
+export function motivoPassageiroDoCupom(c: CupomRecente, comSugestao = true): { problema: string; solucao: string; semBotao?: true } | null {
   if (c.estado !== 'REVISAR' || c.pedido_sischef != null) return null
   const itens = Array.isArray(c.itens) ? c.itens : []
   if (itens.length === 0 || itens.some(semProdutoConfirmado)) return null
@@ -207,7 +207,7 @@ export function motivoPassageiroDoCupom(c: CupomRecente): { problema: string; so
   if (reconhecido) return { problema: frases.length === 1 ? frases[0] : FRASE_MONTAR, solucao: SOLUCAO_PASSAGEIRO }
   // etapa 6 (14/11/2026): texto que o app não conhece, mas o robô PROVOU (sugestão `falha_passageira`) que nada foi criado: a frase curta vale, o botão NÃO (a função confirmar-cupom ainda confere o texto
   // pelos mesmos moldes; enquanto ela não aceitar a sugestão, oferecer o botão daria uma recusa). O texto sem nenhum sinal de compra criada já foi conferido acima.
-  if (falhaPassageiraDeSugestoes('revisar', motivo, c.sugestoes)) return { problema: FRASE_SUGESTAO, solucao: SOLUCAO_SUGESTAO, semBotao: true }
+  if (comSugestao && falhaPassageiraDeSugestoes('revisar', motivo, c.sugestoes)) return { problema: FRASE_SUGESTAO, solucao: SOLUCAO_SUGESTAO, semBotao: true }
   return null
 }
 
@@ -250,7 +250,7 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
   }
 
   // falha PASSAGEIRA antes de "Gerar compra" (etapa 8 do inventário de 14/11): nada foi criado no SisChef, então dá para tentar de novo
-  const passageiro = motivoPassageiroDoCupom(c)
+  const passageiro = motivoPassageiroDoCupom(c, false) // só pelo texto aqui: a sugestão do robô só entra DEPOIS de todo caso que o app já reconhece (fornecedor, pagamento…)
   if (passageiro) return { problema: passageiro.problema, itens: [], pedidos: [], conferencia: null, solucao: passageiro.solucao, corrigivel: false, ...(passageiro.semBotao ? {} : { tentarDeNovo: true as const }) }
 
   // O SisChef não tem o fornecedor (o robô não cadastra sozinho): o app deixa o Ivan cadastrar (caixa "Cadastrar fornecedor") e reenviar o cupom
@@ -307,6 +307,10 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
     return sem('O cupom chegou ao robô com dados incompletos (produto ou quantidade de algum item).',
       `${CLAUDE}: ele confere os itens com a foto, corrige e libera.`)
   }
+
+  // nenhum caso conhecido: se o robô provou (sugestão) que foi falha passageira, vale a frase curta dele (sem botão)
+  const pelaSugestao = motivoPassageiroDoCupom(c)
+  if (pelaSugestao) return { problema: pelaSugestao.problema, itens: [], pedidos: [], conferencia: null, solucao: pelaSugestao.solucao, corrigivel: false, ...(pelaSugestao.semBotao ? {} : { tentarDeNovo: true as const }) }
 
   // motivo que ninguém reconhece: não repete o texto aqui (a tela já o mostra, em letra pequena, como "Motivo registrado")
   return sem(motivo !== '' ? 'O sistema parou este cupom por um motivo que ainda não sei explicar (veja o motivo registrado abaixo).' : 'O robô não conseguiu lançar este cupom.',

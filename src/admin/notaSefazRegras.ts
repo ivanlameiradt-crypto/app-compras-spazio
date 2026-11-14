@@ -7,6 +7,7 @@ import {
   boletosDaNotaPrevalecem, conversoesDesnecessarias, conversoesPedidasPeloRobo, explicarMotivoDoRobo, formaRecusadaPeloRobo, motivoPassageiro, motivoSemPrefixoTecnico, motivoXmlNaoLido, semSinalDeLancamento, type MotivoPassageiro,
 } from './motivoDoRobo'
 import type { BoletoDoRobo, ConversaoDesnecessaria, FormaLembrada, FraseConversao } from './motivoDoRobo'
+import { fornecedorNovoNaNota } from './fornecedorRegras'
 import { conversoesDaSugestao, falhaPassageiraDaSugestao, fraseItensMesmoCodigo, itensMesmoCodigoDeSugestoes } from './sugestoesDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota, SugestaoDoRobo } from '../lib/tipos'
 
@@ -140,8 +141,12 @@ export const parouPorXmlNaoLido = (n: NotaSefazLista): boolean =>
 export const FRASE_FALHA_PASSAGEIRA_DA_SUGESTAO = 'Nada foi lançado. O robô parou por uma falha passageira do SisChef (demora ou conexão). Toque em Tentar de novo.'
 export const passageiroDaNota = (n: NotaSefazLista): MotivoPassageiro | null => {
   if (n.lancamento_estado !== 'revisar') return null
-  if (falhaPassageiraDaSugestao(n)) return { frase: FRASE_FALHA_PASSAGEIRA_DA_SUGESTAO, repetir: true } // etapa 6: o dado do robô no lugar da leitura do texto
-  return motivoPassageiro(n.lancamento_motivo)
+  const pelTexto = motivoPassageiro(n.lancamento_motivo)
+  if (pelTexto) return pelTexto
+  // etapa 6: texto que o app não reconhece como passageiro, e que também não é outro caso conhecido (fornecedor novo, forma, XML, conta…): vale o dado do robô
+  const texto = (n.lancamento_motivo ?? '').replace(/\s+/g, ' ').trim()
+  const outroCaso = explicarMotivoDoRobo(texto, n.itens) !== null || fornecedorNovoNaNota(texto) || formaRecusadaPeloRobo(texto) !== null || boletosDaNotaPrevalecem(texto) !== null || motivoXmlNaoLido(texto) || /sem boletos?/i.test(texto)
+  return !outroCaso && falhaPassageiraDaSugestao(n) ? { frase: FRASE_FALHA_PASSAGEIRA_DA_SUGESTAO, repetir: true } : null
 }
 
 /** Padrão do fornecedor no banco (a forma da última nota lançada dele; chave = CNPJ), ou null. */

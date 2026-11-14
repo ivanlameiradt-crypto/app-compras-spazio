@@ -99,6 +99,14 @@ describe('falha passageira da nota — a sugestão prova, o app confere de novo'
     const p = passageiroDaNota(nota({ lancamento_motivo: 'parou antes de gerar o pedido (nada lançado): erro novo da tela que ninguém mapeou', lancamento_sugestoes: [PASSAGEIRA] }))
     expect(p).toEqual({ frase: 'Nada foi lançado. O robô parou por uma falha passageira do SisChef (demora ou conexão). Toque em Tentar de novo.', repetir: true })
   })
+  it('texto de OUTRO caso que o app reconhece (fornecedor novo, forma recusada, XML não lido) vence a sugestão', () => {
+    for (const motivo of ['fornecedor não cadastrado no Sischef e sem autorização do Ivan', 'não consegui ler o XML da nota (sem XML)', 'sem boletos na nota — pagamento manual']) {
+      expect(passageiroDaNota(nota({ lancamento_motivo: motivo, lancamento_sugestoes: [PASSAGEIRA] }))?.frase ?? '').not.toContain('falha passageira do SisChef')
+    }
+  })
+  it('semSinalDeLancamento reconhece o texto cortado em 2000 letras como NÃO provado', () => {
+    expect(falhaPassageiraDaSugestao(nota({ lancamento_motivo: `parou antes de gerar o pedido (nada lançado): ${'x'.repeat(1990)}`, lancamento_sugestoes: [PASSAGEIRA] }))).toBe(false)
+  })
   it('sem a sugestão, é o mesmo de hoje (pelo texto)', () => {
     expect(passageiroDaNota(nota({ lancamento_motivo: TEMPO, lancamento_sugestoes: null }))?.repetir).toBe(true)
     expect(passageiroDaNota(nota({ lancamento_motivo: 'erro novo da tela que ninguém mapeou', lancamento_sugestoes: null }))).toBeNull()
@@ -142,6 +150,11 @@ describe('cupom — falha passageira pela sugestão', () => {
   ])('sinal de compra criada vence a sugestão: %s', (motivo) => {
     expect(diagnosticoDoCupom(cupom(motivo))?.problema ?? '').not.toContain('Nada foi criado')
     expect(motivoPassageiroDoCupom(cupom(motivo))).toBeNull()
+  })
+  it('texto de caso conhecido vence a sugestão antiga: fornecedor não encontrado continua mandando cadastrar', () => {
+    const d = diagnosticoDoCupom(cupom('fornecedor não encontrado no Sischef (CNPJ 1)'))
+    expect(d?.problema).toBe('O SisChef não tem este fornecedor cadastrado, então o robô não lançou nada.')
+    expect(d?.problema).not.toContain('falhou antes de lançar')
   })
   it('com pedido no SisChef, item sem produto ou fora de REVISAR, a sugestão não vale', () => {
     expect(motivoPassageiroDoCupom(cupom('erro novo', { pedido_sischef: '163071006' }))).toBeNull()
