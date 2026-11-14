@@ -123,6 +123,10 @@ const DO_APP = [
   // Excluir cupom e compra avulsa (03/11/2026, 20261225000001): o admin tira da lista o que não vai lançar e desfaz; só cria as 2 funções (mexe no CHECK e em colunas da tabela do robô)
   'cupom_excluir(uuid,text)',
   'cupom_restaurar(uuid)',
+  // Memoria do produto por fornecedor (20261230000001): o admin le o produto lembrado, associa sozinho o que o app lembra e registra a recusa. A funcao de calculo (cot_nfe_lembrado_calcular) e interna e NAO entra aqui
+  'cot_nfe_produto_lembrado(text)',
+  'cot_nfe_associar_lembrado(text,integer,bigint,numeric)',
+  'cot_nfe_recusar_lembrado(text,integer)',
 ]
 
 /** A página do vendedor (chave anônima): estas duas + as 7 do robô de NF-e (só com o segredo, Fase 2 D; a 4ª,
