@@ -32,11 +32,12 @@ import {
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma, quemEstaLancando,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
-  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
+  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, planoTirarConversao, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 import TituloDaTela from '../components/TituloDaTela'
 import { Icone } from '../components/Icones'
 import TerminarPedido from './TerminarPedido'
+import { fraseConversaoDesnecessaria, fraseConversaoTirada } from './motivoDoRobo'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
 const INTERVALO_ATUALIZAR = 15_000
@@ -450,6 +451,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
+  const [tirando, setTirando] = useState(false) // "Tirar a conversão e lançar de novo" gravando (14/11/2026)
+  const [erroTirar, setErroTirar] = useState('')
   const [descartando, setDescartando] = useState(false) // aberta a pergunta "Excluir a nota?"
   const [motivoDito, setMotivoDito] = useState('') // o que o Ivan escreveu em "Motivo (opcional)" da exclusão
   const [descartandoEnvio, setDescartandoEnvio] = useState(false)
@@ -534,17 +537,22 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     lembrarForma(nota.emitente, nova)
   }
 
+  /** O disparo do robô, igual para o "Confirmar" do Lançar e para o "Tirar a conversão e lançar de novo": a forma, as parcelas e o frete que estão na tela. Quem chama já conferiu as travas. */
+  async function enviarLancamento() {
+    const parcelas = exigeParcelas ? resultadoParcelas.parcelas : plano ? plano.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })) : undefined
+    if (frete) await api.lancarNota(nota.chave, forma, parcelas, frete)
+    else if (parcelas) await api.lancarNota(nota.chave, forma, parcelas)
+    else await api.lancarNota(nota.chave, forma)
+    lembrarForma(nota.emitente, forma)
+    limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
+  }
+
   async function confirmar() {
     if (!podeLancar || trancado.current || !iniciarEnvio()) return
     trancado.current = true
     setEnviando(true); setErro('')
     try {
-      const parcelas = exigeParcelas ? resultadoParcelas.parcelas : plano ? plano.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })) : undefined
-      if (frete) await api.lancarNota(nota.chave, forma, parcelas, frete)
-      else if (parcelas) await api.lancarNota(nota.chave, forma, parcelas)
-      else await api.lancarNota(nota.chave, forma)
-      lembrarForma(nota.emitente, forma)
-      limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
+      await enviarLancamento()
       setConfirmando(false)
       await recarregar() // recarrega: a nota passa a aparecer como "lançando"
     } catch (e) {
@@ -555,6 +563,40 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       setEnviando(false)
       fimEnvio()
     }
+  }
+
+  // "Tirar a conversão e lançar de novo" (pedido do Ivan, 14/11/2026): o robô devolveu a nota porque o número informado na conversão de um item não serve (a nota e o produto já
+  // estão na mesma unidade). O toque apaga o número no app (o produto escolhido continua) e dispara o mesmo lançamento do botão Lançar, com as mesmas travas — todas menos a
+  // do item, que se confere na nota como ela fica DEPOIS de tirar o número. Com alguma trava (outra nota lançando, forma por escolher, parcelas por digitar, outro problema no
+  // motivo), o toque só tira o número e a frase manda tocar em Lançar.
+  const planoTirar = planoTirarConversao(nota)
+  const faltaTirar = planoTirar != null && planoTirar.alvos.length > 0
+  const lancaJunto = planoTirar != null && planoTirar.resto === '' && !robotOuMetade && bloqueiosDaNota(planoTirar.notaDepois).length === 0 && forma !== '' && !outraOcupando
+    && !fretePendente && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
+  async function tirarConversao() {
+    if (!planoTirar || !faltaTirar || !podeAssociar || trancado.current || enviando) return
+    const lancar = lancaJunto && iniciarEnvio() // pede a vez de enviar já aqui: entre apagar e lançar, nenhuma outra nota entra na frente
+    trancado.current = true
+    setTirando(true); setErroTirar(''); setErro(''); setConfirmando(false)
+    if (lancar) setEnviando(true)
+    let tirou = false
+    try {
+      for (const a of planoTirar.alvos) {
+        if (a.via === 'converter') { await api.converterItem(nota.chave, a.n, null); aplicarDecisao(nota.chave, a.n, null, null) }
+        else { await api.associarItem(nota.chave, a.n, a.produtoId, null); aplicarDecisao(nota.chave, a.n, a.produtoId, null) }
+      }
+      tirou = true
+      if (lancar) await enviarLancamento()
+    } catch (e) {
+      const texto = e instanceof Error ? e.message.trim() : ''
+      setErroTirar(tirou
+        ? `Tirei o número, mas não consegui lançar agora${texto ? `: ${texto}` : '.'} Toque em Lançar para tentar de novo.`
+        : texto || 'Não consegui tirar a conversão agora. Confira a internet e tente de novo.')
+    }
+    try { await recarregar() } catch { /* o que foi gravado já está na tela (aplicarDecisao); a próxima leitura confirma */ }
+    trancado.current = false
+    setTirando(false)
+    if (lancar) { setEnviando(false); fimEnvio() }
   }
 
   // Regra 3 (ampliada em 03/11/2026): qualquer nota da lista pode ser excluída (sai da lista; nada muda no SisChef). Nunca a pela metade nem a lançando agora.
@@ -634,7 +676,22 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
           <p>Quase sempre é a embalagem: a “UN” da nota é um fardo, uma caixa ou um pacote. Abra “Conferir itens e financeiro” e toque em Editar no item para acertar a conversão.</p>
         </div>
       )}
-      {estadoTexto && (
+      {planoTirar ? (
+        // o número informado na conversão não serve: a frase curta no lugar do texto do robô e o conserto de um toque
+        <div className="amarelo" data-testid="status-nota">
+          {['Precisa de você — nada foi lançado.',
+            ...planoTirar.itens.map((c) => (faltaTirar || tirando ? fraseConversaoDesnecessaria(c) : fraseConversaoTirada(c))),
+            ...(planoTirar.resto ? [`O robô também disse: ${planoTirar.resto}`] : [])].join('\n')}
+          {(faltaTirar || tirando) && (
+            <div className="acoes">
+              <button type="button" className="botao" disabled={tirando || enviando || !podeAssociar} onClick={() => void tirarConversao()}>
+                {tirando ? 'Gravando…' : `Tirar ${planoTirar.itens.length > 1 ? 'as conversões' : 'a conversão'}${lancaJunto ? ' e lançar de novo' : ''}`}
+              </button>
+            </div>
+          )}
+          {erroTirar && <p className="erro" role="alert" data-testid="tirar-conversao-erro">{erroTirar}</p>}
+        </div>
+      ) : estadoTexto && (
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo, nota.itens)}</div>}
