@@ -5,11 +5,13 @@
 // cupom a PENDENTE, guarda o aprendizado confirmado (cupom_aprendizado) e dispara o robô. Sem foto nova nem leitura nova.
 // Sem globais do Deno nem rede: banco e GitHub entram por `deps` (molde enviar-cupom/logica.ts). index.ts monta `deps` e chama `tratar`.
 import { normalizar } from './normalizar.ts'
+import { motivoEhPassageiro } from './passageiro.ts'
 import { fraseDaRepetida, impressaoDaCompra, semTrechoDaFalha, semTrechoDaRepetida, trechoDaFalha, trechoDaRepetida, type Impressao, type Parecida } from './parecida.ts'
 
 /** `outra_compra: true` (E5) = o Ivan viu o aviso "POSSÍVEL REPETIDA" deste cupom e disse que É outra compra: modo próprio, sem itens (ver `tratar`). */
+/** `tentar_de_novo: true` (14/11/2026) = o robô parou por falha PASSAGEIRA antes de "Gerar compra" (o texto prova que nada foi criado no SisChef; ver passageiro.ts): confere soma e compra repetida e solta de novo, SEM marca de "outra compra". */
 /** `conferir_de_novo: true` (E5) = o robô não conseguiu conferir se a compra é repetida (falha passageira): confere DE NOVO e só então solta, SEM gravar a marca "outra compra" (a marca só vem de `outra_compra`). */
-export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown; outra_compra?: unknown; conferir_de_novo?: unknown }
+export interface Corpo { cupom_id?: unknown; itens?: unknown; so_confirmar?: unknown; reenviar_fornecedor?: unknown; outra_compra?: unknown; conferir_de_novo?: unknown; tentar_de_novo?: unknown }
 /** O cupom está todo casado e só espera o Ivan conferir e confirmar (o mesmo texto de enviar-cupom/logica.ts e de src/admin/cupomRegras.ts). */
 export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
 /** O motivo que o robô de cupom grava quando o fornecedor não está no Sischef (cupom_navegador.py) — o app deixa cadastrá-lo e reenviar o cupom. */
@@ -213,10 +215,12 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   // "É outra compra" (E5, pedido do Ivan de 04/11): ele viu o aviso POSSÍVEL REPETIDA deste cupom e decidiu. Modo próprio: sem itens e sem os outros modos. Só o booleano true liga.
   const outraCompra = c.outra_compra === true
   const conferirDeNovo = c.conferir_de_novo === true
-  if ((outraCompra && (soConfirmar || reenviarFornecedor || conferirDeNovo)) || (conferirDeNovo && (soConfirmar || reenviarFornecedor))) return { status: 400, corpo: { erro: 'peça um modo de cada vez' } }
-  if ((outraCompra || conferirDeNovo) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'a decisão de "outra compra" e o "tentar de novo" não levam itens nem outro modo' } }
+  const tentarDeNovo = c.tentar_de_novo === true
+  const modos = [soConfirmar, reenviarFornecedor, outraCompra, conferirDeNovo, tentarDeNovo].filter(Boolean).length
+  if (modos > 1) return { status: 400, corpo: { erro: 'peça um modo de cada vez' } }
+  if ((outraCompra || conferirDeNovo || tentarDeNovo) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'a decisão de "outra compra" e o "tentar de novo" não levam itens nem outro modo' } }
   if ((soConfirmar || reenviarFornecedor) && Array.isArray(c.itens) && c.itens.length > 0) return { status: 400, corpo: { erro: 'confirmar o cupom inteiro não leva itens: confirme os itens um a um ou o cupom todo' } }
-  const conf = soConfirmar || reenviarFornecedor || outraCompra || conferirDeNovo ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
+  const conf = soConfirmar || reenviarFornecedor || outraCompra || conferirDeNovo || tentarDeNovo ? { ok: true as const, itens: [] as Confirmacao[] } : lerConfirmacoes(c.itens)
   if (!conf.ok) return { status: 400, corpo: { erro: conf.erro } }
 
   // 3. o cupom tem de estar parado por item sem produto, e nada pode ter chegado ao SisChef.
@@ -259,6 +263,26 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
       return { status: 409, corpo: { erro: 'este cupom mudou enquanto você decidia: atualize a tela' } }
     }
     return { status: 200, corpo: { cupom_id: cupomId, estado: REVISAR, resumo: 'anotado: você disse que é outra compra. Siga com o cupom como de costume.', disparo_ok: false, lembrados: 0, nao_lembrados: 0 } }
+  }
+  if (tentarDeNovo) {
+    // "Tentar de novo" da falha PASSAGEIRA (14/11/2026): o texto do robô (moldes de passageiro.ts, todos de antes de "Gerar compra") prova que nada foi criado no SisChef. Mesmos portões do conferirDeNovo:
+    // todos os itens com produto, soma fechando e conferência de compra repetida; solta como PENDENTE SEM marca de "outra compra".
+    if (!motivoEhPassageiro(cupom.motivo)) {
+      return { status: 409, corpo: { erro: 'este cupom não está parado por uma falha passageira do robô (ou o texto não prova que nada foi criado no SisChef): atualize a tela' } }
+    }
+    if (pendentes.length > 0) return { status: 409, corpo: { erro: 'este cupom ainda tem item sem produto: atualize a tela' } }
+    const somaT = conferirSoma(originais, total)
+    if (!somaT.bate) {
+      return { status: 400, corpo: { erro: `a soma dos itens (${brl(somaT.soma)}) não bate com o total do cupom (${brl(total)}): diferença de ${brl(Math.abs(somaT.diferenca))}.`, soma: somaT.soma, total } }
+    }
+    const barradoT = await conferirRepetida(cupom, cupom.emitente_cnpj, deps)
+    if (barradoT) return barradoT
+    if (!(await deps.atualizarCupom(cupomId, originais))) {
+      return { status: 409, corpo: { erro: 'este cupom não está mais parado (já foi reenviado ou lançado): atualize a tela' } }
+    }
+    let disparouT = false
+    try { await deps.dispararLancamento(cupomId); disparouT = true } catch { /* quem registra o motivo é o index.ts */ }
+    return { status: 200, corpo: { cupom_id: cupomId, estado: PENDENTE, resumo: disparouT ? 'tentando de novo: enviado para lançar' : AVISO_DISPARO_FALHOU, disparo_ok: disparouT, lembrados: 0, nao_lembrados: 0 } }
   }
   if (conferirDeNovo) {
     // "Tentar de novo" (E5): só vale para o cupom parado SÓ porque o robô não conseguiu conferir se a compra é repetida (nada foi tocado no SisChef). Confere de novo (o portão) e, nada achando, solta
