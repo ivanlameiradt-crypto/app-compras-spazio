@@ -2,6 +2,7 @@ import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
 import { REPETIDA_PREFIXO, envioRepetido } from '../admin/cupomRegras'
 import { sugestoesLidas } from '../admin/sugestoesDoRobo'
+import { linhaLembrada, type ProdutoLembrado } from '../admin/produtoLembrado'
 import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/CadastrarProduto'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
@@ -1035,6 +1036,17 @@ export async function converterItem(chave: string, n: number, conversao: number 
  */
 export async function lembrarDescricao(produtoId: number, texto: string): Promise<boolean> {
   return (await chamarRet<boolean | null>('cot_produto_lembrar', { p_produto_id: produtoId, p_texto: texto })) === true
+}
+
+/**
+ * Produto lembrado por fornecedor (14/11/2026, cot_nfe_produto_lembrado, admin): o produto que o Ivan escolheu nas notas JÁ LANÇADAS daquele CNPJ, por CÓD. FOR + unidade.
+ * NUNCA lança: falha (rede, função ainda não aplicada, CNPJ ruim) = lista vazia, e a tela segue como sempre (o Ivan escolhe o produto).
+ */
+export async function produtoLembradoDoFornecedor(cnpj: string): Promise<ProdutoLembrado[]> {
+  try {
+    const r = await chamarRet<unknown>('cot_nfe_produto_lembrado', { p_cnpj: cnpj })
+    return Array.isArray(r) ? r.map(linhaLembrada).filter((x): x is ProdutoLembrado => x != null) : []
+  } catch { return [] }
 }
 
 // ---------- memória de embalagem das notas fiscais (fase 2, 29/10/2026): o que o robô aprendeu (public.nfe_aprendizado, só o admin lê) e o botão "Esquecer"
