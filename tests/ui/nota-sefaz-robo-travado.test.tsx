@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import NotaSefaz from '../../src/admin/NotaSefaz'
@@ -68,9 +68,10 @@ describe('NotaSefaz — nota "lançando" cujo robô pode ter caído (07/10: a ex
     await screen.findByTestId('nota-a-lancar')
     await userEvent.click(botaoVerificar())
     // a caixa de status já existia (com o texto de "lançando"): findBy acharia a velha; espera o texto novo da releitura
-    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('Precisa de você: O robô não chegou a começar'))
+    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('Nada foi lançado. O robô não chegou a começar.'))
     const status = screen.getByTestId('status-nota')
-    expect(status).toHaveTextContent('Nada foi criado no SisChef; pode lançar de novo.')
+    expect(status).toHaveTextContent('Toque em Tentar de novo.')   // 14/11/2026: frase curta (motivo passageiro) com o botão que faz o mesmo que o Lançar
+    expect(within(status).getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Verificar o robô' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()
   })
