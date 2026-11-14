@@ -5,7 +5,7 @@ import Cupom from '../../src/admin/Cupom'
 import TentarDeNovoCupom from '../../src/admin/TentarDeNovoCupom'
 import type { CupomRecente, ItemCupomRecente, RespostaConfirmacaoCupom } from '../../src/lib/tipos'
 
-// Etapa 8 do inventário de 14/11: motivo PASSAGEIRO do robô (nada foi criado no SisChef) = frase curta; o botão "Tentar de novo" só existe com a função do servidor pronta (BOTAO_TENTAR_DE_NOVO_LIGADO),
+// Etapa 8 do inventário de 14/11: motivo PASSAGEIRO do robô (nada foi criado no SisChef) = frase curta; o botão "Tentar de novo" existe desde 14/11 (função do servidor pronta, BOTAO_TENTAR_DE_NOVO_LIGADO ligado),
 // e o que PODE ter criado compra nunca ganha botão, nem a frase de "nada foi lançado".
 vi.mock('../../src/lib/api')
 const m = vi.mocked(api)
@@ -25,15 +25,16 @@ beforeEach(() => {
 })
 
 describe('Cupom — motivo passageiro do robô', () => {
-  it('mostra a frase curta, mantém o motivo cru em letra pequena e, com a função do servidor ainda não pronta, manda pedir ao Claude (sem botão)', async () => {
+  it('mostra a frase curta, mantém o motivo cru em letra pequena e oferece o botão Tentar de novo (função do servidor pronta desde 14/11)', async () => {
     m.cuponsRecentes.mockResolvedValue([cupom(NAO_COLOCOU)])
     render(<Cupom />)
     const p = await screen.findByTestId('cupom-problema')
     expect(p).toHaveTextContent('O SisChef demorou para mostrar o produto do item 1. Nada foi lançado.')
     expect(p).toHaveTextContent(`Motivo registrado: ${NAO_COLOCOU}`)
     expect(p).not.toHaveTextContent('motivo que ainda não sei explicar')
-    expect(screen.getByTestId('tentar-de-novo-pelo-claude')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('tentar-de-novo-cupom')).toBeInTheDocument()
+    expect(screen.queryByTestId('tentar-de-novo-pelo-claude')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
   })
 
   it('o que PODE ter criado compra mantém o texto de sempre, sem "nada foi lançado" e sem pedir para repetir', async () => {

@@ -1129,3 +1129,97 @@ describe('confirmar-cupom — "Tentar de novo" depois de a conferência do robô
     expect((await tratar(conferirDeNovo, IVAN, comprador)).status).toBe(403)
   })
 })
+
+// ---------- 14/11/2026 (pedido do Ivan: "Tentar de novo" para falha PASSAGEIRA do robô, antes de "Gerar compra"): modo `tentar_de_novo`. O próprio texto do robô prova que nada foi criado no SisChef;
+// o servidor reconhece o texto pelos MESMOS moldes do app (passageiro.ts = src/admin/cupomRegras.ts), confere soma e compra repetida e só então solta o cupom (sem marca de "outra compra").
+const NAO_COLOCOU = 'item 2: o Sischef não colocou o produto (código 3484991) na lista em ~30 s (demora do Sischef ou produto fora do catálogo)'
+const GRADE = 'a grade do Sischef tem 4 linha(s), esperava 3: uma linha pode ter entrado duas vezes (nada foi gerado)'
+const MONTAR = 'falha ao montar o pedido no Sischef ao preencher a linha (código 3484974): tempo esgotado'
+const tentarDeNovo = { cupom_id: CUPOM_ID, tentar_de_novo: true }
+
+describe('confirmar-cupom — "Tentar de novo" depois de falha passageira do robô (nada criado no SisChef)', () => {
+  it.each([NAO_COLOCOU, GRADE, MONTAR, `${NAO_COLOCOU}; ${GRADE}`])('motivo passageiro %#: confere a repetida, solta como PENDENTE, dispara e NÃO grava marca', async (motivo) => {
+    const d = depsE5([], { cupom: cupomCasado({ motivo }) })
+    const r = await tratar(tentarDeNovo, IVAN, d)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ cupom_id: CUPOM_ID, estado: 'PENDENTE', disparo_ok: true })
+    expect(d.atualizacoesComExtras).toHaveLength(1)
+    expect(d.atualizacoesComExtras[0].extras).toBeUndefined()
+    expect(d.consultas).toEqual([{ cnpj: CNPJ_ATACADAO, centavos: 3527, ignorarId: CUPOM_ID }])
+    expect(d.disparos).toEqual([CUPOM_ID])
+    expect(d.marcadas).toEqual([])
+  })
+
+  it('o texto REAL do robô para teste usa ponto e vírgula dentro do parêntese e também é aceito', async () => {
+    const d = depsE5([], { cupom: cupomCasado({ teste: true, motivo: 'erro inesperado no teste (dry-run; nada foi criado no Sischef): tempo esgotado' }) })
+    expect((await tratar(tentarDeNovo, IVAN, d)).status).toBe(200)
+  })
+
+  it('o cupom de TESTE (dry-run) também pode tentar de novo', async () => {
+    const d = depsE5([], { cupom: cupomCasado({ teste: true, motivo: 'erro inesperado no teste (dry-run, nada foi criado no Sischef): tempo esgotado' }) })
+    expect((await tratar(tentarDeNovo, IVAN, d)).status).toBe(200)
+  })
+
+  it('NUNCA solta por motivo que não é passageiro: aviso, conferência, repetida, fornecedor, texto desconhecido, qualquer sinal de compra, parte desconhecida, texto longo ou vazio (409, nada gravado)', async () => {
+    const motivos: (string | null)[] = [
+      null, '', MOTIVO_CONFIRMAR, FALHA, FRASE, 'fornecedor não encontrado no Sischef (CNPJ 123)',
+      'qualquer coisa que o robô nunca escreveu',
+      `${NAO_COLOCOU}; qualquer coisa que o robô nunca escreveu`,
+      `${NAO_COLOCOU}; ${FALHA}`, `${NAO_COLOCOU}; ${FRASE}`,
+      `${MONTAR}; GERAR_COMPRA_CLICADO`, `${MONTAR}: pedido criado 123`, `${MONTAR}: Finalizar compra clicado`,
+      'CONFERIR NO SISCHEF antes de repetir: ' + MONTAR,
+      'falha ao preencher o pagamento no Sischef: tempo esgotado', 'FINALIZAR_COMPRA_CLICADO — conferir no Sischef antes de repetir: x',
+      'CONFERIR NO SISCHEF antes de repetir: PROCESSANDO preso há mais de 30 min',
+      'PROCESSANDO preso há mais de 20 min (nunca lançado)',
+      'falha ao montar o pedido no Sischef: ' + 'x'.repeat(1500),
+    ]
+    for (const motivo of motivos) {
+      const d = depsE5([], { cupom: cupomCasado({ motivo }) })
+      const r = await tratar(tentarDeNovo, IVAN, d)
+      expect([r.status, motivo]).toEqual([409, motivo])
+      nadaGravado(d)
+      expect(d.consultas).toEqual([])
+    }
+  })
+
+  it('já tem pedido no SisChef, ou não está em REVISAR: 409; item sem produto: 409; soma que não fecha: 400 (nada gravado)', async () => {
+    for (const cup of [cupomCasado({ motivo: MONTAR, pedido_sischef: '999' }), cupomCasado({ motivo: MONTAR, estado: 'PENDENTE' }), cupom({ motivo: MONTAR })]) {
+      const d = depsE5([], { cupom: cup })
+      expect((await tratar(tentarDeNovo, IVAN, d)).status).toBe(409)
+      nadaGravado(d)
+    }
+    const itens = structuredClone(ITENS_TODOS_CASADOS)
+    itens[2].entrada_estoque = 1
+    const naoFecha = depsE5([], { cupom: cupomCasado({ motivo: MONTAR, itens }) })
+    expect((await tratar(tentarDeNovo, IVAN, naoFecha)).status).toBe(400)
+    nadaGravado(naoFecha)
+  })
+
+  it('achou compra parecida: 409 com a frase e nada solto; a consulta cai: 503 e nada solto', async () => {
+    const achou = depsE5([PARECIDA], { cupom: cupomCasado({ motivo: MONTAR }) })
+    const r = await tratar(tentarDeNovo, IVAN, achou)
+    expect(r.status).toBe(409)
+    expect(r.corpo).toEqual({ erro: FRASE })
+    nadaGravado(achou)
+    const caiu = depsE5(new Error('banco fora'), { cupom: cupomCasado({ motivo: MONTAR }) })
+    expect((await tratar(tentarDeNovo, IVAN, caiu)).status).toBe(503)
+    nadaGravado(caiu)
+  })
+
+  it('não mistura com os outros modos nem leva itens (400); só o administrador (403); outro modo continua sem aceitar o motivo passageiro', async () => {
+    for (const outro of [{ so_confirmar: true }, { reenviar_fornecedor: true }, { outra_compra: true }, { conferir_de_novo: true }, { itens: CONFIRMACOES }]) {
+      const d = depsE5([], { cupom: cupomCasado({ motivo: MONTAR }) })
+      expect((await tratar({ ...tentarDeNovo, ...outro } as never, IVAN, d)).status).toBe(400)
+      nadaGravado(d)
+    }
+    const comprador = depsE5([], { cupom: cupomCasado({ motivo: MONTAR }), async buscarUsuario() { return { papel: 'comprador', ativo: true } } })
+    expect((await tratar(tentarDeNovo, IVAN, comprador)).status).toBe(403)
+    const texto = depsE5([], { cupom: cupomCasado({ motivo: MONTAR }) })
+    expect((await tratar({ cupom_id: CUPOM_ID, tentar_de_novo: 'true' } as never, IVAN, texto)).status).toBe(400)   // só o booleano true liga
+    for (const modo of [soConfirmar, conferirDeNovo]) {
+      const d = depsE5([], { cupom: cupomCasado({ motivo: MONTAR }) })
+      expect((await tratar(modo, IVAN, d)).status).toBe(409)
+      nadaGravado(d)
+    }
+  })
+})

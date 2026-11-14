@@ -164,10 +164,10 @@ const MOLDE_TESTE = /^erro inesperado no teste \(dry-run, nada foi criado no Sis
 const SINAL_DE_COMPRA = /CONFERIR NO SISCHEF|conferir no sischef|_CLICADO|pedido criado|pedido gerado|Gerar compra|Finalizar compra|pagamento no Sischef|preso há mais de \d+ min(?! \(cupom de teste)|nunca lançado/i
 
 /**
- * Liga o botão "Tentar de novo" dos motivos passageiros. DESLIGADO de propósito: a função confirmar-cupom ainda não tem o modo `tentar_de_novo` (hoje só aceita o motivo "CONFIRMAR:", o da falha de conferência
- * e o de fornecedor novo), então o botão levaria um 409. Ligar junto com a publicação da função (ver o relatório de 14/11/2026).
+ * Liga o botão "Tentar de novo" dos motivos passageiros. LIGADO em 14/11/2026, com o modo `tentar_de_novo` da função confirmar-cupom publicado (passageiro.ts da função tem os mesmos moldes;
+ * tests/unit/passageiroParidade.test.ts garante que os dois reconhecem os mesmos textos). Para desligar de novo: `false`.
  */
-export const BOTAO_TENTAR_DE_NOVO_LIGADO = false
+export const BOTAO_TENTAR_DE_NOVO_LIGADO = true
 
 const FRASE_MONTAR = 'O SisChef demorou ou falhou ao montar o pedido. Nada foi lançado.'
 const FRASE_TESTE = 'O teste deste cupom falhou. Nada foi criado.'

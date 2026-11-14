@@ -1193,8 +1193,7 @@ export async function tentarConferirDeNovo(cupomId: string): Promise<RespostaCon
 
 /**
  * "Tentar de novo" do cupom parado por falha PASSAGEIRA do robô (SisChef lento, produto que não apareceu na lista, tela que falhou ANTES de "Gerar compra"). O servidor confere que o cupom está parado por
- * esse motivo, que a soma fecha e que a compra não é repetida, e só então solta o cupom para o robô. ATENÇÃO: o modo `tentar_de_novo` AINDA NÃO existe na função confirmar-cupom (pendência de 14/11/2026):
- * por isso a tela só mostra o botão com BOTAO_TENTAR_DE_NOVO_LIGADO (cupomRegras.ts) ligado.
+ * esse motivo, que a soma fecha e que a compra não é repetida, e só então solta o cupom para o robô. O modo `tentar_de_novo` existe na função confirmar-cupom desde 14/11/2026; a tela só mostra o botão com BOTAO_TENTAR_DE_NOVO_LIGADO (cupomRegras.ts) ligado.
  */
 export async function tentarDeNovoCupom(cupomId: string): Promise<RespostaConfirmacaoCupom> {
   const { data, error } = await supabase.functions.invoke('confirmar-cupom', { body: { cupom_id: cupomId, tentar_de_novo: true } })
