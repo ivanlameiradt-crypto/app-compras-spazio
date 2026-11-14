@@ -1150,6 +1150,11 @@ describe('confirmar-cupom — "Tentar de novo" depois de falha passageira do rob
     expect(d.marcadas).toEqual([])
   })
 
+  it('o texto REAL do robô para teste usa ponto e vírgula dentro do parêntese e também é aceito', async () => {
+    const d = depsE5([], { cupom: cupomCasado({ teste: true, motivo: 'erro inesperado no teste (dry-run; nada foi criado no Sischef): tempo esgotado' }) })
+    expect((await tratar(tentarDeNovo, IVAN, d)).status).toBe(200)
+  })
+
   it('o cupom de TESTE (dry-run) também pode tentar de novo', async () => {
     const d = depsE5([], { cupom: cupomCasado({ teste: true, motivo: 'erro inesperado no teste (dry-run, nada foi criado no Sischef): tempo esgotado' }) })
     expect((await tratar(tentarDeNovo, IVAN, d)).status).toBe(200)
@@ -1163,6 +1168,8 @@ describe('confirmar-cupom — "Tentar de novo" depois de falha passageira do rob
       `${NAO_COLOCOU}; ${FALHA}`, `${NAO_COLOCOU}; ${FRASE}`,
       `${MONTAR}; GERAR_COMPRA_CLICADO`, `${MONTAR}: pedido criado 123`, `${MONTAR}: Finalizar compra clicado`,
       'CONFERIR NO SISCHEF antes de repetir: ' + MONTAR,
+      'falha ao preencher o pagamento no Sischef: tempo esgotado', 'FINALIZAR_COMPRA_CLICADO — conferir no Sischef antes de repetir: x',
+      'CONFERIR NO SISCHEF antes de repetir: PROCESSANDO preso há mais de 30 min',
       'PROCESSANDO preso há mais de 20 min (nunca lançado)',
       'falha ao montar o pedido no Sischef: ' + 'x'.repeat(1500),
     ]
