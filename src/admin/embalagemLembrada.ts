@@ -28,7 +28,7 @@ export function memoriaDoItem(
 }
 
 /** "28/10", sempre no horário de Brasília (o mesmo da equipe e do resto do app), qualquer que seja o fuso do aparelho; data ilegível = null. */
-function dataCurta(iso: string | null | undefined): string | null {
+export function dataCurta(iso: string | null | undefined): string | null {
   const t = Date.parse(iso ?? '')
   if (!Number.isFinite(t)) return null
   const p = Object.fromEntries(

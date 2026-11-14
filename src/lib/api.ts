@@ -2,6 +2,7 @@ import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
 import { REPETIDA_PREFIXO, envioRepetido } from '../admin/cupomRegras'
 import { sugestoesLidas } from '../admin/sugestoesDoRobo'
+import { linhaLembrada, type ProdutoLembrado } from '../admin/produtoLembrado'
 import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/CadastrarProduto'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
@@ -614,7 +615,9 @@ const COLUNAS_NOTA_SEM_ASSOCIACAO = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, l
 const COLUNAS_NOTA_SEM_FRETE = `${COLUNAS_NOTA_SEM_ASSOCIACAO}, associacoes_app`
 /** Até a migração do frete gravado (20261218000001): sem as sugestões do robô (20261229000001), que são as mais novas. */
 const COLUNAS_NOTA_SEM_SUGESTOES = `${COLUNAS_NOTA_SEM_FRETE}, frete_valor, frete_tipo`
-const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_SUGESTOES}, lancamento_sugestoes`
+const COLUNAS_NOTA_SEM_RECUSA = `${COLUNAS_NOTA_SEM_SUGESTOES}, lancamento_sugestoes`
+/** Com a recusa do produto lembrado (20261230000001), a mais nova. */
+const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_RECUSA}, lembrado_recusado`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -624,6 +627,8 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   lancamento_estado: n.lancamento_estado ?? null,
   lancamento_motivo: n.lancamento_motivo ?? null,
   lancamento_estado_em: n.lancamento_estado_em ?? null,
+  // os itens em que o Ivan trocou/desfez a associação automática (14/11/2026): o app nunca mais associa sozinho; ausente/torta = []
+  lembrado_recusado: Array.isArray(n.lembrado_recusado) ? n.lembrado_recusado.map(Number).filter((x) => Number.isInteger(x) && x > 0) : [],
   lancamento_sugestoes: sugestoesLidas(n.lancamento_sugestoes), // etapa 6: só as bem formadas; ausente/torta = null (vale o texto do motivo)
   parcelas: Array.isArray(n.parcelas)
     ? n.parcelas.map((p) => ({ numero: p?.numero ?? null, vencimento: p?.vencimento ?? null, valor: Number(p?.valor ?? 0) }))
@@ -672,6 +677,7 @@ async function lerNotas(consulta: (colunas: string, novas: boolean) => PromiseLi
   // Degraus: tudo (com as sugestões do robô) -> sem as sugestões -> sem o frete -> sem a decisão do app (descarte já existe) -> só as colunas antigas. Cada degrau só é tentado se o anterior
   // falhou por coluna inexistente (migração ainda não aplicada); qualquer outro erro vale como está.
   let r = await consulta(COLUNAS_NOTA, true)
+  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_RECUSA, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_SUGESTOES, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_FRETE, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_ASSOCIACAO, true)
@@ -1035,6 +1041,26 @@ export async function converterItem(chave: string, n: number, conversao: number 
  */
 export async function lembrarDescricao(produtoId: number, texto: string): Promise<boolean> {
   return (await chamarRet<boolean | null>('cot_produto_lembrar', { p_produto_id: produtoId, p_texto: texto })) === true
+}
+
+/**
+ * Produto lembrado por fornecedor (14/11/2026, cot_nfe_produto_lembrado, admin): o produto que o Ivan escolheu nas notas JÁ LANÇADAS daquele CNPJ, por CÓD. FOR + unidade.
+ * NUNCA lança: falha (rede, função ainda não aplicada, CNPJ ruim) = lista vazia, e a tela segue como sempre (o Ivan escolhe o produto).
+ */
+export async function produtoLembradoDoFornecedor(cnpj: string): Promise<ProdutoLembrado[]> {
+  try {
+    const r = await chamarRet<unknown>('cot_nfe_produto_lembrado', { p_cnpj: cnpj })
+    return Array.isArray(r) ? r.map(linhaLembrada).filter((x): x is ProdutoLembrado => x != null) : []
+  } catch { return [] }
+}
+
+/** Gravação AUTOMÁTICA do produto lembrado (cot_nfe_associar_lembrado): origem 'lembrado' e só se o item ainda não tem decisão nem foi recusado. true = gravou. */
+export async function associarLembrado(chave: string, n: number, produtoId: number, conversao: number | null): Promise<boolean> {
+  return (await chamarRet<boolean | null>('cot_nfe_associar_lembrado', { p_chave: chave, p_n: n, p_produto_id: produtoId, p_conversao: conversao })) === true
+}
+/** O Ivan trocou ou desfez uma associação automática: guarda a recusa (cot_nfe_recusar_lembrado) para o app nunca mais associar sozinho este item da nota. */
+export async function recusarLembrado(chave: string, n: number): Promise<void> {
+  await chamar('cot_nfe_recusar_lembrado', { p_chave: chave, p_n: n })
 }
 
 // ---------- memória de embalagem das notas fiscais (fase 2, 29/10/2026): o que o robô aprendeu (public.nfe_aprendizado, só o admin lê) e o botão "Esquecer"
