@@ -617,8 +617,6 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const planoBol = semSugestao || planoConv ? null : planoBoletosDaNota(nota)
   const planoForma = semSugestao || planoConv || planoBol ? null : planoFormaLembrada(nota, padroes)
   const faltaGravarConv = planoConv != null && planoConv.sugestoes.some((s) => !s.gravado)
-  const lancaJuntoConv = planoConv != null && planoConv.resto === '' && !robotOuMetade && bloqueiosDaNota(planoConv.notaDepois).length === 0 && forma !== '' && !outraOcupando
-    && !fretePendente && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
   // A forma lembrada só ESCOLHE a forma (nunca lança junto): o Lançar normal ainda pede o "Confirmar?" com a forma e as parcelas à vista (revisão independente de 14/11/2026).
   const numeroDoBotao = (n: number): string => n.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: 4 })
   /** O caminho comum das três sugestões: grava (se houver o que gravar), pede a vez de enviar já aqui (entre gravar e lançar nenhuma outra nota entra na frente) e lança com o mesmo disparo do Lançar. */
@@ -649,7 +647,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     if (!planoConv || !faltaGravarConv || !podeAssociar) return
     const alvos = planoConv.sugestoes.filter((s) => !s.gravado)
     void aplicarSugestao({
-      lancar: lancaJuntoConv, falhaDoLancamento: 'Gravei a conversão, mas não consegui lançar agora',
+      lancar: false, falhaDoLancamento: '', // só GRAVA: o número vira de-para permanente no SisChef e o Ivan nunca o digitou; o Lançar é dele
       gravar: async () => {
         for (const s of alvos) {
           if (s.via === 'converter') await api.converterItem(nota.chave, s.n, s.numero)
@@ -767,7 +765,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
             {planoConv && (faltaGravarConv || sugerindo) && (
               <div className="acoes">
                 <button type="button" className="botao" disabled={sugerindo || enviando || !podeAssociar} onClick={usarConversaoSugerida}>
-                  {sugerindo ? 'Gravando…' : `Usar ${planoConv.sugestoes.length > 1 ? 'as sugestões' : numeroDoBotao(planoConv.sugestoes[0].numero)}${lancaJuntoConv ? ' e lançar' : ''}`}
+                  {sugerindo ? 'Gravando…' : `Usar ${planoConv.sugestoes.length > 1 ? 'as sugestões' : numeroDoBotao(planoConv.sugestoes[0].numero)}`}
                 </button>
               </div>
             )}

@@ -344,6 +344,8 @@ const ehKetchupSachet = (descricao: string): boolean => {
 /** O número do NOME para um item com UN DIFERE: SÓ o peso ("395G"), com a nota em UN e o produto em KG (o de-para é por unidade; a unidade do produto é conferida em sugestaoDoItem). A embalagem genérica do nome ("C/ 12", "PCT/15",
  *  "168UN", "SIX PACK") NÃO entra aqui: com a nota em CX ou FD cabem vários pacotes numa caixa e o número sairia errado (revisão independente de 14/11/2026). Só o ketchup sachê usa o nome da embalagem, porque o robô valida esse número. */
 function numeroDoNomeDoItem(it: ItemNotaSefaz): { numero: number; trecho: string } | null {
+  // O nome que traz peso E embalagem ("56G C/ 30", "56G CX 30UN", "200G FD C/ 10") não diz o peso por unidade da nota: sem sugestão.
+  if (embalagemPeloNome(it.descricao, 'UN') != null || /\b(?:C|PCT|CX|FD)\s*\/?\s*\d|\d\s*(?:UN|UND)\b/i.test(it.descricao ?? '')) return null
   const peso = pesoPeloNome(it.descricao, it.unidade_nota)
   return peso ? { numero: peso.kg, trecho: peso.trecho } : null
 }
@@ -363,7 +365,7 @@ function sugestaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz, numero: number, tr
   if (unidadeNota === '' || it.qtd_nota == null || Number(it.qtd_nota) !== qtd) return null
   // Cada lado com a sua unidade: a do produto é a da decisão do app (item sem produto no SisChef; lá a unidade_sischef é a da NOTA) ou, senão, a do SisChef.
   const unidadeProduto = rotuloUnidade(decididoNoApp ? d?.unidade : it.unidade_sischef)
-  if (tipo === 'peso' ? !(unidadeNota === 'UN' && unidadeProduto === 'KG') : unidadeProduto !== 'UN') return null
+  if (tipo === 'peso' ? !(unidadeNota === 'UN' && unidadeProduto === 'KG') : !(unidadeProduto === 'UN' && ['UN', 'CX', 'FD', 'PCT'].includes(unidadeNota))) return null
   const antes = conversaoDaDecisao(d)
   if (antes != null && antes !== numero && !aceitaOutroGravado) return null
   const leitura = leituraDaEntrada(qtd, null, numero, unidadeProduto)
@@ -440,7 +442,7 @@ export function planoFormaLembrada(n: NotaSefazLista, padroes: Record<string, st
   if (!forma) return null
   // Boleto só quando a nota traz parcelas que fecham com o valor; Dinheiro e Tesouraria nunca quando o XML traz boletos (não criariam a conta a pagar).
   const fin = resumoFinanceiro(n)
-  if (forma === 'boleto' ? !fin.bate : fin.parcelas.length > 0) return null
+  if (forma === 'boleto' ? !fin.bate : !fin.lido || fin.parcelas.length > 0) return null
   return forma ? { forma, rotulo: rotuloForma(forma), origem: doBanco ? 'banco' : 'aparelho', resto: recusada.resto } : null
 }
 

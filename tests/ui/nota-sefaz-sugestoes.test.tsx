@@ -49,28 +49,27 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
     expect(aviso).toHaveTextContent('Nada foi lançado.')
     expect(aviso).toHaveTextContent('Item 3 (KETCHUP SACHE HEINZ 168UN): falta a conversão de unidade. Sugestão: 1 unidade da nota = 168 (o nome diz 168UN). Conta: 10 × 168 = 1.680 UN.')
     expect(aviso).not.toHaveTextContent('UN DIFERE')
-    expect(within(aviso).getByRole('button', { name: 'Usar 168 e lançar' })).toBeEnabled()
+    expect(within(aviso).getByRole('button', { name: 'Usar 168' })).toBeEnabled()
     const cru = screen.getByTestId('texto-do-robo')
     expect(cru).toHaveTextContent('ketchup sachê: a nota traz 10 caixa(s) de 168 un')
   })
 
-  it('o toque grava a conversão pela função do item e SÓ DEPOIS dispara o mesmo lançamento do botão Lançar; enquanto grava, o botão fica travado', async () => {
+  it('o toque SÓ GRAVA a conversão pela função do item (nunca lança: o número vira de-para permanente no SisChef); enquanto grava, o botão fica travado', async () => {
     m.notasALancar.mockResolvedValue([nota()])
     let soltar!: () => void
     m.converterItem.mockReturnValue(new Promise<void>((ok) => { soltar = ok }))
-    m.lancarNota.mockImplementation(async () => { m.notasALancar.mockResolvedValue([nota({ associacoes_app: ketchupGravado(168), lancamento_estado: 'lancando', lancamento_em: new Date().toISOString() } as unknown as Partial<NotaSefazLista>)]) })
     render(<NotaSefaz />)
-    await userEvent.click(within(await faixa()).getByRole('button', { name: 'Usar 168 e lançar' }))
+    await userEvent.click(within(await faixa()).getByRole('button', { name: 'Usar 168' }))
     const gravando = screen.getByRole('button', { name: 'Gravando…' })
     expect(gravando).toBeDisabled()
     expect(m.converterItem).toHaveBeenCalledWith(CHAVE, 3, 168)
-    expect(m.lancarNota).not.toHaveBeenCalled()
     await userEvent.click(gravando)
     expect(m.converterItem).toHaveBeenCalledTimes(1)
+    m.notasALancar.mockResolvedValue([nota({ associacoes_app: ketchupGravado(168) })])
     await act(async () => { soltar() })
-    await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto'))
-    expect(m.lancarNota).toHaveBeenCalledTimes(1)
-    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('Lançando…'))
+    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('conversão 168 gravada (10 × 168 = 1.680 UN). Agora toque em Lançar.'))
+    expect(m.lancarNota).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()
   })
 
   it('peso no nome (395G), produto em KG: sugere 0,395 com a conta em KG', async () => {
@@ -81,9 +80,9 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
     render(<NotaSefaz />)
     const aviso = await faixa()
     expect(aviso).toHaveTextContent('Conta: 24 × 0,395 = 9,48 KG.')
-    await userEvent.click(within(aviso).getByRole('button', { name: 'Usar 0,395 e lançar' }))
+    await userEvent.click(within(aviso).getByRole('button', { name: 'Usar 0,395' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenCalledWith(CHAVE, 4, 0.395))
-    await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto'))
+    expect(m.lancarNota).not.toHaveBeenCalled()
   })
 
   it('outra nota está lançando: o botão só grava (não lança) e a frase manda tocar em Lançar', async () => {
@@ -93,7 +92,7 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
     render(<NotaSefaz />)
     await screen.findAllByTestId('nota-a-lancar')
     const aviso = screen.getAllByTestId('status-nota').find((x) => (x.textContent ?? '').includes('Item 3'))!
-    expect(within(aviso).queryByRole('button', { name: 'Usar 168 e lançar' })).not.toBeInTheDocument()
+    expect(within(aviso).queryByRole('button', { name: /e lançar/ })).not.toBeInTheDocument()
     await userEvent.click(within(aviso).getByRole('button', { name: 'Usar 168' }))
     expect(m.converterItem).toHaveBeenCalledWith(CHAVE, 3, 168)
     await waitFor(() => expect(aviso).toHaveTextContent('conversão 168 gravada (10 × 168 = 1.680 UN). Agora toque em Lançar.'))
@@ -104,21 +103,10 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
     m.notasALancar.mockResolvedValue([nota()])
     m.converterItem.mockRejectedValue(new Error('Não consegui guardar a conversão agora. Confira a internet e tente de novo.'))
     render(<NotaSefaz />)
-    await userEvent.click(within(await faixa()).getByRole('button', { name: 'Usar 168 e lançar' }))
+    await userEvent.click(within(await faixa()).getByRole('button', { name: 'Usar 168' }))
     expect(await screen.findByTestId('sugestao-erro')).toHaveTextContent('Não consegui guardar a conversão agora. Confira a internet e tente de novo.')
     expect(m.lancarNota).not.toHaveBeenCalled()
-    expect(within(screen.getByTestId('status-nota')).getByRole('button', { name: 'Usar 168 e lançar' })).toBeEnabled()
-  })
-
-  it('gravou mas o lançamento falhou: diz que gravou e manda tocar em Lançar', async () => {
-    m.notasALancar.mockResolvedValue([nota()])
-    m.converterItem.mockImplementation(async () => { m.notasALancar.mockResolvedValue([nota({ associacoes_app: ketchupGravado(168) })]) })
-    m.lancarNota.mockRejectedValue(new Error('O robô está ocupado. Tente daqui a pouco.'))
-    render(<NotaSefaz />)
-    await userEvent.click(within(await faixa()).getByRole('button', { name: 'Usar 168 e lançar' }))
-    expect(await screen.findByTestId('sugestao-erro')).toHaveTextContent('Gravei a conversão, mas não consegui lançar agora: O robô está ocupado. Tente daqui a pouco. Toque em Lançar para tentar de novo.')
-    await waitFor(() => expect(screen.getByTestId('status-nota')).toHaveTextContent('conversão 168 gravada'))
-    expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()
+    expect(within(screen.getByTestId('status-nota')).getByRole('button', { name: 'Usar 168' })).toBeEnabled()
   })
 
   it('sem número seguro no nome: nada muda (o texto de hoje, sem botão de sugestão)', async () => {
@@ -138,9 +126,9 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
     render(<NotaSefaz />)
     const aviso = await faixa()
     expect(aviso).toHaveTextContent('Hoje o app tem 12.')
-    await userEvent.click(within(aviso).getByRole('button', { name: 'Usar 168 e lançar' }))
+    await userEvent.click(within(aviso).getByRole('button', { name: 'Usar 168' }))
     await waitFor(() => expect(m.converterItem).toHaveBeenCalledWith(CHAVE, 3, 168))
-    await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'boleto'))
+    expect(m.lancarNota).not.toHaveBeenCalled()
   })
 })
 

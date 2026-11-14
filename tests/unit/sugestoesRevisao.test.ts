@@ -89,3 +89,28 @@ describe('6: texto longo do robô (o banco corta em 2.000 letras e pode perder o
     expect(semSinalDeLancamento(PRE + UD('5') + ' | ' + 'x'.repeat(1500))).toBe(false)
   })
 })
+
+// Segunda revisão (14/11/2026): o peso do nome perdeu o conflito "peso × embalagem"; Dinheiro com XML não lido; ketchup com nota em peso.
+describe('A: o peso do nome só vale quando o nome NÃO traz também uma embalagem', () => {
+  it.each(['HAMBURGUER BOVINO 56G C/ 30', 'HAMBURGUER 56G CX 30UN', 'QUEIJO FATIADO 200G FD C/ 10'])('%s não sugere', (d) => {
+    expect(um({ descricao: `CÓD. FOR: 5 ${d}`, qtd: 3, unidade_sischef: 'KG', unidade_nota: 'UN' })).toBeNull()
+  })
+  it('MUSSARELA PECA 3,5KG continua sugerindo 3,5', () => {
+    expect(um({ descricao: 'CÓD. FOR: 5 MUSSARELA PECA 3,5KG', qtd: 3, unidade_sischef: 'KG', unidade_nota: 'UN' })?.sugestoes[0].numero).toBe(3.5)
+  })
+})
+describe('B: Dinheiro/Tesouraria exigem o XML LIDO', () => {
+  it('parcelas null (XML não lido): não sugere dinheiro nem tesouraria', () => {
+    const FALTA = PRE + 'falta a forma de pagamento — escolha "como pagar" no app'
+    expect(planoFormaLembrada(nota([], FALTA, { parcelas: null }), { '1': 'dinheiro' })).toBeNull()
+    expect(planoFormaLembrada(nota([], FALTA, { parcelas: null }), { '1': 'tesouraria' })).toBeNull()
+  })
+})
+describe('C: ketchup com a nota em peso ou volume não sugere', () => {
+  it.each(['KG', 'L', 'ML', 'G'])('nota em %s', (u) => {
+    expect(um({ descricao: 'CÓD. FOR: 5 KETCHUP SACHE 168UN', qtd: 2, qtd_nota: 2, unidade_sischef: 'UN', unidade_nota: u }, KET_A)).toBeNull()
+  })
+  it('nota em FD, PCT e UN seguem sugerindo', () => {
+    for (const u of ['FD', 'PCT', 'UN', 'CX']) expect(um({ descricao: 'CÓD. FOR: 5 KETCHUP SACHE 168UN', qtd: 2, qtd_nota: 2, unidade_sischef: 'UN', unidade_nota: u }, KET_A)).not.toBeNull()
+  })
+})
