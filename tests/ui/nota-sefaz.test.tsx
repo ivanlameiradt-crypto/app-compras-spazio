@@ -2034,7 +2034,9 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
       aLancar(nota({ itens: [sem(1)] }))
       m.catalogoProdutos.mockRejectedValue(new Error('rede'))
       render(<NotaSefaz />)
-      expect(await screen.findByText('Não consegui carregar a lista de produtos. Atualize a página.')).toBeInTheDocument()
+      // 14/11/2026: o aviso agora oferece o botão "Tentar de novo" no lugar de mandar atualizar a página
+      expect(await screen.findByText('Não consegui carregar a lista de produtos. Confira a internet e toque em “Tentar de novo”.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
       expect(screen.queryByLabelText('Produto do SisChef')).not.toBeInTheDocument()
     })
 

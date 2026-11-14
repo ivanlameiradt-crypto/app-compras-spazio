@@ -55,6 +55,8 @@ export default function Layout({ usuario, offline = false, children }: { usuario
   const loc = useLocation()
   const aba = abaAtual(loc.pathname)
   // Trocar de aba desmonta a tela e o que foi digitado some: com dados não enviados a aba pergunta antes (13/11/2026). A aba da própria tela não sai dela: não pergunta.
+  // "Trocar minha senha" e "Sair" (topo) usam a mesma pergunta: os dois também jogam fora o que estava em preenchimento.
+  // "Trocar minha senha" e "Sair" (topo) usam a mesma pergunta: os dois também jogam fora o que estava em preenchimento.
   const aoTrocarDeAba = (e: MouseEvent, destino: string) => { if (destino !== loc.pathname && !podeSair()) e.preventDefault() }
   // numa tela de Compra que não é o próprio menu em grade → oferece voltar para o menu
   const emSubtelaCompra = admin && aba === 'compra' && loc.pathname !== '/compra'
@@ -77,8 +79,8 @@ export default function Layout({ usuario, offline = false, children }: { usuario
           </button>
         </div>
         <div className="barra-links">
-          <NavLink to="/senha" className="link-claro">Trocar minha senha</NavLink>
-          <button type="button" className="link-claro" onClick={() => api.sair()}>Sair</button>
+          <NavLink to="/senha" className="link-claro" onClick={(e) => aoTrocarDeAba(e, '/senha')}>Trocar minha senha</NavLink>
+          <button type="button" className="link-claro" onClick={() => { if (podeSair()) api.sair() }}>Sair</button>
         </div>
         <div className="barra-titulo" ref={setSlotTitulo} />
         {admin ? (
