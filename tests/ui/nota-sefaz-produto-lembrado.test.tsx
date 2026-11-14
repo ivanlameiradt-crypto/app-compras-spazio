@@ -140,6 +140,31 @@ describe('NotaSefaz — produto lembrado por fornecedor', () => {
     expect(screen.queryByTestId('item-lembrado')).not.toBeInTheDocument()
   })
 
+  it('a recusa não grava: mostra o erro e NÃO desfaz (senão o app associaria de novo ao recarregar)', async () => {
+    m.recusarLembrado.mockRejectedValue(new Error('rede'))
+    const user = userEvent.setup()
+    render(<NotaSefaz />)
+    await screen.findByTestId('item-lembrado', {}, { timeout: 4000 })
+    await user.click((await item()).getByRole('button', { name: 'Editar' }))
+    await user.click((await item()).getByRole('button', { name: 'Desfazer a escolha' }))
+    expect(await screen.findByText(/Não consegui guardar a sua escolha agora/)).toBeInTheDocument()
+    expect(m.associarItem).not.toHaveBeenCalled()
+    expect(decisoes).not.toBeNull()
+  })
+
+  it('caso OLIVEIRA: dois itens do mesmo código (35,16 e 32,35 por CX de 12) associam sozinhos; o fardo de 6 (16,35) só sugere', async () => {
+    m.catalogoProdutos.mockResolvedValue([{ produto_id: GUARANA, nome: 'GUARANÁ ANTARC. S/ AÇÚCAR 350 ML', unidade: 'UN' }])
+    m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, unidade: 'un', preco_ref: 32.7 }])
+    const desc = 'CÓD. FOR: 0009085 GUARANA CHP ANTARCTICA DIET LATA 350ML SH '
+    const itens = [[1, '35,1600', 35.16], [2, '32,3500', 32.35], [3, '16,3500', 16.35]].map(([n, sh, valor]) => ({ n, descricao: desc + sh, qtd: 1, valor, unidade_sischef: 'CX', produto_id: null }))
+    m.notasALancar.mockImplementation(async () => [{ ...nota(), itens } as unknown as NotaSefazLista])
+    m.associarLembrado.mockImplementation(async (_c, n, _p, conv) => { decisoes = { ...(decisoes ?? {}), [String(n)]: decisao('lembrado', conv)['1'] }; return true })
+    render(<NotaSefaz />)
+    await screen.findByRole('button', { name: 'Usar o lembrado: GUARANÁ ANTARC. S/ AÇÚCAR 350 ML × 12' }, { timeout: 4000 })
+    await waitFor(() => expect(screen.getAllByTestId('item-lembrado')).toHaveLength(2))
+    expect(m.associarLembrado.mock.calls.map((c) => c[1]).sort()).toEqual([1, 2])
+  })
+
   it('outra tela já gravou (a função devolve false): não sobrescreve nem insiste', async () => {
     m.associarLembrado.mockResolvedValue(false)
     render(<NotaSefaz />)

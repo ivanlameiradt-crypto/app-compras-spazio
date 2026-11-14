@@ -19,7 +19,7 @@ import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
-import { oQueFazerComOLembrado, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado } from './produtoLembrado'
+import { oQueFazerComOLembrado, precisaRecusarLembrado, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado } from './produtoLembrado'
 import AvisoPreco from './AvisoPreco'
 import { Origem } from './Origem'
 import { ContaAutomatica } from './ContaAutomatica'
@@ -538,13 +538,19 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   // Escolher produto de um item sem produto: não com o robô lançando a nota nem com ela pela metade (o banco também recusa).
   const podeAssociar = estado !== 'erro' && !(estado === 'lancando' && !presa)
   // `conversao` = quanto vale 1 unidade da nota em unidades do produto (só quando as unidades diferem); sempre vai à RPC, nula quando não há.
-  async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false, conversao: number | null = null) {
-    // O Ivan mexeu numa associação que o app fez sozinho (trocou ou desfez): guarda a recusa ANTES, para o app nunca mais associar este item sozinho (nem depois de recarregar).
-    const antes = nota.associacoes_app?.[String(n)]
-    if (antes && (antes.origem ?? '').trim().toLowerCase() === 'lembrado') {
-      try { await api.recusarLembrado(nota.chave, n) } catch { /* sem a recusa a troca do Ivan ainda vale: a gravação automática nunca sobrescreve decisão */ }
+  /**
+   * TODA gravação de decisão por um toque do Ivan passa por aqui (a caixa do item, "Tirar a conversão", "Usar a conversão sugerida"). Se a decisão atual foi feita
+   * sozinha pelo app (origem 'lembrado'), guarda a recusa ANTES: o toque dele vira decisão DELE (origem 'lista') e o app nunca mais associa o item sozinho.
+   * Se a recusa não gravar, NÃO grava a troca (senão, ao recarregar, o app associaria de novo): o erro sobe para a tela.
+   */
+  async function gravarDecisaoDoIvan(n: number, produtoId: number | null, conversao: number | null) {
+    if (precisaRecusarLembrado(nota.associacoes_app?.[String(n)])) {
+      try { await api.recusarLembrado(nota.chave, n) } catch { throw new Error('Não consegui guardar a sua escolha agora. Confira a internet e tente de novo.') }
     }
-    await api.associarItem(nota.chave, n, produtoId, conversao ?? null)
+    await api.associarItem(nota.chave, n, produtoId, conversao)
+  }
+  async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false, conversao: number | null = null) {
+    await gravarDecisaoDoIvan(n, produtoId, conversao ?? null)
     aplicarDecisao(nota.chave, n, produtoId, conversao ?? null) // a tela já reflete o que foi gravado, mesmo que a releitura abaixo falhe
     // "Lembrar esta descrição": só reforça a busca da próxima vez. Falhar aqui NÃO desfaz a confirmação (que já está no banco).
     if (lembrar && produtoId != null) {
@@ -647,7 +653,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     try {
       for (const a of planoTirar.alvos) {
         if (a.via === 'converter') { await api.converterItem(nota.chave, a.n, null); aplicarDecisao(nota.chave, a.n, null, null) }
-        else { await api.associarItem(nota.chave, a.n, a.produtoId, null); aplicarDecisao(nota.chave, a.n, a.produtoId, null) }
+        else { await gravarDecisaoDoIvan(a.n, a.produtoId, null); aplicarDecisao(nota.chave, a.n, a.produtoId, null) }
       }
       tirou = true
       if (lancar) await enviarLancamento()
@@ -705,7 +711,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       gravar: async () => {
         for (const s of alvos) {
           if (s.via === 'converter') await api.converterItem(nota.chave, s.n, s.numero)
-          else { await api.associarItem(nota.chave, s.n, s.produtoId, s.numero); aplicarDecisao(nota.chave, s.n, s.produtoId, s.numero) }
+          else { await gravarDecisaoDoIvan(s.n, s.produtoId, s.numero); aplicarDecisao(nota.chave, s.n, s.produtoId, s.numero) }
         }
       },
     })

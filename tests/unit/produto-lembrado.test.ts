@@ -1,5 +1,5 @@
 import {
-  linhaLembrada, MIN_VEZES_PARA_ASSOCIAR_SOZINHO, oQueFazerComOLembrado, precoNaFaixa, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado,
+  linhaLembrada, MIN_VEZES_PARA_ASSOCIAR_SOZINHO, oQueFazerComOLembrado, precisaRecusarLembrado, precoNaFaixa, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado,
 } from '../../src/admin/produtoLembrado'
 import type { ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
 
@@ -55,6 +55,18 @@ describe('travas: preço, unidade, limiar, recusa', () => {
     expect(oQueFazerComOLembrado(null, G, CAT, false)).toBeNull()
   })
   it('o limiar de hoje é 1 nota', () => { expect(MIN_VEZES_PARA_ASSOCIAR_SOZINHO).toBe(1) })
+  it('unidade normalizada: "UN" do banco e "un" do catálogo (e o contrário) são iguais', () => {
+    const doBanco = linhaLembrada({ ...L, unidade: 'UN' })!
+    expect(oQueFazerComOLembrado(doBanco, G, [{ ...CAT[0], unidade: 'UN' }], false)).toBe('sozinho')
+    expect(oQueFazerComOLembrado({ ...L, unidade: ' un ' }, G, [{ ...CAT[0], unidade: 'UN' }], false)).toBe('sozinho')
+  })
+  it('toque do Ivan em decisão feita sozinha pelo app precisa guardar a recusa; nas outras, não', () => {
+    expect(precisaRecusarLembrado({ origem: 'lembrado' })).toBe(true)
+    expect(precisaRecusarLembrado({ origem: ' Lembrado ' })).toBe(true)
+    expect(precisaRecusarLembrado({ origem: 'lista' })).toBe(false)
+    expect(precisaRecusarLembrado({ origem: 'sischef' })).toBe(false)
+    expect(precisaRecusarLembrado(null)).toBe(false)
+  })
 })
 
 describe('frases e leitura', () => {

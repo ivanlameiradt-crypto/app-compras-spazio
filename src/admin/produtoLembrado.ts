@@ -20,7 +20,7 @@ export interface ProdutoLembrado {
   ultima_em: string | null
 }
 
-/** Quantas notas lançadas concordando são precisas para associar sozinho (o Ivan ainda decide entre 1 e 2). Abaixo disso, só sugestão. */
+/** Quantas NOTAS lançadas diferentes (não itens: `vezes` conta chaves distintas) concordando são precisas para associar sozinho (o Ivan ainda decide entre 1 e 2). Abaixo disso, só sugestão. */
 export const MIN_VEZES_PARA_ASSOCIAR_SOZINHO = 1
 /** A mesma faixa do robô (regras_embalagem.RAZAO_PRECO_MIN/MAX): fora dela pode ser outra embalagem sob o mesmo código (fardo vizinho). */
 export const RAZAO_PRECO_MIN = 0.8
@@ -72,6 +72,9 @@ export function oQueFazerComOLembrado(
   if (!recusado && l.vezes >= MIN_VEZES_PARA_ASSOCIAR_SOZINHO && unidadeIgual && precoNaFaixa(item, l)) return 'sozinho'
   return 'sugerir'
 }
+
+/** A decisão atual foi gravada sozinha pelo app (origem 'lembrado')? Então um toque do Ivan nela (trocar, desfazer, tirar ou ajustar a conversão) tem de guardar a recusa antes. */
+export const precisaRecusarLembrado = (d: { origem?: string | null } | null | undefined): boolean => (d?.origem ?? '').trim().toLowerCase() === 'lembrado'
 
 /** "associado sozinho, igual à nota de 07/11 (1 CX = 12)"; sem data: "associado sozinho, igual a nota anterior"; sem conversão, sem o parêntese. */
 export function textoAssociadoSozinho(ultimaEm: string | null | undefined, unidadeNota: string | null | undefined, conversao: number | null | undefined): string {
