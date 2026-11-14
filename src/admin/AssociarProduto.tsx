@@ -38,6 +38,8 @@ interface Props {
   /** A lista de insumos do app; null = ainda carregando. */
   catalogo: ProdutoCatalogo[] | null
   catalogoFalhou: boolean
+  /** Busca a lista de produtos de novo quando ela não carregou (13/11/2026): o app instalado não tem o "atualizar a página" do navegador. */
+  aoTentarCatalogo?: () => void
   /** O que o Ivan já confirmou para este item, ou null. */
   decisao: AssociacaoApp | null
   /** Guarda a escolha (`produtoId`) ou a desfaz (null); recarrega a nota. `lembrar` = deixar a descrição da nota como palavra-chave do produto.
@@ -59,7 +61,7 @@ const descricaoCurta = (d: string | undefined): string => {
   return t.length > 60 ? `${t.slice(0, 59)}…` : t
 }
 
-export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, decisao, salvar, notaChave, lembrada }: Props) {
+export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, aoTentarCatalogo, decisao, salvar, notaChave, lembrada }: Props) {
   const [texto, setTexto] = useState('')
   const [escolhido, setEscolhido] = useState<ProdutoCatalogo | null>(null) // produto que o Ivan PROCUROU na lista (o indicado vem em `proposta`)
   const [dispensou, setDispensou] = useState(false) // "Não é este produto? Escolher outro": para de propor o produto indicado
@@ -207,7 +209,12 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, dec
         </div>
       )}
       {catalogo === null && !catalogoFalhou && <p className="sub">Carregando a lista de produtos…</p>}
-      {catalogoFalhou && <p className="erro" role="alert">Não consegui carregar a lista de produtos. Atualize a página.</p>}
+      {catalogoFalhou && (
+        <>
+          <p className="erro" role="alert">Não consegui carregar a lista de produtos.{aoTentarCatalogo ? ' Confira a internet e toque em “Tentar de novo”.' : ' Toque em “Atualizar”, no alto da tela.'}</p>
+          {aoTentarCatalogo && <button type="button" className="botao secundario" onClick={aoTentarCatalogo} data-testid="tentar-lista-produtos">Tentar de novo</button>}
+        </>
+      )}
 
       {catalogo !== null && !atual && (
         <>

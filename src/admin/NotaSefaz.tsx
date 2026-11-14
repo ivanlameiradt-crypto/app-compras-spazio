@@ -97,11 +97,13 @@ function TickOk({ rotulo = 'produto associado no SisChef', testid = 'item-ok' }:
 }
 
 /** "Conferir": o que foi associado a cada item e o financeiro (boletos contra o valor da nota), para o Ivan abrir e checar. */
-function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAssociacao, salvarConversaoItem, memoria, esquecerEmbalagem }: {
+function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, podeAssociar, salvarAssociacao, salvarConversaoItem, memoria, esquecerEmbalagem }: {
   nota: NotaSefazLista
   /** Lista de insumos do app (null = carregando) e se a leitura dela falhou. */
   catalogo: ProdutoCatalogo[] | null
   catalogoFalhou: boolean
+  /** Busca a lista de insumos de novo quando ela não carregou. */
+  aoTentarCatalogo: () => void
   /** Dá para escolher produto agora? Não, se o robô está lançando a nota ou ela ficou pela metade (o banco também recusa). */
   podeAssociar: boolean
   salvarAssociacao: (n: number, produtoId: number | null, lembrar?: boolean, conversao?: number | null) => Promise<void>
@@ -149,7 +151,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, podeAssociar, salvarAs
         {conta && <ContaAutomatica conta={conta} />}
         {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
         {!ok && it.n != null && (decisao != null || podeAssociar) && (
-          <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} lembrada={lembrada} />
+          <AssociarProduto item={it} n={it.n} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoTentarCatalogo={aoTentarCatalogo} decisao={decisao} salvar={salvarAssociacao} notaChave={nota.chave} lembrada={lembrada} />
         )}
         {/* Item que já vem associado, mas o SisChef o marcou UN DIFERE: aparece SÓ quando o robô parou pedindo (ou o Ivan já informou) — vazio, para o Ivan dizer o número */}
         {ok && it.n != null && (
@@ -437,6 +439,8 @@ interface PropsNota {
   /** Lista de insumos do app para escolher o produto de um item sem produto (null = carregando) e se a leitura dela falhou. */
   catalogo: ProdutoCatalogo[] | null
   catalogoFalhou: boolean
+  /** Busca a lista de insumos de novo quando ela não carregou (botão "Tentar de novo" da caixa de associar). */
+  tentarCatalogo: () => void
   /** Lê a lista de insumos de novo (depois de "Lembrar esta descrição", que muda as palavras-chave de um produto). */
   recarregarCatalogo: () => Promise<void>
   /** O que o robô lembra das notas já lançadas (memória de embalagem; vazia se ainda não leu ou se a leitura falhou), o botão Esquecer e a releitura dela (depois de o Ivan corrigir um número). */
@@ -444,7 +448,7 @@ interface PropsNota {
   esquecerEmbalagem: (linha: NfeAprendizado) => Promise<void>
   recarregarMemoria: () => Promise<void>
 }
-function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, recarregarCatalogo, memoria, esquecerEmbalagem, recarregarMemoria }: PropsNota) {
+function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicarDecisao, outraLancando, emEnvio, iniciarEnvio, fimEnvio, catalogo, catalogoFalhou, tentarCatalogo, recarregarCatalogo, memoria, esquecerEmbalagem, recarregarMemoria }: PropsNota) {
   // Só a escolha do usuário fica aqui; sem escolha, vale a forma gravada na nota / lembrada do fornecedor / Boleto.
   const [escolha, setEscolha] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState(false)
@@ -662,7 +666,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {!soLancar && !exigeParcelas && prontidao.financeiro && !bloqueios.length && estado == null && (
         <div className="amarelo" data-testid="aviso-financeiro">{prontidao.financeiro}</div>
       )}
-      <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao}
+      <PainelConferir nota={nota} catalogo={catalogo} catalogoFalhou={catalogoFalhou} aoTentarCatalogo={tentarCatalogo} podeAssociar={podeAssociar} salvarAssociacao={salvarAssociacao}
         salvarConversaoItem={salvarConversaoItem} memoria={memoria} esquecerEmbalagem={esquecerEmbalagem} />
       {/* Preço fora do normal: fica FORA do painel recolhido, para ninguém lançar sem ver. O quadro some sozinho quando o Ivan acerta a conversão do item. */}
       {precosFora.length > 0 && !robotOuMetade && (
@@ -880,6 +884,9 @@ export default function NotaSefaz() {
   // Lista de insumos do app (itens_semana) para escolher o produto de um item sem produto. Só é lida quando alguma nota tem esse tipo de item.
   const [catalogo, setCatalogo] = useState<ProdutoCatalogo[] | null>(null)
   const [catalogoFalhou, setCatalogoFalhou] = useState(false)
+  // "Tentar de novo" da caixa de associar (13/11/2026): some o aviso e a leitura da lista roda de novo
+  const [tentativaCatalogo, setTentativaCatalogo] = useState(0)
+  const tentarCatalogo = () => { setCatalogoFalhou(false); setTentativaCatalogo((n) => n + 1) }
   // Nome fantasia por CNPJ (só existe no app; pedido do Ivan, 08/10): é o nome que as linhas mostram; a razão social fica no detalhe.
   const [fantasias, setFantasias] = useState<Record<string, string>>({})
   useEffect(() => {
@@ -944,7 +951,7 @@ export default function NotaSefaz() {
       .then((c) => { if (vivo) { setCatalogo(c ?? []); setCatalogoFalhou(false) } })
       .catch(() => { if (vivo) setCatalogoFalhou(true) })
     return () => { vivo = false }
-  }, [precisaCatalogo, catalogo])
+  }, [precisaCatalogo, catalogo, tentativaCatalogo])
 
   /**
    * Aplica NA HORA, na lista da tela, a decisão que acabou de ser gravada no banco (produto + conversão), sem esperar a releitura. Em 07/10 o Ivan
@@ -1037,7 +1044,7 @@ export default function NotaSefaz() {
             <ul className="recentes">
               {aLancar.map((n) => <NotaALancar key={n.chave} nota={n} nomeExibido={nomeDe(n)} padroes={padroes} seguidas={seguidas} recarregar={() => carregar(true)} aplicarDecisao={aplicarDecisao}
                 outraLancando={quemEstaLancando(aLancar, n.chave, nomeDe)}
-                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou}
+                emEnvio={emEnvio} iniciarEnvio={iniciarEnvio} fimEnvio={fimEnvio} catalogo={catalogo} catalogoFalhou={catalogoFalhou} tentarCatalogo={tentarCatalogo}
                 recarregarCatalogo={recarregarCatalogo} memoria={memoria} esquecerEmbalagem={esquecerEmbalagem} recarregarMemoria={recarregarMemoria} />)}
             </ul>
             <p className="sub">Confira, escolha como pagar e toque em “Lançar”: o robô faz o resto no SisChef.</p>
