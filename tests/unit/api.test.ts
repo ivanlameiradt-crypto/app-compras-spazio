@@ -603,6 +603,24 @@ describe('Sub-fase 3: cupom', () => {
     await expect(enviarCompraAvulsa(envio)).rejects.toThrow(/preço inválido|falhou/)
   })
 
+  it('etapa 6: o cupom traz as sugestões do robô (só as bem formadas); sem a coluna no banco, as duas leituras se repetem sem ela', async () => {
+    const boa = { codigo: 'falha_passageira', item_n: null, acao: 'tentar_de_novo', dados: { nada_criado: 1 } }
+    const ultimos = consulta({ data: [{ id: 'c1', estado: 'REVISAR', valor_a_pagar: '1', criado_em: '2026-11-14T12:00:00Z', motivo: 'x', teste: false, itens: null, sugestoes: [boa, 7] }], error: null })
+    const abertos = consulta({ data: [], error: null })
+    from.mockReturnValueOnce(ultimos).mockReturnValueOnce(abertos)
+    const r = await cuponsRecentes(5)
+    expect(ultimos.select).toHaveBeenCalledWith(expect.stringContaining(', sugestoes'))
+    expect(r[0].sugestoes).toEqual([boa])
+    from.mockReset()
+    const erro = { message: 'column cupom.sugestoes does not exist', code: '42703' }
+    const u1 = consulta({ data: null, error: erro }), a1 = consulta({ data: null, error: erro })
+    const u2 = consulta({ data: [{ id: 'c2', estado: 'REVISAR', valor_a_pagar: '1', criado_em: '2026-11-14T12:00:00Z', motivo: 'x', teste: false, itens: null }], error: null }), a2 = consulta({ data: [], error: null })
+    from.mockReturnValueOnce(u1).mockReturnValueOnce(a1).mockReturnValueOnce(u2).mockReturnValueOnce(a2)
+    const r2 = await cuponsRecentes(5)
+    expect(u2.select).toHaveBeenCalledWith(expect.not.stringContaining('sugestoes'))
+    expect(r2.map((c) => [c.id, c.sugestoes])).toEqual([['c2', null]])
+  })
+
   it('as duas listas deixam de fora os envios EXCLUÍDOS (eles têm a lista própria)', async () => {
     // (13/11) cada lista faz duas leituras: os últimos (sem os excluídos) e os em aberto (REVISAR, PENDENTE, PROCESSANDO: nenhum é excluído)
     const a = consulta({ data: [], error: null })
@@ -783,9 +801,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     const falha2 = cadeia({ data: null, error: erro, status: 400 })  // o 2º degrau (sem o frete) e o 3º (sem a decisão do app) ainda têm as colunas novas: também falham
     const falha3 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
+    const falhaSug = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.lancamento_sugestoes does not exist' }, status: 400 }) // (etapa 6) o degrau mais novo: com as sugestões do robô
+    from.mockReturnValueOnce(falhaSug).mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(4)
+    expect(from).toHaveBeenCalledTimes(5)
     expect(falha.select.mock.calls[0][0]).toContain(COLUNA_NOVA)
     expect(antiga.select.mock.calls[0][0]).not.toContain('forma_pagamento')
     expect(antiga.select.mock.calls[0][0]).toContain('nf_sischef, itens')
@@ -797,10 +816,29 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     from.mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
+      .mockReturnValueOnce(cadeia({ data: null, error: { code: '42703', message: 'x' }, status: 400 }))
       .mockReturnValueOnce(cadeia({ data: [{ ...linha, situacao: 'lancada' }], error: null, status: 200 }))
     const r = await notasLancadas()
-    expect(from).toHaveBeenCalledTimes(4)
+    expect(from).toHaveBeenCalledTimes(5)
     expect(r[0]).toMatchObject({ situacao: 'lancada', lancamento_estado: null })
+  })
+
+  it('etapa 6: lê as sugestões do robô (só as bem formadas) e, sem a coluna, cai para a leitura de antes mantendo o frete', async () => {
+    const boa = { codigo: 'falha_passageira', item_n: null, acao: 'tentar_de_novo', dados: { nada_criado: 1 } }
+    const c = cadeia({ data: [{ ...linha, lancamento_sugestoes: [boa, { lixo: 1 }] }, { ...linha, chave: 'f'.repeat(44), lancamento_sugestoes: 'torto' }, { ...linha, chave: 'e'.repeat(44) }], error: null, status: 200 })
+    from.mockReturnValueOnce(c)
+    const r = await notasALancar()
+    expect(c.select.mock.calls[0][0]).toContain('frete_valor, frete_tipo, lancamento_sugestoes')
+    expect(r.map((n) => n.lancamento_sugestoes)).toEqual([[boa], null, null])
+    from.mockReset()
+    const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.lancamento_sugestoes does not exist' }, status: 400 })
+    const semSugestoes = cadeia({ data: [{ ...linha, frete_valor: '475.00', frete_tipo: '1' }], error: null, status: 200 })
+    from.mockReturnValueOnce(falha).mockReturnValueOnce(semSugestoes)
+    const r2 = await notasALancar()
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(semSugestoes.select.mock.calls[0][0]).toContain('frete_valor')
+    expect(semSugestoes.select.mock.calls[0][0]).not.toContain('lancamento_sugestoes')
+    expect(r2[0]).toMatchObject({ frete_valor: 475, lancamento_sugestoes: null })
   })
 
   it('outro erro NÃO cai para as colunas antigas: lança ErroApi (tabela inexistente continua dando lista vazia)', async () => {
@@ -943,7 +981,8 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     const falha2 = cadeia({ data: null, error: erro, status: 400 })
     const falha3 = cadeia({ data: null, error: erro, status: 400 })
     const antiga = cadeia({ data: [linha], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
+    const falhaSug = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.lancamento_sugestoes does not exist' }, status: 400 }) // (etapa 6) o degrau mais novo: com as sugestões do robô
+    from.mockReturnValueOnce(falhaSug).mockReturnValueOnce(falha).mockReturnValueOnce(falha2).mockReturnValueOnce(falha3).mockReturnValueOnce(antiga)
     const r = await notasALancar()
     expect(falha.is).toHaveBeenCalledWith('descartada_em', null)
     expect(antiga.is).not.toHaveBeenCalled()
@@ -996,9 +1035,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
     const semDecisao = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', lancamento_estado: 'revisar', parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: '10.5' }] }], error: null, status: 200 })
     const falhaFrete = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.associacoes_app does not exist' }, status: 400 })
-    from.mockReturnValueOnce(falhaFrete).mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
+    const falhaSug = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.lancamento_sugestoes does not exist' }, status: 400 }) // (etapa 6) o degrau mais novo: com as sugestões do robô
+    from.mockReturnValueOnce(falhaSug).mockReturnValueOnce(falhaFrete).mockReturnValueOnce(falha).mockReturnValueOnce(semDecisao)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(3)
+    expect(from).toHaveBeenCalledTimes(4)
     expect(falha.select.mock.calls[0][0]).toContain('associacoes_app')
     const colunas = semDecisao.select.mock.calls[0][0] as string
     expect(colunas).not.toContain('associacoes_app')
@@ -1025,9 +1065,10 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   it('A4: só a migração do frete ainda não aplicada: cai para as colunas SEM o frete e mantém a decisão do app', async () => {
     const falha = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.frete_valor does not exist' }, status: 400 })
     const semFrete = cadeia({ data: [{ ...linha, forma_pagamento: 'boleto', associacoes_app: { '1': { produto_id: 7, produto_nome: 'X' } } }], error: null, status: 200 })
-    from.mockReturnValueOnce(falha).mockReturnValueOnce(semFrete)
+    const falhaSug = cadeia({ data: null, error: { code: '42703', message: 'column cot_nfe.lancamento_sugestoes does not exist' }, status: 400 }) // (etapa 6) o degrau mais novo: com as sugestões do robô
+    from.mockReturnValueOnce(falhaSug).mockReturnValueOnce(falha).mockReturnValueOnce(semFrete)
     const r = await notasALancar()
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(from).toHaveBeenCalledTimes(3)
     const colunas = semFrete.select.mock.calls[0][0] as string
     expect(colunas).not.toContain('frete_valor')
     expect(colunas).toContain('associacoes_app')

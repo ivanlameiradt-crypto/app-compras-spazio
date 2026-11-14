@@ -1,6 +1,7 @@
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { juntarFornecedores, type FornecedorConhecido } from '../admin/fornecedorBusca'
 import { REPETIDA_PREFIXO, envioRepetido } from '../admin/cupomRegras'
+import { sugestoesLidas } from '../admin/sugestoesDoRobo'
 import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/CadastrarProduto'
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
@@ -611,7 +612,9 @@ const COLUNAS_NOTA_ANTIGAS = 'chave, cnpj_emitente, emitente, numero, emissao, v
 const COLUNAS_NOTA_SEM_ASSOCIACAO = `${COLUNAS_NOTA_ANTIGAS}, forma_pagamento, lancamento_estado, lancamento_motivo, lancamento_estado_em, parcelas, parcelas_manuais, descartada_em, descartada_motivo`
 /** Até a migração da decisão do app (20261210000001): sem o frete gravado (20261218000001), que é a mais nova. */
 const COLUNAS_NOTA_SEM_FRETE = `${COLUNAS_NOTA_SEM_ASSOCIACAO}, associacoes_app`
-const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_FRETE}, frete_valor, frete_tipo`
+/** Até a migração do frete gravado (20261218000001): sem as sugestões do robô (20261229000001), que são as mais novas. */
+const COLUNAS_NOTA_SEM_SUGESTOES = `${COLUNAS_NOTA_SEM_FRETE}, frete_valor, frete_tipo`
+const COLUNAS_NOTA = `${COLUNAS_NOTA_SEM_SUGESTOES}, lancamento_sugestoes`
 const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   ...n,
   valor_nf: n.valor_nf == null ? null : Number(n.valor_nf),
@@ -621,6 +624,7 @@ const notaListaLida = (n: NotaSefazLista): NotaSefazLista => ({
   lancamento_estado: n.lancamento_estado ?? null,
   lancamento_motivo: n.lancamento_motivo ?? null,
   lancamento_estado_em: n.lancamento_estado_em ?? null,
+  lancamento_sugestoes: sugestoesLidas(n.lancamento_sugestoes), // etapa 6: só as bem formadas; ausente/torta = null (vale o texto do motivo)
   parcelas: Array.isArray(n.parcelas)
     ? n.parcelas.map((p) => ({ numero: p?.numero ?? null, vencimento: p?.vencimento ?? null, valor: Number(p?.valor ?? 0) }))
     : null,
@@ -665,9 +669,10 @@ type RespostaNotas = { data: unknown; error: { message: string; code?: string } 
  * `consulta` qual das duas tentativas é: com as colunas antigas ela também não pode filtrar pelas colunas do descarte.
  */
 async function lerNotas(consulta: (colunas: string, novas: boolean) => PromiseLike<RespostaNotas>): Promise<NotaSefazLista[]> {
-  // Degraus: tudo (com o frete gravado) -> sem o frete -> sem a decisão do app (descarte já existe) -> só as colunas antigas. Cada degrau só é tentado se o anterior
+  // Degraus: tudo (com as sugestões do robô) -> sem as sugestões -> sem o frete -> sem a decisão do app (descarte já existe) -> só as colunas antigas. Cada degrau só é tentado se o anterior
   // falhou por coluna inexistente (migração ainda não aplicada); qualquer outro erro vale como está.
   let r = await consulta(COLUNAS_NOTA, true)
+  if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_SUGESTOES, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_FRETE, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_SEM_ASSOCIACAO, true)
   if (r.error && colunaInexistente(r.error)) r = await consulta(COLUNAS_NOTA_ANTIGAS, false)
@@ -1317,11 +1322,14 @@ export async function fornecedoresConhecidos(): Promise<FornecedorConhecido[]> {
   )
 }
 
-const COLUNAS_CUPOM = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path, processando_desde'
+const COLUNAS_CUPOM_SEM_SUGESTOES = 'id, estado, emitente_nome, emitente_cnpj, valor_a_pagar, pedido_sischef, criado_em, atualizado_em, motivo, teste, itens, foto_path, processando_desde'
+/** Com as sugestões do robô (cupom.sugestoes, migração 20261229000001); se o banco ainda não tem a coluna, a leitura se repete sem ela (a lista não pode quebrar). */
+const COLUNAS_CUPOM = `${COLUNAS_CUPOM_SEM_SUGESTOES}, sugestoes`
 const lerCupom = (c: CupomRecente): CupomRecente => ({
   ...c,
   valor_a_pagar: c.valor_a_pagar == null ? null : Number(c.valor_a_pagar),
   itens: Array.isArray(c.itens) ? c.itens : [], // JSONB pode vir null; a UI espera lista
+  sugestoes: sugestoesLidas(c.sugestoes),
 })
 
 /** Os estados que ainda pedem alguma coisa: parado esperando o Ivan (REVISAR) ou na fila do robô (PENDENTE, PROCESSANDO). Estes aparecem SEMPRE na lista, por mais antigos que sejam. */
@@ -1336,13 +1344,18 @@ const LIMITE_EM_ABERTO = 50
  * O envio REPETIDO ("já lançado em outro envio") fica em REVISAR para sempre e não pede ação: ele NÃO vem pela leitura dos em aberto (só aparece enquanto está entre os últimos).
  */
 async function enviosRecentes(avulsa: boolean, limite: number): Promise<CupomRecente[]> {
-  const daOrigem = () => { const q = supabase.from('cupom').select(COLUNAS_CUPOM); return avulsa ? q.eq('origem', 'avulsa') : q.neq('origem', 'avulsa') }
-  const [ultimos, abertos] = await Promise.all([
-    daOrigem().neq('estado', 'EXCLUIDO').order('criado_em', { ascending: false }).limit(limite),
-    daOrigem().in('estado', ESTADOS_EM_ABERTO).order('criado_em', { ascending: false }).limit(LIMITE_EM_ABERTO),
-  ])
+  const ler = (colunas: string) => {
+    const daOrigem = () => { const q = supabase.from('cupom').select(colunas); return avulsa ? q.eq('origem', 'avulsa') : q.neq('origem', 'avulsa') }
+    return Promise.all([
+      daOrigem().neq('estado', 'EXCLUIDO').order('criado_em', { ascending: false }).limit(limite),
+      daOrigem().in('estado', ESTADOS_EM_ABERTO).order('criado_em', { ascending: false }).limit(LIMITE_EM_ABERTO),
+    ])
+  }
+  let [ultimos, abertos] = await ler(COLUNAS_CUPOM)
+  // banco ainda sem a coluna das sugestões do robô (migração 20261229000001 não aplicada): repete as duas leituras sem ela
+  if ((ultimos.error && colunaInexistente(ultimos.error)) || (abertos.error && colunaInexistente(abertos.error))) [ultimos, abertos] = await ler(COLUNAS_CUPOM_SEM_SUGESTOES)
   const porId = new Map<string, CupomRecente>()
-  for (const c of [...(checar(ultimos) as CupomRecente[]), ...(checar(abertos) as CupomRecente[]).filter((c) => !envioRepetido(c))]) if (!porId.has(c.id)) porId.set(c.id, c)
+  for (const c of [...(checar(ultimos) as unknown as CupomRecente[]), ...(checar(abertos) as unknown as CupomRecente[]).filter((c) => !envioRepetido(c))]) if (!porId.has(c.id)) porId.set(c.id, c)
   return [...porId.values()].sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).map(lerCupom)
 }
 
@@ -1357,7 +1370,7 @@ export async function comprasAvulsasRecentes(limite = 10): Promise<CupomRecente[
 }
 
 /** As colunas de "excluídos" (migração 20261225000001): o motivo e quando o Ivan excluiu. */
-const COLUNAS_CUPOM_EXCLUIDO = `${COLUNAS_CUPOM}, excluido_motivo, excluido_em`
+const COLUNAS_CUPOM_EXCLUIDO = `${COLUNAS_CUPOM_SEM_SUGESTOES}, excluido_motivo, excluido_em`
 
 /**
  * Os envios que o Ivan EXCLUIU (estado 'EXCLUIDO'), do cupom ou da compra avulsa conforme `origem`, o mais novo primeiro: é a lista de onde ele desfaz. Só leitura, por RLS de admin.

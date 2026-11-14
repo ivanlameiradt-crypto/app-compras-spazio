@@ -478,6 +478,17 @@ export interface NfeAprendizado {
 export interface ParcelaNota { numero: string | null; vencimento: string | null; valor: number }
 /** Parcela que o Ivan digita quando o XML não traz as duplicatas: vencimento aaaa-mm-dd e valor em reais. */
 export interface ParcelaDigitada { vencimento: string; valor: number }
+/**
+ * Uma sugestão ESTRUTURADA do robô (etapa 6, 14/11/2026; colunas `cot_nfe.lancamento_sugestoes` e `cupom.sugestoes`, migração 20261229000001): `codigo` curto
+ * (conversao_desnecessaria, itens_mesmo_codigo, falha_passageira), `item_n` = item da nota (ou null), `acao` = o que o app oferece e `dados` só com números e ids.
+ * A frase que o Ivan lê mora no app; o texto do motivo continua gravado e o app o lê quando não há sugestões.
+ */
+export interface SugestaoDoRobo {
+  codigo: string
+  item_n: number | null
+  acao: string
+  dados: Record<string, unknown>
+}
 /** Situação do último "Lançar" de uma nota (cot_nfe.lancamento_estado, migração 20261206000001). null = nunca disparada. */
 export type EstadoLancamentoNfe = 'lancando' | 'revisar' | 'erro' | 'ensaio_ok'
 /** O frete que o Ivan confirmou numa nota (pedido de 09/10/2026): o valor em reais e o tipo do SisChef ("Tipo do frete"); só forma o preço do produto, nunca entra no financeiro. */
@@ -499,6 +510,8 @@ export interface NotaSefazLista {
   lancamento_estado?: EstadoLancamentoNfe | null
   lancamento_motivo?: string | null
   lancamento_estado_em?: string | null
+  /** Sugestões estruturadas do robô junto do motivo (migração 20261229000001; ausente/null = o robô não mandou ou o banco ainda não tem a coluna: vale o texto). */
+  lancamento_sugestoes?: SugestaoDoRobo[] | null
   /** Boletos do XML. null/ausente = XML ainda não lido; [] = lido e sem duplicatas (à vista). Migração 20261207000001. */
   parcelas?: ParcelaNota[] | null
   /** Parcelas que o Ivan digitou (XML sem duplicatas): o que foi mandado ao robô. null = nada digitado. Migração 20261208000001. */
@@ -594,6 +607,8 @@ export interface CupomRecente {
   excluido_em?: string | null
   /** Quando o robô REIVINDICOU o cupom (a reivindicação grava e nada limpa): preenchido = o robô já pegou e pode ter tocado no SisChef; null = nunca pegou; ausente = não se sabe. */
   processando_desde?: string | null
+  /** Sugestões estruturadas do robô (migração 20261229000001); ausente/null = vale o texto do motivo. */
+  sugestoes?: SugestaoDoRobo[] | null
 }
 /** Uma confirmação do Ivan para um item do cupom parado (corpo da Edge Function confirmar-cupom). */
 export interface ConfirmacaoItemCupom {
