@@ -236,6 +236,9 @@ a.botao { display: inline-flex; text-decoration: none; }
 .amarelo { padding: 8px 10px; border-radius: 10px; background: var(--aviso-fundo); color: var(--aviso-texto); font-size: 16px; }
 /* o aviso de "Precisa de você" vem em 3 linhas (nada foi lançado / por quê / o que fazer): respeita as quebras de linha do texto */
 .nota-lancar [data-testid="status-nota"] { white-space: pre-line; line-height: 1.45; }
+.nota-lancar .texto-do-robo { margin-top: 6px; font-size: 14px; }
+.nota-lancar .texto-do-robo summary { cursor: pointer; padding: 6px 0; }
+.nota-lancar .texto-do-robo p { margin: 4px 0 0; overflow-wrap: anywhere; user-select: text; }
 .copiado { align-self: center; }
 .copiar-manual { flex-basis: 100%; }
 .copiar-manual textarea { font: inherit; font-size: 16px; line-height: 1.4; width: 100%; padding: 8px; border-radius: 10px; border: 1px solid var(--linha); background: var(--cartao); color: var(--texto); }

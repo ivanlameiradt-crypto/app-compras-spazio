@@ -178,11 +178,10 @@ describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão q
     for (const m of [null, undefined, '', MOTIVO_FORNECEDOR, MOTIVO_SOZINHO, 'sem boletos na nota — pagamento manual']) expect(motivoXmlNaoLido(m)).toBe(false)
   })
 
-  it('XML não lido: o aviso da nota vem em 3 linhas (nada foi lançado, por quê, o que fazer)', () => {
+  it('XML não lido: o aviso da nota é a frase curta de 14/11/2026 (nada foi lançado, por quê, não digitar as parcelas, Tentar de novo); a explicação longa segue em explicarMotivoDoRobo', () => {
     const texto = textoDoEstado('revisar', MOTIVO_XML, ITENS) ?? ''
-    expect(texto.startsWith('Precisa de você — nada foi lançado.\nPor quê: O robô não conseguiu ler o XML completo desta nota.')).toBe(true)
-    expect(texto).toContain('\nO que fazer: Não digite as parcelas ainda')
-    expect(texto).toContain('toque em Lançar de novo')
+    expect(texto).toBe('Nada foi lançado. A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas). Não digite as parcelas; toque em Tentar de novo mais tarde.')
+    expect(explicarMotivoDoRobo(MOTIVO_XML, ITENS)?.fazer).toContain('toque em Lançar de novo')
   })
 
   it('fornecedor sem autorização: manda usar a caixa "Cadastrar no SisChef" da própria nota e depois tocar em Lançar', () => {

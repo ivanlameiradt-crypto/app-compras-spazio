@@ -2,7 +2,7 @@
 // Fica fora de src/lib/api.ts de propósito (sem rede nem React): os testes de tela trocam o api inteiro por um mock.
 import { CONTAS_PIX } from '../cupom/formasPagamento'
 import { conversaoDaDecisao, fardoPeloNome, rotuloUnidade, situacaoConversao } from './associacaoRegras'
-import { conversoesDesnecessarias, explicarMotivoDoRobo, motivoSemPrefixoTecnico, motivoXmlNaoLido } from './motivoDoRobo'
+import { conversoesDesnecessarias, explicarMotivoDoRobo, motivoPassageiro, motivoSemPrefixoTecnico, motivoXmlNaoLido, type MotivoPassageiro } from './motivoDoRobo'
 import type { ConversaoDesnecessaria } from './motivoDoRobo'
 import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
 
@@ -129,6 +129,10 @@ export const precisaEscolherForma = (n: NotaSefazLista): boolean =>
  *  parcelas NÃO faz o robô lançar (De Marchi 113752, 31/10/2026). A tela deixa de mandar digitar e manda esperar o XML chegar. */
 export const parouPorXmlNaoLido = (n: NotaSefazLista): boolean =>
   n.lancamento_estado === 'revisar' && n.parcelas == null && motivoXmlNaoLido(n.lancamento_motivo)
+
+/** O robô devolveu a nota por um motivo PASSAGEIRO (rede, SisChef lento, login que caiu, leitura vazia…)? A frase curta e se o "Tentar de novo" é seguro (`repetir`: o texto prova que nada foi criado
+ *  no SisChef); senão null. Só vale para a nota devolvida ("revisar"): a que ficou pela metade ("erro") tem a sua própria orientação e nunca ganha o botão. Pedido do Ivan, 14/11/2026. */
+export const passageiroDaNota = (n: NotaSefazLista): MotivoPassageiro | null => (n.lancamento_estado === 'revisar' ? motivoPassageiro(n.lancamento_motivo) : null)
 
 /** Padrão do fornecedor no banco (a forma da última nota lançada dele; chave = CNPJ), ou null. */
 export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<string, string> | undefined): string | null {
@@ -451,6 +455,8 @@ export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, mo
   switch (estado) {
     case 'lancando': return 'Lançando… (o robô está trabalhando)'
     case 'revisar': {
+      const passageiro = motivoPassageiro(motivo) // frase curta de quem passa sozinho (e diz se algo foi lançado); a tela põe o botão "Tentar de novo" quando é seguro
+      if (passageiro) return passageiro.frase
       const explicado = explicarMotivoDoRobo(motivo, itens)
       if (explicado) return `Precisa de você — nada foi lançado.\nPor quê: ${explicado.porque}\nO que fazer: ${explicado.fazer}`
       return m ? `Precisa de você: ${m}` : 'Precisa de você: confira a nota'

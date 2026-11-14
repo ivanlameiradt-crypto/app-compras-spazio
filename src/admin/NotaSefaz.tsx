@@ -32,7 +32,7 @@ import {
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma, quemEstaLancando,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
-  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, planoTirarConversao, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
+  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, passageiroDaNota, planoTirarConversao, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 import TituloDaTela from '../components/TituloDaTela'
 import { Icone } from '../components/Icones'
@@ -489,6 +489,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const presa = lancandoPresa(nota)
   // Bonificação que o robô devolveu por causa da forma de uma tentativa antiga ("sem boletos" ou a trava nova de bonificação): a escolha que ele pedia a tela já fez, e o texto diz que é só lançar.
   const estadoTexto = presa ? AVISO_PRESA : soEstoque && devolvidaPorFormaDeBonificacao(nota) ? TEXTO_BONIFICACAO_DEVOLVIDA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
+  // Motivo PASSAGEIRO (rede, SisChef lento, login que caiu…; 14/11/2026): frase curta + "Tentar de novo" quando o texto do robô prova que nada foi criado no SisChef. Nunca na bonificação já tratada acima.
+  const passageiro = presa || (soEstoque && devolvidaPorFormaDeBonificacao(nota)) ? null : passageiroDaNota(nota)
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
   // aí o servidor aceita reservar de novo, e o robô não relança nota que já saiu da fila do SisChef).
   const robotOuMetade = estado === 'erro' || (estado === 'lancando' && !presa)
@@ -691,6 +693,25 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
           )}
           {erroTirar && <p className="erro" role="alert" data-testid="tirar-conversao-erro">{erroTirar}</p>}
         </div>
+      ) : passageiro ? (
+        // o texto técnico do robô fica guardado e à mão, recolhido, logo abaixo da frase
+        <>
+          <div className="amarelo" data-testid="status-nota">
+            {passageiro.frase}
+            {passageiro.repetir && (
+              // o MESMO caminho do botão Lançar (confirmar): mesmas travas — outra nota lançando, forma, parcelas, frete, iniciarEnvio/fimEnvio
+              <div className="acoes">
+                <button type="button" className="botao" disabled={!podeLancar} onClick={() => { setErro(''); void confirmar() }}>
+                  {enviando ? 'Enviando…' : 'Tentar de novo'}
+                </button>
+              </div>
+            )}
+          </div>
+          <details className="texto-do-robo" data-testid="texto-do-robo">
+            <summary>Ver o texto do robô</summary>
+            <p>{nota.lancamento_motivo}</p>
+          </details>
+        </>
       ) : estadoTexto && (
         <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
