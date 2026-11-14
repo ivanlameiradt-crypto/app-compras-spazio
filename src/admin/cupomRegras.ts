@@ -6,6 +6,7 @@
 // que o "Claude" segue quando o Ivan pede, está em docs/corrigir-cupom.md do repositório do robô (sischef-monitor-notas).
 import { formatarReais } from '../lib/regras'
 import type { CupomRecente, ItemCupomRecente } from '../lib/tipos'
+import { falhaPassageiraDeSugestoes } from './sugestoesDoRobo'
 
 export interface ItemComProblema { descricao: string; preco: string | null }
 /** O motivo que o envio grava quando o cupom está todo casado e só espera o Ivan confirmar (o mesmo texto das Edge Functions enviar-cupom e confirmar-cupom). */
@@ -171,6 +172,8 @@ export const BOTAO_TENTAR_DE_NOVO_LIGADO = true
 
 const FRASE_MONTAR = 'O SisChef demorou ou falhou ao montar o pedido. Nada foi lançado.'
 const FRASE_TESTE = 'O teste deste cupom falhou. Nada foi criado.'
+const FRASE_SUGESTAO = 'O SisChef falhou antes de lançar. Nada foi criado.'
+const SOLUCAO_SUGESTAO = 'Nada foi criado no SisChef, então não há compra para desfazer. Avise o Claude para lançar de novo.'
 const SOLUCAO_PASSAGEIRO = 'Nada foi criado no SisChef, então repetir é seguro. Se falhar de novo no mesmo item, o produto pode estar desativado no SisChef: avise o Claude.'
 
 function fraseDaParte(parte: string): string | null {
@@ -186,7 +189,7 @@ function fraseDaParte(parte: string): string | null {
  * O envio parou por falha PASSAGEIRA do robô e o próprio texto prova que nada foi criado no SisChef: devolve a frase curta e o que fazer; senão null (nunca oferece repetir na dúvida).
  * Só vale para REVISAR sem pedido no SisChef, com itens e todos com produto (o resto é outro caso), e sem o aviso de repetida/falha de conferência misturado.
  */
-export function motivoPassageiroDoCupom(c: CupomRecente): { problema: string; solucao: string } | null {
+export function motivoPassageiroDoCupom(c: CupomRecente): { problema: string; solucao: string; semBotao?: true } | null {
   if (c.estado !== 'REVISAR' || c.pedido_sischef != null) return null
   const itens = Array.isArray(c.itens) ? c.itens : []
   if (itens.length === 0 || itens.some(semProdutoConfirmado)) return null
@@ -194,13 +197,18 @@ export function motivoPassageiroDoCupom(c: CupomRecente): { problema: string; so
   if (motivo === '' || motivo.length >= MOTIVO_CURTO_MAX) return null
   if (SINAL_DE_COMPRA.test(motivo) || trechoDaRepetida(motivo) !== null || trechoDaFalha(motivo) !== null) return null
   const frases: string[] = []
+  let reconhecido = true
   // o '; ' de dentro do molde do teste ('(dry-run; nada foi criado…)') não separa partes
   for (const parte of motivo.replace('(dry-run; nada', '(dry-run, nada').split('; ')) {
     const f = fraseDaParte(parte.trim())
-    if (f === null) return null
+    if (f === null) { reconhecido = false; break }
     frases.push(f)
   }
-  return { problema: frases.length === 1 ? frases[0] : FRASE_MONTAR, solucao: SOLUCAO_PASSAGEIRO }
+  if (reconhecido) return { problema: frases.length === 1 ? frases[0] : FRASE_MONTAR, solucao: SOLUCAO_PASSAGEIRO }
+  // etapa 6 (14/11/2026): texto que o app não conhece, mas o robô PROVOU (sugestão `falha_passageira`) que nada foi criado: a frase curta vale, o botão NÃO (a função confirmar-cupom ainda confere o texto
+  // pelos mesmos moldes; enquanto ela não aceitar a sugestão, oferecer o botão daria uma recusa). O texto sem nenhum sinal de compra criada já foi conferido acima.
+  if (falhaPassageiraDeSugestoes('revisar', motivo, c.sugestoes)) return { problema: FRASE_SUGESTAO, solucao: SOLUCAO_SUGESTAO, semBotao: true }
+  return null
 }
 
 
@@ -243,7 +251,7 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
 
   // falha PASSAGEIRA antes de "Gerar compra" (etapa 8 do inventário de 14/11): nada foi criado no SisChef, então dá para tentar de novo
   const passageiro = motivoPassageiroDoCupom(c)
-  if (passageiro) return { problema: passageiro.problema, itens: [], pedidos: [], conferencia: null, solucao: passageiro.solucao, corrigivel: false, tentarDeNovo: true }
+  if (passageiro) return { problema: passageiro.problema, itens: [], pedidos: [], conferencia: null, solucao: passageiro.solucao, corrigivel: false, ...(passageiro.semBotao ? {} : { tentarDeNovo: true as const }) }
 
   // O SisChef não tem o fornecedor (o robô não cadastra sozinho): o app deixa o Ivan cadastrar (caixa "Cadastrar fornecedor") e reenviar o cupom
   if (/^fornecedor não encontrado no Sischef/i.test(motivo)) {

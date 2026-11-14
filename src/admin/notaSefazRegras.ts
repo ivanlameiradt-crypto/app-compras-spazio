@@ -7,7 +7,8 @@ import {
   boletosDaNotaPrevalecem, conversoesDesnecessarias, conversoesPedidasPeloRobo, explicarMotivoDoRobo, formaRecusadaPeloRobo, motivoPassageiro, motivoSemPrefixoTecnico, motivoXmlNaoLido, semSinalDeLancamento, type MotivoPassageiro,
 } from './motivoDoRobo'
 import type { BoletoDoRobo, ConversaoDesnecessaria, FormaLembrada, FraseConversao } from './motivoDoRobo'
-import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota } from '../lib/tipos'
+import { conversoesDaSugestao, falhaPassageiraDaSugestao, fraseItensMesmoCodigo, itensMesmoCodigoDeSugestoes } from './sugestoesDoRobo'
+import type { AssociacaoApp, EstadoLancamentoNfe, ItemNotaSefaz, NotaSefazLista, ParcelaDigitada, ParcelaNota, SugestaoDoRobo } from '../lib/tipos'
 
 /** Forma de pagamento já marcada quando não há nada gravado nem lembrado. */
 export const FORMA_PADRAO = 'boleto'
@@ -135,7 +136,13 @@ export const parouPorXmlNaoLido = (n: NotaSefazLista): boolean =>
 
 /** O robô devolveu a nota por um motivo PASSAGEIRO (rede, SisChef lento, login que caiu, leitura vazia…)? A frase curta e se o "Tentar de novo" é seguro (`repetir`: o texto prova que nada foi criado
  *  no SisChef); senão null. Só vale para a nota devolvida ("revisar"): a que ficou pela metade ("erro") tem a sua própria orientação e nunca ganha o botão. Pedido do Ivan, 14/11/2026. */
-export const passageiroDaNota = (n: NotaSefazLista): MotivoPassageiro | null => (n.lancamento_estado === 'revisar' ? motivoPassageiro(n.lancamento_motivo) : null)
+/** Frase da falha passageira PROVADA pela sugestão do robô (etapa 6): vale quando o robô diz que nada foi criado e o texto não mostra sinal de lançamento (conferido em `falhaPassageiraDaSugestao`). */
+export const FRASE_FALHA_PASSAGEIRA_DA_SUGESTAO = 'Nada foi lançado. O robô parou por uma falha passageira do SisChef (demora ou conexão). Toque em Tentar de novo.'
+export const passageiroDaNota = (n: NotaSefazLista): MotivoPassageiro | null => {
+  if (n.lancamento_estado !== 'revisar') return null
+  if (falhaPassageiraDaSugestao(n)) return { frase: FRASE_FALHA_PASSAGEIRA_DA_SUGESTAO, repetir: true } // etapa 6: o dado do robô no lugar da leitura do texto
+  return motivoPassageiro(n.lancamento_motivo)
+}
 
 /** Padrão do fornecedor no banco (a forma da última nota lançada dele; chave = CNPJ), ou null. */
 export function formaPadraoDoFornecedor(n: NotaSefazLista, padroes: Record<string, string> | undefined): string | null {
@@ -301,7 +308,7 @@ export interface PlanoTirarConversao {
  */
 export function planoTirarConversao(n: NotaSefazLista): PlanoTirarConversao | null {
   if (n.lancamento_estado !== 'revisar') return null
-  const lido = conversoesDesnecessarias(n.lancamento_motivo)
+  const lido = conversoesDaSugestao(n) ?? conversoesDesnecessarias(n.lancamento_motivo) // etapa 6: a sugestão do robô primeiro; sem ela, o texto como sempre
   if (!lido) return null
   const depois: Record<string, AssociacaoApp> = { ...(n.associacoes_app ?? {}) }
   const alvos: AlvoTirarConversao[] = []
@@ -578,12 +585,14 @@ export const TEXTO_FRETE_ABERTO = 'Pedido aberto no SisChef com o frete: falta l
 
 /** Texto do estado da nota (null = nunca disparada). Com os `itens` da nota, o motivo do robô que a regra reconhece vem em 3 linhas: que nada foi lançado, por
  *  quê (com o produto pelo nome) e o que fazer (a tela mostra as quebras de linha). */
-export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined, itens?: ItemNotaSefaz[]): string | null {
+export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, motivo: string | null | undefined, itens?: ItemNotaSefaz[], sugestoes?: SugestaoDoRobo[] | null): string | null {
   const m = traduzirMotivo(motivo, itens)
   if (freteAberto(estado, motivo)) return TEXTO_FRETE_ABERTO
   switch (estado) {
     case 'lancando': return 'Lançando… (o robô está trabalhando)'
     case 'revisar': {
+      const iguais = itensMesmoCodigoDeSugestoes(estado, motivo, sugestoes) // etapa 6: dois itens com o mesmo CÓD. FOR, vindo do dado do robô
+      if (iguais) return fraseItensMesmoCodigo(iguais)
       const passageiro = motivoPassageiro(motivo) // frase curta de quem passa sozinho (e diz se algo foi lançado); a tela põe o botão "Tentar de novo" quando é seguro
       if (passageiro) return passageiro.frase
       const explicado = explicarMotivoDoRobo(motivo, itens)

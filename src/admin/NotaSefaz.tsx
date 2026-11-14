@@ -494,7 +494,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const bloqueios = bloqueiosDaNota(nota)
   const presa = lancandoPresa(nota)
   // Bonificação que o robô devolveu por causa da forma de uma tentativa antiga ("sem boletos" ou a trava nova de bonificação): a escolha que ele pedia a tela já fez, e o texto diz que é só lançar.
-  const estadoTexto = presa ? AVISO_PRESA : soEstoque && devolvidaPorFormaDeBonificacao(nota) ? TEXTO_BONIFICACAO_DEVOLVIDA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens)
+  const estadoTexto = presa ? AVISO_PRESA : soEstoque && devolvidaPorFormaDeBonificacao(nota) ? TEXTO_BONIFICACAO_DEVOLVIDA : textoDoEstado(estado, nota.lancamento_motivo, nota.itens, nota.lancamento_sugestoes)
   // Motivo PASSAGEIRO (rede, SisChef lento, login que caiu…; 14/11/2026): frase curta + "Tentar de novo" quando o texto do robô prova que nada foi criado no SisChef. Nunca na bonificação já tratada acima.
   const passageiro = presa || (soEstoque && devolvidaPorFormaDeBonificacao(nota)) ? null : passageiroDaNota(nota)
   // 'erro' = pedido pela metade (nunca lançar de novo); 'lancando' = o robô já está nela (salvo se presa há mais de 30 min:
