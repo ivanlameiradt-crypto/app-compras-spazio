@@ -12,8 +12,9 @@ const TECNICO = /Timeout|TimeoutError|RuntimeError|net::|Cód\. Interno|snapshot
 
 // [nome, motivo do robô]: nada foi criado no SisChef, repetir é seguro
 const SEGUROS: Array<[string, string]> = [
-  ['login que não entrou (queda antes do motor)', 'o robô parou antes de terminar: RuntimeError: Login no Sischef não foi concluído (senha, 2FA ou bloqueio).'],
-  ['queda do robô antes de abrir o SisChef (sem o "confira")', 'o robô parou antes de terminar: TimeoutError: Page.goto: Timeout 30000ms exceeded.'],
+  ['login que não entrou, com o começo "nada lançado"', `${ANTES}RuntimeError: Login no Sischef não foi concluído (senha, 2FA ou bloqueio).`],
+  ['antes_do_sischef: sem o cliente do app', 'o robô parou antes de terminar: lançamento real sem o cliente do app (Supabase) para marcar o desfecho'],
+  ['antes_do_sischef: sem falar com o app', 'o robô parou antes de terminar: não consegui falar com o app (Supabase) antes de começar: ConnectError: timed out'],
   ['tempo esgotado ao abrir a tela', `${ANTES}TimeoutError: Page.goto: Timeout 90000ms exceeded.`],
   ['rede caiu', `${ANTES}Error: Page.goto: net::ERR_INTERNET_DISCONNECTED at https://sischef.example/lista`],
   ['navegador fechou', `${ANTES}TargetClosedError: Target page, context or browser has been closed`],
@@ -49,6 +50,12 @@ const TALVEZ: Array<[string, string]> = [
   ['queda do robô depois de começar', `o robô parou antes de terminar: TargetClosedError: Target page, context or browser has been closed${SUFIXO_CONFIRA}`],
   ['queda com tempo esgotado depois de começar', `o robô parou antes de terminar: TimeoutError: Timeout 600000ms exceeded.${SUFIXO_CONFIRA}`],
   ['login no meio de uma queda depois de começar', `o robô parou antes de terminar: RuntimeError: Login no Sischef não foi concluído (senha, 2FA ou bloqueio).${SUFIXO_CONFIRA}`],
+  ['login sem o começo "nada lançado" e sem o "confira": só os dois textos legítimos de antes_do_sischef provam que nada foi tocado', 'o robô parou antes de terminar: RuntimeError: Login no Sischef não foi concluído (senha, 2FA ou bloqueio).'],
+  ['queda sem o "confira" (qualquer outro texto)', 'o robô parou antes de terminar: TimeoutError: Page.goto: Timeout 30000ms exceeded.'],
+  ['texto longo que perdeu o "confira" no corte de 2.000 letras', `o robô parou antes de terminar: TimeoutError: ${'x'.repeat(2100)}`],
+  ['texto legítimo de antes_do_sischef mas longo demais', `o robô parou antes de terminar: não consegui falar com o app (Supabase) antes de começar: ConnectError: ${'x'.repeat(1600)}`],
+  ['começo "nada lançado" mas sobrou um trecho que nenhuma regra explica', `${ANTES}item 5: o produto 3971031 não está no cadastro do SisChef (ou está sem unidade): não dá para associar; Gerar compra: pedido criado`],
+  ['começo "nada lançado", uma parte conhecida e outra item desconhecido', `${ANTES}item 5: o produto 3971031 não está no cadastro do SisChef (ou está sem unidade): não dá para associar; item 6 (CÓD. FOR: 31 MOLHO): precisa de conversão: 1 UN da nota = ? KG`],
   ['clique que estourou o prazo depois de começar', `${ANTES}o clique no botão estourou o prazo DEPOIS de começar (Timeout 30000ms exceeded.): NÃO cliquei de novo — confira no SisChef se o passo foi feito antes de lançar outra vez`],
 ]
 
@@ -68,7 +75,7 @@ const FORA: Array<[string, string | null | undefined]> = [
   ['exceção de tela SEM o começo "nada lançado" (não dá para saber em que ponto parou)', 'item 17253: 3 linhas na tela (esperava 1)'],
   ['tempo esgotado solto, sem o começo "nada lançado"', 'TimeoutError: Page.goto: Timeout 60000ms exceeded.'],
   ['nota que ficou pela metade (estado erro)', "erro no lançamento (pedido JÁ gerado 998877 — conferir no Sischef; pedido: https://sischef.example/pedido/998877; tela no erro: https://sischef.example/x) no passo 'Gerar compra': TimeoutError: Timeout 30000ms exceeded. | diálogos: (nenhum)"],
-  ['uma parte conhecida e outra que a regra não conhece', `${ANTES}item 5: o produto 3971031 não está no cadastro do SisChef (ou está sem unidade): não dá para associar; item 6 (CÓD. FOR: 31 MOLHO): precisa de conversão: 1 UN da nota = ? KG`],
+  ['uma parte conhecida e outra que a regra não conhece (sem o começo "nada lançado")', 'item 5: o produto 3971031 não está no cadastro do SisChef (ou está sem unidade): não dá para associar; item 6 (CÓD. FOR: 31 MOLHO): precisa de conversão: 1 UN da nota = ? KG'],
   ['conversão que não serve (tem botão próprio)', 'item 5 (CÓD. FOR: 2894 LONG WAY GUIOZA LW LEGUMES 240G): a nota e o produto estão na mesma unidade (UN) no SisChef e o número informado (0,24) não é de embalagem (embalagem é maior que 1 e vale para UN, PCT, CX ou FD): no app, toque em Editar neste item, deixe a conversão vazia e lance de novo (ou associe no SisChef)'],
 ]
 

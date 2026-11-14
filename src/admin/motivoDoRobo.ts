@@ -247,6 +247,11 @@ const FIM_PADRAO = 'Toque em Tentar de novo.'
 const SEM_CONFERIR = /confira no SisChef se algo foi criado antes de lançar de novo/i
 const CLIQUE_PODE_TER_SIDO_DADO = /o clique no botão estourou o prazo DEPOIS de começar|NÃO cliquei de novo — confira no SisChef/i
 const QUEDA_DO_ROBO = /^o robô parou antes de terminar:/i
+const LEGITIMO_ANTES_DO_SISCHEF = /^o robô parou antes de terminar: (?:lançamento real sem o cliente do app|não consegui falar com o app \(Supabase\) antes de começar)/i
+/** Abaixo disto o aviso de conferir não foi cortado (o banco guarda 2.000 letras; sobra folga para o resto do texto). */
+const LIMITE_TEXTO_CURTO = 1500
+/** Pedaços que o próprio robô põe depois de um "; " dentro do mesmo item e que não são outro problema (inclusive as tentativas "…"; "…" de "nenhuma opção com Cód. Interno"). */
+const CONTINUACAO_CONHECIDA = /^(?:"|parecidos na tela:|pode lançar de novo|tente de novo|atualize a lista de notas)/i
 const NAO_E_DESTE_TEXTO = /pedido JÁ gerado|pela metade|FINALIZADA no SisChef|RETOMADA/i
 
 const TEMPO_OU_REDE = /Timeout \d+ ?ms|TimeoutError|net::ERR_|Target (?:page, context or browser has been )?closed|TargetClosedError|Execution context was destroyed|ECONN(?:RESET|REFUSED)|browser has been closed|Connection (?:closed|refused|reset)|Navigation (?:failed|timeout)/i
@@ -255,12 +260,14 @@ const TEMPO_OU_REDE = /Timeout \d+ ?ms|TimeoutError|net::ERR_|Target (?:page, co
 const MOLDES_PASSAGEIROS: MoldePassageiro[] = [
   // login (analisar.py: "Login no Sischef não foi concluído (senha, 2FA ou bloqueio).")
   { re: /Login no Sischef não foi concluído/i, exigeNada: true, corpo: 'O robô não conseguiu entrar no SisChef.', fim: 'Toque em Tentar de novo; se repetir, avise o Claude (a senha pode ter mudado).' },
+  // os DOIS únicos textos de "o robô parou antes de terminar:" que o robô grava sem o aviso de conferir porque nada foi tocado no SisChef (lancar_nfe_nuvem.py:545 e :867, `antes_do_sischef`)
+  { re: /^o robô parou antes de terminar: (?:lançamento real sem o cliente do app|não consegui falar com o app \(Supabase\) antes de começar)/i, exigeNada: false, corpo: 'O robô não conseguiu falar com o banco do app antes de começar.' },
   // tela de importação que o SisChef não abriu (analisar.py/motor.py:1878)
   { re: /não foi possível ler a tela de importação desta nota/i, exigeNada: false, corpo: 'O SisChef não abriu a tela desta nota.' },
   // outra importação aberta no SisChef (motor.MSG_OUTRA_ABERTA)
   { re: /há outra importação aberta no Sischef/i, exigeNada: false, corpo: 'Há outra nota aberta no SisChef (alguém começou e não terminou).', fim: 'Espere uns minutos e toque em Tentar de novo.' },
   // o XML completo ainda não chegou ao SisChef (motor.motivo_xml; o resumo da SEFAZ vem antes do XML, horas depois)
-  { re: /não consegui ler o XML da nota/i, exigeNada: false, corpo: 'A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas).', fim: 'Não digite as parcelas; toque em Tentar de novo mais tarde.' },
+  { re: /não consegui ler o XML da nota/i, exigeNada: false, corpo: 'A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas).', fim: 'Não digite as parcelas ainda; toque em Tentar de novo mais tarde.' },
   // leituras do cadastro do SisChef / do app (nfe_decisoes_app, lancar_nfe_nuvem.ler_memoria_de_embalagem)
   { re: /não consegui ler a memória de embalagens do app/i, exigeNada: false, corpo: 'O robô não conseguiu ler a memória de embalagens do app.' },
   { re: /catálogo vivo vazio/i, exigeNada: false, corpo: 'O robô não conseguiu ler a lista de produtos do SisChef.' },
@@ -278,9 +285,6 @@ const MOLDES_PASSAGEIROS: MoldePassageiro[] = [
   { re: new RegExp(`a tela não foi para|não achei o botão/link|esperava exatamente 1 botão/link|o clique no botão não chegou|${TEMPO_OU_REDE.source}`, 'i'), exigeNada: true,
     corpo: 'O SisChef demorou ou a conexão caiu e o robô parou.' },
 ]
-/** Última rede: a queda do robô ANTES de ele mexer no SisChef (sem o "confira"), de qualquer causa que o molde acima não reconheceu. */
-const MOLDE_QUEDA_ANTES_DE_COMECAR: MoldePassageiro = { re: QUEDA_DO_ROBO, exigeNada: true, corpo: 'O robô parou antes de mexer no SisChef.' }
-
 export const FRASE_PODE_TER_LANCADO = 'Pode ter sido lançado em parte: o robô parou no meio do trabalho. Confira no SisChef se a nota entrou antes de repetir.'
 
 /**
@@ -291,22 +295,33 @@ export const FRASE_PODE_TER_LANCADO = 'Pode ter sido lançado em parte: o robô 
 export function motivoPassageiro(motivo: string | null | undefined): MotivoPassageiro | null {
   const t = (motivo ?? '').replace(/\s+/g, ' ').trim()
   if (!t) return null
+  const talvez: MotivoPassageiro = { frase: FRASE_PODE_TER_LANCADO, repetir: false }
   // o robô avisa que PODE ter lançado: confere, nunca repete (vale antes de qualquer outra regra, mesmo com outras partes reconhecidas)
-  if (SEM_CONFERIR.test(t) || CLIQUE_PODE_TER_SIDO_DADO.test(t)) return { frase: FRASE_PODE_TER_LANCADO, repetir: false }
+  if (SEM_CONFERIR.test(t) || CLIQUE_PODE_TER_SIDO_DADO.test(t)) return talvez
   if (NAO_E_DESTE_TEXTO.test(t)) return null // pedido já gerado, pela metade, retomada: é outro estado e tem a sua própria orientação
-  const situacao: SituacaoDoMotivo = PREFIXO_ANTES_DO_PEDIDO.test(t) || (QUEDA_DO_ROBO.test(t) && !SEM_CONFERIR.test(t)) ? 'nada' : 'desconhecida'
-  const semPrefixo = t.replace(PREFIXO_ANTES_DO_PEDIDO, '')
-  // cada item do robô vem separado por "; item …"; o que vem depois do último item (" | fornecedor JÁ cadastrado…") fica com ele
-  const partes = semPrefixo.split(/;\s+(?=item\b)/i)
+  const legitimo = LEGITIMO_ANTES_DO_SISCHEF.test(t)
+  // "o robô parou antes de terminar: <erro>": o aviso de conferir vai no FIM e o motivo é cortado em 2.000 letras (cot_nfe_estado_supabase.py:138), então um erro longo PERDE o aviso.
+  // Só os dois textos curtos de antes_do_sischef provam que nada foi tocado; qualquer outra queda do robô pode ter lançado em parte.
+  if (QUEDA_DO_ROBO.test(t) && (!legitimo || t.length >= LIMITE_TEXTO_CURTO)) return talvez
+  const comPrefixo = PREFIXO_ANTES_DO_PEDIDO.test(t)
+  const situacao: SituacaoDoMotivo = comPrefixo ? 'nada' : 'desconhecida'
+  // o que vem depois de " | " (fornecedor já cadastrado, "por cima do botão"…) é complemento do robô, não outro problema
+  const corpo = t.replace(PREFIXO_ANTES_DO_PEDIDO, '').split(' | ')[0]
   const corpos: string[] = []
   let fim = FIM_PADRAO
-  for (const parte of partes) {
-    let molde = MOLDES_PASSAGEIROS.find((x) => x.re.test(parte) && (!x.exigeNada || situacao === 'nada'))
-    if (!molde && partes.length === 1 && MOLDE_QUEDA_ANTES_DE_COMECAR.re.test(parte) && situacao === 'nada') molde = MOLDE_QUEDA_ANTES_DE_COMECAR
-    if (!molde) return null
+  let sobrou = false
+  // cada item do robô vem separado por "; item …"; dentro de um item, os pedaços separados por "; " precisam ser moldes conhecidos ou continuações conhecidas
+  for (const parte of corpo.split(/;\s+(?=item\b)/i)) {
+    const molde = MOLDES_PASSAGEIROS.find((x) => x.re.test(parte) && (!x.exigeNada || situacao === 'nada'))
+    if (!molde) { sobrou = true; continue }
     if (!corpos.includes(molde.corpo)) corpos.push(molde.corpo)
     if (molde.fim) fim = molde.fim
+    const [, ...resto] = parte.split(/;\s+/)
+    if (resto.some((r) => !CONTINUACAO_CONHECIDA.test(r) && !MOLDES_PASSAGEIROS.some((x) => x.re.test(r) && (!x.exigeNada || situacao === 'nada')))) sobrou = true
   }
+  if (corpos.length === 0) return null
+  // com o começo "nada lançado" mas sobrou um trecho que nenhuma regra explica (ex.: "…; Gerar compra: pedido criado"): não dá para garantir que nada entrou
+  if (sobrou) return comPrefixo ? talvez : null
   // dois problemas diferentes: a frase do fim volta ao padrão (os "fins" especiais falam de UM problema só)
   if (corpos.length > 1) fim = FIM_PADRAO
   return { frase: `Nada foi lançado. ${corpos.join(' ')} ${fim}`, repetir: true }

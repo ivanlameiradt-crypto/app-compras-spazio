@@ -180,7 +180,7 @@ describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão q
 
   it('XML não lido: o aviso da nota é a frase curta de 14/11/2026 (nada foi lançado, por quê, não digitar as parcelas, Tentar de novo); a explicação longa segue em explicarMotivoDoRobo', () => {
     const texto = textoDoEstado('revisar', MOTIVO_XML, ITENS) ?? ''
-    expect(texto).toBe('Nada foi lançado. A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas). Não digite as parcelas; toque em Tentar de novo mais tarde.')
+    expect(texto).toBe('Nada foi lançado. A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas). Não digite as parcelas ainda; toque em Tentar de novo mais tarde.')
     expect(explicarMotivoDoRobo(MOTIVO_XML, ITENS)?.fazer).toContain('toque em Lançar de novo')
   })
 
