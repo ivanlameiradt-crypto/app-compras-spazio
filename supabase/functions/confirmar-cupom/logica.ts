@@ -357,17 +357,23 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
     }
   }
   // Dois itens do mesmo cupom com a MESMA chave de aprendizado (mesmo código de barras, ou mesma descrição deste fornecedor): com produtos
-  // diferentes o 2º gravaria por cima do 1º em silêncio — melhor recusar e pedir o MESMO produto nos dois (a caixinha "Lembrar" saiu da tela em 08/10; texto trocado em 13/11); com o mesmo produto basta uma linha.
+  // diferentes o 2º gravaria por cima do 1º em silêncio. Até 13/11/2026 o servidor recusava (400) e a tela não dava saída quando os produtos eram
+  // mesmo diferentes; decisão do Ivan em 13/11 ("pode lançar os dois"): o cupom segue com o produto escolhido em CADA item e o aprendizado dessa
+  // chave não é guardado (nenhum dos itens dela; contam em nao_lembrados). O aprendizado que já existir no banco para a chave fica como está.
+  // Com o mesmo produto basta uma linha.
   const chaveDe = (l: LinhaAprendizado) => l.codigo_barras ?? `${l.emitente_cnpj}|${l.descricao_norm}`
-  const porChave = new Map<string, { linha: LinhaAprendizado; indice: number }>()
+  const porChave = new Map<string, LinhaAprendizado>()
+  const itensPorChave = new Map<string, number>()
+  const emConflito = new Set<string>()
   for (const a of aprendizados) {
-    const outro = porChave.get(chaveDe(a.linha))
-    if (!outro) { porChave.set(chaveDe(a.linha), a); continue }
-    if (outro.linha.insumo_id !== a.linha.insumo_id) {
-      return { status: 400, corpo: { erro: `os itens ${outro.indice + 1} e ${a.indice + 1} têm a mesma descrição no cupom e produtos diferentes: escolha o mesmo produto nos dois (toque em "Editar" no item para trocar)` } }
-    }
+    const chave = chaveDe(a.linha)
+    itensPorChave.set(chave, (itensPorChave.get(chave) ?? 0) + 1)
+    const outra = porChave.get(chave)
+    if (!outra) porChave.set(chave, a.linha)
+    else if (outra.insumo_id !== a.linha.insumo_id) emConflito.add(chave)
   }
-  const linhasDeAprendizado = [...porChave.values()].map((a) => a.linha)
+  for (const chave of emConflito) { porChave.delete(chave); naoLembrados += itensPorChave.get(chave) ?? 0 }
+  const linhasDeAprendizado = [...porChave.values()]
 
   // 5. a soma tem de bater com o total (senão o robô recusaria depois do disparo, e o app mostra o erro agora).
   const soma = conferirSoma(itens, total)

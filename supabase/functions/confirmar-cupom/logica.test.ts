@@ -674,16 +674,34 @@ describe('o servidor não confia na tela — conversão e chaves de aprendizado 
     nadaGravado(deps)
   })
 
-  it('dois itens pendentes com a MESMA descrição e produtos diferentes, ambos com "Lembrar": 400 (o 2º gravaria por cima do 1º em silêncio)', async () => {
+  // Decisão do Ivan em 13/11/2026 ("pode lançar os dois"): antes o servidor recusava (400) e a tela não dava saída quando os dois produtos eram
+  // mesmo diferentes. Agora o cupom é lançado com os DOIS produtos e só o aprendizado dessa descrição não é guardado (nenhum dos dois).
+  it('dois itens pendentes com a MESMA descrição e produtos diferentes: lança os dois e NÃO guarda o aprendizado dessa descrição', async () => {
     const itens = structuredClone(ITENS_ATACADAO)
     itens[1] = { ...itens[1], descricao_cupom: 'LIMAO SICILIANO' }
     const deps = fakeDeps({ cupom: cupom({ itens }) })
     const r = await tratar(pedido(), IVAN, deps)
-    expect(r.status).toBe(400)
-    // 13/11 (B5): a caixinha "Lembrar" não existe mais na tela; a saída que a tela oferece é escolher o mesmo produto nos dois itens (pelo "Editar")
-    expect(r.corpo.erro).toBe('os itens 1 e 2 têm a mesma descrição no cupom e produtos diferentes: escolha o mesmo produto nos dois (toque em "Editar" no item para trocar)')
-    expect(r.corpo.erro).not.toMatch(/Lembrar/)
-    nadaGravado(deps)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ estado: 'PENDENTE', disparo_ok: true, lembrados: 0, nao_lembrados: 2 })
+    expect(deps.aprendizados).toHaveLength(0)
+    // os dois itens seguem para o robô com o produto que o Ivan escolheu em cada um
+    expect(deps.atualizacoes).toHaveLength(1)
+    const gravados = deps.atualizacoes[0].itens
+    expect(gravados[0].sugestao_produto).toEqual({ id: CONFIRMACOES[0].insumo_id })
+    expect(gravados[1].sugestao_produto).toEqual({ id: CONFIRMACOES[1].insumo_id })
+  })
+
+  it('três itens com a mesma descrição (produtos A, B, A): nenhum dos três vira aprendizado; um item de outra descrição continua sendo lembrado', async () => {
+    const itens = structuredClone(ITENS_ATACADAO)
+    itens[1] = { ...itens[1], descricao_cupom: 'LIMAO SICILIANO' }
+    itens.push(structuredClone(ITENS_ATACADAO[0]))   // índice 3: outro LIMAO SICILIANO (0,5 kg × 13,90 = 6,95)
+    itens.push(structuredClone(ITENS_ATACADAO[1]))   // índice 4: PEPINO JAPONES de verdade (0,912 kg × 5,79 = 5,28)
+    const deps = fakeDeps({ cupom: cupom({ itens, valor_a_pagar: 47.5 }) })   // 35,27 + 6,95 + 5,28
+    const r = await tratar(pedido([CONFIRMACOES[0], CONFIRMACOES[1], { ...CONFIRMACOES[0], indice: 3 }, { ...CONFIRMACOES[1], indice: 4 }]), IVAN, deps)
+    expect(r.status).toBe(200)
+    expect(r.corpo).toMatchObject({ lembrados: 1, nao_lembrados: 3 })
+    expect(deps.aprendizados).toHaveLength(1)
+    expect(deps.aprendizados[0]).toMatchObject({ descricao_norm: 'pepino japones', insumo_id: '3484991' })
   })
 
   it('mesma descrição e o MESMO produto: aceita e grava uma linha de aprendizado só', async () => {
