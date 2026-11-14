@@ -32,12 +32,12 @@ import {
   limparRascunhoDasParcelas, rascunhoDasParcelas, formaPadraoDoFornecedor, formatarValorBr, fornecedorAprendido, itemAssociado, lancandoPresa, lembrarForma, quemEstaLancando,
   linhasIniciais, motivoDoDescarte, parseValorBr, dividirEmParcelas, pendenciasParaLancar, podeDescartar, precisaDigitarParcelas, prontidaoDaNota, resumoFinanceiro, rotuloForma,
   textoDoEstado, freteAberto, traduzirMotivo, validarParcelasDigitadas, ehPagamentoSemanal, planoSemanal, decisaoCompleta, itemPedeAcao, itemPedeConversao, conversaoDeItemAssociado,
-  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, passageiroDaNota, planoTirarConversao, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
+  etiquetaDaNota, itensNoMesmoProduto, parouPorXmlNaoLido, passageiroDaNota, planoTirarConversao, planoConversaoSugerida, planoBoletosDaNota, planoFormaLembrada, type LinhaParcela, type PlanoSemanal, type ResultadoParcelas,
 } from './notaSefazRegras'
 import TituloDaTela from '../components/TituloDaTela'
 import { Icone } from '../components/Icones'
 import TerminarPedido from './TerminarPedido'
-import { fraseConversaoDesnecessaria, fraseConversaoTirada } from './motivoDoRobo'
+import { fraseBoletosDaNota, fraseConversaoDesnecessaria, fraseConversaoGravada, fraseConversaoSugerida, fraseConversaoTirada, fraseFormaLembrada } from './motivoDoRobo'
 
 /** Enquanto alguma nota está 'lancando', a lista é recarregada neste intervalo (ms). */
 const INTERVALO_ATUALIZAR = 15_000
@@ -457,6 +457,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [mudandoForma, setMudandoForma] = useState(false)
   const [tirando, setTirando] = useState(false) // "Tirar a conversão e lançar de novo" gravando (14/11/2026)
   const [erroTirar, setErroTirar] = useState('')
+  const [sugerindo, setSugerindo] = useState(false) // uma sugestão com número pronto (conversão, boletos da nota, forma lembrada) gravando/lançando (14/11/2026)
+  const [erroSugestao, setErroSugestao] = useState('')
   const [descartando, setDescartando] = useState(false) // aberta a pergunta "Excluir a nota?"
   const [motivoDito, setMotivoDito] = useState('') // o que o Ivan escreveu em "Motivo (opcional)" da exclusão
   const [descartandoEnvio, setDescartandoEnvio] = useState(false)
@@ -544,12 +546,14 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   }
 
   /** O disparo do robô, igual para o "Confirmar" do Lançar e para o "Tirar a conversão e lançar de novo": a forma, as parcelas e o frete que estão na tela. Quem chama já conferiu as travas. */
-  async function enviarLancamento() {
-    const parcelas = exigeParcelas ? resultadoParcelas.parcelas : plano ? plano.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })) : undefined
-    if (frete) await api.lancarNota(nota.chave, forma, parcelas, frete)
-    else if (parcelas) await api.lancarNota(nota.chave, forma, parcelas)
-    else await api.lancarNota(nota.chave, forma)
-    lembrarForma(nota.emitente, forma)
+  async function enviarLancamento(formaEnvio: string = forma) {
+    const exige = precisaDigitarParcelas(nota, formaEnvio) // com a forma da tela é o mesmo que exigeParcelas; a forma sugerida (mais abaixo) pode ser outra
+    const planoEnvio = formaEnvio === 'boleto' ? planoSemanal(nota, datasSemanais) : null
+    const parcelas = exige ? resultadoParcelas.parcelas : planoEnvio ? planoEnvio.parcelas.map((p) => ({ vencimento: p.vencimento, valor: p.valor })) : undefined
+    if (frete) await api.lancarNota(nota.chave, formaEnvio, parcelas, frete)
+    else if (parcelas) await api.lancarNota(nota.chave, formaEnvio, parcelas)
+    else await api.lancarNota(nota.chave, formaEnvio)
+    lembrarForma(nota.emitente, formaEnvio)
     limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
   }
 
@@ -603,6 +607,54 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     trancado.current = false
     setTirando(false)
     if (lancar) { setEnviando(false); fimEnvio() }
+  }
+
+  // Sugestões com NÚMERO PRONTO (14/11/2026, pedido do Ivan): o número vem do nome do produto, dos boletos da própria nota ou da forma que o app lembra do fornecedor (notaSefazRegras). O toque do Ivan grava pelas
+  // funções que já existem (as mesmas da caixa de conversão e do "Como pagar") e só lança junto sob as MESMAS travas do botão Lançar: sem elas (outra nota lançando, parcelas por digitar, outro problema no motivo…),
+  // só grava e a frase manda tocar em Lançar. Nunca lança sozinho. Fica de fora quando já existe outra explicação (tirar a conversão) ou a nota está presa / é bonificação já tratada.
+  const semSugestao = presa || (soEstoque && devolvidaPorFormaDeBonificacao(nota)) || planoTirar != null
+  const planoConv = semSugestao ? null : planoConversaoSugerida(nota)
+  const planoBol = semSugestao || planoConv ? null : planoBoletosDaNota(nota)
+  const planoForma = semSugestao || planoConv || planoBol ? null : planoFormaLembrada(nota, padroes)
+  const faltaGravarConv = planoConv != null && planoConv.sugestoes.some((s) => !s.gravado)
+  // A forma lembrada só ESCOLHE a forma (nunca lança junto): o Lançar normal ainda pede o "Confirmar?" com a forma e as parcelas à vista (revisão independente de 14/11/2026).
+  const numeroDoBotao = (n: number): string => n.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: 4 })
+  /** O caminho comum das três sugestões: grava (se houver o que gravar), pede a vez de enviar já aqui (entre gravar e lançar nenhuma outra nota entra na frente) e lança com o mesmo disparo do Lançar. */
+  async function aplicarSugestao(o: { gravar: () => Promise<void>; lancar: boolean; somenteSeLancar?: boolean; formaEnvio?: string; falhaDoLancamento: string }) {
+    if (trancado.current || enviando || sugerindo) return
+    const vaiLancar = o.lancar && iniciarEnvio()
+    if (o.somenteSeLancar && !vaiLancar) return
+    trancado.current = true
+    setSugerindo(true); setErroSugestao(''); setErro(''); setConfirmando(false)
+    if (vaiLancar) setEnviando(true)
+    let gravou = false
+    try {
+      await o.gravar()
+      gravou = true
+      if (vaiLancar) await enviarLancamento(o.formaEnvio)
+    } catch (e) {
+      const texto = e instanceof Error ? e.message.trim() : ''
+      setErroSugestao(gravou
+        ? `${o.falhaDoLancamento}${texto ? `: ${texto}` : '.'} Toque em Lançar para tentar de novo.`
+        : texto || 'Não consegui gravar agora. Confira a internet e tente de novo.')
+    }
+    try { await recarregar() } catch { /* o que foi gravado já está no banco; a próxima leitura confirma */ }
+    trancado.current = false
+    setSugerindo(false)
+    if (vaiLancar) { setEnviando(false); fimEnvio() }
+  }
+  function usarConversaoSugerida() {
+    if (!planoConv || !faltaGravarConv || !podeAssociar) return
+    const alvos = planoConv.sugestoes.filter((s) => !s.gravado)
+    void aplicarSugestao({
+      lancar: false, falhaDoLancamento: '', // só GRAVA: o número vira de-para permanente no SisChef e o Ivan nunca o digitou; o Lançar é dele
+      gravar: async () => {
+        for (const s of alvos) {
+          if (s.via === 'converter') await api.converterItem(nota.chave, s.n, s.numero)
+          else { await api.associarItem(nota.chave, s.n, s.produtoId, s.numero); aplicarDecisao(nota.chave, s.n, s.produtoId, s.numero) }
+        }
+      },
+    })
   }
 
   // Regra 3 (ampliada em 03/11/2026): qualquer nota da lista pode ser excluída (sai da lista; nada muda no SisChef). Nunca a pela metade nem a lançando agora.
@@ -697,6 +749,50 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
           )}
           {erroTirar && <p className="erro" role="alert" data-testid="tirar-conversao-erro">{erroTirar}</p>}
         </div>
+      ) : planoConv || planoBol || planoForma ? (
+        // sugestão com número pronto (nome do produto, boletos da nota ou forma lembrada): a frase curta com a conta e o botão que a aceita; o texto cru do robô fica recolhido logo abaixo
+        <>
+          <div className="amarelo" data-testid="status-nota">
+            {planoConv && ['Nada foi lançado.',
+              ...planoConv.sugestoes.map((s) => (s.gravado && !sugerindo ? fraseConversaoGravada(s) : fraseConversaoSugerida(s))),
+              ...(planoConv.resto ? [`O robô também disse: ${planoConv.resto}`] : [])].join('\n')}
+            {planoBol && ['Nada foi lançado.', fraseBoletosDaNota(planoBol.boletos, planoBol.soma),
+              ...(planoBol.resto ? [`O robô também disse: ${planoBol.resto}`] : []),
+              ...(forma !== 'boleto' ? ['Escolha Boleto em “Como pagar” para usar os boletos da nota.'] : [])].join('\n')}
+            {planoForma && ['Nada foi lançado.', fraseFormaLembrada(planoForma),
+              ...(planoForma.resto ? [`O robô também disse: ${planoForma.resto}`] : []),
+              ...(forma === planoForma.forma ? ['Ela já está marcada em “Como pagar”: confira o resto e toque em Lançar.'] : [])].join('\n')}
+            {planoConv && (faltaGravarConv || sugerindo) && (
+              <div className="acoes">
+                <button type="button" className="botao" disabled={sugerindo || enviando || !podeAssociar} onClick={usarConversaoSugerida}>
+                  {sugerindo ? 'Gravando…' : `Usar ${planoConv.sugestoes.length > 1 ? 'as sugestões' : numeroDoBotao(planoConv.sugestoes[0].numero)}`}
+                </button>
+              </div>
+            )}
+            {planoBol && planoBol.resto === '' && (
+              // o MESMO disparo do Lançar, com as mesmas travas (outra nota lançando, frete, produto…); os boletos já estão na nota, então não há o que gravar
+              <div className="acoes">
+                <button type="button" className="botao" disabled={!podeLancar || forma !== 'boleto' || sugerindo}
+                  onClick={() => void aplicarSugestao({ gravar: async () => {}, lancar: true, somenteSeLancar: true, formaEnvio: 'boleto', falhaDoLancamento: 'Não consegui lançar agora' })}>
+                  {enviando || sugerindo ? 'Enviando…' : 'Usar os boletos da nota e lançar'}
+                </button>
+              </div>
+            )}
+            {planoForma && planoForma.resto === '' && forma !== planoForma.forma && (
+              <div className="acoes">
+                <button type="button" className="botao" disabled={sugerindo || enviando}
+                  onClick={() => void aplicarSugestao({ gravar: async () => { escolher(planoForma.forma) }, lancar: false, falhaDoLancamento: '' })}>
+                  {sugerindo ? 'Gravando…' : `Usar ${planoForma.rotulo}`}
+                </button>
+              </div>
+            )}
+            {erroSugestao && <p className="erro" role="alert" data-testid="sugestao-erro">{erroSugestao}</p>}
+          </div>
+          <details className="texto-do-robo" data-testid="texto-do-robo">
+            <summary>Ver o texto do robô</summary>
+            <p>{nota.lancamento_motivo}</p>
+          </details>
+        </>
       ) : passageiro ? (
         // o texto técnico do robô fica guardado e à mão, recolhido, logo abaixo da frase
         <>

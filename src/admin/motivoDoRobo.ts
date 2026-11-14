@@ -326,3 +326,125 @@ export function motivoPassageiro(motivo: string | null | undefined): MotivoPassa
   if (corpos.length > 1) fim = FIM_PADRAO
   return { frase: `Nada foi lançado. ${corpos.join(' ')} ${fim}`, repetir: true }
 }
+
+// ---------- sugestões com NÚMERO PRONTO (etapas 4 a 6 do inventário dos erros do robô, 14/11/2026; pedido do Ivan, leigo)
+// Quando o robô para porque falta ou está errado um número que o app consegue tirar de uma fonte certa — o NOME do produto na nota ("168UN", "395G"), os boletos que a PRÓPRIA nota traz ou a forma de pagamento que o app
+// lembra deste fornecedor —, a faixa amarela mostra a sugestão com a conta e um botão que a aceita. REGRA DURA: só quando o número vem de uma fonte determinística e sem dúvida entre dois valores; senão, o texto de hoje.
+// Aqui ficam só a leitura do texto do robô e as frases; a decisão de sugerir (com a nota na mão) mora em notaSefazRegras.
+
+/** O texto não tem nenhum sinal de que algo foi criado no SisChef (pedido já gerado, pela metade, retomada, queda do robô depois de começar, clique que pode ter sido dado)? Só então se sugere. */
+export function semSinalDeLancamento(texto: string): boolean {
+  const t = texto.replace(/\s+/g, ' ').trim()
+  if (t.length >= LIMITE_TEXTO_CURTO) return false // o banco corta o motivo em 2.000 letras e um texto longo pode ter perdido o aviso de conferir
+  return !(SEM_CONFERIR.test(t) || CLIQUE_PODE_TER_SIDO_DADO.test(t) || NAO_E_DESTE_TEXTO.test(t) || QUEDA_DO_ROBO.test(t))
+}
+/** O que sobra do motivo depois de tirar os trechos já reconhecidos e o começo técnico; '' = o motivo era só isto. */
+function restoDoMotivo(texto: string, trechos: RegExp[]): string {
+  let r = texto
+  for (const re of trechos) r = r.replace(re, '')
+  return r.replace(PREFIXO_ANTES_DO_PEDIDO, '').replace(/(?:\s*;\s*)+/g, '; ').replace(/^[;\s]+|[;\s]+$/g, '')
+}
+
+// "UN DIFERE sem conversão na tela: CÓD. FOR 17253; 999 (no app, informe a conversão desse item e lance de novo, ou registre no SisChef)" (motor._conferir_na_tela)
+const RE_TRECHO_UN_DIFERE = /UN DIFERE sem convers[ãa]o na tela: C[OÓ]D\.? FOR ([^()]+?)\s*\([^()]*\)/gi
+// "ketchup sachê: o nome diz 168 un por caixa e o app tem 1 UN = 12: no app, toque em Editar neste item e informe 168 (ou acerte no SisChef) e lance de novo" (regra_ketchup.problemas_ketchup)
+const RE_TRECHO_KETCHUP_NOME = /ketchup sachê: o nome diz (\d+) un por caixa e o app tem 1 UN = [\d.,]+: no app, toque em Editar neste item e informe (\d+)(?: \(ou acerte no SisChef\))?(?: e lance de novo)?/gi
+// "ketchup sachê: a nota traz 10 caixa(s) de 168 un e a tela mostra 10 un; o certo é 1.680 un — no app, toque em Editar neste item e informe 1 UN = 168 (ou acerte a quantidade no SisChef) e lance de novo"
+const RE_TRECHO_KETCHUP_CONTA = /ketchup sachê: a nota traz [\d.,]+ caixa\(s\) de (\d+) un e a tela mostra [\d.,]+ un; o certo é [\d.,]+ un — no app, toque em Editar neste item e informe 1 UN = (\d+)(?: \(ou acerte a quantidade no SisChef\))?(?: e lance de novo)?/gi
+
+/** O que o robô pediu em matéria de conversão: os CÓD. FOR com UN DIFERE sem conversão e os fatores do ketchup sachê (o número que o próprio robô diz ser o do nome). */
+export interface ConversoesPedidas { cods: string[]; fatores: number[]; resto: string }
+/**
+ * Reconhece no motivo do robô "UN DIFERE sem conversão" e/ou os dois avisos do ketchup sachê com o fator certo. Do ketchup só vale o trecho em que o número do nome e o número do "informe"
+ * são o MESMO (senão fica no `resto`, e sem nenhum trecho reconhecido o resultado é null).
+ */
+export function conversoesPedidasPeloRobo(motivo: string | null | undefined): ConversoesPedidas | null {
+  const t = (motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  const cods: string[] = []
+  const fatores: number[] = []
+  let sobra = t.replace(RE_TRECHO_UN_DIFERE, (_todo, lista: string) => {
+    for (const c of lista.split(/\s*;\s*/).map((x) => x.trim()).filter(Boolean)) if (!cods.includes(c)) cods.push(c)
+    return ''
+  })
+  const doKetchup = (todo: string, nome: string, informado: string): string => {
+    if (nome !== informado) return todo
+    const f = Number(nome)
+    if (Number.isInteger(f) && f > 0 && !fatores.includes(f)) fatores.push(f)
+    return ''
+  }
+  sobra = sobra.replace(RE_TRECHO_KETCHUP_NOME, doKetchup).replace(RE_TRECHO_KETCHUP_CONTA, doKetchup)
+  if (cods.length === 0 && fatores.length === 0) return null
+  return { cods, fatores, resto: restoDoMotivo(sobra, []) }
+}
+
+/** O que a frase da conversão sugerida precisa saber de cada item. */
+export interface FraseConversao {
+  n: number
+  /** O nome como a nota o traz, sem o "CÓD. FOR" e sem o "- INSUMOS". */
+  nome: string
+  /** O produto a que o SisChef ligou o item. */
+  produtoNome: string
+  numero: number
+  /** O pedaço do nome que gerou o número ("168UN", "395G"). */
+  trecho: string
+  /** "10 × 168 = 1.680 UN". */
+  conta: string
+  /** O número que o app tinha antes (diferente do sugerido), ou null. */
+  antes: number | null
+}
+const semInsumos = (nome: string): string => nome.replace(/\s*-\s*INSUMOS\s*$/i, '').trim()
+/** A sugestão de um item, em poucas frases: o número tirado do nome e a conta à vista. */
+export const fraseConversaoSugerida = (s: FraseConversao): string =>
+  `Item ${s.n} (${s.nome}): falta a conversão de unidade. Sugestão: 1 unidade da nota = ${formatar(s.numero)} (o nome diz ${s.trecho}). Conta: ${s.conta}. Produto no SisChef: ${semInsumos(s.produtoNome)}.`
+  + (s.antes != null ? ` Hoje o app tem ${formatar(s.antes)}.` : '')
+/** Depois de gravar o número: falta só lançar. */
+export const fraseConversaoGravada = (s: Pick<FraseConversao, 'n' | 'nome' | 'numero' | 'conta'>): string =>
+  `Item ${s.n} (${s.nome}): conversão ${formatar(s.numero)} gravada (${s.conta}). Agora toque em Lançar.`
+
+// "o XML desta nota já traz boletos (R$ 60,00 em 05/11/2026 + R$ 40,00 em 12/11/2026) e as parcelas digitadas são outras: o XML prevalece e não uso as digitadas — no app, toque em Atualizar e lance de novo sem digitar parcelas — REVISAR"
+const RE_TRECHO_BOLETOS = /o XML desta nota já traz boletos \(([^()]*)\) e as parcelas digitadas são outras: o XML prevalece e não uso as digitadas — no app, toque em Atualizar e lance de novo sem digitar parcelas(?: — REVISAR)?/gi
+const RE_UM_BOLETO = /^R\$\s*(\d{1,3}(?:\.\d{3})*|\d+),(\d{2}) em (\d{2})\/(\d{2})\/(\d{4})$/
+export interface BoletoDoRobo { valor: number; vencimento: string }
+export interface BoletosPrevalecem { boletos: BoletoDoRobo[]; resto: string }
+/** O robô devolveu a nota porque o XML já traz boletos e o Ivan tinha digitado outras parcelas: os boletos que ele listou (valor e vencimento aaaa-mm-dd). Lista que não se lê inteira = null. */
+export function boletosDaNotaPrevalecem(motivo: string | null | undefined): BoletosPrevalecem | null {
+  const t = (motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  const boletos: BoletoDoRobo[] = []
+  let ilegivel = false
+  let achou = false
+  const sobra = t.replace(RE_TRECHO_BOLETOS, (_todo, lista: string) => {
+    achou = true
+    for (const parte of lista.split(/\s+\+\s+/)) {
+      const m = RE_UM_BOLETO.exec(parte.trim())
+      if (!m) { ilegivel = true; continue }
+      boletos.push({ valor: Number(`${m[1].replace(/\./g, '')}.${m[2]}`), vencimento: `${m[5]}-${m[4]}-${m[3]}` })
+    }
+    return ''
+  })
+  return achou && !ilegivel && boletos.length > 0 ? { boletos, resto: restoDoMotivo(sobra, []) } : null
+}
+const reais = (v: number): string => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const dataBrDoIso = (iso: string): string => iso.split('-').reverse().join('/')
+/** A sugestão de usar os boletos da nota, com a conta: a soma dos boletos é o valor da nota. */
+export const fraseBoletosDaNota = (boletos: BoletoDoRobo[], total: number): string =>
+  'A nota já traz os boletos e eles valem mais do que as parcelas digitadas. Sugestão: usar os boletos da nota. '
+  + `Conta: ${boletos.map((b) => `${reais(b.valor)} (${dataBrDoIso(b.vencimento)})`).join(' + ')} = ${reais(total)}, o valor da nota.`
+
+// "falta a forma de pagamento — escolha "como pagar" no app" / "forma de pagamento desconhecida: 'x'" / "forma de pagamento inválida: 'x'" / "conta PIX 'itau|ij' não existe (esperado …)" (lancar_nfe_nuvem._forma_invalida, formas_pagamento)
+const RE_TRECHOS_FORMA = [
+  /falta a forma de pagamento — escolha [“"”]como pagar[“"”] no app/gi,
+  /forma de pagamento (?:desconhecida|inválida): ('[^']*'|"[^"]*"|\S+)/gi,
+  /conta PIX ('[^']*'|"[^"]*"|\S+) não existe \([^()]*\)/gi,
+]
+/** O robô devolveu a nota por falta de uma forma de pagamento que ele aceite; `resto` = o que o motivo diz além disto. */
+export function formaRecusadaPeloRobo(motivo: string | null | undefined): { resto: string } | null {
+  const t = (motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (!t || !RE_TRECHOS_FORMA.some((re) => { re.lastIndex = 0; return re.test(t) })) return null
+  return { resto: restoDoMotivo(t, RE_TRECHOS_FORMA) }
+}
+/** A forma sugerida e de onde vem: o padrão do fornecedor no banco (a da última nota lançada dele) ou o que este aparelho lembra. */
+export interface FormaLembrada { forma: string; rotulo: string; origem: 'banco' | 'aparelho'; resto: string }
+export const fraseFormaLembrada = (p: FormaLembrada): string =>
+  `Falta uma forma de pagamento que o robô aceite. Sugestão: ${p.rotulo}, a forma ${p.origem === 'banco' ? 'da última nota lançada deste fornecedor' : 'que este aparelho lembra para este fornecedor'}.`
