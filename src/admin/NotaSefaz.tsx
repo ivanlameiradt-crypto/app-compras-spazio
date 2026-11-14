@@ -619,8 +619,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const faltaGravarConv = planoConv != null && planoConv.sugestoes.some((s) => !s.gravado)
   const lancaJuntoConv = planoConv != null && planoConv.resto === '' && !robotOuMetade && bloqueiosDaNota(planoConv.notaDepois).length === 0 && forma !== '' && !outraOcupando
     && !fretePendente && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
-  const lancaJuntoForma = planoForma != null && planoForma.resto === '' && !robotOuMetade && bloqueios.length === 0 && !outraOcupando && !fretePendente
-    && !precisaDigitarParcelas(nota, planoForma.forma) && (planoForma.forma !== 'boleto' || planoSemanal(nota, datasSemanais)?.ok !== false)
+  // A forma lembrada só ESCOLHE a forma (nunca lança junto): o Lançar normal ainda pede o "Confirmar?" com a forma e as parcelas à vista (revisão independente de 14/11/2026).
   const numeroDoBotao = (n: number): string => n.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: 4 })
   /** O caminho comum das três sugestões: grava (se houver o que gravar), pede a vez de enviar já aqui (entre gravar e lançar nenhuma outra nota entra na frente) e lança com o mesmo disparo do Lançar. */
   async function aplicarSugestao(o: { gravar: () => Promise<void>; lancar: boolean; somenteSeLancar?: boolean; formaEnvio?: string; falhaDoLancamento: string }) {
@@ -764,7 +763,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
               ...(forma !== 'boleto' ? ['Escolha Boleto em “Como pagar” para usar os boletos da nota.'] : [])].join('\n')}
             {planoForma && ['Nada foi lançado.', fraseFormaLembrada(planoForma),
               ...(planoForma.resto ? [`O robô também disse: ${planoForma.resto}`] : []),
-              ...(forma === planoForma.forma && !lancaJuntoForma ? ['Ela já está marcada em “Como pagar”: confira o resto e toque em Lançar.'] : [])].join('\n')}
+              ...(forma === planoForma.forma ? ['Ela já está marcada em “Como pagar”: confira o resto e toque em Lançar.'] : [])].join('\n')}
             {planoConv && (faltaGravarConv || sugerindo) && (
               <div className="acoes">
                 <button type="button" className="botao" disabled={sugerindo || enviando || !podeAssociar} onClick={usarConversaoSugerida}>
@@ -781,11 +780,11 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
                 </button>
               </div>
             )}
-            {planoForma && planoForma.resto === '' && (lancaJuntoForma || forma !== planoForma.forma) && (
+            {planoForma && planoForma.resto === '' && forma !== planoForma.forma && (
               <div className="acoes">
                 <button type="button" className="botao" disabled={sugerindo || enviando}
-                  onClick={() => void aplicarSugestao({ gravar: async () => { escolher(planoForma.forma) }, lancar: lancaJuntoForma, formaEnvio: planoForma.forma, falhaDoLancamento: 'Escolhi a forma, mas não consegui lançar agora' })}>
-                  {enviando || sugerindo ? 'Enviando…' : `Usar ${planoForma.rotulo}${lancaJuntoForma ? ' e lançar' : ''}`}
+                  onClick={() => void aplicarSugestao({ gravar: async () => { escolher(planoForma.forma) }, lancar: false, falhaDoLancamento: '' })}>
+                  {sugerindo ? 'Gravando…' : `Usar ${planoForma.rotulo}`}
                 </button>
               </div>
             )}

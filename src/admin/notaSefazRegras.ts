@@ -341,18 +341,13 @@ const ehKetchupSachet = (descricao: string): boolean => {
   const t = descricao.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
   return /KETCHUP|CATCHUP/.test(t) && /SACH|(?<![A-Z0-9])SCH?(?![A-Z0-9])/.test(t)
 }
-/** O número do NOME para um item com UN DIFERE: a embalagem ("168UN", "C/ 12") quando o produto é contado em unidades, ou o peso ("395G") quando a nota está em UN e o produto em KG. Dúvida (dois números, outra
- *  unidade, produto em CT/PCT, as duas leituras discordando) = null. */
+/** O número do NOME para um item com UN DIFERE: SÓ o peso ("395G"), com a nota em UN e o produto em KG (o de-para é por unidade; a unidade do produto é conferida em sugestaoDoItem). A embalagem genérica do nome ("C/ 12", "PCT/15",
+ *  "168UN", "SIX PACK") NÃO entra aqui: com a nota em CX ou FD cabem vários pacotes numa caixa e o número sairia errado (revisão independente de 14/11/2026). Só o ketchup sachê usa o nome da embalagem, porque o robô valida esse número. */
 function numeroDoNomeDoItem(it: ItemNotaSefaz): { numero: number; trecho: string } | null {
-  const unidadeProduto = rotuloUnidade(it.unidade_sischef)
-  if (unidadeProduto === '' || ehEmbalagemContada(unidadeProduto)) return null
-  const embalagem = embalagemPeloNome(it.descricao, it.unidade_sischef)
-  const peso = rotuloUnidade(it.unidade_nota) === 'UN' && unidadeProduto === 'KG' ? pesoPeloNome(it.descricao, 'UN') : null
-  if (embalagem && peso && embalagem.fator !== peso.kg) return null
-  if (embalagem) return { numero: embalagem.fator, trecho: embalagem.trecho }
+  const peso = pesoPeloNome(it.descricao, it.unidade_nota)
   return peso ? { numero: peso.kg, trecho: peso.trecho } : null
 }
-function sugestaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz, numero: number, trecho: string, aceitaOutroGravado: boolean): SugestaoConversao | null {
+function sugestaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz, numero: number, trecho: string, aceitaOutroGravado: boolean, tipo: 'peso' | 'ketchup'): SugestaoConversao | null {
   if (it.n == null || !Number.isInteger(it.n) || it.n <= 0) return null
   const d = n.associacoes_app?.[String(it.n)] ?? null
   const produtoDoApp = Number(d?.produto_id)
@@ -363,10 +358,15 @@ function sugestaoDoItem(n: NotaSefazLista, it: ItemNotaSefaz, numero: number, tr
   if (produtoNome === '') return null
   const qtd = Number(it.qtd)
   if (it.qtd == null || !(qtd > 0)) return null
-  if (it.qtd_nota != null && Number(it.qtd_nota) !== qtd) return null // o SisChef já converteu a linha sozinho: a conta da tela não é a da nota
+  // A nota lida precisa trazer a quantidade e a unidade ORIGINAIS e a linha não pode ter sido convertida pelo SisChef (senão a conta sairia "120 × 168"); sem isso, nenhuma sugestão.
+  const unidadeNota = rotuloUnidade(it.unidade_nota)
+  if (unidadeNota === '' || it.qtd_nota == null || Number(it.qtd_nota) !== qtd) return null
+  // Cada lado com a sua unidade: a do produto é a da decisão do app (item sem produto no SisChef; lá a unidade_sischef é a da NOTA) ou, senão, a do SisChef.
+  const unidadeProduto = rotuloUnidade(decididoNoApp ? d?.unidade : it.unidade_sischef)
+  if (tipo === 'peso' ? !(unidadeNota === 'UN' && unidadeProduto === 'KG') : unidadeProduto !== 'UN') return null
   const antes = conversaoDaDecisao(d)
   if (antes != null && antes !== numero && !aceitaOutroGravado) return null
-  const leitura = leituraDaEntrada(qtd, null, numero, decididoNoApp ? d?.unidade : it.unidade_sischef)
+  const leitura = leituraDaEntrada(qtd, null, numero, unidadeProduto)
   if (leitura == null) return null
   return { n: it.n, nome: nomeDaNota(it.descricao), produtoNome, numero, trecho, conta: leitura.conta, antes: antes != null && antes !== numero ? antes : null, via: decididoNoApp ? 'associar' : 'converter', produtoId, gravado: antes === numero }
 }
@@ -392,13 +392,13 @@ export function planoConversaoSugerida(n: NotaSefazLista): PlanoConversaoSugerid
     const itens = n.itens.filter((x) => codForDoItem(x) === cod)
     if (itens.length !== 1) return null
     const doNome = numeroDoNomeDoItem(itens[0])
-    if (doNome == null || !juntar(sugestaoDoItem(n, itens[0], doNome.numero, doNome.trecho, false))) return null
+    if (doNome == null || !juntar(sugestaoDoItem(n, itens[0], doNome.numero, doNome.trecho, false, 'peso'))) return null
   }
   for (const fator of pedido.fatores) {
     const candidatos = n.itens.filter((x) => ehKetchupSachet(x.descricao) && embalagemPeloNome(x.descricao, 'UN')?.fator === fator)
     if (candidatos.length !== 1) return null
     const trecho = embalagemPeloNome(candidatos[0].descricao, 'UN')?.trecho ?? String(fator)
-    if (!juntar(sugestaoDoItem(n, candidatos[0], fator, trecho, true))) return null
+    if (!juntar(sugestaoDoItem(n, candidatos[0], fator, trecho, true, 'ketchup'))) return null
   }
   if (sugestoes.length === 0) return null
   const depois: Record<string, AssociacaoApp> = { ...(n.associacoes_app ?? {}) }
@@ -437,6 +437,10 @@ export function planoFormaLembrada(n: NotaSefazLista, padroes: Record<string, st
   const doAparelho = formaLembrada(n.emitente)
   if (doBanco && doAparelho && doBanco !== doAparelho) return null
   const forma = doBanco ?? doAparelho
+  if (!forma) return null
+  // Boleto só quando a nota traz parcelas que fecham com o valor; Dinheiro e Tesouraria nunca quando o XML traz boletos (não criariam a conta a pagar).
+  const fin = resumoFinanceiro(n)
+  if (forma === 'boleto' ? !fin.bate : fin.parcelas.length > 0) return null
   return forma ? { forma, rotulo: rotuloForma(forma), origem: doBanco ? 'banco' : 'aparelho', resto: recusada.resto } : null
 }
 

@@ -13,14 +13,15 @@ const CHAVE = '6'.repeat(44)
 const CNPJ = '11222333000144'
 const PREFIXO = 'parou antes de gerar o pedido (nada lançado): '
 const UN_DIFERE = `${PREFIXO}UN DIFERE sem conversão na tela: CÓD. FOR 5510 (no app, informe a conversão desse item e lance de novo, ou registre no SisChef)`
+const KETCHUP_B = 'ketchup sachê: a nota traz 10 caixa(s) de 168 un e a tela mostra 10 un; o certo é 1.680 un — no app, toque em Editar neste item e informe 1 UN = 168 (ou acerte a quantidade no SisChef) e lance de novo'
 const BOLETOS = `${PREFIXO}o XML desta nota já traz boletos (R$ 60,00 em 05/11/2026 + R$ 40,00 em 12/11/2026) e as parcelas digitadas são outras: o XML prevalece e não uso as digitadas — no app, toque em Atualizar e lance de novo sem digitar parcelas — REVISAR`
 const ITAU = "conta PIX 'itau|ij' não existe (esperado 'pix:<banco>|<empresa>' com uma destas: bradesco|ij, pangbank|ij)"
-const KETCHUP = { n: 3, descricao: 'CÓD. FOR: 5510 KETCHUP SACHE HEINZ 168UN', qtd: 10, unidade_sischef: 'UN', unidade_nota: 'UN', produto_id: '777', produto_nome: 'KETCHUP SACHE - INSUMOS', associacao: 'sischef' }
+const KETCHUP = { n: 3, descricao: 'CÓD. FOR: 5510 KETCHUP SACHE HEINZ 168UN', qtd: 10, qtd_nota: 10, unidade_sischef: 'UN', unidade_nota: 'CX', produto_id: '777', produto_nome: 'KETCHUP SACHE - INSUMOS', associacao: 'sischef' }
 const OUTRO = { n: 1, descricao: 'CÓD. FOR: 11 AGUA SEM GÁS 500ML', qtd: 60, unidade_sischef: 'UN', produto_id: '1836957', produto_nome: 'AGUA SEM GAS - INSUMOS', associacao: 'sischef' }
 const nota = (extra: Record<string, unknown> = {}): NotaSefazLista => ({
   chave: CHAVE, cnpj_emitente: CNPJ, emitente: 'HEINZ DISTRIBUIDORA LTDA', numero: '000321', emissao: '2026-11-13', valor_nf: 100,
   situacao: 'na_fila', lancada_em: null, nf_sischef: null, parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: 60 }, { numero: '002', vencimento: '2026-11-12', valor: 40 }],
-  itens: [OUTRO, KETCHUP], associacoes_app: null, forma_pagamento: 'boleto', lancamento_estado: 'revisar', lancamento_motivo: UN_DIFERE,
+  itens: [OUTRO, KETCHUP], associacoes_app: null, forma_pagamento: 'boleto', lancamento_estado: 'revisar', lancamento_motivo: KETCHUP_B,
   ...extra,
 } as unknown as NotaSefazLista)
 const ketchupGravado = (conversao: number) => ({ '3': { produto_id: 777, produto_nome: 'KETCHUP SACHE - INSUMOS', unidade: null, conversao, origem: 'sischef', por: 'ivan@spazio.invalid', em: '2026-11-14T10:00:00Z' } })
@@ -50,7 +51,7 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
     expect(aviso).not.toHaveTextContent('UN DIFERE')
     expect(within(aviso).getByRole('button', { name: 'Usar 168 e lançar' })).toBeEnabled()
     const cru = screen.getByTestId('texto-do-robo')
-    expect(cru).toHaveTextContent('UN DIFERE sem conversão na tela: CÓD. FOR 5510')
+    expect(cru).toHaveTextContent('ketchup sachê: a nota traz 10 caixa(s) de 168 un')
   })
 
   it('o toque grava a conversão pela função do item e SÓ DEPOIS dispara o mesmo lançamento do botão Lançar; enquanto grava, o botão fica travado', async () => {
@@ -74,7 +75,7 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
 
   it('peso no nome (395G), produto em KG: sugere 0,395 com a conta em KG', async () => {
     m.notasALancar.mockResolvedValue([nota({
-      itens: [OUTRO, { n: 4, descricao: 'CÓD. FOR: 99 LEITE COND TIROL SEMIDES TP 395G', qtd: 24, unidade_sischef: 'KG', unidade_nota: 'UN', produto_id: '888', produto_nome: 'LEITE CONDENSADO - INSUMOS', associacao: 'sischef' }],
+      itens: [OUTRO, { n: 4, descricao: 'CÓD. FOR: 99 LEITE COND TIROL SEMIDES TP 395G', qtd: 24, qtd_nota: 24, unidade_sischef: 'KG', unidade_nota: 'UN', produto_id: '888', produto_nome: 'LEITE CONDENSADO - INSUMOS', associacao: 'sischef' }],
       lancamento_motivo: UN_DIFERE.replace('5510', '99'),
     } as unknown as Partial<NotaSefazLista>)])
     render(<NotaSefaz />)
@@ -121,7 +122,7 @@ describe('NotaSefaz — conversão sugerida pelo nome do produto (UN DIFERE sem 
   })
 
   it('sem número seguro no nome: nada muda (o texto de hoje, sem botão de sugestão)', async () => {
-    m.notasALancar.mockResolvedValue([nota({ itens: [OUTRO, { ...KETCHUP, descricao: 'CÓD. FOR: 5510 KETCHUP SACHE HEINZ' }] } as unknown as Partial<NotaSefazLista>)])
+    m.notasALancar.mockResolvedValue([nota({ lancamento_motivo: UN_DIFERE, itens: [OUTRO, { ...KETCHUP, descricao: 'CÓD. FOR: 5510 KETCHUP SACHE HEINZ' }] } as unknown as Partial<NotaSefazLista>)])
     render(<NotaSefaz />)
     const aviso = await faixa()
     expect(aviso).toHaveTextContent('o app ainda não tem o número')
@@ -176,16 +177,18 @@ describe('NotaSefaz — usar os boletos da nota (as parcelas digitadas eram outr
 })
 
 describe('NotaSefaz — forma de pagamento que o app lembra do fornecedor', () => {
-  const notaItau = () => nota({ forma_pagamento: 'pix:itau|ij', lancamento_motivo: `${PREFIXO}${ITAU}` } as unknown as Partial<NotaSefazLista>)
-  it('a frase diz de onde vem; o toque escolhe a forma e lança com ela', async () => {
+  const notaItau = () => nota({ forma_pagamento: 'pix:itau|ij', parcelas: [], lancamento_motivo: `${PREFIXO}${ITAU}` } as unknown as Partial<NotaSefazLista>)
+  it('a frase diz de onde vem; o toque só ESCOLHE a forma (não lança: o Lançar normal ainda pede o Confirmar)', async () => {
     m.formasPadraoPorFornecedor.mockResolvedValue({ [CNPJ]: 'dinheiro' })
     m.notasALancar.mockResolvedValue([notaItau()])
     render(<NotaSefaz />)
     const aviso = await faixa()
     expect(aviso).toHaveTextContent('Sugestão: Dinheiro à vista, a forma da última nota lançada deste fornecedor.')
-    await userEvent.click(within(aviso).getByRole('button', { name: 'Usar Dinheiro à vista e lançar' }))
-    await waitFor(() => expect(m.lancarNota).toHaveBeenCalledWith(CHAVE, 'dinheiro'))
-    expect(m.lancarNota).toHaveBeenCalledTimes(1)
+    await userEvent.click(within(aviso).getByRole('button', { name: 'Usar Dinheiro à vista' }))
+    await waitFor(() => expect(screen.getByLabelText('Como pagar')).toHaveValue('dinheiro'))
+    expect(m.lancarNota).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status-nota')).toHaveTextContent('Ela já está marcada')
+    expect(screen.getByRole('button', { name: 'Lançar' })).toBeEnabled()
   })
 
   it('nada lembrado: nada muda (sem botão de sugestão)', async () => {

@@ -335,6 +335,7 @@ export function motivoPassageiro(motivo: string | null | undefined): MotivoPassa
 /** O texto não tem nenhum sinal de que algo foi criado no SisChef (pedido já gerado, pela metade, retomada, queda do robô depois de começar, clique que pode ter sido dado)? Só então se sugere. */
 export function semSinalDeLancamento(texto: string): boolean {
   const t = texto.replace(/\s+/g, ' ').trim()
+  if (t.length >= LIMITE_TEXTO_CURTO) return false // o banco corta o motivo em 2.000 letras e um texto longo pode ter perdido o aviso de conferir
   return !(SEM_CONFERIR.test(t) || CLIQUE_PODE_TER_SIDO_DADO.test(t) || NAO_E_DESTE_TEXTO.test(t) || QUEDA_DO_ROBO.test(t))
 }
 /** O que sobra do motivo depois de tirar os trechos já reconhecidos e o começo técnico; '' = o motivo era só isto. */

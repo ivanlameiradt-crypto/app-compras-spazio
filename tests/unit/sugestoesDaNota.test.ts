@@ -12,12 +12,12 @@ const KETCHUP_A = (nome: number, noApp: string) => `ketchup sachê: o nome diz $
 const KETCHUP_B = 'ketchup sachê: a nota traz 10 caixa(s) de 168 un e a tela mostra 10 un; o certo é 1.680 un — no app, toque em Editar neste item e informe 1 UN = 168 (ou acerte a quantidade no SisChef) e lance de novo'
 const BOLETOS = 'o XML desta nota já traz boletos (R$ 60,00 em 05/11/2026 + R$ 40,00 em 12/11/2026) e as parcelas digitadas são outras: o XML prevalece e não uso as digitadas — no app, toque em Atualizar e lance de novo sem digitar parcelas — REVISAR'
 
-const KETCHUP_ITEM = { n: 3, descricao: 'CÓD. FOR: 5510 KETCHUP SACHE HEINZ 168UN', qtd: 10, unidade_sischef: 'UN', unidade_nota: 'UN', produto_id: '777', produto_nome: 'KETCHUP SACHE - INSUMOS', associacao: 'sischef' }
-const LEITE_ITEM = { n: 4, descricao: 'CÓD. FOR: 99 LEITE COND TIROL SEMIDES TP 395G', qtd: 24, unidade_sischef: 'KG', unidade_nota: 'UN', produto_id: '888', produto_nome: 'LEITE CONDENSADO - INSUMOS', associacao: 'sischef' }
+const KETCHUP_ITEM = { n: 3, descricao: 'CÓD. FOR: 5510 KETCHUP SACHE HEINZ 168UN', qtd: 10, qtd_nota: 10, unidade_sischef: 'UN', unidade_nota: 'CX', produto_id: '777', produto_nome: 'KETCHUP SACHE - INSUMOS', associacao: 'sischef' }
+const LEITE_ITEM = { n: 4, descricao: 'CÓD. FOR: 99 LEITE COND TIROL SEMIDES TP 395G', qtd: 24, qtd_nota: 24, unidade_sischef: 'KG', unidade_nota: 'UN', produto_id: '888', produto_nome: 'LEITE CONDENSADO - INSUMOS', associacao: 'sischef' }
 const nota = (extra: Record<string, unknown> = {}): NotaSefazLista => ({
   chave: '5'.repeat(44), cnpj_emitente: '03995515011363', emitente: 'FORNECEDOR TESTE LTDA', numero: '000100', emissao: '2026-11-13', valor_nf: 100,
   situacao: 'na_fila', lancada_em: null, nf_sischef: null, parcelas: [{ numero: '001', vencimento: '2026-11-05', valor: 60 }, { numero: '002', vencimento: '2026-11-12', valor: 40 }],
-  itens: [KETCHUP_ITEM, LEITE_ITEM], associacoes_app: null, forma_pagamento: 'boleto', lancamento_estado: 'revisar', lancamento_motivo: PREFIXO + UN_DIFERE('5510'),
+  itens: [KETCHUP_ITEM, LEITE_ITEM], associacoes_app: null, forma_pagamento: 'boleto', lancamento_estado: 'revisar', lancamento_motivo: PREFIXO + KETCHUP_B,
   ...extra,
 } as unknown as NotaSefazLista)
 const decisao = (n: number, produto_id: number, conversao: number | null, origem = 'sischef') => ({ [String(n)]: { produto_id, produto_nome: 'X', unidade: null, conversao, origem } })
@@ -41,7 +41,7 @@ describe('conversoesPedidasPeloRobo — UN DIFERE sem conversão e ketchup sach�
 })
 
 describe('planoConversaoSugerida — o número vem do NOME do produto, com a conta', () => {
-  it('embalagem no nome (168UN): sugere 168 e mostra 10 × 168 = 1.680 UN', () => {
+  it('ketchup, embalagem no nome (168UN): sugere 168 e mostra 10 × 168 = 1.680 UN', () => {
     const p = planoConversaoSugerida(nota())
     expect(p?.resto).toBe('')
     expect(p?.sugestoes).toEqual([expect.objectContaining({
@@ -53,9 +53,9 @@ describe('planoConversaoSugerida — o número vem do NOME do produto, com a con
     expect(p?.sugestoes).toEqual([expect.objectContaining({ n: 4, numero: 0.395, trecho: '395G', conta: '24 × 0,395 = 9,48 KG', via: 'converter', produtoId: 888 })])
   })
   it('dois itens: só sugere se TODOS têm número seguro', () => {
-    expect(planoConversaoSugerida(nota({ lancamento_motivo: PREFIXO + UN_DIFERE('5510; 99') }))?.sugestoes.map((s) => s.n)).toEqual([3, 4])
+    expect(planoConversaoSugerida(nota({ lancamento_motivo: `${PREFIXO}${KETCHUP_B}; ${UN_DIFERE('99')}` }))?.sugestoes.map((s) => s.n).sort()).toEqual([3, 4])
     const semNumero = { ...LEITE_ITEM, descricao: 'CÓD. FOR: 99 LEITE COND TIROL SEMIDES' }
-    expect(planoConversaoSugerida(nota({ itens: [KETCHUP_ITEM, semNumero], lancamento_motivo: PREFIXO + UN_DIFERE('5510; 99') } as unknown as Partial<NotaSefazLista>))).toBeNull()
+    expect(planoConversaoSugerida(nota({ itens: [KETCHUP_ITEM, semNumero], lancamento_motivo: `${PREFIXO}${KETCHUP_B}; ${UN_DIFERE('99')}` } as unknown as Partial<NotaSefazLista>))).toBeNull()
   })
   it.each([
     ['dois números no nome', { descricao: 'CÓD. FOR: 5510 KETCHUP SACHE 168UN CX 100UN' }],
@@ -72,14 +72,14 @@ describe('planoConversaoSugerida — o número vem do NOME do produto, com a con
     expect(planoConversaoSugerida(nota({ itens: [KETCHUP_ITEM, { ...KETCHUP_ITEM, n: 5 }] } as unknown as Partial<NotaSefazLista>))).toBeNull()
   })
   it('já tem outro número gravado: não contradiz (dúvida entre dois valores)', () => {
-    expect(planoConversaoSugerida(nota({ associacoes_app: decisao(3, 777, 12) }))).toBeNull()
+    expect(planoConversaoSugerida(nota({ lancamento_motivo: PREFIXO + UN_DIFERE('99'), associacoes_app: decisao(4, 888, 0.5) }))).toBeNull()
   })
   it('já gravou o mesmo número: continua no plano, marcado como gravado (falta só lançar)', () => {
     const p = planoConversaoSugerida(nota({ associacoes_app: decisao(3, 777, 168) }))
     expect(p?.sugestoes[0]).toEqual(expect.objectContaining({ numero: 168, gravado: true }))
   })
   it('decisão do app com o produto escolhido no app: grava pela função de associar', () => {
-    const n = nota({ associacoes_app: decisao(3, 777, null, 'lista'), itens: [{ ...KETCHUP_ITEM, produto_id: null, associacao: null }, LEITE_ITEM] } as unknown as Partial<NotaSefazLista>)
+    const n = nota({ associacoes_app: { '3': { produto_id: 777, produto_nome: 'X', unidade: 'un', conversao: null, origem: 'lista' } }, itens: [{ ...KETCHUP_ITEM, produto_id: null, associacao: null }, LEITE_ITEM] } as unknown as Partial<NotaSefazLista>)
     const p = planoConversaoSugerida(n)
     expect(p?.sugestoes[0]).toEqual(expect.objectContaining({ via: 'associar', produtoId: 777 }))
     expect(p?.notaDepois.associacoes_app?.['3']?.conversao).toBe(168)
@@ -94,7 +94,7 @@ describe('planoConversaoSugerida — o número vem do NOME do produto, com a con
     expect(planoConversaoSugerida(nota({ lancamento_motivo: KETCHUP_B, itens: [KETCHUP_ITEM, { ...KETCHUP_ITEM, n: 8, descricao: 'CÓD. FOR: 5511 CATCHUP SACHE 168UN' }] } as unknown as Partial<NotaSefazLista>))).toBeNull()
   })
   it('outro problema no mesmo motivo vem em `resto` (o botão só grava, não lança)', () => {
-    expect(planoConversaoSugerida(nota({ lancamento_motivo: `${PREFIXO}${UN_DIFERE('5510')}; item 7: 3 linhas na tela (esperava 1)` }))?.resto).toBe('item 7: 3 linhas na tela (esperava 1)')
+    expect(planoConversaoSugerida(nota({ lancamento_motivo: `${PREFIXO}${KETCHUP_B}; item 7: 3 linhas na tela (esperava 1)` }))?.resto).toBe('item 7: 3 linhas na tela (esperava 1)')
   })
   it.each([
     ['estado diferente de revisar', { lancamento_estado: 'erro' }],
@@ -148,20 +148,20 @@ describe('formaRecusadaPeloRobo / planoFormaLembrada — a forma que o app lembr
     expect(formaRecusadaPeloRobo('sem boletos na nota — pagamento manual')).toBeNull()
   })
   it('padrão do fornecedor no banco: sugere', () => {
-    const p = planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA }), { '03995515011363': 'dinheiro' })
+    const p = planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA, parcelas: [] }), { '03995515011363': 'dinheiro' })
     expect(p).toEqual({ forma: 'dinheiro', rotulo: 'Dinheiro à vista', origem: 'banco', resto: '' })
   })
   it('só o aparelho lembra: sugere', () => {
     lembrarForma('FORNECEDOR TESTE LTDA', 'tesouraria')
-    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA }), {})?.origem).toBe('aparelho')
+    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA, parcelas: [] }), {})?.origem).toBe('aparelho')
   })
   it('o banco e o aparelho lembram formas diferentes: não sugere (dúvida)', () => {
     lembrarForma('FORNECEDOR TESTE LTDA', 'tesouraria')
-    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA }), { '03995515011363': 'dinheiro' })).toBeNull()
+    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA, parcelas: [] }), { '03995515011363': 'dinheiro' })).toBeNull()
   })
   it('nada lembrado, ou Pix/cartão (nunca vêm sozinhos): não sugere', () => {
-    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA }), {})).toBeNull()
-    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA }), { '03995515011363': 'pix:bradesco|ij' })).toBeNull()
+    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA, parcelas: [] }), {})).toBeNull()
+    expect(planoFormaLembrada(nota({ lancamento_motivo: PREFIXO + FALTA, parcelas: [] }), { '03995515011363': 'pix:bradesco|ij' })).toBeNull()
   })
   it('a frase diz de onde vem', () => {
     expect(fraseFormaLembrada({ forma: 'dinheiro', rotulo: 'Dinheiro', origem: 'banco', resto: '' })).toBe('Falta uma forma de pagamento que o robô aceite. Sugestão: Dinheiro, a forma da última nota lançada deste fornecedor.')
