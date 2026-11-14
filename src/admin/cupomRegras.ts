@@ -27,6 +27,8 @@ export interface DiagnosticoCupom {
    * e a Edge Function confirmar-cupom refaz e reenvia. Nos outros casos o caminho continua sendo o Claude/SisChef.
    */
   corrigivel: boolean
+  /** Só quando o próprio texto do robô PROVA que nada foi criado no SisChef (falha passageira antes de "Gerar compra"): repetir é seguro. Ausente = nunca oferecer repetir. */
+  tentarDeNovo?: true
 }
 
 const semProdutoConfirmado = (it: ItemCupomRecente): boolean => String(it.sugestao_produto?.id ?? '').trim() === ''
@@ -149,6 +151,59 @@ export function falhaDeConferirDoCupom(c: CupomRecente): { texto: string } | nul
   return { texto: trecho.slice(FALHA_PREFIXO.length).trim() }
 }
 
+// ---------- falhas PASSAGEIRAS do robô (etapa 8 do inventário de 14/11/2026): nada foi criado no SisChef, dá para tentar de novo
+// Os moldes são os textos que o robô grava ANTES de clicar "Gerar compra" (cupom_navegador.py: `_preencher` e `montar_pedido`; cupom_lancar.py: `ensaiar_cupom`; lancar_cupom_nuvem.py e reaper_cupom.py: só
+// cupom de TESTE, que nunca cria compra). Cada molde é ancorado no INÍCIO do texto, que é onde o robô põe o prefixo. O motivo é cortado em ~2000 caracteres no banco: por isso só se reconhece texto CURTO e
+// nunca se conclui "é seguro" pela AUSÊNCIA de um aviso no fim (ele pode ter sido cortado). Todas as partes de um motivo composto ("; ") têm de ser reconhecidas.
+const MOTIVO_CURTO_MAX = 1500
+const MOLDE_NAO_COLOCOU = /^item (\d+): o Sischef não colocou o produto \(código [^)]*\) na lista em ~\d+ s \(demora do Sischef ou produto fora do catálogo\)$/
+const MOLDE_GRADE = /^(?:item \d+: )?a grade do Sischef tem \d+ linha\(s\), esperava \d+: uma linha pode ter entrado duas vezes \(nada foi gerado\)$/
+const MOLDE_MONTAR = /^(?:item \d+: )?falha ao montar o pedido no Sischef(?: ao preencher a linha \(código [^)]*\))?: \S/
+const MOLDE_TESTE = /^erro inesperado no teste \(dry-run, nada foi criado no Sischef\): \S|^PROCESSANDO preso há mais de \d+ min \(cupom de teste: o dry-run nunca cria compra\)$/
+/** Qualquer sinal de que a compra PODE existir: se aparecer em QUALQUER ponto do texto, não se oferece repetir (cinto e suspensório; o servidor também recusa). */
+const SINAL_DE_COMPRA = /CONFERIR NO SISCHEF|conferir no sischef|_CLICADO|pedido criado|pedido gerado|Gerar compra|Finalizar compra|pagamento no Sischef|preso há mais de \d+ min(?! \(cupom de teste)|nunca lançado/i
+
+/**
+ * Liga o botão "Tentar de novo" dos motivos passageiros. DESLIGADO de propósito: a função confirmar-cupom ainda não tem o modo `tentar_de_novo` (hoje só aceita o motivo "CONFIRMAR:", o da falha de conferência
+ * e o de fornecedor novo), então o botão levaria um 409. Ligar junto com a publicação da função (ver o relatório de 14/11/2026).
+ */
+export const BOTAO_TENTAR_DE_NOVO_LIGADO = false
+
+const FRASE_MONTAR = 'O SisChef demorou ou falhou ao montar o pedido. Nada foi lançado.'
+const FRASE_TESTE = 'O teste deste cupom falhou. Nada foi criado.'
+const SOLUCAO_PASSAGEIRO = 'Nada foi criado no SisChef, então repetir é seguro. Se falhar de novo no mesmo item, o produto pode estar desativado no SisChef: avise o Claude.'
+
+function fraseDaParte(parte: string): string | null {
+  const n = MOLDE_NAO_COLOCOU.exec(parte)
+  if (n) return `O SisChef demorou para mostrar o produto do item ${n[1]}. Nada foi lançado.`
+  if (MOLDE_GRADE.test(parte)) return 'O SisChef mostrou uma linha a mais ao montar o pedido. Nada foi lançado.'
+  if (MOLDE_MONTAR.test(parte)) return FRASE_MONTAR
+  if (MOLDE_TESTE.test(parte)) return FRASE_TESTE
+  return null
+}
+
+/**
+ * O envio parou por falha PASSAGEIRA do robô e o próprio texto prova que nada foi criado no SisChef: devolve a frase curta e o que fazer; senão null (nunca oferece repetir na dúvida).
+ * Só vale para REVISAR sem pedido no SisChef, com itens e todos com produto (o resto é outro caso), e sem o aviso de repetida/falha de conferência misturado.
+ */
+export function motivoPassageiroDoCupom(c: CupomRecente): { problema: string; solucao: string } | null {
+  if (c.estado !== 'REVISAR' || c.pedido_sischef != null) return null
+  const itens = Array.isArray(c.itens) ? c.itens : []
+  if (itens.length === 0 || itens.some(semProdutoConfirmado)) return null
+  const motivo = (c.motivo ?? '').trim()
+  if (motivo === '' || motivo.length >= MOTIVO_CURTO_MAX) return null
+  if (SINAL_DE_COMPRA.test(motivo) || trechoDaRepetida(motivo) !== null || trechoDaFalha(motivo) !== null) return null
+  const frases: string[] = []
+  // o '; ' de dentro do molde do teste ('(dry-run; nada foi criado…)') não separa partes
+  for (const parte of motivo.replace('(dry-run; nada', '(dry-run, nada').split('; ')) {
+    const f = fraseDaParte(parte.trim())
+    if (f === null) return null
+    frases.push(f)
+  }
+  return { problema: frases.length === 1 ? frases[0] : FRASE_MONTAR, solucao: SOLUCAO_PASSAGEIRO }
+}
+
+
 /**
  * O diagnóstico de um envio que está em REVISAR (null para os outros estados). A ordem importa: primeiro o que pode ter chegado ao SisChef
  * (conferir antes de qualquer coisa), depois o que é só dado do cupom. Texto que ninguém reconhece vira o motivo cru + o pedido genérico.
@@ -185,6 +240,10 @@ export function diagnosticoDoCupom(c: CupomRecente): DiagnosticoCupom | null {
     return sem('A foto não ficou legível (ou não mostra os itens do cupom).',
       'Tire outra foto, com o cupom inteiro, esticado e com boa luz, e envie de novo.')
   }
+
+  // falha PASSAGEIRA antes de "Gerar compra" (etapa 8 do inventário de 14/11): nada foi criado no SisChef, então dá para tentar de novo
+  const passageiro = motivoPassageiroDoCupom(c)
+  if (passageiro) return { problema: passageiro.problema, itens: [], pedidos: [], conferencia: null, solucao: passageiro.solucao, corrigivel: false, tentarDeNovo: true }
 
   // O SisChef não tem o fornecedor (o robô não cadastra sozinho): o app deixa o Ivan cadastrar (caixa "Cadastrar fornecedor") e reenviar o cupom
   if (/^fornecedor não encontrado no Sischef/i.test(motivo)) {

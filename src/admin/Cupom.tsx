@@ -10,10 +10,11 @@ import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
 } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { diagnosticoDoCupom, envioRepetido, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
+import { BOTAO_TENTAR_DE_NOVO_LIGADO, diagnosticoDoCupom, envioRepetido, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
 import AvisoRepetida from './AvisoRepetida'
 import AvisoFalhaConferir from './AvisoFalhaConferir'
+import TentarDeNovoCupom from './TentarDeNovoCupom'
 import CuponsExcluidos from './CuponsExcluidos'
 import CorrigirCupom from './CorrigirCupom'
 import CadastrarFornecedor from './CadastrarFornecedor'
@@ -67,6 +68,9 @@ const ACOES_FORNECEDOR = {
   statusDoCadastro: (cnpj: string) => api.statusDoCadastroFornecedor(cnpj),
   reenviarCupom: (id: string) => api.reenviarCupomDoFornecedor(id),
 }
+
+/** A ação do botão "Tentar de novo" dos motivos passageiros (rede pelo api). */
+const ACOES_TENTAR_DE_NOVO = { tentar: (id: string) => api.tentarDeNovoCupom(id) }
 
 /** Cupom parado que o Ivan corrige DENTRO do app (item sem produto confirmado, com o total lido): só nesses a caixa de correção aparece. */
 const corrigivel = (c: CupomRecente): boolean => c.estado === 'REVISAR' && diagnosticoDoCupom(c)?.corrigivel === true
@@ -425,6 +429,11 @@ export default function Cupom() {
                 {falha && <AvisoFalhaConferir id={c.id} texto={falha.texto} aoSoltar={(r) => aoConferirDeNovo(c.id, r)} aoRecarregar={carregarRecentes} />}
                 {anotados[c.id] && c.estado === 'REVISAR' && !repetida && <p className="ok" data-testid="outra-compra-anotada">{anotados[c.id]}</p>}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && !(repetida && !repetida.sobraMotivo) && !falha && <ProblemaDoCupom c={c} />}
+                {c.estado === 'REVISAR' && !envioRepetido(c) && !(repetida && !repetida.sobraMotivo) && !falha && diagnosticoDoCupom(c)?.tentarDeNovo === true && (
+                  BOTAO_TENTAR_DE_NOVO_LIGADO
+                    ? <TentarDeNovoCupom id={c.id} acoes={ACOES_TENTAR_DE_NOVO} aoSoltar={(r) => aoConferirDeNovo(c.id, r)} />
+                    : <p className="sub" data-testid="tentar-de-novo-pelo-claude">Peça ao Claude para reenviar este cupom: nada foi criado no SisChef, então é seguro.</p>
+                )}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && <FotoDoCupom c={c} />}
                 {c.estado === 'REVISAR' && !envioRepetido(c) && fornecedorNaoEncontrado(c.motivo) && (
                   <CadastrarFornecedor cupom={c} acoes={ACOES_FORNECEDOR} aoRecarregar={carregarRecentes} aoReenviar={() => { setReenviados((m) => ({ ...m, [c.id]: { classe: 'ok', texto: 'Reenviado: o cupom entrou na fila e o robô lança em 2 ou 3 minutos.' } })); carregarRecentes() }} />
