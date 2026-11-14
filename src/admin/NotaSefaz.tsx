@@ -19,7 +19,7 @@ import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
-import { produtoLembradoDoItem, textoLembrado, type ProdutoLembrado } from './produtoLembrado'
+import { oQueFazerComOLembrado, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado } from './produtoLembrado'
 import AvisoPreco from './AvisoPreco'
 import { Origem } from './Origem'
 import { ContaAutomatica } from './ContaAutomatica'
@@ -117,6 +117,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, pode
   lembrados?: { cnpj: string; lista: ProdutoLembrado[] } | null
 }) {
   const f = resumoFinanceiro(nota)
+  const [usandoLembrado, setUsandoLembrado] = useState(false) // o toque em "Usar o lembrado" gravando
   const quartaDaMaues = ehPagamentoSemanal(nota) ? planoSemanal(nota, [])?.quarta ?? null : null
   // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
   const [aberto, setAberto] = useState(() => nota.itens.some((it) => (!itemAssociado(it) && decisaoDoItem(nota, it) == null) || itemPedeConversao(nota, it)))
@@ -133,9 +134,13 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, pode
     const rotuloConfirmado = conversao != null && decisao
       ? `produto confirmado no app, ${textoConversao(it.unidade_sischef, decisao.unidade, conversao)}`
       : 'produto confirmado no app'
-    // "lembrado da nota de dd/mm": a decisão do app é a mesma (produto e conversão) que o app lembra das notas lançadas deste fornecedor
-    const doLembrado = lembrados && decisao ? produtoLembradoDoItem(lembrados.lista, lembrados.cnpj, nota, it) : null
-    const marcaLembrado = doLembrado && decisao && doLembrado.produto_id === decisao.produto_id && (doLembrado.conversao ?? null) === (conversao ?? null) ? textoLembrado(doLembrado) : null
+    // Produto lembrado por fornecedor (14/11/2026): a marca só para a decisão que o APP gravou sozinho (origem 'lembrado'); a do Ivan que coincide não ganha marca.
+    // Sem decisão e sem condição de gravar sozinho (preço fora da faixa, unidade diferente, recusado, limiar): o botão de um toque.
+    const doLembrado = lembrados ? produtoLembradoDoItem(lembrados.lista, lembrados.cnpj, nota, it) : null
+    const marcaLembrado = decisao && (decisao.origem ?? '').trim().toLowerCase() === 'lembrado'
+      ? textoAssociadoSozinho(doLembrado && doLembrado.produto_id === decisao.produto_id ? doLembrado.ultima_em : null, it.unidade_sischef, conversao) : null
+    const recusado = it.n != null && (nota.lembrado_recusado ?? []).includes(it.n)
+    const sugestaoLembrada = !ok && !decisao && podeAssociar && it.n != null && oQueFazerComOLembrado(doLembrado, it, catalogo, recusado) === 'sugerir' ? doLembrado : null
     const lembrada = memoriaDoItem(memoria, nota, it) // a embalagem que o robô lembra para o código deste item (CNPJ + CÓD. FOR + unidade), se houver
     const avisoPreco = avisoDePrecoDoItem(nota, it, catalogo, memoria) // preço por unidade de estoque longe das últimas compras (só avisa)
     // A conta que já é AUTOMÁTICA ("48 PC × 15 = 720 UN", pedido do Ivan de 31/10/2026). Some quando o Ivan já informou o número dele neste item (a linha "Conversão informada" já diz tudo)
@@ -155,6 +160,12 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, pode
           </b>
         )}
         {marcaLembrado && <span className="sub" data-testid="item-lembrado">{marcaLembrado}</span>}
+        {sugestaoLembrada && it.n != null && (
+          <button type="button" className="botao" data-testid="usar-lembrado" disabled={usandoLembrado}
+            onClick={() => { const n = it.n as number; setUsandoLembrado(true); void salvarAssociacao(n, sugestaoLembrada.produto_id, false, sugestaoLembrada.conversao).catch(() => undefined).finally(() => setUsandoLembrado(false)) }}>
+            {textoUsarLembrado(nomeParaMostrar(catalogo, sugestaoLembrada.produto_id, sugestaoLembrada.produto_nome ?? '').nome, sugestaoLembrada.conversao)}
+          </button>
+        )}
         {conta && <ContaAutomatica conta={conta} />}
         {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
         {!ok && it.n != null && (decisao != null || podeAssociar) && (
@@ -528,6 +539,11 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const podeAssociar = estado !== 'erro' && !(estado === 'lancando' && !presa)
   // `conversao` = quanto vale 1 unidade da nota em unidades do produto (só quando as unidades diferem); sempre vai à RPC, nula quando não há.
   async function salvarAssociacao(n: number, produtoId: number | null, lembrar = false, conversao: number | null = null) {
+    // O Ivan mexeu numa associação que o app fez sozinho (trocou ou desfez): guarda a recusa ANTES, para o app nunca mais associar este item sozinho (nem depois de recarregar).
+    const antes = nota.associacoes_app?.[String(n)]
+    if (antes && (antes.origem ?? '').trim().toLowerCase() === 'lembrado') {
+      try { await api.recusarLembrado(nota.chave, n) } catch { /* sem a recusa a troca do Ivan ainda vale: a gravação automática nunca sobrescreve decisão */ }
+    }
     await api.associarItem(nota.chave, n, produtoId, conversao ?? null)
     aplicarDecisao(nota.chave, n, produtoId, conversao ?? null) // a tela já reflete o que foi gravado, mesmo que a releitura abaixo falhe
     // "Lembrar esta descrição": só reforça a busca da próxima vez. Falhar aqui NÃO desfaz a confirmação (que já está no banco).
@@ -553,17 +569,21 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       .catch(() => undefined)
     return () => { vivo = false }
   }, [cnpjNota, temItemSemProduto])
-  // Associa SOZINHO, pelo mesmo caminho do toque do Ivan, o item sem produto no SisChef e sem decisão no app que tem produto lembrado presente na lista de insumos.
-  // Uma tentativa por item (guardada aqui): falhou, ou o Ivan trocou/desfez depois, o app não mexe de novo.
+  // Associa SOZINHO (cot_nfe_associar_lembrado: origem 'lembrado', nunca sobrescreve, recusa o item recusado) o item sem produto no SisChef e sem decisão no app quando o
+  // lembrado passa nas travas (produtoLembrado.oQueFazerComOLembrado: lista de insumos, limiar de notas, preço na faixa 0,8×–1,2×, mesma unidade, não recusado).
+  // Uma tentativa por item nesta tela; a recusa do Ivan fica no banco (lembrado_recusado) e vale depois de recarregar.
   const jaTentou = useRef(new Set<number>())
   useEffect(() => {
     if (nota.situacao !== 'na_fila' || !podeAssociar || !catalogo || !lembrados || lembrados.lista.length === 0) return
     for (const it of nota.itens) {
       if (it.n == null || itemAssociado(it) || decisaoDoItem(nota, it) != null || jaTentou.current.has(it.n)) continue
       const l = produtoLembradoDoItem(lembrados.lista, lembrados.cnpj, nota, it)
-      if (!l || !catalogo.some((p) => p.produto_id === l.produto_id)) continue
+      const recusado = (nota.lembrado_recusado ?? []).includes(it.n)
+      if (!l || oQueFazerComOLembrado(l, it, catalogo, recusado) !== 'sozinho') continue
       jaTentou.current.add(it.n)
-      void salvarAssociacao(it.n, l.produto_id, false, l.conversao).catch(() => undefined)
+      new Promise<boolean>((ok) => ok(api.associarLembrado(nota.chave, it.n as number, l.produto_id, l.conversao)))
+        .then((gravou) => { if (gravou) return recarregar() })
+        .catch(() => undefined)
     }
   })
 

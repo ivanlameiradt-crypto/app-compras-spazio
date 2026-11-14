@@ -512,6 +512,8 @@ export interface NotaSefazLista {
   lancamento_estado_em?: string | null
   /** Sugestões estruturadas do robô junto do motivo (migração 20261229000001; ausente/null = o robô não mandou ou o banco ainda não tem a coluna: vale o texto). */
   lancamento_sugestoes?: SugestaoDoRobo[] | null
+  /** Itens (n) em que o Ivan trocou ou desfez a associação automática do produto lembrado: o app nunca mais os associa sozinho (14/11/2026). */
+  lembrado_recusado?: number[] | null
   /** Boletos do XML. null/ausente = XML ainda não lido; [] = lido e sem duplicatas (à vista). Migração 20261207000001. */
   parcelas?: ParcelaNota[] | null
   /** Parcelas que o Ivan digitou (XML sem duplicatas): o que foi mandado ao robô. null = nada digitado. Migração 20261208000001. */
