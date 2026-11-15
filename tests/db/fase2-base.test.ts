@@ -64,6 +64,7 @@ const F3W = '20261227000001_compra_historico.sql' // histórico de compras do Si
 const F3X = '20261228000001_compra_contagem.sql' // contagem da prateleira da lista da semana (11/11/2026): compra_contagem + compra_contagem_salvar (só cria; a função é do app, para authenticated)
 const F3Y = '20261229000001_sugestoes_estruturadas_do_robo.sql' // sugestões estruturadas do robô (14/11/2026): colunas cot_nfe.lancamento_sugestoes e cupom.sugestoes + cot_nfe_marcar_estado lê p->'sugestoes' (só acrescenta; sem 3º parâmetro)
 const F3Z = '20261230000001_produto_lembrado_por_fornecedor.sql' // produto lembrado por fornecedor (14/11/2026): cot_nfe_produto_lembrado coluna cot_nfe.lembrado_recusado + cot_nfe_produto_lembrado, cot_nfe_associar_lembrado e cot_nfe_recusar_lembrado (só cria; funções do admin, para authenticated)
+const F3ZA = '20261231000001_produto_lembrado_embalagem.sql' // produto lembrado, correções da revisão de 15/11/2026: assinatura da descrição da embalagem, notas pela metade fora da memória, unidade única, recusa validada (só create or replace das 3 funções + 1 função interna)
 const F3T = '20261224000001_nfe_aprendizado_esquecer.sql' // memória de embalagem, fase 2 (29/10/2026): nfe_aprendizado_esquecer, o "Esquecer" do app (só cria a função; é do admin, para authenticated)
 const F3N = '20261217000001_fornecedor_cadastro.sql' // cadastro de fornecedor pelo app (fornecedor_cadastro, fornecedor_app)
 const F3M = '20261216000001_produto_planilha_descricao.sql' // produto acrescentado pela planilha (descrição) entra na lista de insumos e em cot_nfe_associar
@@ -72,7 +73,7 @@ const ATE_D1 = [...BASE, E1, D1]
 const ATE_C1 = [...BASE, E1, D1, C1]
 const ANTES_DE_B = [...BASE, E1, D1, C1, D2]
 const ANTES_DE_C2 = [...BASE, E1, D1, C1, D2, B]
-const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R, F3S, F3T, F3U, F3V, F3W, F3X, F3Y, F3Z]
+const ORDEM_ESPERADA = [...BASE, E1, D1, C1, D2, B, C2, F3A, F3B, F3C, F3D, F3E, F3F, F3G, F3H, F3I, F3J, F3K, F3L, F3M, F3N, F3O, F3P, F3Q, F3R, F3S, F3T, F3U, F3V, F3W, F3X, F3Y, F3Z, F3ZA]
 
 // Retrato do esquema da base (1A + 1B). Cresce a cada bloco que cria tabela ou view.
 const TABELAS_ESPERADAS = [

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { bancoRecebimento, chamar, ADMIN } from './fixture-recebimento'
 import { como } from './banco'
+import { assinaturaDaDescricao } from '../../src/admin/produtoLembrado'
 
 // Produto lembrado por fornecedor (20261230000001, 14/11/2026): cot_nfe_produto_lembrado(cnpj) lê as notas LANÇADAS e devolve o produto que o Ivan escolheu
 // por CÓD. FOR + unidade da nota, só quando todas as decisões concordam (produto e conversão), com preço por unidade da nota e unidade do produto;
@@ -11,6 +12,9 @@ import { como } from './banco'
 const AQUI = dirname(fileURLToPath(import.meta.url))
 const MIGRACAO = join(AQUI, '../../supabase/migrations/20261230000001_produto_lembrado_por_fornecedor.sql')
 const DESFAZER = join(AQUI, '../../supabase/rollback/20261230000001_produto_lembrado_por_fornecedor.desfazer.sql')
+// Correções da revisão de 15/11/2026 (20261231000001): assinatura da descrição da embalagem, notas pela metade fora da memória, unidade única, recusa validada.
+const MIGRACAO_EMB = join(AQUI, '../../supabase/migrations/20261231000001_produto_lembrado_embalagem.sql')
+const DESFAZER_EMB = join(AQUI, '../../supabase/rollback/20261231000001_produto_lembrado_embalagem.desfazer.sql')
 
 const atual = bancoRecebimento(null)
 const banco = async () => atual()
@@ -32,7 +36,8 @@ async function nota(db: PGlite, o: { cnpj?: string; situacao?: string; lancada?:
     [chave, cnpj, JSON.stringify(itens), situacao, lancada, o.assoc == null ? null : JSON.stringify(o.assoc)])
   return chave
 }
-const GUARANA = (sh: string, extra: Partial<Item> = {}): Item => ({ n: 1, descricao: `CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET LT 350ML SH ${sh}`, ...extra })
+// O fim da descrição é o PREÇO que o fornecedor escreve ("SH 35,1600") e muda a cada nota: o que não tem vírgula vira "x,00" (a assinatura ignora o preço do fim; só a embalagem conta).
+const GUARANA = (sh: string, extra: Partial<Item> = {}): Item => ({ n: 1, descricao: `CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET LT 350ML SH ${sh.includes(',') ? sh : `${sh},00`}`, ...extra })
 const DEC = (conv: number | null = 12, produto = 3324211, origem = 'lista', unidade: string | null = 'un') => ({ '1': { produto_id: produto, produto_nome: 'GUARANÁ DIET LATA', unidade, conversao: conv, origem } })
 const ler = async (db: PGlite, cnpj = CNPJ, quem = ADMIN) => (await como(db, quem, 'select cot_nfe_produto_lembrado($1) as r', [cnpj]))[0].r
 const autoAssociar = async (db: PGlite, chave: string, n = 1, produto = 101, conv: number | null = 12, quem = ADMIN) =>
@@ -197,6 +202,80 @@ describe('cot_nfe_associar_lembrado se defende sozinha (confere o lembrado no ba
     const db = await banco()
     await expect(como(db, ADMIN, 'select cot_nfe_lembrado_calcular($1)', [CNPJ])).rejects.toThrow(/permission denied/)
     await expect(chamar(db, 'anon', 'cot_nfe_lembrado_calcular($1)', [CNPJ])).rejects.toThrow()
+  })
+})
+
+describe('correções da revisão de 15/11/2026 (20261231000001)', () => {
+  it('G1: embalagem que mudou sob o mesmo código (12 → 10, preço 0,83×, dentro da faixa) NÃO associa sozinha; a mesma descrição com outro preço na faixa associa', async () => {
+    const db = await banco()
+    await insumo(db)
+    await lembrar(db) // 37,50 por CX; descrição "... LT 350ML SH"
+    expect((await ler(db))[0].assinaturas).toEqual(['GUARANA ANTARCTICA DIET LT 350ML SH'])
+    const chave = await nota(db, { situacao: 'na_fila', itens: [
+      { n: 1, descricao: 'CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET LT 350ML C/10 SH 31,2500', valor: 62.5, qtd: 2 }, // 31,25 por CX = 0,83×
+      { n: 2, descricao: 'CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET LT 350ML SH 31,2500', valor: 62.5, qtd: 2 },
+    ] })
+    expect(await autoAssociar(db, chave, 1)).toBe(false)
+    expect(await autoAssociar(db, chave, 2)).toBe(true)
+    expect(Object.keys((await assocDe(db, chave)).a!)).toEqual(['2'])
+  })
+  it('a assinatura do banco é igual à do app (mesma conta em SQL e em TypeScript)', async () => {
+    const db = await banco()
+    for (const d of ['CÓD. FOR: 0009085 GUARANA CHP ANTARCTICA DIET LATA 350ML SH 35,1600', 'cód. for: 0009085   guarana  lata   32,3500 ', 'CÓD. FOR: 77 COCA COLA 1,5L PET C/6',
+      'CÓD. FOR: 5 X C/12', 'CÓD. FOR: 5', 'SEM CODIGO 7,50', 'CÓD. FOR: ABC-1 ÓLEO DE SOJA 900ML 8,9']) {
+      const r = (await db.query<{ s: string }>('select cot_nfe_assinatura_descricao($1) as s', [d])).rows[0].s
+      expect(r, d).toBe(assinaturaDaDescricao(d))
+    }
+  })
+  it('sem assinatura (descrição só com o código) nunca associa sozinho', async () => {
+    const db = await banco()
+    await insumo(db)
+    await nota(db, { itens: [{ n: 1, descricao: 'CÓD. FOR: 0009085', valor: 75, qtd: 2 }], assoc: DEC(12, 101, 'lista', 'un') })
+    expect((await ler(db))[0].assinaturas).toEqual([])
+    const chave = await nota(db, { situacao: 'na_fila', itens: [{ n: 1, descricao: 'CÓD. FOR: 0009085', valor: 75, qtd: 2 }] })
+    expect(await autoAssociar(db, chave)).toBe(false)
+  })
+  it('M1: nota lançada que ficou "pela metade" (erro) ou "revisar" não ensina a memória', async () => {
+    const db = await banco()
+    const a = await nota(db, { itens: [GUARANA('1')], assoc: DEC() })
+    const b = await nota(db, { itens: [GUARANA('2')], assoc: DEC() })
+    await db.query(`update cot_nfe set lancamento_estado = 'erro' where chave = $1`, [a])
+    await db.query(`update cot_nfe set lancamento_estado = 'revisar' where chave = $1`, [b])
+    expect(await ler(db)).toEqual([])
+    await db.query(`update cot_nfe set lancamento_estado = null where chave = $1`, [b])
+    expect((await ler(db))[0]).toMatchObject({ vezes: 1 })
+  })
+  it('M2: decisões com unidade de produto diferente entre as notas: não devolve (tem de ser uma só)', async () => {
+    const db = await banco()
+    await nota(db, { itens: [GUARANA('1')], assoc: DEC(12, 3324211, 'lista', 'un') })
+    await nota(db, { itens: [GUARANA('2')], assoc: DEC(12, 3324211, 'lista', 'kg') })
+    expect(await ler(db)).toEqual([])
+  })
+  it('B1: recusar só vale para item que existe e nota na fila; o resto não grava nada nem dá erro', async () => {
+    const db = await banco()
+    const chave = await nota(db, { situacao: 'na_fila', itens: [GUARANA('1')] })
+    await recusar(db, chave, 9)
+    expect((await assocDe(db, chave)).r).toBeNull()
+    const lancada = await nota(db, { itens: [GUARANA('1')] })
+    await recusar(db, lancada, 1)
+    expect((await assocDe(db, lancada)).r).toBeNull()
+    await recusar(db, chave, 1)
+    expect((await assocDe(db, chave)).r).toEqual([1])
+  })
+  it('a função interna da assinatura não é executável por ninguém de fora', async () => {
+    const db = await banco()
+    await expect(como(db, ADMIN, `select cot_nfe_assinatura_descricao('x')`)).rejects.toThrow(/permission denied/)
+    await expect(chamar(db, 'anon', `cot_nfe_assinatura_descricao('x')`, [])).rejects.toThrow()
+  })
+  it('o desfazer da correção volta às funções de antes (sem assinaturas), apaga a interna, e a migração roda de novo', async () => {
+    const db = await banco()
+    await nota(db, { itens: [GUARANA('1')], assoc: DEC() })
+    expect((await ler(db))[0]).toHaveProperty('assinaturas')
+    await db.exec(readFileSync(DESFAZER_EMB, 'utf8'))
+    expect((await ler(db))[0]).not.toHaveProperty('assinaturas')
+    expect((await db.query(`select 1 from pg_proc where proname = 'cot_nfe_assinatura_descricao'`)).rows).toEqual([])
+    await db.exec(readFileSync(MIGRACAO_EMB, 'utf8'))
+    expect((await ler(db))[0]).toHaveProperty('assinaturas')
   })
 })
 

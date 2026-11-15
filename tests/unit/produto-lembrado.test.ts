@@ -1,10 +1,11 @@
 import {
-  linhaLembrada, MIN_VEZES_PARA_ASSOCIAR_SOZINHO, oQueFazerComOLembrado, precisaRecusarLembrado, precoNaFaixa, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado,
+  assinaturaDaDescricao, descricaoMudou, linhaLembrada, mesmaDescricaoDoLembrado, MIN_VEZES_PARA_ASSOCIAR_SOZINHO, oQueFazerComOLembrado, precisaRecusarLembrado, precoNaFaixa, produtoLembradoDoItem,
+  textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado,
 } from '../../src/admin/produtoLembrado'
 import type { ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
 
 const CNPJ = '12345678000190'
-const L: ProdutoLembrado = { cod_forn: '0009085', unidade_nota: 'CX', produto_id: 3324211, produto_nome: 'GUARANA', unidade: 'un', conversao: 12, preco_ref: 37.5, vezes: 2, ultima_em: '2026-11-08T02:30:00Z' }
+const L: ProdutoLembrado = { cod_forn: '0009085', unidade_nota: 'CX', produto_id: 3324211, produto_nome: 'GUARANA', unidade: 'un', conversao: 12, preco_ref: 37.5, vezes: 2, ultima_em: '2026-11-08T02:30:00Z', assinaturas: ['GUARANA ANTARCTICA DIET SH'] }
 const item_ = (descricao: string, unidade: string | null = 'CX', valor: number | null = 75, qtd: number | null = 2) =>
   ({ n: 1, descricao, unidade_sischef: unidade, qtd, valor, produto_id: null } as unknown as ItemNotaSefaz)
 const G = item_('CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET SH 32,7000')
@@ -54,6 +55,33 @@ describe('travas: preço, unidade, limiar, recusa', () => {
     expect(oQueFazerComOLembrado(L, G, null, false)).toBeNull()
     expect(oQueFazerComOLembrado(null, G, CAT, false)).toBeNull()
   })
+  it('a embalagem que mudou sob o mesmo código NÃO associa sozinha, mesmo com o preço na faixa (12 → 10: 0,83×); só sugere, e a tela avisa (revisão de 15/11/2026)', () => {
+    const c10 = item_('CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET C/10 SH 27,0000', 'CX', 62.5, 2) // 31,25 por CX = 0,83× de 37,50: dentro da faixa
+    expect(precoNaFaixa(c10, L)).toBe(true)
+    expect(oQueFazerComOLembrado(L, c10, CAT, false)).toBe('sugerir')
+    expect(descricaoMudou(c10, L)).toBe(true)
+    expect(descricaoMudou(G, L)).toBe(false)
+  })
+  it('sem assinatura lembrada (banco antigo, descrição vazia) nunca associa sozinho, e a tela não inventa aviso', () => {
+    expect(oQueFazerComOLembrado({ ...L, assinaturas: [] }, G, CAT, false)).toBe('sugerir')
+    expect(descricaoMudou(G, { assinaturas: [] })).toBe(false)
+    expect(oQueFazerComOLembrado(L, item_('CÓD. FOR: 0009085 '), CAT, false)).toBe('sugerir') // item sem descrição além do código: assinatura vazia
+    expect(mesmaDescricaoDoLembrado(item_('CÓD. FOR: 0009085 '), { assinaturas: [''] })).toBe(false)
+  })
+  it('vale qualquer uma das assinaturas em que o Ivan decidiu', () => {
+    const duas = { ...L, assinaturas: ['GUARANA ANTARCTICA DIET C/10 SH', 'GUARANA ANTARCTICA DIET SH'] }
+    expect(oQueFazerComOLembrado(duas, item_('CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET C/10 SH 31,2500'), CAT, false)).toBe('sozinho')
+    expect(oQueFazerComOLembrado(duas, G, CAT, false)).toBe('sozinho')
+  })
+  it('assinaturaDaDescricao: só o que muda a cada nota sai (código do começo, preço do fim, espaços e caixa); peso, embalagem e números no meio ficam', () => {
+    expect(assinaturaDaDescricao('CÓD. FOR: 0009085 GUARANA CHP ANTARCTICA DIET LATA 350ML SH 35,1600')).toBe('GUARANA CHP ANTARCTICA DIET LATA 350ML SH')
+    expect(assinaturaDaDescricao('cód. for: 0009085   guarana chp antarctica diet lata 350ml sh   32,3500 ')).toBe('GUARANA CHP ANTARCTICA DIET LATA 350ML SH')
+    expect(assinaturaDaDescricao('CÓD. FOR: 77 COCA COLA 1,5L PET C/6')).toBe('COCA COLA 1,5L PET C/6') // "1,5L" não é preço: não sai
+    expect(assinaturaDaDescricao('CÓD. FOR: 77 COCA COLA 2,5L PET C/6')).not.toBe(assinaturaDaDescricao('CÓD. FOR: 77 COCA COLA 1,5L PET C/6'))
+    expect(assinaturaDaDescricao('CÓD. FOR: 5 X C/12')).not.toBe(assinaturaDaDescricao('CÓD. FOR: 5 X C/10'))
+    expect(assinaturaDaDescricao(null)).toBe('')
+    expect(assinaturaDaDescricao('CÓD. FOR: 5')).toBe('')
+  })
   it('o limiar de hoje é 1 nota', () => { expect(MIN_VEZES_PARA_ASSOCIAR_SOZINHO).toBe(1) })
   it('unidade normalizada: "UN" do banco e "un" do catálogo (e o contrário) são iguais', () => {
     const doBanco = linhaLembrada({ ...L, unidade: 'UN' })!
@@ -79,6 +107,8 @@ describe('frases e leitura', () => {
   it('converte a linha do banco e descarta a fora do formato', () => {
     expect(linhaLembrada({ ...L, produto_id: '3324211', conversao: '12', preco_ref: '37.5000', unidade_nota: 'cx', unidade: 'UN ' })).toEqual(L)
     expect(linhaLembrada({ ...L, conversao: null, preco_ref: null })).toMatchObject({ conversao: null, preco_ref: null })
+    expect(linhaLembrada({ ...L, assinaturas: undefined })!.assinaturas).toEqual([]) // banco antigo: sem a chave
+    expect(linhaLembrada({ ...L, assinaturas: ['A', 3, '', null] })!.assinaturas).toEqual(['A']) // só texto não vazio
     expect(linhaLembrada({ ...L, produto_id: null })).toBeNull()
     expect(linhaLembrada({ ...L, cod_forn: ' ' })).toBeNull()
     expect(linhaLembrada('x')).toBeNull()
