@@ -23,12 +23,12 @@ export interface ProdutoLembrado {
 }
 
 /**
- * A "assinatura" da descrição do item: a embalagem que o fornecedor escreveu, sem o que muda toda nota. Maiúsculas, sem o "CÓD. FOR: x" do começo, sem o preço no fim
- * ("... SH 35,1600") e com espaços únicos. É a MESMA conta de cot_nfe_assinatura_descricao no banco (quem decide é o banco; aqui só se escolhe entre "sozinho" e "sugerir").
+ * A "assinatura" da descrição do item: a embalagem que o fornecedor escreveu, sem o que muda toda nota. Maiúsculas, sem o "CÓD. FOR: x" do começo, sem o PREÇO de 4 casas
+ * no fim ("... SH 35,1600"; um número com 2 casas no fim, como "PCT 100,00", pode ser a embalagem e FICA) e com espaços únicos (o espaço especial vira espaço normal). É a MESMA conta de cot_nfe_assinatura_descricao no banco (quem decide é o banco; aqui só se escolhe entre "sozinho" e "sugerir").
  * Uma caixa que passa de 12 para 10 unidades muda a descrição ("C/12" → "C/10") e o preço só cai ~17%: a faixa de preço sozinha não pega (revisão de 15/11/2026).
  */
 export const assinaturaDaDescricao = (descricao: string | null | undefined): string =>
-  (descricao ?? '').replace(/^\s*C[OÓ]D\.?\s*FOR\.?:?\s*\S+\s*/i, '').toUpperCase().replace(/\s+\d+,\d{2,4}\s*$/, '').replace(/\s+/g, ' ').trim()
+  (descricao ?? '').replace(/ /g, ' ').replace(/^\s*C[OÓ]D\.?\s*FOR\.?:?\s*\S+\s*/i, '').toUpperCase().replace(/\s+\d+,\d{4}\s*$/, '').replace(/\s+/g, ' ').trim()
 
 /** A descrição deste item é uma das que o Ivan já decidiu? Sem assinatura (do item ou do lembrado) = false (fecha por padrão). */
 export function mesmaDescricaoDoLembrado(item: Pick<ItemNotaSefaz, 'descricao'>, l: Pick<ProdutoLembrado, 'assinaturas'>): boolean {

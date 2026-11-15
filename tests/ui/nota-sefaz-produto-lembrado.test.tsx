@@ -14,7 +14,7 @@ const CHAVE = '4'.repeat(44)
 const CNPJ = '12345678000190'
 const GUARANA = 3324211
 const CATALOGO: ProdutoCatalogo[] = [{ produto_id: GUARANA, nome: 'GUARANA DIET LATA 350 ML', unidade: 'un' }]
-const LEMBRADO: ProdutoLembrado = { cod_forn: '0009085', unidade_nota: 'CX', produto_id: GUARANA, produto_nome: 'GUARANA DIET LATA', unidade: 'un', conversao: 12, preco_ref: 36, vezes: 1, ultima_em: '2026-11-08T02:30:00Z' }
+const LEMBRADO: ProdutoLembrado = { cod_forn: '0009085', unidade_nota: 'CX', produto_id: GUARANA, produto_nome: 'GUARANA DIET LATA', unidade: 'un', conversao: 12, preco_ref: 36, vezes: 1, ultima_em: '2026-11-08T02:30:00Z', assinaturas: ['GUARANA ANTARCTICA DIET LT 350ML SH'] }
 const MARCA = 'associado sozinho, igual à nota de 07/11 (1 CX = 12)'
 const BOTAO = 'Usar o lembrado: GUARANA DIET LATA 350 ML × 12'
 
@@ -74,6 +74,8 @@ describe('NotaSefaz — produto lembrado por fornecedor', () => {
     ['sem preço de referência', () => { m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, preco_ref: null }]) }],
     ['unidade do produto diferente da lembrada', () => { m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, unidade: 'kg' }]) }],
     ['abaixo do limiar de notas', () => { m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, vezes: 0 }]) }],
+    ['a descrição mudou (outra embalagem sob o mesmo código)', () => { m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, assinaturas: ['GUARANA ANTARCTICA DIET LT 350ML C/10 SH'] }]) }],
+    ['banco sem a assinatura da descrição', () => { m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, assinaturas: [] }]) }],
   ])('%s: NÃO grava sozinho; o botão de um toque associa', async (_nome, preparar) => {
     preparar()
     const user = userEvent.setup()
@@ -85,6 +87,19 @@ describe('NotaSefaz — produto lembrado por fornecedor', () => {
     await waitFor(() => expect(m.associarItem).toHaveBeenCalledWith(CHAVE, 1, GUARANA, 12))
     await waitFor(() => expect(screen.queryByTestId('usar-lembrado')).not.toBeInTheDocument())
     expect(screen.queryByTestId('item-lembrado')).not.toBeInTheDocument()
+  })
+
+  it('descrição mudou: o botão vem com o aviso para conferir a embalagem; descrição igual não mostra aviso (revisão de 15/11/2026)', async () => {
+    m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, assinaturas: ['GUARANA ANTARCTICA DIET LT 350ML C/10 SH'] }])
+    const tela = render(<NotaSefaz />)
+    await screen.findByRole('button', { name: BOTAO }, { timeout: 4000 })
+    expect(await screen.findByTestId('lembrado-descricao-mudou')).toHaveTextContent('A descrição deste item mudou desde a última nota: confira a embalagem antes de usar.')
+    tela.unmount()
+    m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, vezes: 0 }]) // sugere (abaixo do limiar), mas a descrição é a mesma: sem aviso
+    render(<NotaSefaz />)
+    await screen.findByRole('button', { name: BOTAO }, { timeout: 4000 })
+    await leituraFeita()
+    expect(screen.queryByTestId('lembrado-descricao-mudou')).not.toBeInTheDocument()
   })
 
   it('sem nada lembrado: tela de sempre', async () => {
@@ -154,7 +169,7 @@ describe('NotaSefaz — produto lembrado por fornecedor', () => {
 
   it('caso OLIVEIRA: dois itens do mesmo código (35,16 e 32,35 por CX de 12) associam sozinhos; o fardo de 6 (16,35) só sugere', async () => {
     m.catalogoProdutos.mockResolvedValue([{ produto_id: GUARANA, nome: 'GUARANÁ ANTARC. S/ AÇÚCAR 350 ML', unidade: 'UN' }])
-    m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, unidade: 'un', preco_ref: 32.7 }])
+    m.produtoLembradoDoFornecedor.mockResolvedValue([{ ...LEMBRADO, unidade: 'un', preco_ref: 32.7, assinaturas: ['GUARANA CHP ANTARCTICA DIET LATA 350ML SH'] }])
     const desc = 'CÓD. FOR: 0009085 GUARANA CHP ANTARCTICA DIET LATA 350ML SH '
     const itens = [[1, '35,1600', 35.16], [2, '32,3500', 32.35], [3, '16,3500', 16.35]].map(([n, sh, valor]) => ({ n, descricao: desc + sh, qtd: 1, valor, unidade_sischef: 'CX', produto_id: null }))
     m.notasALancar.mockImplementation(async () => [{ ...nota(), itens } as unknown as NotaSefazLista])

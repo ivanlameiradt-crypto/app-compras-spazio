@@ -36,8 +36,8 @@ async function nota(db: PGlite, o: { cnpj?: string; situacao?: string; lancada?:
     [chave, cnpj, JSON.stringify(itens), situacao, lancada, o.assoc == null ? null : JSON.stringify(o.assoc)])
   return chave
 }
-// O fim da descrição é o PREÇO que o fornecedor escreve ("SH 35,1600") e muda a cada nota: o que não tem vírgula vira "x,00" (a assinatura ignora o preço do fim; só a embalagem conta).
-const GUARANA = (sh: string, extra: Partial<Item> = {}): Item => ({ n: 1, descricao: `CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET LT 350ML SH ${sh.includes(',') ? sh : `${sh},00`}`, ...extra })
+// O fim da descrição é o PREÇO que o fornecedor escreve ("SH 35,1600", 4 casas) e muda a cada nota: o que não tem vírgula vira "x,0000" (a assinatura ignora o preço de 4 casas do fim; só a embalagem conta).
+const GUARANA = (sh: string, extra: Partial<Item> = {}): Item => ({ n: 1, descricao: `CÓD. FOR: 0009085 GUARANA ANTARCTICA DIET LT 350ML SH ${sh.includes(',') ? sh : `${sh},0000`}`, ...extra })
 const DEC = (conv: number | null = 12, produto = 3324211, origem = 'lista', unidade: string | null = 'un') => ({ '1': { produto_id: produto, produto_nome: 'GUARANÁ DIET LATA', unidade, conversao: conv, origem } })
 const ler = async (db: PGlite, cnpj = CNPJ, quem = ADMIN) => (await como(db, quem, 'select cot_nfe_produto_lembrado($1) as r', [cnpj]))[0].r
 const autoAssociar = async (db: PGlite, chave: string, n = 1, produto = 101, conv: number | null = 12, quem = ADMIN) =>
@@ -222,7 +222,8 @@ describe('correções da revisão de 15/11/2026 (20261231000001)', () => {
   it('a assinatura do banco é igual à do app (mesma conta em SQL e em TypeScript)', async () => {
     const db = await banco()
     for (const d of ['CÓD. FOR: 0009085 GUARANA CHP ANTARCTICA DIET LATA 350ML SH 35,1600', 'cód. for: 0009085   guarana  lata   32,3500 ', 'CÓD. FOR: 77 COCA COLA 1,5L PET C/6',
-      'CÓD. FOR: 5 X C/12', 'CÓD. FOR: 5', 'SEM CODIGO 7,50', 'CÓD. FOR: ABC-1 ÓLEO DE SOJA 900ML 8,9']) {
+      'CÓD. FOR: 5 X C/12', 'CÓD. FOR: 5', 'SEM CODIGO 7,50', 'CÓD. FOR: ABC-1 ÓLEO DE SOJA 900ML 8,9', 'CÓD. FOR: 77 COPO 200ML PCT 100,00', 'CÓD. FOR: 77 COPO 200ML PCT 50,00',
+      'CÓD. FOR: 9 X C/12 35,1600']) {
       const r = (await db.query<{ s: string }>('select cot_nfe_assinatura_descricao($1) as s', [d])).rows[0].s
       expect(r, d).toBe(assinaturaDaDescricao(d))
     }

@@ -4,7 +4,7 @@
 -- O QUE MUDA (só create or replace das funções da 20261230000001: mesmas assinaturas e mesmas permissões; nenhuma tabela nem coluna nova; 1 função interna nova)
 --   1) G1 (GRAVE): a faixa de preço 0,8×–1,2× não pega a embalagem que muda sob o MESMO CÓD. FOR (uma caixa que passa de 12 para 10 unidades custa ~0,83× e
 --      ficava dentro da faixa: o estoque entrava 20% a mais). Agora cada lembrado carrega as "assinaturas" da descrição dos itens das decisões do Ivan (maiúsculas,
---      sem o "CÓD. FOR: x" do começo, sem o preço no fim, espaços únicos) e cot_nfe_associar_lembrado só grava sozinho se a assinatura do item da nota nova for UMA
+--      sem o "CÓD. FOR: x" do começo, sem o preço de 4 casas no fim ("SH 35,1600"), espaços únicos, espaço especial trocado por espaço normal) e cot_nfe_associar_lembrado só grava sozinho se a assinatura do item da nota nova for UMA
 --      das lembradas. Mudou a descrição = o app só SUGERE (botão de um toque, com o aviso "a descrição mudou"). Sem assinatura = nunca sozinho (fecha por padrão).
 --   2) M1: nota 'lancada' com lancamento_estado 'erro' (ficou pela metade) ou 'revisar' não ensina mais a memória.
 --   3) M2: o grupo exige UMA só unidade de produto entre todas as decisões (antes valia a da mais recente).
@@ -17,7 +17,7 @@
 
 create or replace function public.cot_nfe_assinatura_descricao(p_descricao text) returns text
 language sql immutable set search_path = public as $$
-  select btrim(regexp_replace(regexp_replace(upper(regexp_replace(coalesce(p_descricao, ''), '^\s*C[OÓ]D\.?\s*FOR\.?:?\s*\S+\s*', '', 'i')), '\s+\d+,\d{2,4}\s*$', ''), '\s+', ' ', 'g'))
+  select btrim(regexp_replace(regexp_replace(upper(regexp_replace(translate(coalesce(p_descricao, ''), chr(160), ' '), '^\s*C[OÓ]D\.?\s*FOR\.?:?\s*\S+\s*', '', 'i')), '\s+\d+,\d{4}\s*$', ''), '\s+', ' ', 'g'))
 $$;
 
 create or replace function public.cot_nfe_lembrado_calcular(p_cnpj text) returns jsonb

@@ -79,6 +79,8 @@ describe('travas: preço, unidade, limiar, recusa', () => {
     expect(assinaturaDaDescricao('CÓD. FOR: 77 COCA COLA 1,5L PET C/6')).toBe('COCA COLA 1,5L PET C/6') // "1,5L" não é preço: não sai
     expect(assinaturaDaDescricao('CÓD. FOR: 77 COCA COLA 2,5L PET C/6')).not.toBe(assinaturaDaDescricao('CÓD. FOR: 77 COCA COLA 1,5L PET C/6'))
     expect(assinaturaDaDescricao('CÓD. FOR: 5 X C/12')).not.toBe(assinaturaDaDescricao('CÓD. FOR: 5 X C/10'))
+    expect(assinaturaDaDescricao('CÓD. FOR: 77 COPO 200ML PCT 100,00')).not.toBe(assinaturaDaDescricao('CÓD. FOR: 77 COPO 200ML PCT 50,00')) // 2 casas no fim: pode ser a embalagem, FICA
+    expect(assinaturaDaDescricao('CÓD. FOR: 9 X C/12 35,1600')).toBe('X C/12') // o espaço especial (NBSP) vale como espaço
     expect(assinaturaDaDescricao(null)).toBe('')
     expect(assinaturaDaDescricao('CÓD. FOR: 5')).toBe('')
   })
