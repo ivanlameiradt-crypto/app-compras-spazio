@@ -1,6 +1,7 @@
 // Uma linha de resposta do "Digitar preços" (os campos da página do vendedor): a base da tela, o que a tela mostra e a
 // EntradaItem que ela representa. Saiu de DigitarPrecos.tsx (que reimporta sem mudar comportamento) para o "Corrigir" do
 // Colar resposta com IA (B.8) usar os mesmos campos.
+import { ehMilharAmbiguo, lerPrecoUnitario } from '../../lib/dinheiro'
 import { lerNumero } from '../../lib/regras'
 import type { BaseCotacao, EntradaItem, EstadoItemCotacao, ItemCotacao } from '../../lib/tipos'
 
@@ -35,20 +36,27 @@ export function linhaDe(i: ItemCotacao): LinhaTela {
 
 /** Número digitado ("31,50", "R$ 1.234,50"); vazio → null; texto que não é número → NaN (erro na tela). */
 export const numeroDe = (t: string): number | null => (t.trim() ? (lerNumero(t) ?? Number.NaN) : null)
+/** Preço unitário digitado: igual a numeroDe, mas "2.500" (ponto de milhar sem vírgula) é ambíguo (R$ 2.500,00 ou R$ 2,50?) e vira NaN: a tela pede a vírgula nos centavos. */
+export const precoDe = (t: string): number | null => (t.trim() ? (lerPrecoUnitario(t) ?? Number.NaN) : null)
+/** Por que a linha tem número inválido: preço com ponto sem vírgula ("2.500") pede a vírgula nos centavos; o resto é "número inválido". */
+export const motivoNumeroInvalido = (l: LinhaTela): string =>
+  [l.preco, l.similarPreco, l.aPartirDe].some((t) => ehMilharAmbiguo(t))
+    ? 'preço com ponto e sem vírgula: escreva os centavos com vírgula (ex.: 2,50)'
+    : 'número inválido'
 export const textoDe = (t: string) => (t.trim() ? t.trim() : null)
 
 /** A entrada de cot_responder_admin que a linha da tela representa (sem numero/rev). */
 export function entradaDe(l: LinhaTela, unidade: 'un' | 'kg'): Omit<EntradaItem, 'numero' | 'rev_lida'> {
   if (l.estado === 'sem_resposta') return { estado: 'sem_resposta' }
-  const similar = { similar_desc: textoDe(l.similarDesc), similar_preco: numeroDe(l.similarPreco) }
+  const similar = { similar_desc: textoDe(l.similarDesc), similar_preco: precoDe(l.similarPreco) }
   if (l.estado === 'nao_tem') return { estado: 'nao_tem', ...similar }
   const base: BaseCotacao = l.base.startsWith('emb_') ? 'embalagem' : (l.base as BaseCotacao)
   const emb = numeroDe(l.emb)
   return {
-    estado: 'tem', preco: numeroDe(l.preco), base,
+    estado: 'tem', preco: precoDe(l.preco), base,
     emb_unidades: l.base === 'emb_un' && unidade === 'un' ? emb : null,
     emb_gramas: l.base === 'emb_g' ? emb : null,
     emb_ml: l.base === 'emb_ml' ? emb : null,
-    tenho_so: numeroDe(l.tenhoSo), a_partir_de: numeroDe(l.aPartirDe), ...similar, marca: textoDe(l.marca),
+    tenho_so: numeroDe(l.tenhoSo), a_partir_de: precoDe(l.aPartirDe), ...similar, marca: textoDe(l.marca),
   }
 }

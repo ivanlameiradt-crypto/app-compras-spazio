@@ -57,6 +57,8 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   if (corpo.acao === 'redefinir_senha') {
     if (!corpo.senha || corpo.senha.length < 6) return erro(400, 'a senha precisa ter pelo menos 6 caracteres')
     const email = (corpo.email ?? '').trim().toLowerCase()
+    // o login do Supabase é compartilhado com outros apps (Tiquei): só se redefine a senha de quem é usuário DO COMPRAR (tabela usuarios)
+    if (!(await deps.buscarUsuario(email))) return erro(404, 'usuário não encontrado')
     const auth = await deps.acharAuthPorEmail(email)
     if (!auth) return erro(404, 'usuário não encontrado')
     await deps.trocarSenha(auth.id, corpo.senha, { trocarSenha: true }) // redefinida: troca obrigatória de novo

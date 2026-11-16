@@ -513,6 +513,17 @@ describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
       expect(d.cancelados).toEqual([])
     })
 
+    // análise de 16/11: duas execuções sem número no título na mesma janela (ex.: a retomada de outra nota, 'Terminar pedido', e esta) -> não dá para saber qual é desta nota;
+    // liberar e cancelar a errada deixaria a verdadeira viva. Na dúvida, espera (o fim de 30 min libera como sempre).
+    it('duas execuções candidatas na janela da reserva: NÃO libera nem cancela nenhuma (não dá para saber qual é desta nota)', async () => {
+      const d = deps({ async execucoesDoRobo() { return [TRAVADA({ id: 55 }), TRAVADA({ id: 56, criada_em: '2026-10-07T17:49:40Z' })] }, agora: DEZ_MIN })
+      const r = await chamar(d)
+      expect(sit(r)).toBe('aguardando')
+      expect(r.corpo.mensagem as string).toContain('mais de uma')
+      expect(d.marcas).toEqual([])
+      expect(d.cancelados).toEqual([])
+    })
+
     it('só olha a execução criada junto da reserva e sem o número de OUTRA nota: a velha, a tardia e a de outra nota não contam', async () => {
       const lista = [
         TRAVADA({ id: 1, criada_em: '2026-10-07T16:00:00Z' }),                  // de antes da reserva

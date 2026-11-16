@@ -220,8 +220,8 @@ export async function tratar(corpo: Corpo, chamador: string, deps: Deps): Promis
   // 3. reserva (compara-e-troca): duplo toque / dois aparelhos / nota pela metade não disparam de novo.
   const agora = deps.agora()
   const limite = new Date(agora.getTime() - MINUTOS_TRAVA * 60_000)
-  // Um robô por vez: com outra nota ainda lançando (há menos de 30 min) este disparo cancelaria o run pendente e deixaria uma
-  // nota reservada à toa. Recusa ANTES de reservar; a tela mostra o aviso e o Ivan lança esta quando a outra terminar.
+  // Um robô por vez: com outra nota ainda lançando (há menos de 30 min) este disparo só empilharia outra execução atrás dela (desde 13/11 o
+  // lancar-nfe.yml tem queue: max e o GitHub guarda os pendentes; antes cancelava o pendente). Recusa ANTES de reservar; a tela mostra o aviso e o Ivan lança esta quando a outra terminar.
   if (await deps.outraLancando(chave, limite.toISOString())) {
     return { status: 409, corpo: { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' } }
   }
@@ -330,13 +330,18 @@ export async function verificar(corpo: Corpo, chamador: string, deps: DepsVerifi
   if (!dela) {
     if (minutos < MINUTOS_PARA_CONCLUIR) return respostaVerificacao('aguardando', 'O robô acabou de ser chamado: aguarde um instante.')
     // Na fila o GitHub ainda não pôs o número da nota no título: a execução desta nota é a "na fila" criada junto da reserva (e que não é de outra nota).
-    const emFila = execucoes
+    const candidatas = execucoes
       .filter((e) => STATUS_NA_FILA.includes(e.status) && !/^Lançar NF \d/.test(e.titulo)
         && Date.parse(e.criada_em) >= reservadaEm - FOLGA_MS && Date.parse(e.criada_em) <= reservadaEm + JANELA_DISPARO_MS)
-      .sort((a, b) => Date.parse(a.criada_em) - Date.parse(b.criada_em))[0]
+      .sort((a, b) => Date.parse(a.criada_em) - Date.parse(b.criada_em))
+    const emFila = candidatas[0]
     if (!emFila) {
       return respostaVerificacao('sem_execucao',
         `Não achei a execução desta nota no GitHub (disparada há ${minutos} min). Confira no SisChef se a nota entrou; se não entrou, a tela libera o Lançar sozinha aos 30 min.`)
+    }
+    // análise de 16/11: duas candidatas na janela (ex.: a retomada de outra nota e esta) = não dá para saber qual é desta nota; liberar e cancelar a errada deixaria a verdadeira viva. Na dúvida espera (aos 30 min a tela libera como sempre).
+    if (candidatas.length > 1) {
+      return respostaVerificacao('aguardando', 'Há mais de uma execução do robô na fila e não dá para saber qual é desta nota. Aguarde; se passar de 30 minutos, a tela libera o Lançar sozinha.')
     }
     const naFila = Math.floor((agora.getTime() - Date.parse(emFila.criada_em)) / 60_000)
     if (naFila < MINUTOS_ZUMBI) {
@@ -498,7 +503,7 @@ export async function retomar(corpo: Corpo, chamador: string, deps: DepsRetomar)
   if (impedimento) return { status: 409, corpo: { erro: impedimento } }
 
   const agora = deps.agora()
-  // Um robô por vez (o GitHub guarda só UM run pendente do grupo sischef-session): com outra nota lançando, este disparo a cancelaria.
+  // Um robô por vez: com outra nota lançando, este disparo só empilharia outra execução atrás dela (queue: max desde 13/11; antes o GitHub guardava só UM pendente e cancelava o outro).
   if (await deps.outraLancando(chave, new Date(agora.getTime() - MINUTOS_TRAVA * 60_000).toISOString())) {
     return { status: 409, corpo: { erro: 'o robô está lançando outra nota: aguarde ela terminar e peça de novo' } }
   }

@@ -955,6 +955,8 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     [400, { erro: 'parcelas digitadas só valem para boleto' }, 'Parcelas digitadas só valem para a forma Boleto.'],
     [400, { erro: 'parcelas digitadas inválidas: confira o vencimento e o valor de cada uma' }, 'Confira o vencimento e o valor de cada parcela.'],
     [400, { erro: 'chave da nota inválida' }, 'A chave da nota não é válida. Atualize a tela e tente de novo.'],
+    [400, { erro: 'frete inválido: confira o valor e o tipo do frete' }, 'O frete não está certo: confira o valor e o tipo do frete.'],
+    [400, { erro: 'qualquer outra recusa nova do servidor' }, 'O servidor recusou o pedido. Atualize a tela e confira a nota.'],
     [502, { erro: 'não consegui chamar o robô agora — tente de novo em instantes' }, 'Não consegui chamar o robô agora, tente de novo.'],
   ])('lancarNota: status %i vira texto claro em português', async (status, corpo, esperado) => {
     falhaHttp(status, corpo)
@@ -965,7 +967,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     falhaHttp(undefined, { erro: 'apenas o administrador pode fazer isso' })
     await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Só o administrador pode lançar notas.')
     invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
-    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Não consegui lançar agora. Confira a internet e tente de novo.')
+    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Sem resposta do servidor (internet ou servidor fora do ar). O robô pode ter sido chamado: atualize a tela e veja se a nota aparece como "lançando" antes de tocar em Lançar de novo.')
   })
 
   it('"Notas a lançar" deixa de fora as descartadas (filtro no banco) e lê as colunas do descarte', async () => {

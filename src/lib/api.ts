@@ -759,10 +759,16 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
     if (t.includes('frete')) return 'O frete não está certo: confira o valor e o tipo do frete.'
     return 'Confira o vencimento e o valor de cada parcela.'
   }
+  if (t.includes('frete')) return 'O frete não está certo: confira o valor e o tipo do frete.'
   if (status === 400 || t.includes('inválid')) {
-    return t.includes('chave') ? 'A chave da nota não é válida. Atualize a tela e tente de novo.' : 'Escolha como pagar: a forma de pagamento não é válida.'
+    if (t.includes('chave')) return 'A chave da nota não é válida. Atualize a tela e tente de novo.'
+    // só a recusa da forma de pagamento fala em "pagar"/"forma"; qualquer outra recusa nova não pode se passar por ela
+    if (t.includes('pagar') || t.includes('forma')) return 'Escolha como pagar: a forma de pagamento não é válida.'
+    return 'O servidor recusou o pedido. Atualize a tela e confira a nota.'
   }
   if (status === 502 || t.includes('robô')) return 'Não consegui chamar o robô agora, tente de novo.'
+  // sem resposta nenhuma (internet caiu): o servidor pode ter reservado a nota e chamado o robô antes de a resposta se perder; repetir o toque é seguro (o 2º vem como "já está lançando"), mas a pessoa precisa saber disso
+  if (status === undefined && !texto) return 'Sem resposta do servidor (internet ou servidor fora do ar). O robô pode ter sido chamado: atualize a tela e veja se a nota aparece como "lançando" antes de tocar em Lançar de novo.'
   return 'Não consegui lançar agora. Confira a internet e tente de novo.'
 }
 /**

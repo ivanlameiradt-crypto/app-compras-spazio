@@ -408,6 +408,9 @@ a.botao { display: inline-flex; text-decoration: none; }
 .cupom .problema-cupom li, .cupom .lancar-travado li { display: list-item; font-size: 16px; padding: 0; border: 0; }
 .cupom .problema-cupom ol li { padding-left: 2px; }
 .cupom button.link { background: none; border: 0; padding: 0; color: var(--tinta); text-decoration: underline; cursor: pointer; font: inherit; }
+/* botões de texto que ficam colados a outros na tela de notas: área de toque de 44 px (o dedo errava e Limpar parcelas apagava o que foi digitado) */
+.cupom .editor-parcelas button.link { min-height: 44px; padding: 10px 6px; }
+.cupom .verificar-robo button.link { min-height: 44px; padding: 10px 6px; }
 .cupom .editor-parcelas { display: flex; flex-direction: column; gap: 8px; }
 .cupom .linha-parcela { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
 .cupom .linha-parcela label { display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
