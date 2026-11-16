@@ -69,5 +69,9 @@ create index if not exists cardapio_sugestoes_decisao_idx on public.cardapio_sug
 alter table public.cardapio_levantamentos enable row level security;
 alter table public.cardapio_sugestoes enable row level security;
 
+-- Padrão do repositório (tests/db/permissoes.test.ts): anon e authenticated sem NENHUM privilégio direto. Na produção essas duas tabelas ficaram com
+-- REFERENCES, TRIGGER e TRUNCATE para esses dois papéis (padrão do Supabase para tabela nova); aqui isso é fechado.
+revoke all on public.cardapio_levantamentos, public.cardapio_sugestoes from anon, authenticated;
+
 -- Regra de 13/11/2026: tabela nova precisa de leitura para o service_role, senão o backup diário sai INCOMPLETO sem avisar (HTTP 403).
 grant select on public.cardapio_levantamentos, public.cardapio_sugestoes to service_role;
