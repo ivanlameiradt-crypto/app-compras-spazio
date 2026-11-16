@@ -123,8 +123,14 @@ export function traduzirMotivo(motivo: string | null | undefined, itens?: ItemNo
   if (/sem boletos?/i.test(t)) return SEM_BOLETO
   const explicado = explicarMotivoDoRobo(t, itens)
   if (explicado) return `${explicado.porque} O que fazer: ${explicado.fazer}`
+  if (PARADA_SEM_MOTIVO_CONHECIDO.test(t)) return FRASE_PARADA_SEM_MOTIVO_CONHECIDO
   return motivoSemPrefixoTecnico(t)
 }
+
+/** O robô caiu com um erro que nenhuma regra do app reconhece: o motivo é o NOME DA EXCEÇÃO do programa ("TimeoutError: …") ou "resultado ilegível do motor: …" (revisão de 15/11/2026).
+ *  Em vez do jargão, a frase simples; o texto original continua gravado na nota e no registro do robô. */
+const PARADA_SEM_MOTIVO_CONHECIDO = /^(?:o robô parou antes de terminar:|resultado ilegível do motor:)/i
+export const FRASE_PARADA_SEM_MOTIVO_CONHECIDO = 'O robô parou antes de terminar e o app não reconhece o motivo. O que fazer: confira no SisChef se já existe um pedido desta nota; se não existir, toque em Lançar de novo.'
 
 /** A nota voltou do robô porque não tem boleto: a forma "boleto" já tentada não serve, o Ivan tem que escolher. */
 export const precisaEscolherForma = (n: NotaSefazLista): boolean =>

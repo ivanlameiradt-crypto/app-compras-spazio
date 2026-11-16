@@ -76,6 +76,13 @@ describe('notaSefazRegras', () => {
     expect(traduzirMotivo(null)).toBe('')
   })
 
+  it('traduzirMotivo: queda do robô com erro desconhecido vira a frase simples (sem o nome da exceção do programa)', () => {
+    const frase = 'O robô parou antes de terminar e o app não reconhece o motivo. O que fazer: confira no SisChef se já existe um pedido desta nota; se não existir, toque em Lançar de novo.'
+    expect(traduzirMotivo('o robô parou antes de terminar: KeyError: \'itens\' — confira no SisChef se algo foi criado antes de lançar de novo')).toBe(frase)
+    expect(traduzirMotivo('resultado ilegível do motor: \'xyz\'')).toBe(frase)
+    expect(traduzirMotivo('RETOMADA: o robô parou antes de terminar (KeyError) — confira o pedido no SisChef antes de tentar de novo')).not.toBe(frase) // a retomada tem a sua própria orientação
+  })
+
   it('bloqueiosDaNota', () => {
     expect(bloqueiosDaNota(nota())).toEqual([])
     expect(bloqueiosDaNota(nota({ emitente: 'kondo comercio' }))).toEqual(['Conta especial: essa nota não é lançada pelo app'])

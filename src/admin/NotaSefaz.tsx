@@ -19,7 +19,7 @@ import AssociarProduto from './AssociarProduto'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
-import { oQueFazerComOLembrado, precisaRecusarLembrado, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado } from './produtoLembrado'
+import { AVISO_DESCRICAO_MUDOU, descricaoMudou, oQueFazerComOLembrado, precisaRecusarLembrado, produtoLembradoDoItem, textoAssociadoSozinho, textoUsarLembrado, type ProdutoLembrado } from './produtoLembrado'
 import AvisoPreco from './AvisoPreco'
 import { Origem } from './Origem'
 import { ContaAutomatica } from './ContaAutomatica'
@@ -166,6 +166,7 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, pode
             {textoUsarLembrado(nomeParaMostrar(catalogo, sugestaoLembrada.produto_id, sugestaoLembrada.produto_nome ?? '').nome, sugestaoLembrada.conversao)}
           </button>
         )}
+        {sugestaoLembrada && descricaoMudou(it, sugestaoLembrada) && <span className="sub" data-testid="lembrado-descricao-mudou">{AVISO_DESCRICAO_MUDOU}</span>}
         {conta && <ContaAutomatica conta={conta} />}
         {!ok && !decisao && <span className="sub">{(it.associacao ?? '').trim().toLowerCase() === 'painel' ? 'decidido no app (ainda não está no SisChef)' : 'sem associação'}</span>}
         {!ok && it.n != null && (decisao != null || podeAssociar) && (

@@ -18,7 +18,29 @@ export interface ProdutoLembrado {
   vezes: number
   /** lancada_em da última nota; null = sem data. */
   ultima_em: string | null
+  /** As "assinaturas" da descrição dos itens em que o Ivan decidiu (ver `assinaturaDaDescricao`). Vazia = não se sabe: nunca associa sozinho (revisão de 15/11/2026). */
+  assinaturas: string[]
 }
+
+/**
+ * A "assinatura" da descrição do item: a embalagem que o fornecedor escreveu, sem o que muda toda nota. Maiúsculas, sem o "CÓD. FOR: x" do começo, sem o PREÇO de 4 casas
+ * no fim ("... SH 35,1600"; um número com 2 casas no fim, como "PCT 100,00", pode ser a embalagem e FICA) e com espaços únicos (o espaço especial vira espaço normal). É a MESMA conta de cot_nfe_assinatura_descricao no banco (quem decide é o banco; aqui só se escolhe entre "sozinho" e "sugerir").
+ * Uma caixa que passa de 12 para 10 unidades muda a descrição ("C/12" → "C/10") e o preço só cai ~17%: a faixa de preço sozinha não pega (revisão de 15/11/2026).
+ */
+export const assinaturaDaDescricao = (descricao: string | null | undefined): string =>
+  (descricao ?? '').replace(/ /g, ' ').replace(/^\s*C[OÓ]D\.?\s*FOR\.?:?\s*\S+\s*/i, '').toUpperCase().replace(/\s+\d+,\d{4}\s*$/, '').replace(/\s+/g, ' ').trim()
+
+/** A descrição deste item é uma das que o Ivan já decidiu? Sem assinatura (do item ou do lembrado) = false (fecha por padrão). */
+export function mesmaDescricaoDoLembrado(item: Pick<ItemNotaSefaz, 'descricao'>, l: Pick<ProdutoLembrado, 'assinaturas'>): boolean {
+  const s = assinaturaDaDescricao(item.descricao)
+  return s !== '' && (l.assinaturas ?? []).includes(s)
+}
+
+/** O lembrado SABE a embalagem (tem assinatura) e a descrição deste item é outra: a tela avisa para o Ivan conferir antes de tocar em "Usar o lembrado". */
+export const descricaoMudou = (item: Pick<ItemNotaSefaz, 'descricao'>, l: Pick<ProdutoLembrado, 'assinaturas'>): boolean =>
+  (l.assinaturas ?? []).length > 0 && !mesmaDescricaoDoLembrado(item, l)
+
+export const AVISO_DESCRICAO_MUDOU = 'A descrição deste item mudou desde a última nota: confira a embalagem antes de usar.'
 
 /** Quantas NOTAS lançadas diferentes (não itens: `vezes` conta chaves distintas) concordando são precisas para associar sozinho (o Ivan ainda decide entre 1 e 2). Abaixo disso, só sugestão. */
 export const MIN_VEZES_PARA_ASSOCIAR_SOZINHO = 1
@@ -57,7 +79,7 @@ export function precoNaFaixa(item: Pick<ItemNotaSefaz, 'valor' | 'qtd'>, l: Pick
 /**
  * O que fazer com o lembrado deste item: 'sozinho' (grava sem perguntar), 'sugerir' (mostra o botão de um toque) ou null (nada). Só existe para item sem decisão
  * cujo produto lembrado está na lista de insumos carregada. Sozinho exige ainda: vezes ≥ o limiar, item não recusado pelo Ivan, preço por unidade na faixa e a mesma
- * unidade do produto no catálogo.
+ * unidade do produto no catálogo, e a MESMA descrição de embalagem de uma decisão do Ivan (assinatura; revisão de 15/11/2026).
  */
 export function oQueFazerComOLembrado(
   l: ProdutoLembrado | null,
@@ -69,7 +91,7 @@ export function oQueFazerComOLembrado(
   const produto = catalogo.find((p) => p.produto_id === l.produto_id)
   if (!produto) return null
   const unidadeIgual = l.unidade != null && produto.unidade != null && l.unidade.trim().toLowerCase() === produto.unidade.trim().toLowerCase()
-  if (!recusado && l.vezes >= MIN_VEZES_PARA_ASSOCIAR_SOZINHO && unidadeIgual && precoNaFaixa(item, l)) return 'sozinho'
+  if (!recusado && l.vezes >= MIN_VEZES_PARA_ASSOCIAR_SOZINHO && unidadeIgual && precoNaFaixa(item, l) && mesmaDescricaoDoLembrado(item, l)) return 'sozinho'
   return 'sugerir'
 }
 
@@ -110,5 +132,6 @@ export function linhaLembrada(x: unknown): ProdutoLembrado | null {
     preco_ref: numeroOuNulo(o.preco_ref),
     vezes: Number(o.vezes) || 1,
     ultima_em: typeof o.ultima_em === 'string' ? o.ultima_em : null,
+    assinaturas: Array.isArray(o.assinaturas) ? o.assinaturas.filter((a): a is string => typeof a === 'string' && a !== '') : [],
   }
 }
