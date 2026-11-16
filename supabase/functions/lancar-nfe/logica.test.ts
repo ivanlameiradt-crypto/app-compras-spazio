@@ -364,6 +364,7 @@ describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
       async jobsDaExecucao() { return 0 },
       async algoRodando() { return false },
       async cancelarExecucao(id) { cancelados.push(id) },
+      // (o teste da ordem das consultas troca estes três por versões que registram a ordem)
       async marcarEstado(...a) { marcas.push(a); return true },
       agora: () => AGORA_V,
       ...over,
@@ -544,6 +545,44 @@ describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
       expect((await chamar(b)).status).toBe(502)
       expect(b.marcas).toEqual([])
       expect(b.cancelados).toEqual([])
+    })
+
+    it('revisão de 16/11: a execução largou entre a conferência e o cancelamento (agora tem job): libera a nota mas NÃO cancela (não mata o robô no meio)', async () => {
+      let chamadas = 0
+      const d = travada({ async jobsDaExecucao() { chamadas += 1; return chamadas === 1 ? 0 : 1 } })
+      expect(sit(await chamar(d))).toBe('liberada')
+      expect(d.marcas).toHaveLength(1)
+      expect(chamadas).toBe(2)
+      expect(d.cancelados).toEqual([])
+    })
+
+    it('revisão de 16/11: a ordem é jobs, depois "algo rodando" (com job nem pergunta o resto), depois marca, e só então confere os jobs de novo e cancela; "algo rodando" recebe o id da própria execução', async () => {
+      const log: string[] = []
+      const ids: number[] = []
+      const d = travada({
+        async jobsDaExecucao() { log.push('jobs'); return 0 },
+        async algoRodando(ignorarId) { log.push('algoRodando'); ids.push(ignorarId); return false },
+        async marcarEstado() { log.push('marcar'); return true },
+        async cancelarExecucao() { log.push('cancelar') },
+      })
+      await chamar(d)
+      expect(log).toEqual(['jobs', 'algoRodando', 'marcar', 'jobs', 'cancelar'])
+      expect(ids).toEqual([55])
+      const comJob: string[] = []
+      await chamar(travada({
+        async jobsDaExecucao() { comJob.push('jobs'); return 1 },
+        async algoRodando() { comJob.push('algoRodando'); return false },
+      }))
+      expect(comJob).toEqual(['jobs'])
+    })
+
+    it('a janela da execução desta nota: de 2 min antes da reserva (folga de relógio) até 2 min depois; um segundo fora dela não conta', async () => {
+      // reserva = 17:50:12.674; limites = 17:48:12.674 e 17:52:12.674
+      const com = (criada: string) => travada({ async execucoesDoRobo() { return [TRAVADA({ criada_em: criada })] }, agora: () => new Date('2026-10-07T18:05:00.000Z') })
+      expect(sit(await chamar(com('2026-10-07T17:48:13Z')))).toBe('liberada')
+      expect(sit(await chamar(com('2026-10-07T17:48:11Z')))).toBe('sem_execucao')
+      expect(sit(await chamar(com('2026-10-07T17:52:12Z')))).toBe('liberada')
+      expect(sit(await chamar(com('2026-10-07T17:52:13Z')))).toBe('sem_execucao')
     })
 
     it('o robô avisou o resultado no meio da conferência (compara-e-troca falhou): não sobrescreve nem cancela à toa', async () => {

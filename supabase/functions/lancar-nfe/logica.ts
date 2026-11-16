@@ -266,8 +266,9 @@ export interface DepsVerificar {
   passosDaExecucao(id: number): Promise<PassoExecucao[]>
   /** Quantos jobs a execução tem (0 = o GitHub ainda não a entregou a nenhum executor). Levanta se o GitHub não responde. */
   jobsDaExecucao(id: number): Promise<number>
-  /** Há alguma execução EM ANDAMENTO no repositório do robô? (o grupo sischef-session roda uma de cada vez: com algo rodando, esperar na fila é normal). */
-  algoRodando(): Promise<boolean>
+  /** Há OUTRA execução (que não a `ignorarId`) em andamento no repositório do robô, ou esperando um executor do servidor (na fila COM job)? O grupo
+   *  sischef-session roda uma de cada vez: com algo rodando, ou com o executor desligado/reiniciando e outra execução esperando por ele, esperar na fila é normal. */
+  algoRodando(ignorarId: number): Promise<boolean>
   /** Cancela a execução na fila (melhor esforço: o chamador ignora o erro; o GitHub às vezes recusa cancelar uma execução travada). */
   cancelarExecucao(id: number): Promise<void>
   /** Compara-e-troca: só muda se a nota AINDA está 'lancando' (e sem lançada_em). true = mudou. */
@@ -345,7 +346,7 @@ export async function verificar(corpo: Corpo, chamador: string, deps: DepsVerifi
     let ocupado = false
     try {
       jobs = await deps.jobsDaExecucao(emFila.id)
-      if (jobs === 0) ocupado = await deps.algoRodando()
+      if (jobs === 0) ocupado = await deps.algoRodando(emFila.id)
     } catch {
       return { status: 502, corpo: { erro: 'não consegui consultar o GitHub agora — tente de novo em instantes' } }
     }
@@ -356,7 +357,12 @@ export async function verificar(corpo: Corpo, chamador: string, deps: DepsVerifi
     }
     const motivoTravada = `O GitHub travou a execução do robô: ela ficou ${naFila} min na fila sem começar nenhum passo e não há nada rodando. Nada foi criado no SisChef; pode lançar de novo.`
     const liberou = await deps.marcarEstado(chave, 'revisar', motivoTravada, agora.toISOString())
-    if (liberou) await deps.cancelarExecucao(emFila.id).catch(() => undefined) // melhor esforço: se um dia ela acordar, o robô não relança a nota que já saiu da lista
+    if (liberou) {
+      // Cancela para a execução não acordar horas depois com os dados antigos da nota (a nota pode ter sido ajustada e lançada de novo). Revisão de 16/11:
+      // confere os jobs mais uma vez logo antes; se ela largou nesse meio-tempo, NÃO cancela (não se mata o robô no meio; ele não relança nota que saiu da lista).
+      const aindaSemJob = await deps.jobsDaExecucao(emFila.id).then((n) => n === 0, () => false)
+      if (aindaSemJob) await deps.cancelarExecucao(emFila.id).catch(() => undefined) // melhor esforço
+    }
     return respostaVerificacao('liberada', liberou ? motivoTravada : 'A nota já mudou de estado: recarregue a tela.', { execucao: emFila.id, mudou: liberou })
   }
   if (dela.status !== 'completed') {
