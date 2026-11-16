@@ -133,4 +133,14 @@ describe('tratar — redefinir_senha', () => {
     const r = await tratar({ acao: 'redefinir_senha', email: 'joao@spazio.invalid', senha: '123' }, ADMIN.email, deps)
     expect(r.status).toBe(400)
   })
+
+  // 16/11/2026 (análise do app): o login do Supabase é um só para vários apps (o Tiquei também tem contas nele). O admin do Comprar só pode redefinir
+  // senha de quem está na tabela de usuários do Comprar; conta de outro app tem de dar 404 e ficar intacta.
+  it('conta que existe no login mas NÃO é usuária do Comprar (outro app): 404 e a conta fica intacta', async () => {
+    const deps = fakeDeps()
+    deps.auth.set('maria@outro-app.invalid', { id: 'auth-externo', senha: 'senha-dela', nome: 'Maria', trocarSenha: false })
+    const r = await tratar({ acao: 'redefinir_senha', email: 'maria@outro-app.invalid', senha: '654321' }, ADMIN.email, deps)
+    expect(r).toEqual({ status: 404, corpo: { erro: 'usuário não encontrado' } })
+    expect(deps.auth.get('maria@outro-app.invalid')).toMatchObject({ senha: 'senha-dela', trocarSenha: false })
+  })
 })
