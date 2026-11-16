@@ -467,12 +467,13 @@ describe('Fase 2 E1: painel de economia', () => {
 })
 
 describe('Sub-fase 3: cupom', () => {
-  it('enviarCupom chama a Edge Function com foto_path, pagamento e teste; devolve o resumo', async () => {
+  it('enviarCupom chama a Edge Function só com foto_path e pagamento (sem "teste": o cupom enviado é sempre para lançar de verdade); devolve o resumo', async () => {
     invoke.mockResolvedValue({ data: { cupom_id: 'c1', resumo: 'enviado para lançar', estado: 'PENDENTE', disparo_ok: true }, error: null })
-    const r = await enviarCupom('cupom/abc.jpg', { forma: 'pix', conta: 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA' }, true)
+    const r = await enviarCupom('cupom/abc.jpg', { forma: 'pix', conta: 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA' })
     expect(invoke).toHaveBeenCalledWith('enviar-cupom', {
-      body: { foto_path: 'cupom/abc.jpg', pagamento: { forma: 'pix', conta: 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA' }, teste: true },
+      body: { foto_path: 'cupom/abc.jpg', pagamento: { forma: 'pix', conta: 'CONTA BANCÁRIA - CAIXA - I J LAMEIRA' } },
     })
+    expect(invoke.mock.calls[0][1].body).not.toHaveProperty('teste')
     expect(r).toMatchObject({ cupom_id: 'c1', estado: 'PENDENTE' })
   })
 

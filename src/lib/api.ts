@@ -1185,8 +1185,9 @@ export async function subirFotoCupom(caminho: string, foto: Blob): Promise<void>
 }
 
 /** Chama a Edge Function enviar-cupom (service_role lê a foto, lê com IA, casa o confirmado, grava e dispara). */
-export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom, teste = false): Promise<ResumoEnvioCupom> {
-  const { data, error } = await supabase.functions.invoke('enviar-cupom', { body: { foto_path: fotoPath, pagamento, teste } })
+export async function enviarCupom(fotoPath: string, pagamento: PagamentoCupom): Promise<ResumoEnvioCupom> {
+  // Sem "modo teste" no app (pedido do Ivan, 16/11/2026): o cupom enviado é sempre para lançar de verdade (a função só marca teste com `teste: true`).
+  const { data, error } = await supabase.functions.invoke('enviar-cupom', { body: { foto_path: fotoPath, pagamento } })
   if (error) throw new Error(await mensagemDaFuncao(error))
   return data as ResumoEnvioCupom
 }

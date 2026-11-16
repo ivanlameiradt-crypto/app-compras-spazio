@@ -224,7 +224,6 @@ export default function Cupom() {
   // a foto e o caminho dela nascem juntos (um estado só) e sobrevivem a um envio com erro: o retry reusa o MESMO caminho
   const [foto, setFoto] = useState<{ blob: Blob; path: string } | null>(null)
   const [preparando, setPreparando] = useState(false)
-  const [teste, setTeste] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [resultado, setResultado] = useState<ResumoEnvioCupom | null>(null)
   const [erro, setErro] = useState('')
@@ -328,9 +327,9 @@ export default function Cupom() {
     setEnviando(true); setErro(''); setResultado(null)
     try {
       await api.subirFotoCupom(foto.path, foto.blob)
-      const r = await api.enviarCupom(foto.path, pagamento, teste)
+      const r = await api.enviarCupom(foto.path, pagamento)
       setResultado(r)
-      setFoto(null); setForma(null); setContaPix(null) // limpa para o próximo cupom (o "Modo teste" fica como está)
+      setFoto(null); setForma(null); setContaPix(null) // limpa para o próximo cupom
       carregarRecentes()
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui enviar. Tente de novo.') // a foto fica; o retry reusa o MESMO caminho
@@ -374,11 +373,6 @@ export default function Cupom() {
         </label>
         {preparando && <p className="sub">Preparando a foto…</p>}
         {foto && !preparando && <p className="ok" data-testid="foto-pronta">✓ Foto anexada</p>}
-
-        <label className="marcar">
-          <input type="checkbox" checked={teste} onChange={(e) => setTeste(e.target.checked)} />
-          Modo teste (não lança de verdade)
-        </label>
       </fieldset>
 
       <div className="grupo">3. Enviar</div>

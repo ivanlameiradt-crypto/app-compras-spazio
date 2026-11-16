@@ -46,7 +46,7 @@ describe('Cupom', () => {
     await waitFor(() => expect(enviar).toBeEnabled())
     await userEvent.click(enviar)
     await waitFor(() => expect(m.subirFotoCupom).toHaveBeenCalled())
-    expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\//), { forma: 'sem_cartao' }, false)
+    expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\//), { forma: 'sem_cartao' })
     expect(await screen.findByText(/enviado para lançar/)).toBeInTheDocument()
   })
 
@@ -239,7 +239,7 @@ describe('Cupom — o que vai para o servidor', () => {
     await escolher(rotulo)
     await anexar()
     await userEvent.click(await enviarPronto())
-    await waitFor(() => expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\/.+\.jpg$/), pagamento, false))
+    await waitFor(() => expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\/.+\.jpg$/), pagamento))
   })
 
   it.each(CONTAS_PIX.map((c) => [c.rotulo, c.conta]))('PIX — %s manda a conta %s', async (rotulo, conta) => {
@@ -248,16 +248,18 @@ describe('Cupom — o que vai para o servidor', () => {
     await escolher(rotulo)
     await anexar()
     await userEvent.click(await enviarPronto())
-    await waitFor(() => expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\/.+\.jpg$/), { forma: 'pix', conta }, false))
+    await waitFor(() => expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\/.+\.jpg$/), { forma: 'pix', conta }))
   })
 
-  it('"Modo teste" ligado manda teste=true', async () => {
+  it('não existe mais "Modo teste" (pedido do Ivan, 16/11/2026): nem a caixinha na tela nem o terceiro argumento no envio', async () => {
     render(<Cupom />)
     await escolher('Sem cartão')
-    await userEvent.click(screen.getByRole('checkbox', { name: /Modo teste/ }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText(/Modo teste|não lança de verdade/i)).toBeNull()
     await anexar()
     await userEvent.click(await enviarPronto())
-    await waitFor(() => expect(m.enviarCupom).toHaveBeenCalledWith(expect.stringMatching(/^cupom\//), { forma: 'sem_cartao' }, true))
+    await waitFor(() => expect(m.enviarCupom).toHaveBeenCalled())
+    expect(m.enviarCupom.mock.calls[0]).toHaveLength(2)
   })
 
   it('sobe a foto REDUZIDA (o Blob do reduzirFoto), não o arquivo original', async () => {
