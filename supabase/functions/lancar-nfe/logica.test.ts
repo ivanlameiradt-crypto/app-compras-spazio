@@ -1,5 +1,5 @@
 import {
-  CONTAS_PIX, PASSO_QUE_LANCA, filtroReservavel, montarNotaJson, normalizarForma, normalizarFrete, normalizarParcelas, somaParcelas, tratar, verificar,
+  CONTAS_PIX, MINUTOS_ZUMBI, PASSO_QUE_LANCA, filtroReservavel, montarNotaJson, normalizarForma, normalizarFrete, normalizarParcelas, somaParcelas, tratar, verificar,
   type Deps, type DepsVerificar, type Execucao, type NotaEstado, type NotaReservada, type PassoExecucao,
 } from './logica'
 
@@ -351,14 +351,20 @@ describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
     { name: PASSO_QUE_LANCA, status: 'completed', conclusion: lancaConclusion },
     { name: 'Aviso de falha por e-mail', status: 'completed', conclusion: 'success' },
   ]
-  function deps(over: Partial<DepsVerificar> = {}): DepsVerificar & { marcas: unknown[][] } {
+  function deps(over: Partial<DepsVerificar> = {}): DepsVerificar & { marcas: unknown[][]; cancelados: number[] } {
     const marcas: unknown[][] = []
+    const cancelados: number[] = []
     return {
       marcas,
+      cancelados,
       async buscarUsuario() { return { papel: 'admin', ativo: true } },
       async estadoDaNota() { return nota() },
       async execucoesDoRobo() { return [exec()] },
       async passosDaExecucao() { return passos('skipped') },
+      async jobsDaExecucao() { return 0 },
+      async algoRodando() { return false },
+      async cancelarExecucao(id) { cancelados.push(id) },
+      // (o teste da ordem das consultas troca estes três por versões que registram a ordem)
       async marcarEstado(...a) { marcas.push(a); return true },
       agora: () => AGORA_V,
       ...over,
@@ -459,6 +465,133 @@ describe('verificar: o que houve com o robô de uma nota "lançando"', () => {
       return [exec({ id: 9, status: 'in_progress', conclusao: null, criada_em: '2026-10-07T17:55:00Z' }), exec({ id: 8 })]
     } })
     expect(sit(await chamar(d))).toBe('rodando')
+  })
+
+  // 16/11/2026: o GitHub deixou a execução do robô "na fila" sem nenhum job por 40 min (título ainda o padrão, sem o número da nota) e a nota ficou
+  // reservada 30 min. Execução na fila sem job, com o servidor livre e nada rodando no repositório = travada: nada começou, a nota é liberada cedo.
+  describe('execução travada na fila do GitHub (16/11/2026)', () => {
+    const TRAVADA = (extra: Partial<Execucao> = {}): Execucao => ({
+      id: 55, titulo: 'Lançar NF-e de compra (nuvem)', status: 'queued', conclusao: null, criada_em: '2026-10-07T17:50:14Z', ...extra,
+    })
+    const DEZ_MIN = () => new Date('2026-10-07T18:00:30.000Z') // 10 min depois da reserva
+    const travada = (over: Partial<DepsVerificar> = {}) => deps({ async execucoesDoRobo() { return [TRAVADA()] }, agora: DEZ_MIN, ...over })
+
+    it('na fila há 8 min ou mais, sem job, servidor livre e nada rodando: libera a nota (revisar), explica e tenta cancelar a execução', async () => {
+      const d = travada()
+      const r = await chamar(d)
+      const c = r.corpo as { situacao: string; mensagem: string; mudou: boolean; execucao: number }
+      expect([r.status, c.situacao, c.mudou, c.execucao]).toEqual([200, 'liberada', true, 55])
+      expect(c.mensagem).toContain('O GitHub travou a execução do robô')
+      expect(c.mensagem).toContain('Nada foi criado no SisChef')
+      expect(c.mensagem).toContain('pode lançar de novo')
+      expect(d.marcas).toHaveLength(1)
+      expect(d.marcas[0].slice(0, 3)).toEqual([CHAVE, 'revisar', c.mensagem])
+      expect(d.cancelados).toEqual([55])
+    })
+
+    it('na fila há MENOS de 8 min: só aguarda (um robô saudável larga em segundos, mas não se conclui nada cedo demais)', async () => {
+      const d = travada({ agora: () => new Date('2026-10-07T17:56:00.000Z') }) // 5 min
+      expect(sit(await chamar(d))).toBe('aguardando')
+      expect(d.marcas).toEqual([])
+      expect(d.cancelados).toEqual([])
+      expect(MINUTOS_ZUMBI).toBe(8)
+    })
+
+    it('a execução já tem job (esperando um executor do servidor): NÃO libera, é outro problema', async () => {
+      const d = travada({ async jobsDaExecucao() { return 1 } })
+      expect(sit(await chamar(d))).toBe('rodando')
+      expect(d.marcas).toEqual([])
+      expect(d.cancelados).toEqual([])
+    })
+
+    it('há outra execução em andamento no repositório (um login do SisChef por vez): a fila é legítima, NÃO libera', async () => {
+      const d = travada({ async algoRodando() { return true } })
+      const r = await chamar(d)
+      expect(sit(r)).toBe('rodando')
+      expect(r.corpo.mensagem as string).toContain('outra tarefa')
+      expect(d.marcas).toEqual([])
+      expect(d.cancelados).toEqual([])
+    })
+
+    it('só olha a execução criada junto da reserva e sem o número de OUTRA nota: a velha, a tardia e a de outra nota não contam', async () => {
+      const lista = [
+        TRAVADA({ id: 1, criada_em: '2026-10-07T16:00:00Z' }),                  // de antes da reserva
+        TRAVADA({ id: 2, criada_em: '2026-10-07T17:58:00Z' }),                  // criada muito depois da reserva
+        TRAVADA({ id: 3, titulo: 'Lançar NF 000055100 (real)' }),               // é de outra nota
+        TRAVADA({ id: 4, status: 'completed', conclusao: 'cancelled' }),         // já terminou (o caminho de sempre cuida)
+      ]
+      const d = deps({ async execucoesDoRobo() { return lista }, agora: DEZ_MIN })
+      expect(sit(await chamar(d))).toBe('sem_execucao')
+      expect(d.marcas).toEqual([])
+    })
+
+    it('execução na fila COM o número desta nota no título segue o caminho de sempre: está "rodando", nada muda', async () => {
+      const d = deps({ async execucoesDoRobo() { return [TRAVADA({ titulo: 'Lançar NF 002270833 (real)' })] }, agora: DEZ_MIN })
+      expect(sit(await chamar(d))).toBe('rodando')
+      expect(d.marcas).toEqual([])
+    })
+
+    it('não conseguiu cancelar a execução travada: a nota é liberada do mesmo jeito', async () => {
+      const d = travada({ async cancelarExecucao() { throw new Error('HTTP 409') } })
+      expect(sit(await chamar(d))).toBe('liberada')
+      expect(d.marcas).toHaveLength(1)
+    })
+
+    it('o GitHub não responde sobre os jobs ou sobre o que roda: 502 e nada muda', async () => {
+      const a = travada({ async jobsDaExecucao() { throw new Error('HTTP 500') } })
+      expect((await chamar(a)).status).toBe(502)
+      expect(a.marcas).toEqual([])
+      const b = travada({ async algoRodando() { throw new Error('HTTP 500') } })
+      expect((await chamar(b)).status).toBe(502)
+      expect(b.marcas).toEqual([])
+      expect(b.cancelados).toEqual([])
+    })
+
+    it('revisão de 16/11: a execução largou entre a conferência e o cancelamento (agora tem job): libera a nota mas NÃO cancela (não mata o robô no meio)', async () => {
+      let chamadas = 0
+      const d = travada({ async jobsDaExecucao() { chamadas += 1; return chamadas === 1 ? 0 : 1 } })
+      expect(sit(await chamar(d))).toBe('liberada')
+      expect(d.marcas).toHaveLength(1)
+      expect(chamadas).toBe(2)
+      expect(d.cancelados).toEqual([])
+    })
+
+    it('revisão de 16/11: a ordem é jobs, depois "algo rodando" (com job nem pergunta o resto), depois marca, e só então confere os jobs de novo e cancela; "algo rodando" recebe o id da própria execução', async () => {
+      const log: string[] = []
+      const ids: number[] = []
+      const d = travada({
+        async jobsDaExecucao() { log.push('jobs'); return 0 },
+        async algoRodando(ignorarId) { log.push('algoRodando'); ids.push(ignorarId); return false },
+        async marcarEstado() { log.push('marcar'); return true },
+        async cancelarExecucao() { log.push('cancelar') },
+      })
+      await chamar(d)
+      expect(log).toEqual(['jobs', 'algoRodando', 'marcar', 'jobs', 'cancelar'])
+      expect(ids).toEqual([55])
+      const comJob: string[] = []
+      await chamar(travada({
+        async jobsDaExecucao() { comJob.push('jobs'); return 1 },
+        async algoRodando() { comJob.push('algoRodando'); return false },
+      }))
+      expect(comJob).toEqual(['jobs'])
+    })
+
+    it('a janela da execução desta nota: de 2 min antes da reserva (folga de relógio) até 2 min depois; um segundo fora dela não conta', async () => {
+      // reserva = 17:50:12.674; limites = 17:48:12.674 e 17:52:12.674
+      const com = (criada: string) => travada({ async execucoesDoRobo() { return [TRAVADA({ criada_em: criada })] }, agora: () => new Date('2026-10-07T18:05:00.000Z') })
+      expect(sit(await chamar(com('2026-10-07T17:48:13Z')))).toBe('liberada')
+      expect(sit(await chamar(com('2026-10-07T17:48:11Z')))).toBe('sem_execucao')
+      expect(sit(await chamar(com('2026-10-07T17:52:12Z')))).toBe('liberada')
+      expect(sit(await chamar(com('2026-10-07T17:52:13Z')))).toBe('sem_execucao')
+    })
+
+    it('o robô avisou o resultado no meio da conferência (compara-e-troca falhou): não sobrescreve nem cancela à toa', async () => {
+      const d = travada({ async marcarEstado() { return false } })
+      const c = (await chamar(d)).corpo as { situacao: string; mudou: boolean; mensagem: string }
+      expect([c.situacao, c.mudou]).toEqual(['liberada', false])
+      expect(c.mensagem).toContain('já mudou de estado')
+      expect(d.cancelados).toEqual([])
+    })
   })
 
   it('o GitHub não responde: 502 e nada muda', async () => {

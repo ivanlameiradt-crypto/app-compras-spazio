@@ -153,7 +153,8 @@ Deno.serve(async (req: Request) => {
 
     // ação "verificar": o que houve com o robô de uma nota que ficou "lançando" (consulta o GitHub; só muda a nota quando é seguro)
     if (corpo && typeof corpo === 'object' && corpo.acao === 'verificar') {
-      const gh = (caminho: string) => fetch(`https://api.github.com/repos/${REPO}/${caminho}`, {
+      const gh = (caminho: string, metodo = 'GET') => fetch(`https://api.github.com/repos/${REPO}/${caminho}`, {
+        method: metodo,
         headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'lancar-nfe' },
         signal: AbortSignal.timeout(15_000),
       })
@@ -177,6 +178,36 @@ Deno.serve(async (req: Request) => {
           if (!r.ok) { console.error(`lancar-nfe: listar passos falhou (HTTP ${r.status})`); throw new Error(`HTTP ${r.status}`) }
           const j = await r.json() as { jobs?: Array<{ steps?: PassoExecucao[] }> }
           return (j.jobs ?? []).flatMap((x) => x.steps ?? []).map((p) => ({ name: p.name, status: p.status, conclusion: p.conclusion }))
+        },
+        async jobsDaExecucao(id) {
+          const r = await gh(`actions/runs/${id}/jobs?per_page=1`)
+          if (!r.ok) { console.error(`lancar-nfe: contar jobs falhou (HTTP ${r.status})`); throw new Error(`HTTP ${r.status}`) }
+          const j = await r.json() as { total_count?: number; jobs?: unknown[] }
+          return typeof j.total_count === 'number' ? j.total_count : (j.jobs ?? []).length
+        },
+        async algoRodando(ignorarId) {
+          // 1) alguma execução em andamento? (conta tudo: total_count não depende da página)
+          const a = await gh('actions/runs?status=in_progress&per_page=1')
+          if (!a.ok) { console.error(`lancar-nfe: listar o que roda falhou (HTTP ${a.status})`); throw new Error(`HTTP ${a.status}`) }
+          const ja = await a.json() as { total_count?: number; workflow_runs?: unknown[] }
+          if ((typeof ja.total_count === 'number' ? ja.total_count : (ja.workflow_runs ?? []).length) > 0) return true
+          // 2) outra execução esperando um executor do servidor (na fila COM job: servidor desligado/reiniciando). Na fila SEM job é outra execução travada
+          //    do GitHub (como a desta nota) e não segura nada.
+          const b = await gh('actions/runs?status=queued&per_page=20')
+          if (!b.ok) { console.error(`lancar-nfe: listar a fila falhou (HTTP ${b.status})`); throw new Error(`HTTP ${b.status}`) }
+          const jb = await b.json() as { workflow_runs?: Array<{ id: number }> }
+          for (const x of (jb.workflow_runs ?? []).filter((y) => y.id !== ignorarId)) {
+            const rj = await gh(`actions/runs/${x.id}/jobs?per_page=1`)
+            if (!rj.ok) { console.error(`lancar-nfe: contar jobs da fila falhou (HTTP ${rj.status})`); throw new Error(`HTTP ${rj.status}`) }
+            const jj = await rj.json() as { total_count?: number; jobs?: unknown[] }
+            if ((typeof jj.total_count === 'number' ? jj.total_count : (jj.jobs ?? []).length) > 0) return true
+          }
+          return false
+        },
+        async cancelarExecucao(id) {
+          // melhor esforço (16/11/2026): o GitHub às vezes recusa cancelar uma execução travada (HTTP 409); só o status vai ao log
+          const r = await gh(`actions/runs/${id}/cancel`, 'POST')
+          if (!r.ok) console.error(`lancar-nfe: cancelar a execução travada foi recusado (HTTP ${r.status})`)
         },
         async marcarEstado(chave, estado, motivo, agoraIso) {
           // compara-e-troca: só muda se a nota ainda está 'lancando' (se o robô acabou de avisar o resultado, não se sobrescreve)
