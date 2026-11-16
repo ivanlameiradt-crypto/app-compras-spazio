@@ -8,7 +8,7 @@
 import { useRef, useState } from 'react'
 import * as api from '../../lib/api'
 import type { BaseTela, LinhaTela } from './linhaResposta'
-import { entradaDe, linhaDe, numeroDe, textoDe } from './linhaResposta'
+import { entradaDe, linhaDe, motivoNumeroInvalido, numeroDe, textoDe } from './linhaResposta'
 import type { Cotacao, EntradaGerais, EntradaItem, EstadoItemCotacao, ItemCotacao, ResultadoEnvio } from '../../lib/tipos'
 import { converter } from '../../cotacao/conversao'
 import { numeroBr, peso } from '../../cotacao/mensagens'
@@ -91,7 +91,7 @@ export default function DigitarPrecos({ c, onFechar }: { c: Cotacao; onFechar: (
     for (const i of itens) {
       const agora = entradaDe(linhas[i.id], i.unidade)
       // (NaN vira null no JSON: o número inválido é checado antes de comparar com o que estava gravado)
-      if (temNaN(agora)) { problemas.push(`item ${i.numero}: número inválido`); continue }
+      if (temNaN(agora)) { problemas.push(`item ${i.numero}: ${motivoNumeroInvalido(linhas[i.id])}`); continue }
       if (assinatura(agora) === assinatura(entradaDe(linhaDe(i), i.unidade))) continue
       const entrada: EntradaItem = { numero: i.numero as number, rev_lida: i.rev, ...agora }
       const conta = converter(i, entrada)

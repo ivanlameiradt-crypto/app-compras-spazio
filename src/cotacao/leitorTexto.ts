@@ -11,7 +11,7 @@
 // "2,50un", "64,00sc": nunca o preço na base padrão do item) — e a linha que só começa como uma da mensagem ("Itens em
 // kg: preço da caixa de 10 kg", "Não tem? 6 e 11").
 import type { BaseCotacao, EntradaItem, ItemCotacao } from '../lib/tipos'
-import { lerNumero } from '../lib/regras'
+import { lerPrecoUnitario } from '../lib/dinheiro'
 import { validar } from './conversao'
 import { basePresumida } from './ia'
 import {
@@ -203,7 +203,7 @@ function lerResposta(texto: string, item: ItemCotacao): Lida {
 
   const m = s.match(P_PRECO)
   if (!m) return { erro: true }
-  const preco = lerNumero(m[0])
+  const preco = lerPrecoUnitario(m[0]) // "2.500" sem vírgula é ambíguo: null = linha não entendida (a pessoa digita com a vírgula)
   s = s.replace(P_PRECO, ' ')
   // sobrou número depois do preço e das embalagens conhecidas ("42,00 12 un", "8,90 vence 30/10"), "não tenho" depois
   // do número ("5 não tenho": o 5 é outro item) ou palavra que não é de unidade nem de embalagem ("só tenho 1 kg",
