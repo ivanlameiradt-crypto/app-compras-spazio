@@ -264,6 +264,12 @@ export interface DepsVerificar {
   /** As execuções mais recentes do lancar-nfe.yml (disparos manuais), da mais nova para a mais velha. Levanta se o GitHub não responde. */
   execucoesDoRobo(): Promise<Execucao[]>
   passosDaExecucao(id: number): Promise<PassoExecucao[]>
+  /** Quantos jobs a execução tem (0 = o GitHub ainda não a entregou a nenhum executor). Levanta se o GitHub não responde. */
+  jobsDaExecucao(id: number): Promise<number>
+  /** Há alguma execução EM ANDAMENTO no repositório do robô? (o grupo sischef-session roda uma de cada vez: com algo rodando, esperar na fila é normal). */
+  algoRodando(): Promise<boolean>
+  /** Cancela a execução na fila (melhor esforço: o chamador ignora o erro; o GitHub às vezes recusa cancelar uma execução travada). */
+  cancelarExecucao(id: number): Promise<void>
   /** Compara-e-troca: só muda se a nota AINDA está 'lancando' (e sem lançada_em). true = mudou. */
   marcarEstado(chave: string, estado: 'revisar' | 'erro', motivo: string, agoraIso: string): Promise<boolean>
   agora(): Date
@@ -278,6 +284,16 @@ export const PASSO_QUE_LANCA = 'Lançar / ensaiar a nota'
 export const MINUTOS_PARA_CONCLUIR = 3
 /** O GitHub cria a execução logo depois do disparo; esta folga cobre diferença de relógio. */
 const FOLGA_MS = 2 * 60_000
+/** A execução desta nota nasce segundos depois da reserva; uma "na fila" criada bem depois dela não é desta nota. */
+const JANELA_DISPARO_MS = 2 * 60_000
+/** Estados de uma execução que ainda não começou. */
+const STATUS_NA_FILA = ['queued', 'waiting', 'pending', 'requested']
+/**
+ * 16/11/2026: o GitHub deixou a execução do robô "na fila" sem nenhum job por 40 min (com o título ainda o padrão, sem o número da nota) e a nota ficou reservada
+ * 30 min sem poder ser lançada de novo. Execução na fila há tanto tempo, sem job, com nada rodando no repositório, é travada: nada começou e a nota é liberada.
+ * Um robô saudável larga em segundos; o grupo sischef-session pode segurar a fila alguns minutos atrás de uma leitura do SisChef, por isso a espera.
+ */
+export const MINUTOS_ZUMBI = 8
 
 const COMO_TERMINOU: Record<string, string> = { cancelled: 'foi cancelada', failure: 'falhou', timed_out: 'estourou o tempo' }
 const respostaVerificacao = (situacao: SituacaoVerificacao, mensagem: string, extra: Record<string, unknown> = {}): Resultado =>
@@ -311,10 +327,37 @@ export async function verificar(corpo: Corpo, chamador: string, deps: DepsVerifi
     .sort((a, b) => Date.parse(b.criada_em) - Date.parse(a.criada_em))[0]
 
   if (!dela) {
-    return minutos < MINUTOS_PARA_CONCLUIR
-      ? respostaVerificacao('aguardando', 'O robô acabou de ser chamado: aguarde um instante.')
-      : respostaVerificacao('sem_execucao',
-          `Não achei a execução desta nota no GitHub (disparada há ${minutos} min). Confira no SisChef se a nota entrou; se não entrou, a tela libera o Lançar sozinha aos 30 min.`)
+    if (minutos < MINUTOS_PARA_CONCLUIR) return respostaVerificacao('aguardando', 'O robô acabou de ser chamado: aguarde um instante.')
+    // Na fila o GitHub ainda não pôs o número da nota no título: a execução desta nota é a "na fila" criada junto da reserva (e que não é de outra nota).
+    const emFila = execucoes
+      .filter((e) => STATUS_NA_FILA.includes(e.status) && !/^Lançar NF \d/.test(e.titulo)
+        && Date.parse(e.criada_em) >= reservadaEm - FOLGA_MS && Date.parse(e.criada_em) <= reservadaEm + JANELA_DISPARO_MS)
+      .sort((a, b) => Date.parse(a.criada_em) - Date.parse(b.criada_em))[0]
+    if (!emFila) {
+      return respostaVerificacao('sem_execucao',
+        `Não achei a execução desta nota no GitHub (disparada há ${minutos} min). Confira no SisChef se a nota entrou; se não entrou, a tela libera o Lançar sozinha aos 30 min.`)
+    }
+    const naFila = Math.floor((agora.getTime() - Date.parse(emFila.criada_em)) / 60_000)
+    if (naFila < MINUTOS_ZUMBI) {
+      return respostaVerificacao('aguardando', `O robô está na fila do GitHub há ${naFila} min: aguarde um instante.`, { execucao: emFila.id })
+    }
+    let jobs: number
+    let ocupado = false
+    try {
+      jobs = await deps.jobsDaExecucao(emFila.id)
+      if (jobs === 0) ocupado = await deps.algoRodando()
+    } catch {
+      return { status: 502, corpo: { erro: 'não consegui consultar o GitHub agora — tente de novo em instantes' } }
+    }
+    // com job, a execução só espera um executor do servidor (outro problema, que o vigia avisa); com algo rodando, a fila é legítima: em nenhum dos dois se libera.
+    if (jobs > 0) return respostaVerificacao('rodando', 'O robô está esperando um executor livre no servidor. Aguarde.', { execucao: emFila.id })
+    if (ocupado) {
+      return respostaVerificacao('rodando', 'O robô está na fila esperando outra tarefa do SisChef terminar (um login por vez). Aguarde.', { execucao: emFila.id })
+    }
+    const motivoTravada = `O GitHub travou a execução do robô: ela ficou ${naFila} min na fila sem começar nenhum passo e não há nada rodando. Nada foi criado no SisChef; pode lançar de novo.`
+    const liberou = await deps.marcarEstado(chave, 'revisar', motivoTravada, agora.toISOString())
+    if (liberou) await deps.cancelarExecucao(emFila.id).catch(() => undefined) // melhor esforço: se um dia ela acordar, o robô não relança a nota que já saiu da lista
+    return respostaVerificacao('liberada', liberou ? motivoTravada : 'A nota já mudou de estado: recarregue a tela.', { execucao: emFila.id, mudou: liberou })
   }
   if (dela.status !== 'completed') {
     return respostaVerificacao('rodando', 'O robô ainda está trabalhando nesta nota. Aguarde.', { execucao: dela.id })
