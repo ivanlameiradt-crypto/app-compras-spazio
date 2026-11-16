@@ -159,7 +159,7 @@ const DO_ROBO = [
 ]
 
 /** Só a chave de serviço lê (sem SELECT para authenticated, D27). Fase 2 D acrescenta a view cot_desempenho. */
-const SO_SERVICO = ['cot_avisos', 'cot_cadastros_aplicados', 'cot_desempenho', 'cot_ia_config', 'cot_limites']
+const SO_SERVICO = ['cardapio_levantamentos', 'cardapio_sugestoes', 'cot_avisos', 'cot_cadastros_aplicados', 'cot_desempenho', 'cot_ia_config', 'cot_limites'] // as 2 do cardápio (levantamento de concorrente): só o service_role (robô e backup)
 
 async function tabelas(db: Awaited<ReturnType<typeof banco>>): Promise<string[]> {
   const r = await db.query<{ t: string }>(
