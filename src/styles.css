@@ -154,10 +154,14 @@ input[aria-invalid='true'] { border-color: var(--alerta); }
 .botao-arquivo input[type='file'] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; min-height: 0; padding: 0; border: 0; }
 .botao-arquivo:focus-within { outline: 3px solid var(--amarelo); outline-offset: 2px; box-shadow: 0 0 0 2px var(--preto); }
 .faixa { margin: 0 20px 12px; padding: 10px 14px; border-radius: 12px; background: var(--aviso-fundo); color: var(--aviso-texto); font-size: 16px; font-weight: 600; }
-/* Faixa "Tem uma versão nova do app." (13/11): texto e botão lado a lado, discreta; as margens respeitam o recorte/cantos do celular (viewport-fit=cover), principalmente com o aparelho deitado. */
-.faixa.nova-versao { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; padding-top: 2px; padding-bottom: 2px; margin-left: max(20px, env(safe-area-inset-left)); margin-right: max(20px, env(safe-area-inset-right)); }
-/* botão da faixa: área de toque de pelo menos 44 px (a faixa ficou com pouco padding vertical para continuar discreta) */
-.faixa.nova-versao .link { min-height: 44px; min-width: 44px; padding: 8px 12px; justify-content: center; }
+/* Janela obrigatória "Tem uma versão nova do app." (pedido do Ivan, 16/11; no lugar da faixa discreta de 13/11): fundo escuro na tela inteira e um cartão no meio; as margens respeitam os recortes do aparelho (viewport-fit=cover). */
+.aviso-versao { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); background: rgba(35, 31, 32, .6); }
+.aviso-versao-cartao { width: 100%; max-width: 384px; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; border-radius: 18px; background: var(--cartao); color: var(--tinta); text-align: center; box-shadow: 0 20px 40px rgba(0, 0, 0, .3); }
+.aviso-versao-icone { width: 32px; height: 32px; }
+.aviso-versao-cartao h2 { margin: 0; font-size: 22px; line-height: 1.2; font-weight: 800; }
+.aviso-versao-cartao p { margin: 0; font-size: 17px; color: var(--suave); }
+.aviso-versao-cartao .botao { width: 100%; min-height: 60px; }
+.aviso-versao-cartao .botao:focus-visible { outline: 4px solid var(--preto); outline-offset: 2px; }
 .erro { color: var(--alerta); }
 .aviso { color: var(--suave); font-size: 16px; }
 .cabecalho { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 8px 0; }

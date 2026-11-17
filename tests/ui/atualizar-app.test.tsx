@@ -51,19 +51,19 @@ describe('Botão Atualizar do topo (pedido do Ivan, 07/10: não precisar sair e 
   })
 })
 
-describe('Faixa "Tem uma versão nova do app." (regra do dono, 13/11: nunca recarrega sozinho; só quando a pessoa clica)', () => {
-  it('sem versão nova a faixa não aparece', () => {
+describe('Janela "Tem uma versão nova do app." (regra do dono, 13/11: nunca recarrega sozinho; só quando a pessoa clica. Desde 16/11 é janela obrigatória: ver aviso-versao-obrigatorio.test.tsx)', () => {
+  it('sem versão nova a janela não aparece', () => {
     render(<AvisoNovaVersao />)
     expect(screen.queryByTestId('aviso-nova-versao')).not.toBeInTheDocument()
   })
 
-  it('com versão nova aparece discreta (role=status) com o texto e o botão "Atualizar"; ao aparecer NÃO troca nem recarrega nada', () => {
+  it('com versão nova aparece a janela (role=alertdialog) com o texto e o botão "Atualizar agora"; ao aparecer NÃO troca nem recarrega nada', () => {
     a.useNovaVersao.mockReturnValue('xyz123')
     render(<AvisoNovaVersao />)
-    const faixa = screen.getByRole('status')
-    expect(faixa).toBe(screen.getByTestId('aviso-nova-versao'))
-    expect(faixa).toHaveTextContent('Tem uma versão nova do app.')
-    expect(within(faixa).getByRole('button', { name: 'Atualizar' })).toBeInTheDocument()
+    const janela = screen.getByRole('alertdialog')
+    expect(screen.getByTestId('aviso-nova-versao')).toContainElement(janela)
+    expect(janela).toHaveTextContent('Tem uma versão nova do app.')
+    expect(within(janela).getByRole('button', { name: 'Atualizar agora' })).toBeInTheDocument()
     expect(a.aplicarNovaVersao).not.toHaveBeenCalled()
     expect(a.recarregarPagina).not.toHaveBeenCalled()
   })
@@ -71,15 +71,16 @@ describe('Faixa "Tem uma versão nova do app." (regra do dono, 13/11: nunca reca
   it('só ao clicar em "Atualizar" troca para essa versão', () => {
     a.useNovaVersao.mockReturnValue('xyz123')
     render(<AvisoNovaVersao />)
-    fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar agora' }))
     expect(a.aplicarNovaVersao).toHaveBeenCalledTimes(1)
     expect(a.aplicarNovaVersao).toHaveBeenCalledWith('xyz123')
   })
 
-  it('o Layout mostra a faixa junto dos outros avisos do topo (além do botão Atualizar do topo)', () => {
+  it('o Layout mostra a janela (além do botão Atualizar do topo)', () => {
     a.useNovaVersao.mockReturnValue('xyz123')
     render(<MemoryRouter><Layout usuario={ADMIN}><p>tela</p></Layout></MemoryRouter>)
     expect(screen.getByTestId('aviso-nova-versao')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Atualizar' })).toHaveLength(2) // o do topo e o da faixa
+    expect(screen.getAllByRole('button', { name: 'Atualizar' })).toHaveLength(1) // o do topo
+    expect(screen.getAllByRole('button', { name: 'Atualizar agora' })).toHaveLength(1) // o da janela
   })
 })

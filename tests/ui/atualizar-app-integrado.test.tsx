@@ -74,20 +74,20 @@ describe('conferência automática de versão (módulo real, relógio falso)', (
     expect(conferencias()).toBe(antes + 1)
   })
 
-  it('ao voltar do fundo depois de bastante tempo com versão nova no ar: a página NÃO recarrega, a faixa aparece e nada é "tentado"', async () => {
+  it('ao voltar do fundo depois de bastante tempo com versão nova no ar: a página NÃO recarrega, a janela aparece e nada é "tentado"', async () => {
     render(<AvisoNovaVersao />)
     expect(screen.queryByTestId('aviso-nova-versao')).not.toBeInTheDocument()
     idNoAr = 'versao-nova-13-11'
     await mudarVisibilidade(false)
     await passar(10 * 60_000) // dez minutos no bolso
     await mudarVisibilidade(true)
-    expect(screen.getByRole('status')).toHaveTextContent('Tem uma versão nova do app.')
-    expect(screen.getByRole('button', { name: 'Atualizar' })).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Tem uma versão nova do app.')
+    expect(screen.getByRole('button', { name: 'Atualizar agora' })).toBeInTheDocument()
     expect(recargas).toEqual([])
     expect(sessionStorage.getItem('spazio_versao_tentada')).toBeNull()
   })
 
-  it('com a faixa na tela e o app em uso por mais um tempo: continua só avisando, nunca recarrega sozinho', async () => {
+  it('com a janela na tela e o app em uso por mais um tempo: continua só avisando, nunca recarrega sozinho', async () => {
     render(<AvisoNovaVersao />) // a versão nova já vista continua guardada: a faixa aparece de novo
     await passar(30 * 60_000)
     await act(async () => { window.dispatchEvent(new Event('online')) })
@@ -97,7 +97,7 @@ describe('conferência automática de versão (módulo real, relógio falso)', (
 
   it('só ao clicar em "Atualizar" a troca acontece, mantendo a tela em que a pessoa está', async () => {
     render(<AvisoNovaVersao />)
-    fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar agora' }))
     await passar(0)
     expect(recargas).toEqual(['replace /?v=versao-nova-13-11#/compra/lista'])
     expect(sessionStorage.getItem('spazio_versao_tentada')).toBe('versao-nova-13-11')
