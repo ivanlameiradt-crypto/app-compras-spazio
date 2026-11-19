@@ -7,7 +7,7 @@ import type { PedidoProduto, RespostaPedido, StatusProduto } from '../admin/Cada
 import { supabase } from './supabase'
 import { EVENTO_SAIU, esquecerUsuario } from '../auth/usuarioGuardado'
 import { ErroRede, ehErroTemporario, enfileirar, processar, type Op } from './fila'
-import { emailDoLogin, SENHA_PADRAO } from './login'
+import { emailDoLogin } from './login'
 import { mensagemDeErroDaFoto } from './foto'
 import { ehUnidadeDaLista } from './unidadesDaLista'
 import type { ProdutoHistorico } from './sugestaoCompra'
@@ -100,7 +100,7 @@ export async function criarAcesso(args: { login: string; nome: string; papel: Pa
   return data as { email: string }
 }
 
-export async function redefinirSenha(email: string, senha: string = SENHA_PADRAO): Promise<void> {
+export async function redefinirSenha(email: string, senha: string): Promise<void> {
   const { error } = await supabase.functions.invoke('gerenciar-usuarios', { body: { acao: 'redefinir_senha', email, senha } })
   if (error) throw new Error(await mensagemDaFuncao(error))
 }

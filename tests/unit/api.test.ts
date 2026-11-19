@@ -198,13 +198,6 @@ describe('criarAcesso / redefinirSenha (Edge Function)', () => {
     })
   })
 
-  it('redefinirSenha sem senha explícita usa a senha padrão', async () => {
-    invoke.mockResolvedValue({ data: { ok: true }, error: null })
-    await redefinirSenha('joao@spazio.invalid')
-    expect(invoke).toHaveBeenCalledWith('gerenciar-usuarios', {
-      body: { acao: 'redefinir_senha', email: 'joao@spazio.invalid', senha: '123456' },
-    })
-  })
 })
 
 describe('trocarMinhaSenha (P2)', () => {
