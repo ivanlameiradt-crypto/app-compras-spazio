@@ -5,12 +5,19 @@ import { mensagemDeErro } from '../lib/regras'
 import { SENHA_PADRAO, usuarioDoEmail } from '../lib/login'
 import TituloDaTela from '../components/TituloDaTela'
 
+/** A senha que o administrador combina com a pessoa: nunca a senha padrão antiga, que é conhecida de todos. */
+function problemaDaSenhaProvisoria(senha: string): string {
+  if (senha.length < 6) return 'A senha provisória precisa ter pelo menos 6 caracteres.'
+  if (senha === SENHA_PADRAO) return `Escolha uma senha provisória diferente de ${SENHA_PADRAO}.`
+  return ''
+}
+
 export default function Pessoas({ usuario }: { usuario: Usuario }) {
   const [pessoas, setPessoas] = useState<Usuario[]>([])
   const [login, setLogin] = useState('')
   const [nome, setNome] = useState('')
   const [papel, setPapel] = useState<Papel>('comprador')
-  const [senha, setSenha] = useState(SENHA_PADRAO)
+  const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [aviso, setAviso] = useState('')
 
@@ -21,10 +28,12 @@ export default function Pessoas({ usuario }: { usuario: Usuario }) {
     e.preventDefault()
     setErro('')
     setAviso('')
+    const problema = problemaDaSenhaProvisoria(senha)
+    if (problema) return setErro(problema)
     try {
       const r = await api.criarAcesso({ login, nome: nome.trim(), papel, senha })
       setAviso(`Acesso criado: usuário ${usuarioDoEmail(r.email)}, senha inicial ${senha} — no primeiro acesso a pessoa escolhe a própria senha.`)
-      setLogin(''); setNome(''); setPapel('comprador'); setSenha(SENHA_PADRAO)
+      setLogin(''); setNome(''); setPapel('comprador'); setSenha('')
       await carregar()
     } catch (err) {
       setErro(mensagemDeErro(err))
@@ -43,11 +52,15 @@ export default function Pessoas({ usuario }: { usuario: Usuario }) {
 
   async function redefinir(p: Usuario) {
     const nomeUsuario = usuarioDoEmail(p.email)
-    if (!window.confirm(`A senha de ${nomeUsuario} volta para ${SENHA_PADRAO} e ela terá que trocar no próximo acesso. Confirmar?`)) return
+    const digitada = window.prompt(`Digite a senha provisória de ${nomeUsuario} (mínimo 6 caracteres). Ela terá que trocar no próximo acesso.`)
+    if (digitada == null) return
+    const nova = digitada.trim()
+    const problema = problemaDaSenhaProvisoria(nova)
+    if (problema) { setAviso(''); setErro(problema); return }
     try {
-      await api.redefinirSenha(p.email)
+      await api.redefinirSenha(p.email, nova)
       setErro('')
-      setAviso(`Senha de ${nomeUsuario} redefinida para ${SENHA_PADRAO}.`)
+      setAviso(`Senha de ${nomeUsuario} redefinida para ${nova}.`)
     } catch (err) {
       setErro(mensagemDeErro(err))
     }
@@ -70,7 +83,7 @@ export default function Pessoas({ usuario }: { usuario: Usuario }) {
           </select>
         </label>
         <label>Senha inicial
-          <input aria-label="Senha inicial" value={senha} onChange={(e) => setSenha(e.target.value)} />
+          <input aria-label="Senha inicial" placeholder="Combine com a pessoa (mínimo 6)" value={senha} onChange={(e) => setSenha(e.target.value)} />
         </label>
         <button className="botao" type="submit">Cadastrar</button>
       </form>

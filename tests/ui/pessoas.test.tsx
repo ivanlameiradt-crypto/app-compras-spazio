@@ -16,9 +16,21 @@ beforeEach(() => {
 })
 
 describe('Pessoas (P1 + P3 — login com usuário + senha padrão)', () => {
-  it('o campo de senha inicial já vem preenchido com a senha padrão 123456', async () => {
+  it('o campo de senha inicial vem VAZIO: o administrador combina a senha com a pessoa', async () => {
     render(<Pessoas usuario={ivan} />)
-    expect(await screen.findByLabelText('Senha inicial')).toHaveValue('123456')
+    expect(await screen.findByLabelText('Senha inicial')).toHaveValue('')
+  })
+
+  it('não cadastra sem senha, com senha curta nem com a senha padrão antiga', async () => {
+    render(<Pessoas usuario={ivan} />)
+    await userEvent.type(screen.getByLabelText('Nome'), 'Maria')
+    await userEvent.type(await screen.findByLabelText('Usuário (ou e-mail)'), 'maria')
+    await userEvent.click(screen.getByRole('button', { name: 'Cadastrar' }))
+    expect(await screen.findByText('A senha provisória precisa ter pelo menos 6 caracteres.')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Senha inicial'), '123456')
+    await userEvent.click(screen.getByRole('button', { name: 'Cadastrar' }))
+    expect(await screen.findByText('Escolha uma senha provisória diferente de 123456.')).toBeInTheDocument()
+    expect(m.criarAcesso).not.toHaveBeenCalled()
   })
 
   it('cadastra pelo usuário (login mapeado no servidor) e mostra a senha inicial uma vez', async () => {
@@ -26,11 +38,13 @@ describe('Pessoas (P1 + P3 — login com usuário + senha padrão)', () => {
     render(<Pessoas usuario={ivan} />)
     await userEvent.type(screen.getByLabelText('Nome'), 'Maria')
     await userEvent.type(await screen.findByLabelText('Usuário (ou e-mail)'), 'Maria')
+    await userEvent.type(screen.getByLabelText('Senha inicial'), 'combinada1')
     await userEvent.click(screen.getByRole('button', { name: 'Cadastrar' }))
-    expect(m.criarAcesso).toHaveBeenCalledWith({ login: 'Maria', nome: 'Maria', papel: 'comprador', senha: '123456' })
+    expect(m.criarAcesso).toHaveBeenCalledWith({ login: 'Maria', nome: 'Maria', papel: 'comprador', senha: 'combinada1' })
     expect(await screen.findByText(
-      'Acesso criado: usuário maria, senha inicial 123456 — no primeiro acesso a pessoa escolhe a própria senha.',
+      'Acesso criado: usuário maria, senha inicial combinada1 — no primeiro acesso a pessoa escolhe a própria senha.',
     )).toBeInTheDocument()
+    expect(screen.getByLabelText('Senha inicial')).toHaveValue('')
   })
 
   it('senha inicial é editável (admin pode escolher outra)', async () => {
@@ -50,6 +64,7 @@ describe('Pessoas (P1 + P3 — login com usuário + senha padrão)', () => {
     render(<Pessoas usuario={ivan} />)
     await userEvent.type(screen.getByLabelText('Nome'), 'João de novo')
     await userEvent.type(await screen.findByLabelText('Usuário (ou e-mail)'), 'joao')
+    await userEvent.type(screen.getByLabelText('Senha inicial'), 'combinada1')
     await userEvent.click(screen.getByRole('button', { name: 'Cadastrar' }))
     expect(await screen.findByText('esse usuário já existe')).toBeInTheDocument()
   })
@@ -61,20 +76,33 @@ describe('Pessoas (P1 + P3 — login com usuário + senha padrão)', () => {
     expect(within(linhaJoao).queryByText(/@spazio\.invalid/)).not.toBeInTheDocument()
   })
 
-  it('redefinir senha pede confirmação, chama a api com a senha padrão e avisa uma vez', async () => {
+  it('redefinir senha pede a senha provisória, chama a api com ela e avisa uma vez', async () => {
     m.redefinirSenha.mockResolvedValue()
+    vi.spyOn(window, 'prompt').mockReturnValue(' provisoria1 ')
     render(<Pessoas usuario={ivan} />)
     const linhaJoao = (await screen.findByText('João')).closest('tr') as HTMLElement
     await userEvent.click(within(linhaJoao).getByRole('button', { name: 'Redefinir senha' }))
-    expect(window.confirm).toHaveBeenCalledWith(
-      'A senha de joao volta para 123456 e ela terá que trocar no próximo acesso. Confirmar?',
+    expect(window.prompt).toHaveBeenCalledWith(
+      'Digite a senha provisória de joao (mínimo 6 caracteres). Ela terá que trocar no próximo acesso.',
     )
-    expect(m.redefinirSenha).toHaveBeenCalledWith('joao@spazio.invalid')
-    expect(await screen.findByText('Senha de joao redefinida para 123456.')).toBeInTheDocument()
+    expect(m.redefinirSenha).toHaveBeenCalledWith('joao@spazio.invalid', 'provisoria1')
+    expect(await screen.findByText('Senha de joao redefinida para provisoria1.')).toBeInTheDocument()
   })
 
-  it('cancelar a confirmação não chama a api', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
+  it('redefinir senha recusa senha curta e a senha padrão antiga, sem chamar a api', async () => {
+    const pergunta = vi.spyOn(window, 'prompt').mockReturnValue('123')
+    render(<Pessoas usuario={ivan} />)
+    const linhaJoao = (await screen.findByText('João')).closest('tr') as HTMLElement
+    await userEvent.click(within(linhaJoao).getByRole('button', { name: 'Redefinir senha' }))
+    expect(await screen.findByText('A senha provisória precisa ter pelo menos 6 caracteres.')).toBeInTheDocument()
+    pergunta.mockReturnValue('123456')
+    await userEvent.click(within(linhaJoao).getByRole('button', { name: 'Redefinir senha' }))
+    expect(await screen.findByText('Escolha uma senha provisória diferente de 123456.')).toBeInTheDocument()
+    expect(m.redefinirSenha).not.toHaveBeenCalled()
+  })
+
+  it('cancelar a pergunta da senha não chama a api', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue(null)
     render(<Pessoas usuario={ivan} />)
     const linhaJoao = (await screen.findByText('João')).closest('tr') as HTMLElement
     await userEvent.click(within(linhaJoao).getByRole('button', { name: 'Redefinir senha' }))
