@@ -24,4 +24,4 @@ por loja, e cada compra fechada entra na fila de lançamento no SisChef.
   passam pela Edge Function `gerenciar-usuarios`, que precisa estar publicada:
   `supabase functions deploy gerenciar-usuarios --project-ref <ref>`. Ela usa a `service_role` key
   só no servidor (nunca no celular) e confere que quem chama é um administrador ativo.
-  Senha inicial padrão: `123456` (o app obriga a pessoa a trocar no primeiro acesso).
+  Senha inicial padrão: combinada pelo administrador fora deste repositório (o app obriga a pessoa a trocar no primeiro acesso).
