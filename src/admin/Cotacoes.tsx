@@ -293,7 +293,7 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
         botao={(rotulo) => `Cotação complementar para ${rotulo}`} />
       <DaSemanaAnterior linhas={preparo.atravessados} dados={dados} />
       <NaoEnviadas cotacoes={[...dados.daSemana, ...dados.anteriores]} />
-      {preparo.cartoes.length === 0 && <p className="vazio">Nenhum item com vendedor nesta semana.</p>}
+      {preparo.cartoes.length === 0 && <p className="vazio">Nenhum item com vendedor nesta semana.<span className="vazio-passo">Associe um vendedor aos itens em Cadastros.</span></p>}
       {preparo.cartoes.map((cartao) => {
         const v = dados.vendedores.find((x) => x.id === cartao.vendedor_id)
         if (!v) return null

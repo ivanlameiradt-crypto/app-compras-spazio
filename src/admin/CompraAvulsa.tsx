@@ -327,7 +327,7 @@ export default function CompraAvulsa() {
 
       <div className="grupo">Últimas compras avulsas</div>
       {falhaRecentes && <p className="erro" role="alert">Não consegui carregar as últimas compras.</p>}
-      {recentes.length === 0 ? (!falhaRecentes && <p className="sub">Nenhuma compra avulsa ainda.</p>) : (
+      {recentes.length === 0 ? (!falhaRecentes && <p className="sub vazio">Nenhuma compra avulsa ainda.<span className="vazio-passo">Preencha a compra acima e toque em Lançar.</span></p>) : (
         <ul className="recentes">
           {recentes.map((c) => {
             const aberto = expandido === c.id
@@ -338,7 +338,7 @@ export default function CompraAvulsa() {
             return (
               <li key={c.id} data-testid="compra-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto} onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {nome}{c.valor_a_pagar != null && ` · ${formatarReais(c.valor_a_pagar)}`}</span>
+                  <span><b>{ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {nome}{c.valor_a_pagar != null && <> · <b className="valor valor-linha">{formatarReais(c.valor_a_pagar)}</b></>}</span>
                   <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                 </button>
                 {repetidaDaCompra && (

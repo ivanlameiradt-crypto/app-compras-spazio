@@ -168,7 +168,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
 
   if (dados === undefined) return <p className="centro">Carregando…</p>
   const semana = dados.semana
-  if (!semana) return <p className="vazio">{aviso || 'Nenhuma lista liberada para compra agora.'}</p>
+  if (!semana) return <p className="vazio">{aviso || 'Nenhuma lista liberada para compra agora.'}<span className="vazio-passo">Espere a administração liberar a lista e toque em Atualizar.</span></p>
 
   if (!compra || compra.semanaId !== semana.id) {
     return (
@@ -299,7 +299,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
       ))}
       <div className="rodape">
         <div>
-          <button className="botao secundario" style={{ flex: 1 }} onClick={() => setFechando(true)} disabled={minhas.size === 0}>
+          <button className="botao" style={{ flex: 1 }} onClick={() => setFechando(true)} disabled={minhas.size === 0}>
             Fechar compra desta loja (nota / cupom)
           </button>
         </div>

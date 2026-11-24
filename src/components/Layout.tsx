@@ -41,6 +41,18 @@ export default function Layout({ usuario, offline = false, children }: { usuario
   const [aguardando, setAguardando] = useState(0)
   const [atualizando, setAtualizando] = useState(false)
   const [slotTitulo, setSlotTitulo] = useState<HTMLElement | null>(null)
+  // Menu da pessoa (Trocar minha senha, Sair) e "Mais" da barra de baixo (padrão visual único, 23/11/2026): abrem e fecham por aqui; as opções ficam sempre no HTML.
+  const [menuPessoa, setMenuPessoa] = useState(false)
+  const [maisAberto, setMaisAberto] = useState(false)
+  // Menu lateral do computador (a partir de 1024 px): 256 px, ou 76 px só com os ícones. A escolha fica guardada no aparelho (se o navegador não deixar, vale o padrão).
+  const [recolhido, setRecolhido] = useState(() => { try { return window.localStorage.getItem('comprar-menu-recolhido') === '1' } catch { return false } })
+  const alternarMenu = () => setRecolhido((v) => { const n = !v; try { window.localStorage.setItem('comprar-menu-recolhido', n ? '1' : '0') } catch { /* sem armazenamento: vale só nesta visita */ } return n })
+  const botaoRecolher = (
+    <button type="button" className="recolher-menu" aria-label={recolhido ? 'Abrir menu' : 'Recolher menu'} aria-expanded={!recolhido} onClick={alternarMenu}>
+      <Icone nome={recolhido ? 'dir' : 'esq'} tamanho={24} />
+      <span>Recolher menu</span>
+    </button>
+  )
   const admin = usuario.papel === 'admin'
   // Botão Atualizar (pedido do Ivan, 07/10): o iPhone instalado não tem "puxar para atualizar" e ele não deve precisar sair do app. Confere a versão no ar:
   // se saiu versão nova, troca já (a tela fica a mesma); se não, recarrega a tela para ler os dados de novo (rascunhos como as parcelas ficam guardados no aparelho).
@@ -54,6 +66,19 @@ export default function Layout({ usuario, offline = false, children }: { usuario
   }
   const loc = useLocation()
   const aba = abaAtual(loc.pathname)
+  // trocar de tela fecha os dois menus; Esc também
+  useEffect(() => { setMenuPessoa(false); setMaisAberto(false) }, [loc.pathname])
+  useEffect(() => {
+    if (!menuPessoa && !maisAberto) return
+    const aoTeclar = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenuPessoa(false); setMaisAberto(false) } }
+    const aoTocarFora = (e: Event) => {
+      const alvo = e.target as HTMLElement | null
+      if (!alvo?.closest('.menu-pessoa, .aba-mais, .mais-destinos')) { setMenuPessoa(false); setMaisAberto(false) }
+    }
+    document.addEventListener('keydown', aoTeclar)
+    document.addEventListener('pointerdown', aoTocarFora)
+    return () => { document.removeEventListener('keydown', aoTeclar); document.removeEventListener('pointerdown', aoTocarFora) }
+  }, [menuPessoa, maisAberto])
   // Trocar de aba desmonta a tela e o que foi digitado some: com dados não enviados a aba pergunta antes (13/11/2026). A aba da própria tela não sai dela: não pergunta.
   // "Trocar minha senha" e "Sair" (topo) usam a mesma pergunta: os dois também jogam fora o que estava em preenchimento.
   // "Trocar minha senha" e "Sair" (topo) usam a mesma pergunta: os dois também jogam fora o que estava em preenchimento.
@@ -68,38 +93,54 @@ export default function Layout({ usuario, offline = false, children }: { usuario
     const t = setInterval(contar, 60000)
     return () => { vivo = false; clearInterval(t) }
   }, [admin])
+  // Um destino da barra (admin). Só a aba Lançamentos tem a bolinha vermelha (quantas compras esperam aprovação). A aba que tem bolinha ganha "com-contador": em tela larga o CSS
+  // afasta o nome do ícone (a bolinha passa 14 px do ícone e o espaço normal é 8 px: cobria a 1ª letra). No celular a classe não muda nada.
+  const destino = (a: (typeof ABAS)[number]) => {
+    const comContador = a.chave === 'lancamentos' && aguardando > 0
+    const classes = [aba === a.chave ? 'ativo' : '', comContador ? 'com-contador' : ''].filter(Boolean).join(' ')
+    return (
+      <Link key={a.chave} to={a.to} className={classes || undefined} aria-current={aba === a.chave ? 'page' : undefined} onClick={(e) => aoTrocarDeAba(e, a.to)}>
+        <span className="aba-icone">
+          <Icone nome={a.ic} tamanho={26} />
+          {comContador && <span className="contador">{aguardando}</span>}
+        </span>
+        <span>{a.rotulo}</span>
+      </Link>
+    )
+  }
   return (
-    <div className="app">
-      <header className="barra-topo">
+    <div className={recolhido ? 'app com-menu recolhido' : 'app com-menu'}>
+      <header className="cabecalho-app">
+        <div className="barra-topo">
         <div className="barra-linha">
           <LogoComprar altura={30} cor="#FFFFFF" />
           <button type="button" className="fantasma" disabled={atualizando} onClick={() => void atualizar()}>
             <Icone nome="atualizar" tamanho={18} />
             {atualizando ? 'Atualizando…' : 'Atualizar'}
           </button>
+          <div className={menuPessoa ? 'menu-pessoa aberto' : 'menu-pessoa'}>
+            <button type="button" className="menu-pessoa-botao" aria-expanded={menuPessoa} aria-label={`Minha conta: ${usuario.nome}`} onClick={() => setMenuPessoa((v) => !v)}>
+              <Icone nome="pessoa" tamanho={24} />
+              <span className="menu-pessoa-nome">{(usuario.nome || '').split(' ')[0]}</span>
+            </button>
+            <div className="menu-pessoa-lista">
+              <NavLink to="/senha" className="link-claro" onClick={(e) => aoTrocarDeAba(e, '/senha')}>Trocar minha senha</NavLink>
+              <button type="button" className="link-claro" onClick={() => { if (podeSair()) api.sair() }}>Sair</button>
+            </div>
+          </div>
         </div>
-        <div className="barra-links">
-          <NavLink to="/senha" className="link-claro" onClick={(e) => aoTrocarDeAba(e, '/senha')}>Trocar minha senha</NavLink>
-          <button type="button" className="link-claro" onClick={() => { if (podeSair()) api.sair() }}>Sair</button>
         </div>
         <div className="barra-titulo" ref={setSlotTitulo} />
         {admin ? (
-          <nav className="barra-abas" aria-label="Seções">
-            {ABAS.map((a) => {
-              // Só a aba Lançamentos tem a bolinha vermelha (quantas compras esperam aprovação). A aba que tem bolinha ganha "com-contador": em tela larga o CSS
-              // afasta o nome do ícone (a bolinha passa 14 px do ícone e o espaço normal é 8 px: cobria a 1ª letra). No celular a classe não muda nada.
-              const comContador = a.chave === 'lancamentos' && aguardando > 0
-              const classes = [aba === a.chave ? 'ativo' : '', comContador ? 'com-contador' : ''].filter(Boolean).join(' ')
-              return (
-                <Link key={a.chave} to={a.to} className={classes || undefined} aria-current={aba === a.chave ? 'page' : undefined} onClick={(e) => aoTrocarDeAba(e, a.to)}>
-                  <span className="aba-icone">
-                    <Icone nome={a.ic} tamanho={26} />
-                    {comContador && <span className="contador">{aguardando}</span>}
-                  </span>
-                  <span>{a.rotulo}</span>
-                </Link>
-              )
-            })}
+          <nav className={maisAberto ? 'barra-abas mais-aberto' : 'barra-abas'} aria-label="Seções">
+            {ABAS.slice(0, 3).map(destino)}
+            {/* "Mais" (só no celular e tablet em pé): guarda Lançamento fiscal e Compras avulsas. Em tela larga some e os cinco destinos ficam na barra de cima. */}
+            <button type="button" className={aba === 'sefaz' || aba === 'avulsa' ? 'aba-mais ativo' : 'aba-mais'} aria-expanded={maisAberto} aria-controls="mais-destinos" onClick={() => setMaisAberto((v) => !v)}>
+              <span className="aba-icone"><Icone nome="mais" tamanho={26} /></span>
+              <span>Mais</span>
+            </button>
+            <div id="mais-destinos" className="mais-destinos">{ABAS.slice(3).map(destino)}</div>
+            {botaoRecolher}
           </nav>
         ) : (
           <nav className="barra-abas duas" aria-label="Seções">
@@ -109,6 +150,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
                 <span>{a.rotulo}</span>
               </NavLink>
             ))}
+            {botaoRecolher}
           </nav>
         )}
       </header>

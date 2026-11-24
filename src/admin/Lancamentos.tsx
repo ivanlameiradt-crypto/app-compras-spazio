@@ -225,22 +225,28 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
               </div>
               <div className="linha" style={{ marginTop: 8 }}>
                 {a.itens > 0
-                  ? <button className="botao" onClick={() => fecharPeloComprador(a)}>Fechar pelo comprador</button>
+                  ? <button className="botao secundario" onClick={() => fecharPeloComprador(a)}>Fechar pelo comprador</button>
                   : <button className="botao secundario" onClick={() => cancelarAberta(a)}>Cancelar</button>}
               </div>
             </div>
           ))}
         </>
       )}
-      {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.</p>}
+      {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.<span className="vazio-passo">Quando um comprador fechar uma compra, ela aparece aqui. Toque em Atualizar para conferir.</span></p>}
       {fila.map((c) => (
         <div key={c.id} className="cartao">
-          <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
+          {/* Padrão visual único (23/11/2026): o nome à esquerda e o valor em destaque (32 px, peso 800) à direita. */}
+          <div className="cartao-topo">
+            <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
+            <strong className="valor">{formatarReais(Number(c.total_pago ?? 0))}</strong>
+          </div>
           <div className="sub">
-            {c.itens} itens · {formatarReais(Number(c.total_pago ?? 0))} ·{' '}
+            {c.itens} itens ·{' '}
             <span className="pill neutro">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>{' '}
             <span className={c.status === 'aprovada' ? 'pill ok' : 'pill atencao'}>{ROTULO_STATUS[c.status]}</span>
           </div>
+          {/* Padrão visual único (23/11/2026): o selo diz o estado e a frase ao lado diz o que fazer agora. */}
+          <p className="sub o-que-fazer">{c.status === 'aprovada' ? 'Falta marcar como lançada, depois de lançar no SisChef.' : 'Confira os itens e toque em Aprovar.'}</p>
           {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
           {cupomEmbutido[c.id] && <img src={cupomEmbutido[c.id]} alt="Foto do cupom fiscal" style={{ maxWidth: '100%', marginTop: 8 }} />}
           {aberta === c.id && (
@@ -262,8 +268,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}>{ocupados.get(c.id) === 'itens' ? 'Carregando…' : aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
             <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}>{ocupados.get(c.id) === 'total' ? 'Gravando…' : 'Corrigir total/nota'}</button>
             {c.status === 'fechada'
-              ? <button className="botao" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
-              : <button className="botao" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
+              ? <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
+              : <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
           </div>
         </div>
       ))}

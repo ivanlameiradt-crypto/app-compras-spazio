@@ -78,7 +78,7 @@ export default function ListaSemana() {
     return (
       <section className="coluna">
         <TituloDaTela>Lista da semana</TituloDaTela>
-        <p className="vazio">Nenhuma lista nova. A próxima chega segunda às 6h.</p>
+        <p className="vazio">Nenhuma lista nova. A próxima chega segunda às 6h.<span className="vazio-passo">Depois desse horário, toque em Atualizar.</span></p>
         <a className="link" href="#/lista">Abrir a lista antiga</a>
       </section>
     )
@@ -157,7 +157,7 @@ export default function ListaSemana() {
       {visiveis.map((l) => (
         <Cartao key={l.item.id} l={l} editavel={editavel} situacao={situacao[l.item.produto_id]} onContar={contar} onAjustar={ajustarManual} />
       ))}
-      {visiveis.length === 0 && <p className="vazio">Nenhum item aqui.</p>}
+      {visiveis.length === 0 && <p className="vazio">Nenhum item aqui.<span className="vazio-passo">Troque o filtro acima para ver os outros itens.</span></p>}
 
       <div style={{ height: 96 }} aria-hidden="true" />
       <div className="rodape">

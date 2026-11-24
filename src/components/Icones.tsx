@@ -24,6 +24,8 @@ const CAMINHOS = {
   fechar: <path d="M6 6l12 12M18 6 6 18" />,
   dir: <path d="M9 5l7 7-7 7" />,
   atualizar: <><path d="M20 11a8 8 0 0 0-14.5-4.4L4 8.5" /><path d="M4 4v4.5h4.5" /><path d="M4 13a8 8 0 0 0 14.5 4.4L20 15.5" /><path d="M20 20v-4.5h-4.5" /></>,
+  pessoa: <><circle cx="12" cy="8.5" r="3.6" /><path d="M4.8 20c.6-4 3.4-6 7.2-6s6.6 2 7.2 6" /></>,
+  mais: <><circle cx="6" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="18" cy="12" r="1.6" /></>,
   compartilhar: <><path d="M12 15V4M8 7.5 12 3.5l4 4" /><path d="M6 11H5v9h14v-9h-1" /></>,
 } satisfies Record<string, ReactNode>
 

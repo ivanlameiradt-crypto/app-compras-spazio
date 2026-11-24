@@ -390,7 +390,7 @@ export default function Cupom() {
 
       <div className="grupo">Últimos envios</div>
       {falhaRecentes && <p className="erro" role="alert">Não consegui carregar os últimos envios.</p>}
-      {recentes.length === 0 ? (!falhaRecentes && <p className="sub">Nenhum envio ainda.</p>) : (
+      {recentes.length === 0 ? (!falhaRecentes && <p className="sub vazio">Nenhum envio ainda.<span className="vazio-passo">Escolha a forma de pagamento, anexe o cupom e toque em Enviar.</span></p>) : (
         <ul className="recentes">
           {recentes.map((c) => {
             const valor = valorDaLinha(c)
@@ -407,7 +407,7 @@ export default function Cupom() {
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
                   onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && !envioRepetido(c) && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && ` · ${valor}`}</span>
+                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && !envioRepetido(c) && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && <> · <b className="valor valor-linha">{valor}</b></>}</span>
                   <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                 </button>
                 {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (
