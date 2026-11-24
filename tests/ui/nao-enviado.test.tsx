@@ -38,34 +38,13 @@ function Onde() { return <p data-testid="onde">{useLocation().pathname}</p> }
 const montar = () => render(<MemoryRouter initialEntries={['/compra-avulsa']}><Layout usuario={ADMIN}><Onde /></Layout></MemoryRouter>)
 const aba = (nome: string) => within(screen.getByRole('navigation', { name: 'Seções' })).getByRole('link', { name: new RegExp(nome) })
 
-describe('Layout: o Atualizar do topo e as abas perguntam antes de jogar fora o que foi digitado (B4)', () => {
-  it('SEM dados pendentes nada muda: o Atualizar recarrega e a aba troca, sem pergunta nenhuma', async () => {
+describe('Layout: as abas perguntam antes de jogar fora o que foi digitado (B4)', () => {
+  it('SEM dados pendentes nada muda: a aba troca, sem pergunta nenhuma (o botão Atualizar do topo saiu em 24/11/2026)', async () => {
     montar()
     await userEvent.click(aba('Lançamento de cupom'))
     expect(screen.getByTestId('onde')).toHaveTextContent('/cupom')
-    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    await waitFor(() => expect(a.recarregarPagina).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('button', { name: 'Atualizar' })).not.toBeInTheDocument()
     expect(confirmar).not.toHaveBeenCalled()
-  })
-
-  it('COM dados pendentes o Atualizar pergunta; "Cancelar" não confere a versão nem recarrega, e o botão continua à mão', async () => {
-    marcarNaoEnviado('teste', true)
-    confirmar.mockReturnValue(false)
-    montar()
-    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    expect(confirmar).toHaveBeenCalledWith(PERGUNTA_NAO_ENVIADO)
-    expect(a.conferirVersao).not.toHaveBeenCalled()
-    expect(a.recarregarPagina).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Atualizar' })).toBeEnabled()
-  })
-
-  it('COM dados pendentes e "OK" o Atualizar segue como sempre', async () => {
-    marcarNaoEnviado('teste', true)
-    confirmar.mockReturnValue(true)
-    montar()
-    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    await waitFor(() => expect(a.recarregarPagina).toHaveBeenCalledTimes(1))
-    expect(a.conferirVersao).toHaveBeenCalledWith('manual')
   })
 
   it('COM dados pendentes a aba pergunta: "Cancelar" fica na tela; "OK" troca de aba', async () => {
