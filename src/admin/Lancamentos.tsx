@@ -225,14 +225,14 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
               </div>
               <div className="linha" style={{ marginTop: 8 }}>
                 {a.itens > 0
-                  ? <button className="botao" onClick={() => fecharPeloComprador(a)}>Fechar pelo comprador</button>
+                  ? <button className="botao secundario" onClick={() => fecharPeloComprador(a)}>Fechar pelo comprador</button>
                   : <button className="botao secundario" onClick={() => cancelarAberta(a)}>Cancelar</button>}
               </div>
             </div>
           ))}
         </>
       )}
-      {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.</p>}
+      {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.<span className="vazio-passo">Quando um comprador fechar uma compra, ela aparece aqui. Toque em Atualizar para conferir.</span></p>}
       {fila.map((c) => (
         <div key={c.id} className="cartao">
           {/* Padrão visual único (23/11/2026): o nome à esquerda e o valor em destaque (32 px, peso 800) à direita. */}
@@ -268,8 +268,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}>{ocupados.get(c.id) === 'itens' ? 'Carregando…' : aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
             <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}>{ocupados.get(c.id) === 'total' ? 'Gravando…' : 'Corrigir total/nota'}</button>
             {c.status === 'fechada'
-              ? <button className="botao" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
-              : <button className="botao" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
+              ? <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
+              : <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
           </div>
         </div>
       ))}

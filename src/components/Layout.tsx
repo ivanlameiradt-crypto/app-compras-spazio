@@ -44,6 +44,15 @@ export default function Layout({ usuario, offline = false, children }: { usuario
   // Menu da pessoa (Trocar minha senha, Sair) e "Mais" da barra de baixo (padrão visual único, 23/11/2026): abrem e fecham por aqui; as opções ficam sempre no HTML.
   const [menuPessoa, setMenuPessoa] = useState(false)
   const [maisAberto, setMaisAberto] = useState(false)
+  // Menu lateral do computador (a partir de 1024 px): 256 px, ou 76 px só com os ícones. A escolha fica guardada no aparelho (se o navegador não deixar, vale o padrão).
+  const [recolhido, setRecolhido] = useState(() => { try { return window.localStorage.getItem('comprar-menu-recolhido') === '1' } catch { return false } })
+  const alternarMenu = () => setRecolhido((v) => { const n = !v; try { window.localStorage.setItem('comprar-menu-recolhido', n ? '1' : '0') } catch { /* sem armazenamento: vale só nesta visita */ } return n })
+  const botaoRecolher = (
+    <button type="button" className="recolher-menu" aria-label={recolhido ? 'Abrir menu' : 'Recolher menu'} aria-expanded={!recolhido} onClick={alternarMenu}>
+      <Icone nome={recolhido ? 'dir' : 'esq'} tamanho={24} />
+      <span>Recolher menu</span>
+    </button>
+  )
   const admin = usuario.papel === 'admin'
   // Botão Atualizar (pedido do Ivan, 07/10): o iPhone instalado não tem "puxar para atualizar" e ele não deve precisar sair do app. Confere a versão no ar:
   // se saiu versão nova, troca já (a tela fica a mesma); se não, recarrega a tela para ler os dados de novo (rascunhos como as parcelas ficam guardados no aparelho).
@@ -100,8 +109,9 @@ export default function Layout({ usuario, offline = false, children }: { usuario
     )
   }
   return (
-    <div className="app">
-      <header className="barra-topo">
+    <div className={recolhido ? 'app com-menu recolhido' : 'app com-menu'}>
+      <header className="cabecalho-app">
+        <div className="barra-topo">
         <div className="barra-linha">
           <LogoComprar altura={30} cor="#FFFFFF" />
           <button type="button" className="fantasma" disabled={atualizando} onClick={() => void atualizar()}>
@@ -119,6 +129,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
             </div>
           </div>
         </div>
+        </div>
         <div className="barra-titulo" ref={setSlotTitulo} />
         {admin ? (
           <nav className={maisAberto ? 'barra-abas mais-aberto' : 'barra-abas'} aria-label="Seções">
@@ -129,6 +140,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
               <span>Mais</span>
             </button>
             <div id="mais-destinos" className="mais-destinos">{ABAS.slice(3).map(destino)}</div>
+            {botaoRecolher}
           </nav>
         ) : (
           <nav className="barra-abas duas" aria-label="Seções">
@@ -138,6 +150,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
                 <span>{a.rotulo}</span>
               </NavLink>
             ))}
+            {botaoRecolher}
           </nav>
         )}
       </header>

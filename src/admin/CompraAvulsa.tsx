@@ -327,7 +327,7 @@ export default function CompraAvulsa() {
 
       <div className="grupo">Últimas compras avulsas</div>
       {falhaRecentes && <p className="erro" role="alert">Não consegui carregar as últimas compras.</p>}
-      {recentes.length === 0 ? (!falhaRecentes && <p className="sub">Nenhuma compra avulsa ainda.</p>) : (
+      {recentes.length === 0 ? (!falhaRecentes && <p className="sub vazio">Nenhuma compra avulsa ainda.<span className="vazio-passo">Preencha a compra acima e toque em Lançar.</span></p>) : (
         <ul className="recentes">
           {recentes.map((c) => {
             const aberto = expandido === c.id

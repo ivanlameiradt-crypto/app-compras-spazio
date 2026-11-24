@@ -19,13 +19,12 @@ describe('TituloDaTela', () => {
     barra.remove()
   })
 
-  it('no computador largo (1280 ou mais) o título fica no conteúdo, não na barra', () => {
+  it('no computador largo o título também vai para o lugar abaixo da barra (padrão visual único de 23/11/2026: antes ficava no conteúdo)', () => {
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('1280'), media: q, addEventListener: () => undefined, removeEventListener: () => undefined }))
     const barra = document.createElement('div')
     document.body.appendChild(barra)
     render(<SlotDoTitulo.Provider value={barra}><TituloDaTela>Cupom</TituloDaTela></SlotDoTitulo.Provider>)
-    expect(barra).toBeEmptyDOMElement()
-    expect(screen.getByRole('heading', { level: 2, name: 'Cupom' })).toBeInTheDocument()
+    expect(within(barra).getByRole('heading', { level: 1, name: 'Cupom' })).toBeInTheDocument()
     barra.remove()
   })
 })

@@ -87,13 +87,13 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
 
 /* ---- Estrutura: barra preta com bico, navegação, conteúdo ---- */
 .app { position: relative; min-height: 100vh; padding-bottom: calc(var(--barra-baixo) + 24px + env(safe-area-inset-bottom)); }
-.barra-topo { position: relative; z-index: 5; background: var(--v-barra); color: var(--v-barra-texto); padding: 18px 20px 18px; margin-bottom: 22px; display: flex; flex-direction: column; gap: 12px; }
-.barra-topo::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 20px; background: var(--v-barra); clip-path: polygon(0 0, 100% 0, 50% 100%); }
-.barra-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.barra-links { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 16px; }
-/* O título da tela mora aqui dentro (celular e tablet): ver TituloDaTela. Vazio some. */
+.barra-topo { position: relative; z-index: 5; background: var(--v-barra); color: var(--v-barra-texto); height: 56px; padding: 0 16px; margin-left: var(--menu-w, 0px); }
+.barra-topo::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 14px; background: var(--v-barra); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.barra-linha { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* Título da tela (h1) logo abaixo da barra, no fundo da página: ver TituloDaTela. Vazio some. */
+.barra-titulo { margin-left: var(--menu-w, 0px); padding: 28px 20px 4px; max-width: calc(760px + 40px); }
 .barra-titulo:empty { display: none; }
-.titulo-barra { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 800; color: var(--v-barra-texto); }
+.titulo-barra { margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; color: var(--texto); }
 .link-claro { white-space: nowrap; background: none; border: 0; padding: 4px 0; min-height: 48px; color: var(--texto); font: inherit; font-size: 16px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; display: inline-flex; align-items: center; }
 .fantasma { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 16px; border: 2px solid var(--v-barra-texto); border-radius: 24px; background: transparent; color: var(--v-barra-texto); font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
 .fantasma:disabled { opacity: .6; cursor: default; }
@@ -116,42 +116,13 @@ html { scroll-padding-top: 1rem; scroll-padding-bottom: 7rem; }
 .ajustes { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; margin-top: 4px; color: var(--suave); font-size: 16px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .voltar-menu { display: inline-flex; align-items: center; gap: 6px; margin: 0 20px 8px; min-height: 48px; color: var(--tinta); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .conteudo { width: 100%; max-width: 760px; margin: 0 auto; padding: 0 20px 24px; }
+.app > .faixa, .app > .voltar-menu { margin-left: var(--menu-w, 0px); }
 .centro, .vazio { text-align: center; color: var(--suave); padding: 32px 16px; }
 /* Faixa de atalhos com rolagem (subabas de Cadastros, filtros de Produtos) */
 .menu { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 10px; }
 .menu a, .menu button { display: inline-flex; align-items: center; min-height: 48px; padding: 0 16px; border-radius: 999px; border: 2px solid var(--tinta); background: var(--cartao); color: var(--texto); font: inherit; font-size: 16px; font-weight: 700; text-decoration: none; white-space: nowrap; cursor: pointer; }
 .menu a.active, .menu button.ativa { background: var(--marca); color: var(--marca-texto); font-weight: 800; }
 .topo { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; }
-@media (min-width: 640px) {
-  .barra-topo { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 14px 32px 18px; }
-  .barra-titulo { order: 5; flex: 1 0 100%; }
-  .barra-linha { display: contents; }
-  .barra-linha .fantasma { order: 3; margin-left: auto; }
-  .barra-links { order: 4; flex-wrap: nowrap; }
-}
-@media (min-width: 1280px) {
-  .app { padding-bottom: 32px; }
-  .barra-topo { flex-wrap: nowrap; gap: 16px; padding: 12px 28px 12px; }
-  .barra-links { gap: 6px 16px; }
-  .barra-topo::after { height: 12px; }
-  .barra-abas { position: static; z-index: auto; order: 2; flex: 1; display: flex; justify-content: center; gap: 6px; background: transparent; border: 0; height: auto; padding: 0; }
-  .barra-abas a { flex-direction: row; gap: 8px; min-height: 48px; padding: 0 12px; border: 0; border-radius: 10px; color: var(--v-barra-texto); font-size: 16px; font-weight: 700; white-space: nowrap; }
-  .barra-abas a.ativo { background: var(--amarelo); color: var(--preto); font-weight: 800; }
-  .barra-abas .contador { top: -10px; right: -14px; box-shadow: 0 0 0 2px var(--v-barra); }
-  .barra-abas a.ativo .contador { box-shadow: 0 0 0 2px var(--amarelo); }
-  /* A bolinha vermelha passa 14 px da borda direita do ícone (mais o anel de 2 px) e o espaço normal entre ícone e nome é 8 px: ela cobria a 1ª letra do nome. A aba que tem
-     bolinha (classe com-contador, posta pelo Layout) afasta o nome 22 px do ícone (sobra 6 px de folga, com 1, 2 ou 3 dígitos, pois a bolinha cresce para a esquerda).
-     Só aqui: abaixo de 1280 px o nome fica embaixo do ícone e nada se sobrepõe. */
-  .barra-abas a.com-contador { gap: 22px; }
-  .rodape { bottom: 0 !important; }
-}
-/* 1280 a 1479 px: as 5 abas em fila precisam de ~1435 px ao lado do logo, do "Atualizar" e dos links (sem isso a página ganha rolagem lateral). Aqui elas descem
-   para uma 2ª linha da própria barra preta, centralizadas; de 1480 px em diante ficam todas na linha de cima. */
-@media (min-width: 1280px) and (max-width: 1479px) {
-  .barra-topo { flex-wrap: wrap; row-gap: 8px; }
-  .barra-abas { order: 5; flex: 1 0 100%; }
-}
-
 /* ---- Entrar e telas parecidas ---- */
 .login { max-width: 440px; margin: 0 auto; padding: 30px 24px 40px; display: flex; flex-direction: column; gap: 20px; }
 .login .coluna { gap: 18px; }
@@ -598,7 +569,6 @@ a.botao { display: inline-flex; text-decoration: none; }
 html { color-scheme: light dark; }
 
 /* ---- Cabeçalho: logo, Atualizar e o menu da pessoa (Trocar minha senha, Sair) numa linha só ---- */
-.barra-linha { flex-wrap: nowrap; }
 .menu-pessoa { position: relative; order: 4; flex: none; }
 .menu-pessoa-botao { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 48px; min-height: 48px; padding: 0 12px; border: 2px solid var(--v-barra-texto); border-radius: 24px; background: transparent; color: var(--v-barra-texto); font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
 .menu-pessoa-botao[aria-expanded='true'] { background: var(--v-barra-texto); color: var(--v-barra); }
@@ -621,13 +591,6 @@ html { color-scheme: light dark; }
   .barra-abas:not(.duas) a, .barra-abas:not(.duas) .aba-mais { font-stretch: 78%; overflow-wrap: normal; }
   .barra-abas:not(.duas) a.ativo { font-weight: 700; }
   .barra-abas:not(.duas) .mais-destinos a { font-stretch: 100%; font-weight: 700; overflow-wrap: normal; }
-}
-@media (min-width: 1280px) {
-  .barra-abas .aba-mais { display: none; }
-  .mais-destinos, .mais-aberto .mais-destinos { display: contents; position: static; }
-  .mais-destinos a { gap: 8px; min-height: 48px; padding: 0 12px; border-radius: 10px; font-size: 16px; }
-  .mais-destinos a.ativo { background: var(--amarelo); }
-  .barra-linha .fantasma { order: 3; }
 }
 
 /* ---- Links, campos e caixinhas com toque de 48 px ---- */
@@ -670,3 +633,66 @@ summary { min-height: 48px; padding-block: 12px; box-sizing: border-box; }
 [data-testid='total-geral'] b, [data-testid='total-linha'] b { font-size: 32px; font-weight: 800; line-height: 1.1; }
 /* Botão desligado: continua legível (nunca abaixo de 4,5:1), sem esmaecer com transparência */
 .botao:disabled, .botao.secundario:disabled, .botao.perigo:disabled, .botao.perigo-contorno:disabled { opacity: 1; background: var(--v-neutro-fundo); color: var(--v-neutro); border: 2px solid var(--v-linha); cursor: not-allowed; }
+
+/* ======================================================================================================================================================
+   Padrão visual único, 2ª rodada (24/11/2026): menu lateral no computador, barra de 56 px com o título abaixo, esqueleto de carregando,
+   botão principal no lugar padrão, contador na cor de erro do manual.
+   ====================================================================================================================================================== */
+.app.com-menu { padding-left: var(--menu-w, 0px); }
+.barra-topo { margin-left: calc(var(--menu-w, 0px) * -1); }
+.barra-titulo { margin: 0 auto; width: 100%; max-width: 760px; padding: 28px 20px 4px; box-sizing: border-box; }
+.app > .faixa, .app > .voltar-menu { margin-left: 20px; }
+.app > .faixa { margin-top: 16px; }
+.recolher-menu { display: none; }
+
+/* contador de compras esperando: cor de erro da tabela do manual (cor + número) */
+.contador { background: var(--v-erro); color: var(--v-erro-fundo); }
+.barra-abas .contador { box-shadow: 0 0 0 2px var(--cartao); }
+
+/* Carregando: esqueleto cinza no lugar do texto (o texto continua para quem usa leitor de tela) */
+.centro { position: relative; min-height: 132px; overflow: hidden; text-indent: -9999px; white-space: nowrap; font-size: 16px; }
+.centro::before, .centro::after { content: ''; position: absolute; left: 0; right: 0; border-radius: var(--v-raio-cartao); background: var(--v-trilho); animation: esqueleto 1.4s ease-in-out infinite; }
+.centro::before { top: 8px; height: 56px; }
+.centro::after { top: 76px; height: 48px; width: 70%; }
+@keyframes esqueleto { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .centro::before, .centro::after { animation: none; } }
+
+/* Tela vazia: desenho + frase + o que fazer */
+.vazio { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.vazio::before { margin: 0 0 4px; }
+.vazio-passo { display: block; font-weight: 400; color: var(--suave); }
+p.sub.vazio { padding: 16px; }
+
+/* Botão principal: celular = fixo acima da barra de baixo (já era); a barra fixa vira "principal" amarelo */
+.rodape { z-index: 15; }
+.rodape .botao:not(.secundario):not(.perigo) { width: 100%; }
+
+@media (min-width: 1024px) {
+  .app.com-menu { --menu-w: 256px; padding-bottom: 32px; }
+  .app.com-menu.recolhido { --menu-w: 76px; }
+  .barra-topo { padding: 0 24px; }
+  .barra-topo::after { left: var(--menu-w); }
+  /* menu lateral grafite: item atual com texto e ícone amarelos */
+  .barra-abas, .barra-abas.duas { position: fixed; left: 0; right: auto; top: 56px; bottom: 0; z-index: 4; width: var(--menu-w); height: auto; padding: 24px 8px 16px; display: flex; flex-direction: column; gap: 4px; background: var(--v-barra); border: 0; overflow-y: auto; }
+  .barra-abas a, .barra-abas .mais-destinos a, .recolher-menu { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px; min-height: 56px; padding: 0 16px; border: 0; border-radius: 12px; color: var(--v-barra-texto); font-size: 17px; font-weight: 700; text-align: left; white-space: nowrap; font-stretch: 100%; }
+  .barra-abas a:hover, .recolher-menu:hover { background: rgba(255, 255, 255, .08); }
+  .barra-abas a.ativo, .barra-abas .mais-destinos a.ativo { background: rgba(255, 255, 255, .14); color: var(--amarelo); border: 0; font-weight: 800; }
+  .barra-abas a.com-contador { gap: 24px; }
+  .barra-abas .contador { box-shadow: 0 0 0 2px var(--v-barra); }
+  .barra-abas .aba-mais { display: none; }
+  .mais-destinos, .mais-aberto .mais-destinos { display: contents; position: static; }
+  .recolher-menu { margin-top: auto; background: transparent; border: 2px solid var(--v-barra-apoio); color: var(--v-barra-apoio); cursor: pointer; font-family: inherit; }
+  .recolher-menu:hover { color: var(--v-barra-texto); }
+  .app.recolhido .barra-abas a { justify-content: center; padding: 0; }
+  .app.recolhido .recolher-menu { justify-content: center; padding: 0; }
+  .app.recolhido .barra-abas a > span:last-child, .app.recolhido .recolher-menu > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .app.recolhido .barra-abas a.com-contador { gap: 0; }
+  .barra-abas a.ativo .aba-icone, .barra-abas a .aba-icone { color: inherit; }
+  /* botão principal da tela: canto direito do cabeçalho da página, na altura do título */
+  .rodape { position: fixed; top: 76px; right: 24px; left: auto; bottom: auto !important; width: auto; max-width: 420px; padding: 8px; background: var(--fundo); border: 0; border-radius: var(--v-raio-cartao); z-index: 15; }
+  .rodape > div { max-width: none; gap: 16px; }
+  .rodape .botao:not(.secundario):not(.perigo) { width: auto; min-width: 240px; }
+  .economia .rodape { position: static; }
+}
+.barra-linha { justify-content: flex-start; }
+.barra-linha .fantasma { margin-left: auto; }

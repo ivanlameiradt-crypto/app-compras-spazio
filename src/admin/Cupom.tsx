@@ -390,7 +390,7 @@ export default function Cupom() {
 
       <div className="grupo">Últimos envios</div>
       {falhaRecentes && <p className="erro" role="alert">Não consegui carregar os últimos envios.</p>}
-      {recentes.length === 0 ? (!falhaRecentes && <p className="sub">Nenhum envio ainda.</p>) : (
+      {recentes.length === 0 ? (!falhaRecentes && <p className="sub vazio">Nenhum envio ainda.<span className="vazio-passo">Escolha a forma de pagamento, anexe o cupom e toque em Enviar.</span></p>) : (
         <ul className="recentes">
           {recentes.map((c) => {
             const valor = valorDaLinha(c)
