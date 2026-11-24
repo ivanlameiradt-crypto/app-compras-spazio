@@ -235,12 +235,18 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
       {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.</p>}
       {fila.map((c) => (
         <div key={c.id} className="cartao">
-          <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
+          {/* Padrão visual único (23/11/2026): o nome à esquerda e o valor em destaque (32 px, peso 800) à direita. */}
+          <div className="cartao-topo">
+            <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
+            <strong className="valor">{formatarReais(Number(c.total_pago ?? 0))}</strong>
+          </div>
           <div className="sub">
-            {c.itens} itens · {formatarReais(Number(c.total_pago ?? 0))} ·{' '}
+            {c.itens} itens ·{' '}
             <span className="pill neutro">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>{' '}
             <span className={c.status === 'aprovada' ? 'pill ok' : 'pill atencao'}>{ROTULO_STATUS[c.status]}</span>
           </div>
+          {/* Padrão visual único (23/11/2026): o selo diz o estado e a frase ao lado diz o que fazer agora. */}
+          <p className="sub o-que-fazer">{c.status === 'aprovada' ? 'Falta marcar como lançada, depois de lançar no SisChef.' : 'Confira os itens e toque em Aprovar.'}</p>
           {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
           {cupomEmbutido[c.id] && <img src={cupomEmbutido[c.id]} alt="Foto do cupom fiscal" style={{ maxWidth: '100%', marginTop: 8 }} />}
           {aberta === c.id && (

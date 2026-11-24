@@ -44,13 +44,12 @@ export default function QuadroItem({ item, marcacao, jaCompradoPorOutros, etique
       </div>
       {erro && <p className="erro">{erro}</p>}
       <button className="botao" onClick={() => confirmar('comprado')}>Comprei</button>
-      <div className="linha">
-        <button className="link" onClick={() => confirmar('parcial')}>Achei só parte</button>
-        <button className="link perigo" onClick={() => confirmar('nao_achei')}>Não achei</button>
-      </div>
-      <div className="linha">
-        {marcacao ? <button className="link" onClick={onDesmarcar}>Desmarcar</button> : <span />}
-        <button className="link" onClick={onCancelar}>Cancelar</button>
+      {/* Padrão visual único (23/11/2026): as quatro ações são botões de 48 px, em grade de 2 colunas (empilham no aparelho estreito), e não links de 40 px colados. */}
+      <div className="acoes-item">
+        <button className="botao secundario" onClick={() => confirmar('parcial')}>Achei só parte</button>
+        <button className="botao secundario perigo-contorno" onClick={() => confirmar('nao_achei')}>Não achei</button>
+        {marcacao && <button className="botao secundario" onClick={onDesmarcar}>Desmarcar</button>}
+        <button className="botao secundario" onClick={onCancelar}>Cancelar</button>
       </div>
     </div>
   )

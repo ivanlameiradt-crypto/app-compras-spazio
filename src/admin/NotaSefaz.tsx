@@ -1239,7 +1239,7 @@ export default function NotaSefaz() {
           <ul className="conferir-itens">
             {descartadas.map((n) => (
               <li key={n.chave} data-testid="nota-descartada">
-                <span><b>{nomeDe(n)}</b> · NF {n.numero} · {ddmm(n.emissao)}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
+                <span><b>{nomeDe(n)}</b> · NF {n.numero} · {ddmm(n.emissao)}{n.valor_nf != null && <> · <b className="valor valor-linha">{formatarReais(n.valor_nf)}</b></>}</span>
                 {n.descartada_motivo && <span className="sub">Motivo: {n.descartada_motivo}</span>}
                 {descartadaVoltouComItens(n) && (
                   <span className="ok" data-testid="descartada-com-itens">
@@ -1267,7 +1267,7 @@ export default function NotaSefaz() {
                 <li key={n.chave} data-testid="nota-lancada">
                   <button type="button" className="recente-linha" aria-expanded={aberto}
                     onClick={() => setExpandido(aberto ? null : n.chave)}>
-                    <span><b>lançada ✓</b> · {nomeDe(n)} · NF {n.numero}{n.valor_nf != null && ` · ${formatarReais(n.valor_nf)}`}</span>
+                    <span><b>lançada ✓</b> · {nomeDe(n)} · NF {n.numero}{n.valor_nf != null && <> · <b className="valor valor-linha">{formatarReais(n.valor_nf)}</b></>}</span>
                     <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                   </button>
                   {aberto && <DetalheLancamento rotulo="NF no SisChef" pedido={n.nf_sischef} quando={n.lancada_em ? formatarDataHora(n.lancada_em) : null} rotuloQtd={false} itens={n.itens.map((it) => linhaDoItem(it, catalogo))}
