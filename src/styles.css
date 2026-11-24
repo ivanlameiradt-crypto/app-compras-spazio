@@ -696,3 +696,13 @@ p.sub.vazio { padding: 16px; }
 }
 .barra-linha { justify-content: flex-start; }
 .barra-linha .fantasma { margin-left: auto; }
+
+/* ---- Celular e tablet em pé (até 1023 px): os 5 destinos do administrador ficam à vista, sem "Mais" (pedido do Ivan, 24/11/2026).
+   Nome curto de 16 px em cada um (Compra, Lançar, Cupom, Fiscal, Avulsa); o nome inteiro continua no HTML (leitor de tela) e no menu lateral do computador. ---- */
+@media (max-width: 1023px) {
+  .barra-abas:not(.duas) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .barra-abas:not(.duas) a { font-stretch: 100%; padding: 0 2px; gap: 2px; overflow-wrap: normal; }
+  .barra-abas:not(.duas) a.ativo { font-weight: 800; }
+  .barra-abas:not(.duas) .aba-nome { font-size: 0; line-height: 0; }
+  .barra-abas:not(.duas) .aba-nome::after { content: attr(data-curto); font-size: 16px; line-height: 1.15; }
+}

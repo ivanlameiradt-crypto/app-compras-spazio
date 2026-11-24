@@ -192,12 +192,12 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Entrar' })).toBeInTheDocument()
   })
 
-  it('a barra de cima tem o logo e as ações Atualizar, Trocar minha senha e Sair', async () => {
+  it('a barra de cima tem o logo e as ações Trocar minha senha e Sair (sem o botão Atualizar)', async () => {
     estado = { carregando: false, sessao, usuario: { email: 'ivan@spazio.com', nome: 'Ivan', papel: 'admin', ativo: true } }
     render(<App />)
     const barra = (await screen.findByRole('banner')) as HTMLElement
     expect(within(barra).getByRole('img', { name: 'Comprar' })).toBeInTheDocument()
-    expect(within(barra).getByRole('button', { name: 'Atualizar' })).toBeInTheDocument()
+    expect(within(barra).queryByRole('button', { name: 'Atualizar' })).not.toBeInTheDocument()
     expect(within(barra).getByRole('link', { name: 'Trocar minha senha' })).toHaveAttribute('href', '#/senha')
     expect(within(barra).getByRole('button', { name: 'Sair' })).toBeInTheDocument()
   })
