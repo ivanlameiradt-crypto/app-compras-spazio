@@ -22,7 +22,7 @@ import { useMemo, useState } from 'react'
 import type { AssociacaoApp, ItemNotaSefaz, NfeAprendizado, ProdutoCatalogo } from '../lib/tipos'
 import {
   CONVERSAO_CASAS, CONVERSAO_MAXIMA, avisoDoUm, buscarProdutos, conversaoDaDecisao, fardoPeloNome, formatarConversao, formatarQuantidade, leituraDaEntrada, nomeParaMostrar, parseConversao, pesoPeloNome,
-  quantidadeNoEstoque, rotuloUnidade, situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
+  produtoUtensilio, quantidadeNoEstoque, rotuloUnidade, situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from './associacaoRegras'
 import { ProdutoNaoCadastrado, type OrigemProduto } from './CadastrarProduto'
 import { ACOES_PRODUTO } from './acoesProduto'
@@ -78,6 +78,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, aoT
   const sugestao = useMemo(() => sugestaoNoCatalogo(item, lista), [item, lista])
   const porPalavras = useMemo(() => sugestaoPorPalavras(item, lista), [item, lista])
   const busca = useMemo(() => buscarProdutos(lista, texto), [lista, texto])
+  const utensilio = useMemo(() => produtoUtensilio(lista), [lista])
   const resumoDaNota = descricaoCurta(item.descricao)
 
   // A decisão já gravada, como produto da lista (ou, sem a lista, com o que ficou guardado nela).
@@ -263,6 +264,18 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, aoT
               Nada na sua lista de insumos com isso. Tente outra palavra, parte do nome ou o código do SisChef.
             </p>
           )}
+          {/* Item que não é insumo (utensílio, material): vai para o produto genérico de utensílios, o total da nota não muda (pedido do Ivan, 25/11/2026) */}
+          {!enviando && (utensilio ? (
+            <p className="sub" data-testid="item-utensilio">
+              Não é insumo (utensílio, material)?{' '}
+              <button type="button" className="link" onClick={() => escolher(utensilio)} data-testid="usar-utensilio">Sem estoque (utensílio)</button>
+              {' '}O valor continua na nota e no boleto.
+            </p>
+          ) : (
+            <p className="sub" data-testid="item-utensilio-falta">
+              Item que não é insumo (utensílio, material)? Cadastre uma vez o produto “UTENSILIOS E MATERIAIS” pelo botão abaixo e, nas próximas notas, ele aparece aqui como “Sem estoque (utensílio)”.
+            </p>
+          ))}
           {/* Produto que o app não identificou: aviso + botão; com sugestão ou resultados na tela: só o botão discreto, sempre à mão (pedido do Ivan, 13/10) */}
           {!enviando && (
             <ProdutoNaoCadastrado descricaoDoItem={item.descricao ?? ''} acoes={ACOES_PRODUTO} origem={origemDoCadastro}

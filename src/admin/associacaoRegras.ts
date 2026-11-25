@@ -309,3 +309,12 @@ export function fardoPeloNome(descricao: string | null | undefined, unidadeNota:
   const e = embalagemPeloNome(descricao, unidadeNota)
   return e != null && /^SIX ?PACK$/.test(e.trecho) ? e : null
 }
+
+/**
+ * O produto genérico dos itens da nota que NÃO são insumo (utensílio, material: peneira, pano, tábua), pedido do Ivan em 25/11/2026 (NF 90565 do Mateus).
+ * Associar o item a ele mantém o total da nota igual e o boleto sai com o valor que veio; o item não vira insumo nem entra na ficha técnica.
+ * É o produto da lista cujo nome começa com "UTENSILIOS" (sem acento, qualquer caixa), cadastrado uma vez por "Cadastrar produto novo". Sem ele: null.
+ */
+export function produtoUtensilio(lista: ProdutoCatalogo[]): ProdutoCatalogo | null {
+  return lista.find((p) => !p.oculto && normalizar(p.nome).startsWith('utensilios')) ?? null
+}
