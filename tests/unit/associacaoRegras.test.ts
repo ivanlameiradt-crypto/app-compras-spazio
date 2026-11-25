@@ -1,5 +1,5 @@
 import {
-  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, avisoDoUm, buscarProdutos, conversaoDaDecisao, formatarConversao, leituraDaEntrada, nomeParaMostrar, parseConversao, rotuloUnidade,
+  CONVERSAO_CASAS, CONVERSAO_MAXIMA, MAX_RESULTADOS, avisoDoUm, buscarProdutos, conversaoDaDecisao, formatarConversao, leituraDaEntrada, nomeParaMostrar, parseConversao, produtoUtensilio, rotuloUnidade,
   situacaoConversao, sugestaoNoCatalogo, sugestaoPorPalavras, textoConversao,
 } from '../../src/admin/associacaoRegras'
 import type { AssociacaoApp, ItemNotaSefaz, ProdutoCatalogo } from '../../src/lib/tipos'
@@ -465,5 +465,15 @@ describe('avisoDoUm (o "1" entre unidades diferentes)', () => {
   it('as formas de digitar 1 que a caixa entende (1, 1,0, 1.000, 1,0000) viram 1 e avisam; 1,0001 não', () => {
     for (const digitado of ['1', '1,0', '1.000', '1,0000']) expect(avisoDoUm(parseConversao(digitado), 'UN', 'kg', true)).not.toBeNull()
     expect(avisoDoUm(parseConversao('1,0001'), 'UN', 'kg', true)).toBeNull()
+  })
+})
+
+describe('produtoUtensilio', () => {
+  it('acha o produto genérico pelo nome, sem acento e em qualquer caixa', () => {
+    expect(produtoUtensilio([...CATALOGO, p(9001, 'Utensílios e materiais', 'un')])?.produto_id).toBe(9001)
+  })
+  it('sem o produto na lista, devolve null; escondido não vale', () => {
+    expect(produtoUtensilio(CATALOGO)).toBeNull()
+    expect(produtoUtensilio([{ ...p(9001, 'UTENSILIOS E MATERIAIS', 'un'), oculto: true }])).toBeNull()
   })
 })
