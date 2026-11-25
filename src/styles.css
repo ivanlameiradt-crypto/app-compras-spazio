@@ -781,3 +781,5 @@ p.sub.vazio { padding: 16px; }
 .barra-linha .sino + .menu-pessoa { margin-left: 0; }
 .barra-linha > .menu-pessoa, .barra-linha > .sino { margin-left: auto; }
 .busca-linha .busca-campo input:not([type='checkbox']):not([type='radio']):not([type='file']) { padding-left: 46px; min-height: 56px; }
+.cartao-tarja > .acoes button:last-child:nth-child(odd) { grid-column: 1 / -1; border-right: 0; border-top: 1px solid var(--linha); }
+@media (min-width: 640px) { .cartao-tarja > .acoes button:last-child:nth-child(odd) { grid-column: auto; border-top: 0; } }

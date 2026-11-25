@@ -280,7 +280,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
               { valor: 'aprovada', nome: 'Prontas para lançar', numero: contar({ situacao: false }, 'aprovada'), tom: 'ok' },
               { valor: 'tudo', nome: 'Tudo', numero: contar({ situacao: false }), tom: 'neutro' },
             ]} />
-          <BuscaFiltros valor={busca} aoMudar={setBusca} rotulo="Buscar compra" placeholder="Buscar por loja ou comprador" ligados={(loja ? 1 : 0) + (periodo ? 1 : 0)} aoAbrir={() => setGaveta(true)} />
+          <BuscaFiltros valor={busca} aoMudar={setBusca} rotulo="Buscar compra" placeholder="Buscar loja ou comprador" ligados={(loja ? 1 : 0) + (periodo ? 1 : 0)} aoAbrir={() => setGaveta(true)} />
           <Fichas fichas={fichas} />
           <p className="sub">{filtrando ? `${visiveis.length} de ${fila.length} compras` : `${fila.length} compras`}</p>
           {visiveis.length === 0 && <p className="vazio">Nenhuma compra com esse filtro.<span className="vazio-passo">Toque em Tudo ou tire as fichas acima.</span></p>}
