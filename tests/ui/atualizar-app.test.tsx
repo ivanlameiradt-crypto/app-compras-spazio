@@ -20,34 +20,10 @@ beforeEach(() => {
   a.useNovaVersao.mockReturnValue(null)
 })
 
-describe('Botão Atualizar do topo (pedido do Ivan, 07/10: não precisar sair e entrar no app)', () => {
-  const montar = () => render(<MemoryRouter><Layout usuario={ADMIN}><p>tela</p></Layout></MemoryRouter>)
-
-  it('o botão está no topo; sem versão nova ele recarrega a tela para ler os dados de novo', async () => {
-    a.conferirVersao.mockResolvedValue('igual')
-    montar()
-    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    await waitFor(() => expect(a.recarregarPagina).toHaveBeenCalledTimes(1))
-    expect(a.conferirVersao).toHaveBeenCalledWith('manual')
-  })
-
-  it('com versão nova ele troca de versão (a página recarrega por conta própria): não recarrega duas vezes', async () => {
-    a.conferirVersao.mockResolvedValue('aplicando')
-    montar()
-    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    await waitFor(() => expect(a.conferirVersao).toHaveBeenCalledWith('manual'))
-    expect(a.recarregarPagina).not.toHaveBeenCalled()
-  })
-
-  it('sem internet (servidor não responde): ainda recarrega a tela, e o botão não deixa tocar duas vezes enquanto trabalha', async () => {
-    let liberar!: (v: 'sem_resposta') => void
-    a.conferirVersao.mockReturnValue(new Promise((r) => { liberar = r }))
-    montar()
-    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    expect(screen.getByRole('button', { name: 'Atualizando…' })).toBeDisabled()
-    await act(async () => { liberar('sem_resposta') })
-    await waitFor(() => expect(a.recarregarPagina).toHaveBeenCalledTimes(1))
-    expect(a.conferirVersao).toHaveBeenCalledTimes(1)
+describe('O botão "Atualizar" do topo saiu (pedido do Ivan, 24/11/2026): a janela obrigatória de versão nova já pede a atualização', () => {
+  it('a barra de cima não tem mais o botão Atualizar', () => {
+    render(<MemoryRouter><Layout usuario={ADMIN}><p>tela</p></Layout></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: 'Atualizar' })).not.toBeInTheDocument()
   })
 })
 
@@ -76,11 +52,11 @@ describe('Janela "Tem uma versão nova do app." (regra do dono, 13/11: nunca rec
     expect(a.aplicarNovaVersao).toHaveBeenCalledWith('xyz123')
   })
 
-  it('o Layout mostra a janela (além do botão Atualizar do topo)', () => {
+  it('o Layout mostra a janela (e só ela: o botão Atualizar do topo saiu)', () => {
     a.useNovaVersao.mockReturnValue('xyz123')
     render(<MemoryRouter><Layout usuario={ADMIN}><p>tela</p></Layout></MemoryRouter>)
     expect(screen.getByTestId('aviso-nova-versao')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Atualizar' })).toHaveLength(1) // o do topo
+    expect(screen.queryByRole('button', { name: 'Atualizar' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Atualizar agora' })).toHaveLength(1) // o da janela
   })
 })

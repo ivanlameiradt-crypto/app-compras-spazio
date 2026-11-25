@@ -4,7 +4,6 @@ import * as api from '../lib/api'
 import type { Usuario } from '../lib/tipos'
 import AvisoFila from './AvisoFila'
 import AvisoNovaVersao from './AvisoNovaVersao'
-import { conferirVersao, recarregarPagina } from '../lib/atualizacao'
 import { LogoComprar } from './marca/Comprar'
 import { Icone, type NomeIcone } from './Icones'
 import { SlotDoTitulo } from './TituloDaTela'
@@ -14,12 +13,13 @@ import { podeSair } from '../lib/naoEnviado'
 // grade de 4 telas (Lista, Pedidos, Receber, Resultados) mais o link "Ajustes" (Cadastros); Lançamentos (a fila de compras esperando lançamento),
 // Cupom e Fiscal (a nota da SEFAZ) e Compras avulsas são cada um sua tela.
 type ChaveAba = 'compra' | 'lancamentos' | 'cupom' | 'sefaz' | 'avulsa'
-const ABAS: readonly { chave: ChaveAba; to: string; rotulo: string; ic: NomeIcone }[] = [
-  { chave: 'compra', to: '/compra', rotulo: 'Compra', ic: 'carrinho' },
-  { chave: 'lancamentos', to: '/lancamentos', rotulo: 'Lançamentos', ic: 'lancamentos' },
-  { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', ic: 'cupom' },
-  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', ic: 'fiscal' },
-  { chave: 'avulsa', to: '/compra-avulsa', rotulo: 'Compras avulsas', ic: 'sacola' },
+// "curto" é o nome que aparece na barra de baixo do celular (5 destinos de 78 px cada, sem "Mais"); o nome inteiro continua no HTML e no menu lateral do computador.
+const ABAS: readonly { chave: ChaveAba; to: string; rotulo: string; curto: string; ic: NomeIcone }[] = [
+  { chave: 'compra', to: '/compra', rotulo: 'Compra', curto: 'Compra', ic: 'carrinho' },
+  { chave: 'lancamentos', to: '/lancamentos', rotulo: 'Lançamentos', curto: 'Lançar', ic: 'lancamentos' },
+  { chave: 'cupom', to: '/cupom', rotulo: 'Lançamento de cupom', curto: 'Cupom', ic: 'cupom' },
+  { chave: 'sefaz', to: '/nota-sefaz', rotulo: 'Lançamento fiscal', curto: 'Fiscal', ic: 'fiscal' },
+  { chave: 'avulsa', to: '/compra-avulsa', rotulo: 'Compras avulsas', curto: 'Avulsa', ic: 'sacola' },
 ]
 
 /** Quem só compra e recebe (perfil comprador) vê duas telas na barra. A tela "Comprar" passou a se chamar "Fazer compra" (o app inteiro é o "Comprar"). */
@@ -39,7 +39,6 @@ function abaAtual(pathname: string): ChaveAba {
 
 export default function Layout({ usuario, offline = false, children }: { usuario: Usuario; offline?: boolean; children: ReactNode }) {
   const [aguardando, setAguardando] = useState(0)
-  const [atualizando, setAtualizando] = useState(false)
   const [slotTitulo, setSlotTitulo] = useState<HTMLElement | null>(null)
   // Menu da pessoa (Trocar minha senha, Sair) e "Mais" da barra de baixo (padrão visual único, 23/11/2026): abrem e fecham por aqui; as opções ficam sempre no HTML.
   const [menuPessoa, setMenuPessoa] = useState(false)
@@ -54,16 +53,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
     </button>
   )
   const admin = usuario.papel === 'admin'
-  // Botão Atualizar (pedido do Ivan, 07/10): o iPhone instalado não tem "puxar para atualizar" e ele não deve precisar sair do app. Confere a versão no ar:
-  // se saiu versão nova, troca já (a tela fica a mesma); se não, recarrega a tela para ler os dados de novo (rascunhos como as parcelas ficam guardados no aparelho).
-  async function atualizar() {
-    if (atualizando) return
-    // 13/11/2026: recarregar joga fora o que foi digitado e ainda não enviado (compra avulsa, correção de cupom): com dados pendentes, pergunta antes; "Cancelar" não faz nada
-    if (!podeSair()) return
-    setAtualizando(true)
-    const r = await conferirVersao('manual')
-    if (r !== 'aplicando') recarregarPagina()
-  }
+  // O botão "Atualizar" do topo saiu em 24/11/2026 (pedido do Ivan): a janela obrigatória "Tem uma versão nova do app." já pede a atualização.
   const loc = useLocation()
   const aba = abaAtual(loc.pathname)
   // trocar de tela fecha os dois menus; Esc também
@@ -104,7 +94,7 @@ export default function Layout({ usuario, offline = false, children }: { usuario
           <Icone nome={a.ic} tamanho={26} />
           {comContador && <span className="contador">{aguardando}</span>}
         </span>
-        <span>{a.rotulo}</span>
+        <span className="aba-nome" data-curto={a.curto}>{a.rotulo}</span>
       </Link>
     )
   }
@@ -114,10 +104,6 @@ export default function Layout({ usuario, offline = false, children }: { usuario
         <div className="barra-topo">
         <div className="barra-linha">
           <LogoComprar altura={30} cor="#FFFFFF" />
-          <button type="button" className="fantasma" disabled={atualizando} onClick={() => void atualizar()}>
-            <Icone nome="atualizar" tamanho={18} />
-            {atualizando ? 'Atualizando…' : 'Atualizar'}
-          </button>
           <div className={menuPessoa ? 'menu-pessoa aberto' : 'menu-pessoa'}>
             <button type="button" className="menu-pessoa-botao" aria-expanded={menuPessoa} aria-label={`Minha conta: ${usuario.nome}`} onClick={() => setMenuPessoa((v) => !v)}>
               <Icone nome="pessoa" tamanho={24} />
@@ -133,13 +119,8 @@ export default function Layout({ usuario, offline = false, children }: { usuario
         <div className="barra-titulo" ref={setSlotTitulo} />
         {admin ? (
           <nav className={maisAberto ? 'barra-abas mais-aberto' : 'barra-abas'} aria-label="Seções">
-            {ABAS.slice(0, 3).map(destino)}
-            {/* "Mais" (só no celular e tablet em pé): guarda Lançamento fiscal e Compras avulsas. Em tela larga some e os cinco destinos ficam na barra de cima. */}
-            <button type="button" className={aba === 'sefaz' || aba === 'avulsa' ? 'aba-mais ativo' : 'aba-mais'} aria-expanded={maisAberto} aria-controls="mais-destinos" onClick={() => setMaisAberto((v) => !v)}>
-              <span className="aba-icone"><Icone nome="mais" tamanho={26} /></span>
-              <span>Mais</span>
-            </button>
-            <div id="mais-destinos" className="mais-destinos">{ABAS.slice(3).map(destino)}</div>
+            {/* Os cinco destinos ficam sempre à vista (pedido do Ivan, 24/11/2026): no celular com nome curto, sem "Mais". */}
+            {ABAS.map(destino)}
             {botaoRecolher}
           </nav>
         ) : (
