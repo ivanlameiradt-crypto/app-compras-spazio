@@ -20,6 +20,7 @@ import { chaveCot, ContextoCotacoes, useCotacoes, type Contexto, type Sessao } f
 import { BotoesCopiar, LinkWhatsApp } from './cotacoes/Copiar'
 import { prontaSemSinal } from './cotacoes/estado'
 import { textoMotivo } from './cotacoes/formato'
+import { BuscaFiltros, Fichas, GavetaFiltros, GrupoFiltro } from '../components/pecas/Filtros'
 import TituloDaTela from '../components/TituloDaTela'
 import { hojeLocal } from './ListaSemana'
 import { qtdNaTela } from './listaSemanaRegras'
@@ -279,13 +280,36 @@ async function checarSaude(codigo: string | null, itens: number): Promise<string
 
 function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) {
   const grupos = useGruposDeLoja(dados, preparo)
+  // manual visual v2 (5B): com muitos vendedores, busca por nome + gaveta de filtros (com ou sem cotação). Só aparência: os cartões são os mesmos.
+  const [busca, setBusca] = useState('')
+  const [pedido, setPedido] = useState<string | null>(null)
+  const [gaveta, setGaveta] = useState(false)
   const cotacoesDe = (vendedorId: number) => {
     const cartao = preparo.cartoes.find((c) => c.vendedor_id === vendedorId)
     const ids = cartao?.cotacoes ?? []
     return ids.map((id) => dados.daSemana.find((c) => c.id === id)).filter((c): c is Cotacao => c != null)
   }
+  const semAcento = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  const termo = semAcento(busca.trim())
+  const comCotacao = (vendedorId: number) => cotacoesDe(vendedorId).length > 0
+  const nomeDe = (vendedorId: number) => dados.vendedores.find((x) => x.id === vendedorId)?.nome ?? ''
+  const passa = (cartao: Preparo['cartoes'][number], p: string | null) => (!p || (p === 'Com cotação') === comCotacao(cartao.vendedor_id)) && (!termo || semAcento(nomeDe(cartao.vendedor_id)).includes(termo))
+  const cartoesVisiveis = preparo.cartoes.filter((c) => passa(c, pedido))
+  const comFiltros = preparo.cartoes.length >= 5
   return (
     <>
+      {comFiltros && (
+        <>
+          <BuscaFiltros valor={busca} aoMudar={setBusca} rotulo="Buscar vendedor" ligados={pedido ? 1 : 0} aoAbrir={() => setGaveta(true)} />
+          <Fichas fichas={pedido ? [{ chave: 'pedido', rotulo: pedido, aoTirar: () => setPedido(null) }] : []} />
+          {gaveta && (
+            <GavetaFiltros aoFechar={() => setGaveta(false)} aoLimpar={() => { setPedido(null); setBusca('') }} total={cartoesVisiveis.length} unidade={['vendedor', 'vendedores']}>
+              <GrupoFiltro titulo="Cotação" valor={pedido} aoEscolher={setPedido}
+                opcoes={['Com cotação', 'Sem cotação ainda'].map((g) => ({ valor: g, contagem: preparo.cartoes.filter((c) => passa(c, g)).length }))} />
+            </GavetaFiltros>
+          )}
+        </>
+      )}
       <CompraNaLoja grupos={grupos} />
       <ForaDaCotacao titulo="Fora da cotação já enviada" linhas={preparo.fora_da_enviada} dados={dados}
         botao={(rotulo, versao) => `Gerar v${versao} para ${rotulo} incluindo`} />
@@ -294,7 +318,7 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
       <DaSemanaAnterior linhas={preparo.atravessados} dados={dados} />
       <NaoEnviadas cotacoes={[...dados.daSemana, ...dados.anteriores]} />
       {preparo.cartoes.length === 0 && <p className="vazio">Nenhum item com vendedor nesta semana.<span className="vazio-passo">Associe um vendedor aos itens em Cadastros.</span></p>}
-      {preparo.cartoes.map((cartao) => {
+      {cartoesVisiveis.map((cartao) => {
         const v = dados.vendedores.find((x) => x.id === cartao.vendedor_id)
         if (!v) return null
         return <CartaoVendedor key={v.id} v={v} cartao={cartao} cotacoes={cotacoesDe(v.id)} daSemana />

@@ -297,8 +297,10 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
           })}
         </div>
       ))}
-      <div className="rodape">
+      {/* Rodapé fixo com resumo (manual v2, 5B-7): o que vai acontecer + o botão principal de 60 px. */}
+      <div className="rodape com-resumo">
         <div>
+          <p className="resumo-linha"><b>{c.loja}</b> · {feitos} de {dados.itens.length} itens · <b>{formatarReais(totalMarcado)}</b>{minhas.size === 0 && ' · marque ao menos um item para fechar'}</p>
           <button className="botao" style={{ flex: 1 }} onClick={() => setFechando(true)} disabled={minhas.size === 0}>
             Fechar compra desta loja (nota / cupom)
           </button>

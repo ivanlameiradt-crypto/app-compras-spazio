@@ -37,6 +37,12 @@ function abaAtual(pathname: string): ChaveAba {
   return 'compra'
 }
 
+/** As iniciais do nome para o avatar do cabeçalho: primeira letra do primeiro e do último nome ("Ana Souza" = "AS"). */
+function iniciais(nome: string): string {
+  const p = (nome || '').trim().split(/\s+/).filter(Boolean)
+  return p.length === 0 ? '?' : (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase()
+}
+
 export default function Layout({ usuario, offline = false, children }: { usuario: Usuario; offline?: boolean; children: ReactNode }) {
   const [aguardando, setAguardando] = useState(0)
   const [slotTitulo, setSlotTitulo] = useState<HTMLElement | null>(null)
@@ -104,9 +110,15 @@ export default function Layout({ usuario, offline = false, children }: { usuario
         <div className="barra-topo">
         <div className="barra-linha">
           <LogoComprar altura={30} cor="#FFFFFF" />
+          {admin && aguardando > 0 && (
+            <Link to="/lancamentos" className="sino" aria-label={`${aguardando} ${aguardando === 1 ? 'compra esperando' : 'compras esperando'} aprovação`} onClick={(e) => aoTrocarDeAba(e, '/lancamentos')}>
+              <Icone nome="sino" tamanho={26} />
+              <span className="contador" aria-hidden="true">{aguardando}</span>
+            </Link>
+          )}
           <div className={menuPessoa ? 'menu-pessoa aberto' : 'menu-pessoa'}>
             <button type="button" className="menu-pessoa-botao" aria-expanded={menuPessoa} aria-label={`Minha conta: ${usuario.nome}`} onClick={() => setMenuPessoa((v) => !v)}>
-              <Icone nome="pessoa" tamanho={24} />
+              <span className="avatar" aria-hidden="true">{iniciais(usuario.nome)}</span>
               <span className="menu-pessoa-nome">{(usuario.nome || '').split(' ')[0]}</span>
             </button>
             <div className="menu-pessoa-lista">

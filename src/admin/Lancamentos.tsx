@@ -8,6 +8,17 @@ import {
   ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, lerNumero, mensagemDeErro,
 } from '../lib/regras'
 import TituloDaTela from '../components/TituloDaTela'
+import { BuscaFiltros, CartoesSituacao, Fichas, GavetaFiltros, GrupoFiltro, type Ficha } from '../components/pecas/Filtros'
+
+type Periodo = 'Últimos 7 dias' | 'Últimos 30 dias' | 'Mais de 30 dias'
+const PERIODOS: Periodo[] = ['Últimos 7 dias', 'Últimos 30 dias', 'Mais de 30 dias']
+const DIA_MS = 86_400_000
+const semAcento = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+function noPeriodo(fechadaEm: string | null, p: Periodo): boolean {
+  if (!fechadaEm) return false
+  const dias = (Date.now() - new Date(fechadaEm).getTime()) / DIA_MS
+  return p === 'Últimos 7 dias' ? dias <= 7 : p === 'Últimos 30 dias' ? dias <= 30 : dias > 30
+}
 
 /** Prazo de uma gravação do cartão: sem resposta até aqui, a trava do cartão é solta com um aviso (revisão do PR 91). */
 const PRAZO_DA_ACAO_MS = 20_000
@@ -31,6 +42,12 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
   // mesmo lugar (o "Aprovar" vira "Marcar como lançada no SisChef") tirava a compra da fila sem querer.
   const [ocupados, setOcupados] = useState<ReadonlyMap<string, AcaoDoCartao>>(new Map())
   const ocupadosAgora = useRef(new Map<string, AcaoDoCartao>()) // a trava vale já no clique, antes de a tela redesenhar
+  // Manual visual v2 (5B): situação como filtro, busca e gaveta de filtros (loja e período). Só aparência: a lista e as ações são as mesmas.
+  const [situacao, setSituacao] = useState<'fechada' | 'aprovada' | null>(null)
+  const [busca, setBusca] = useState('')
+  const [loja, setLoja] = useState<string | null>(null)
+  const [periodo, setPeriodo] = useState<Periodo | null>(null)
+  const [gaveta, setGaveta] = useState(false)
 
   useEffect(() => {
     api.filaLancamentos().then(setFila).catch((e) => { setErro(mensagemDeErro(e)); setFila([]) })
@@ -187,10 +204,32 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
 
   if (fila === undefined) return <p className="centro">Carregando…</p>
   const deOutros = travando ? abertas.filter((a) => a.comprador !== usuario.email) : []
+  const todas = fila
+  const lojas = [...new Set(fila.map((c) => c.loja))].sort()
+  const termo = semAcento(busca.trim())
+  /** Quantas compras passam nos filtros ligados. `ignorar` solta um filtro (para contar as opções dele); os 3 últimos parâmetros testam uma opção sem ligá-la. */
+  function contar(ignorar: { situacao?: false; loja?: false; periodo?: false }, qualSituacao?: 'fechada' | 'aprovada', qualLoja?: string, qualPeriodo?: Periodo): number {
+    return todas.filter((c) => {
+      const s = ignorar.situacao === false ? qualSituacao : situacao
+      const l = ignorar.loja === false ? qualLoja : loja
+      const p = ignorar.periodo === false ? qualPeriodo : periodo
+      if (s && c.status !== s) return false
+      if (l && c.loja !== l) return false
+      if (p && !noPeriodo(c.fechada_em, p)) return false
+      if (termo && !semAcento(`${c.loja} ${c.comprador_nome}`).includes(termo)) return false
+      return true
+    }).length
+  }
+  const visiveis = fila.filter((c) => (!situacao || c.status === situacao) && (!loja || c.loja === loja) && (!periodo || noPeriodo(c.fechada_em, periodo))
+    && (!termo || semAcento(`${c.loja} ${c.comprador_nome}`).includes(termo)))
+  const filtrando = !!(situacao || loja || periodo || termo)
+  const fichas: Ficha[] = [
+    ...(loja ? [{ chave: 'loja', rotulo: loja, aoTirar: () => setLoja(null) }] : []),
+    ...(periodo ? [{ chave: 'periodo', rotulo: periodo, aoTirar: () => setPeriodo(null) }] : []),
+  ]
   return (
     <section>
       <TituloDaTela>Lançamentos</TituloDaTela>
-      <p className="sub">{fila.length} compras</p>
       {erro && <p className="erro">{erro}</p>}
       {erroFila && (
         <p className="erro" data-testid="erro-fila">
@@ -233,43 +272,71 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
         </>
       )}
       {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.<span className="vazio-passo">Quando um comprador fechar uma compra, ela aparece aqui. Toque em Atualizar para conferir.</span></p>}
-      {fila.map((c) => (
-        <div key={c.id} className="cartao">
-          {/* Padrão visual único (23/11/2026): o nome à esquerda e o valor em destaque (32 px, peso 800) à direita. */}
-          <div className="cartao-topo">
-            <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
-            <strong className="valor">{formatarReais(Number(c.total_pago ?? 0))}</strong>
+      {fila.length > 0 && (
+        <>
+          <CartoesSituacao valor={situacao ?? 'tudo'} aoEscolher={(v) => setSituacao(v === 'fechada' || v === 'aprovada' ? v : null)}
+            situacoes={[
+              { valor: 'fechada', nome: ROTULO_STATUS.fechada, numero: contar({ situacao: false }, 'fechada'), tom: 'atencao' },
+              { valor: 'aprovada', nome: 'Prontas para lançar', numero: contar({ situacao: false }, 'aprovada'), tom: 'ok' },
+              { valor: 'tudo', nome: 'Tudo', numero: contar({ situacao: false }), tom: 'neutro' },
+            ]} />
+          <BuscaFiltros valor={busca} aoMudar={setBusca} rotulo="Buscar compra" placeholder="Buscar por loja ou comprador" ligados={(loja ? 1 : 0) + (periodo ? 1 : 0)} aoAbrir={() => setGaveta(true)} />
+          <Fichas fichas={fichas} />
+          <p className="sub">{filtrando ? `${visiveis.length} de ${fila.length} compras` : `${fila.length} compras`}</p>
+          {visiveis.length === 0 && <p className="vazio">Nenhuma compra com esse filtro.<span className="vazio-passo">Toque em Tudo ou tire as fichas acima.</span></p>}
+        </>
+      )}
+      {gaveta && (
+        <GavetaFiltros aoFechar={() => setGaveta(false)} aoLimpar={() => { setLoja(null); setPeriodo(null); setSituacao(null); setBusca('') }} total={visiveis.length} unidade={['compra', 'compras']}>
+          <GrupoFiltro titulo="Loja" valor={loja} aoEscolher={setLoja} opcoes={lojas.map((l) => ({ valor: l, contagem: contar({ loja: false }, undefined, l) }))} />
+          <GrupoFiltro titulo="Situação" valor={situacao === 'fechada' ? ROTULO_STATUS.fechada : situacao === 'aprovada' ? 'Prontas para lançar' : null}
+            aoEscolher={(v) => setSituacao(v === ROTULO_STATUS.fechada ? 'fechada' : v === 'Prontas para lançar' ? 'aprovada' : null)}
+            opcoes={[{ valor: ROTULO_STATUS.fechada, contagem: contar({ situacao: false }, 'fechada') }, { valor: 'Prontas para lançar', contagem: contar({ situacao: false }, 'aprovada') }]} />
+          <GrupoFiltro titulo="Período (quando foi fechada)" valor={periodo} aoEscolher={(v) => setPeriodo(v as Periodo | null)}
+            opcoes={PERIODOS.map((p) => ({ valor: p, contagem: contar({ periodo: false }, undefined, undefined, p) }))} />
+        </GavetaFiltros>
+      )}
+      {visiveis.map((c) => (
+        <div key={c.id} className={`cartao cartao-tarja ${c.status === 'aprovada' ? 'ok' : 'atencao'}`}>
+          {/* Cartão com tarja lateral (manual v2, 5B-5): à esquerda a palavra do estado; no meio o nome, os dados e o valor em 32 px; no rodapé as ações. */}
+          <div className="tarja">
+            <Icone nome={c.status === 'aprovada' ? 'check' : 'relogio'} tamanho={28} />
+            <b>{ROTULO_STATUS[c.status]}</b>
           </div>
-          <div className="sub">
-            {c.itens} itens ·{' '}
-            <span className="pill neutro">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>{' '}
-            <span className={c.status === 'aprovada' ? 'pill ok' : 'pill atencao'}>{ROTULO_STATUS[c.status]}</span>
+          <div className="miolo">
+            <div className="cartao-topo">
+              <div className="nome">{c.loja} · {c.fechada_em ? formatarData(c.fechada_em) : ''} · {c.comprador_nome}</div>
+              <strong className="valor">{formatarReais(Number(c.total_pago ?? 0))}</strong>
+            </div>
+            <div className="sub">
+              {c.itens} itens ·{' '}
+              <span className="pill neutro">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>
+            </div>
+            <p className="sub o-que-fazer">{c.status === 'aprovada' ? 'Falta marcar como lançada, depois de lançar no SisChef.' : 'Confira os itens e toque em Aprovar.'}</p>
+            {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
+            {cupomEmbutido[c.id] && <img src={cupomEmbutido[c.id]} alt="Foto do cupom fiscal" style={{ maxWidth: '100%', marginTop: 8 }} />}
+            {aberta === c.id && (
+              <table>
+                <thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th /></tr></thead>
+                <tbody>
+                  {linhas.map((l) => (
+                    <tr key={l.id}>
+                      <td>{l.produto}</td>
+                      <td>{l.resultado === 'nao_achei' ? 'não achou' : formatarQtd(Number(l.qtd), l.unidade)}</td>
+                      <td>{l.preco_unit == null ? '—' : formatarReais(Number(l.preco_unit))}</td>
+                      <td><button className="link" onClick={() => corrigir(l)}>Corrigir</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-          {/* Padrão visual único (23/11/2026): o selo diz o estado e a frase ao lado diz o que fazer agora. */}
-          <p className="sub o-que-fazer">{c.status === 'aprovada' ? 'Falta marcar como lançada, depois de lançar no SisChef.' : 'Confira os itens e toque em Aprovar.'}</p>
-          {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
-          {cupomEmbutido[c.id] && <img src={cupomEmbutido[c.id]} alt="Foto do cupom fiscal" style={{ maxWidth: '100%', marginTop: 8 }} />}
-          {aberta === c.id && (
-            <table>
-              <thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th /></tr></thead>
-              <tbody>
-                {linhas.map((l) => (
-                  <tr key={l.id}>
-                    <td>{l.produto}</td>
-                    <td>{l.resultado === 'nao_achei' ? 'não achou' : formatarQtd(Number(l.qtd), l.unidade)}</td>
-                    <td>{l.preco_unit == null ? '—' : formatarReais(Number(l.preco_unit))}</td>
-                    <td><button className="link" onClick={() => corrigir(l)}>Corrigir</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <div className="linha" style={{ marginTop: 8 }}>
-            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}>{ocupados.get(c.id) === 'itens' ? 'Carregando…' : aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
-            <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}>{ocupados.get(c.id) === 'total' ? 'Gravando…' : 'Corrigir total/nota'}</button>
+          <div className="acoes">
+            <button disabled={ocupados.has(c.id)} onClick={() => verItens(c.id)}><Icone nome="lista" tamanho={22} />{ocupados.get(c.id) === 'itens' ? 'Carregando…' : aberta === c.id ? 'Esconder itens' : 'Ver itens'}</button>
+            <button disabled={ocupados.has(c.id)} onClick={() => corrigirTotal(c)}><Icone nome="lancamentos" tamanho={22} />{ocupados.get(c.id) === 'total' ? 'Gravando…' : 'Corrigir total/nota'}</button>
             {c.status === 'fechada'
-              ? <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}>{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
-              : <button className="botao secundario" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}>{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
+              ? <button className="principal" disabled={ocupados.has(c.id)} onClick={() => aprovar(c.id)}><Icone nome="check" tamanho={22} />{ocupados.get(c.id) === 'aprovar' ? 'Gravando…' : 'Aprovar'}</button>
+              : <button className="principal" disabled={ocupados.has(c.id)} onClick={() => lancada(c.id)}><Icone nome="fiscal" tamanho={22} />{ocupados.get(c.id) === 'lancada' ? 'Gravando…' : 'Marcar como lançada no SisChef'}</button>}
           </div>
         </div>
       ))}
