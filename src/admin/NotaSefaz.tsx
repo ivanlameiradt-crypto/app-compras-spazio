@@ -16,6 +16,8 @@ import { unidadeDoProduto } from './unidadeEstoque'
 import FreteDaNota, { type FreteConfirmado } from './FreteDaNota'
 import { freteGravado, type ItemParaRateio } from './freteRegras'
 import AssociarProduto from './AssociarProduto'
+import LerBoletoPorFoto from './LerBoletoPorFoto'
+import type { BoletoLido } from './boletoRegras'
 import { conversaoDaDecisao, nomeParaMostrar, rotuloUnidade, textoConversao } from './associacaoRegras'
 import { ConversaoItemAssociado } from './ConversaoItemAssociado'
 import { memoriaDoItem } from './embalagemLembrada'
@@ -268,6 +270,21 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
     let k = 0
     onChange(linhas.map((l, i) => (alvo.includes(i) ? { ...l, valor: dividido[k++] } : l)))
   }
+  // Boleto lido pela foto (ou pelo número digitado): preenche a primeira linha em branco ou abre uma nova. Boleto que já está na lista não entra de novo.
+  const receberBoleto = (b: BoletoLido): { ok: boolean; texto: string } => {
+    if (b.valor == null) return { ok: false, texto: 'Este boleto não traz o valor.' }
+    const venc = b.vencimento ?? ''
+    if (venc !== '' && linhas.some((l) => l.vencimento === venc && parseValorBr(l.valor) === b.valor)) return { ok: false, texto: 'Esse boleto já está na lista de parcelas.' }
+    const nova: LinhaParcela = { vencimento: venc, valor: formatarValorBr(b.valor) }
+    const vazia = linhas.findIndex(emBranco)
+    onChange(vazia >= 0 ? linhas.map((l, i) => (i === vazia ? nova : l)) : [...linhas, nova])
+    const hoje = new Date()
+    const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+    const base = venc === ''
+      ? `Boleto lido: ${formatarReais(b.valor)}. Ele não traz data de vencimento: informe a data na parcela.`
+      : `Boleto lido: vence ${dataBr(venc)} · ${formatarReais(b.valor)}. Confira nas parcelas abaixo.`
+    return { ok: true, texto: venc !== '' && venc < hojeIso ? `${base} Atenção: esse vencimento já passou.` : base }
+  }
   // Recomeça: uma linha só, sem data e sem valor (apaga também o rascunho guardado neste aparelho).
   const limpar = () => onChange([{ vencimento: '', valor: '' }])
   // "Valores iguais" que não fecham por 1 ou 2 centavos (R$ 1.794,49 / 3): explica e aponta a saída, em vez de só dizer "faltam 0,01".
@@ -297,6 +314,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           confirmado aqui no app, com a conversão de unidade se precisar).
         </p>
       )}
+      {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={receberBoleto} />}
       {linhas.map((l, i) => (
         <div key={i} className="linha-parcela" data-testid="linha-parcela">
           <label>Vencimento da parcela {i + 1}
