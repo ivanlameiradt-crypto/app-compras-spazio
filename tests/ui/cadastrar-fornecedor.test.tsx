@@ -314,7 +314,7 @@ describe('CadastrarFornecedor — nota: pedido parado, cadastro antigo e robô o
     expect(screen.queryByTestId('cadastro-antigo')).not.toBeInTheDocument()
   })
 
-  it('robô ocupado com outra nota: o botão Cadastrar espera (o GitHub guarda só um pedido na fila e cancelaria um dos dois)', async () => {
+  it('robô ocupado com outra nota: o botão Cadastrar espera (só cabe um pedido por vez na fila, e um dos dois seria cancelado)', async () => {
     const a = acoes({ consultarCnpj: vi.fn().mockResolvedValue(PLAST) })
     abrirNotaCom(a, { ocupado: true })
     await userEvent.click(screen.getByTestId('buscar-cnpj'))

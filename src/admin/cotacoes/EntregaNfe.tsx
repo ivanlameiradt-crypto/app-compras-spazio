@@ -45,11 +45,11 @@ export default function EntregaNfe({ cotacao, vendedor }: { cotacao: number; ven
       </p>
       <p>{estadoRecebimento(linhas)}</p>
 
-      <h4>NF-e</h4>
-      {nfes.length === 0 && <p>NF-e ainda não apareceu.</p>}
+      <h4>Nota fiscal</h4>
+      {nfes.length === 0 && <p>A nota fiscal ainda não apareceu.</p>}
       {nfes.map((n) => (
         <p key={n.chave}>
-          NF-e {n.numero} · {ddmm(n.emissao)} · {reais(n.valor_nf)} · {textoSituacao(n)}
+          Nota fiscal {n.numero} · {ddmm(n.emissao)} · {reais(n.valor_nf)} · {textoSituacao(n)}
           {' '}<button className="link" onClick={() => acao(api.vincularNfe(n.chave, null))}>Não é deste pedido</button>
         </p>
       ))}
@@ -83,7 +83,7 @@ export default function EntregaNfe({ cotacao, vendedor }: { cotacao: number; ven
 
       {nfes.length === 0 && semPedido.length > 0 && (
         <div className="sem-pedido">
-          <h4>NF-e recentes do {rotulo} sem pedido</h4>
+          <h4>Notas fiscais recentes do {rotulo} sem pedido</h4>
           {semPedido.map((n) => (
             <p key={n.chave}>
               NF {n.numero} · {ddmm(n.emissao)} · {reais(n.valor_nf)} · {n.emitente}

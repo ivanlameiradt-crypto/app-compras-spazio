@@ -63,7 +63,7 @@ describe('Economia', () => {
     render(<Economia />)
     expect(await screen.findByTestId('economia-valor')).toHaveTextContent('R$ 20,00')
     expect(screen.getByTestId('economia-texto')).toHaveTextContent('Economizou R$ 20,00 (4,2% abaixo do último preço pago)')
-    for (const rotulo of ['Desde o piloto', 'Este mês', 'Mês passado', '3 meses']) {
+    for (const rotulo of ['Desde o começo', 'Este mês', 'Mês passado', '3 meses']) {
       expect(screen.getByRole('tab', { name: rotulo })).toBeInTheDocument()
     }
     expect(screen.getByText(/Economia desde 28\/09/)).toBeInTheDocument()

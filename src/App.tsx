@@ -1,10 +1,11 @@
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useSessao } from './auth/useSessao'
 import Login from './auth/Login'
 import SemAcesso from './auth/SemAcesso'
 import TrocarSenha from './auth/TrocarSenha'
 import { trocaSenhaPendente } from './auth/usuarioGuardado'
 import Layout from './components/Layout'
+import BarreiraDeErro from './components/BarreiraDeErro'
 import Instalar from './auth/Instalar'
 import TelaAbertura from './components/marca/TelaAbertura'
 import { LogoComprar } from './components/marca/Comprar'
@@ -25,7 +26,12 @@ import Receber from './recebimento/Recebimento'
 import { sair } from './lib/api'
 import type { Usuario } from './lib/tipos'
 
+/** Aviso de erro geral (manual visual §6): se qualquer tela quebrar ao ser desenhada, aparece a faixa vermelha com "Tentar de novo" em vez da tela branca. */
 export default function App() {
+  return <BarreiraDeErro><Aplicativo /></BarreiraDeErro>
+}
+
+function Aplicativo() {
   const s = useSessao()
   if (s.carregando) return <TelaAbertura />
   if (!s.sessao) {
@@ -80,7 +86,10 @@ function Rotas({ usuario, offline = false }: { usuario: Usuario; offline?: boole
 
 function Telas({ usuario }: { usuario: Usuario }) {
   const admin = usuario.papel === 'admin'
+  // a barreira fica DENTRO do Layout: o cabeçalho e o menu continuam na tela, e trocar de tela limpa o aviso
+  const { pathname } = useLocation()
   return (
+    <BarreiraDeErro chave={pathname}>
     <Routes>
       {admin && <Route path="/compra" element={<CompraHome />} />}
       {admin && <Route path="/nota-sefaz" element={<NotaSefaz />} />}
@@ -103,5 +112,6 @@ function Telas({ usuario }: { usuario: Usuario }) {
       <Route path="/senha" element={<TrocarSenha forcada={false} />} />
       <Route path="*" element={<Navigate to={admin ? '/compra' : '/comprar'} replace />} />
     </Routes>
+    </BarreiraDeErro>
   )
 }

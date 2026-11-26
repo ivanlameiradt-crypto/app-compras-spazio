@@ -7,6 +7,8 @@ import { formatarData, formatarReais, mensagemDeErro } from '../lib/regras'
 import { lerQuantidadeBr } from '../lib/quantidade'
 import { sugerirCompras, type ProdutoHistorico, type SugestaoProduto } from '../lib/sugestaoCompra'
 import TituloDaTela from '../components/TituloDaTela'
+import VerMais from '../components/pecas/VerMais'
+import { BuscaFiltros, CartoesSituacao, Fichas, GavetaFiltros, GrupoFiltro } from '../components/pecas/Filtros'
 import {
   abaPrincipais, itensForaDoTotal, itensParaGravar, montarLinhas, nomeNaTela, qtdNaTela, resumoContagem, totalEstimadoLista, type LinhaLista,
 } from './listaSemanaRegras'
@@ -30,6 +32,10 @@ export default function ListaSemana() {
   const [manuais, setManuais] = useState<Record<number, number>>({})
   const [situacao, setSituacao] = useState<Record<number, { salvando?: boolean; erro?: string }>>({})
   const [aba, setAba] = useState<Aba>('principais')
+  // manual visual v2 (5B): busca por nome e gaveta de filtros (grupo Bebidas/Insumos). Só aparência: as quantidades e a aprovação são as mesmas.
+  const [busca, setBusca] = useState('')
+  const [grupoFiltro, setGrupoFiltro] = useState<string | null>(null)
+  const [gaveta, setGaveta] = useState(false)
   const [erro, setErro] = useState('')
   const [aprovando, setAprovando] = useState(false)
 
@@ -78,7 +84,7 @@ export default function ListaSemana() {
     return (
       <section className="coluna">
         <TituloDaTela>Lista da semana</TituloDaTela>
-        <p className="vazio">Nenhuma lista nova. A próxima chega segunda às 6h.<span className="vazio-passo">Depois desse horário, toque em Atualizar.</span></p>
+        <p className="vazio">Nenhuma lista nova. A próxima chega segunda às 6h.<span className="vazio-passo">Depois desse horário, feche e abra o app de novo.</span></p>
         <a className="link" href="#/lista">Abrir a lista antiga</a>
       </section>
     )
@@ -87,7 +93,11 @@ export default function ListaSemana() {
   const editavel = s.status === 'rascunho'
   // sem histórico não existe "Principais": a tela abre em Todos
   const abaAtual: Aba = !historico && aba === 'principais' ? 'todos' : aba
-  const visiveis = abaAtual === 'principais' ? principais : abaAtual === 'conferir' ? conferir : linhas
+  const daAba = abaAtual === 'principais' ? principais : abaAtual === 'conferir' ? conferir : linhas
+  const termo = busca.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim()
+  const casa = (l: LinhaLista, g: string | null) => (!g || (g === 'Bebidas') === l.item.bebida)
+    && (!termo || l.item.produto.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().includes(termo))
+  const visiveis = daAba.filter((l) => casa(l, grupoFiltro))
 
   async function contar(l: LinhaLista, qtd: number | null) {
     const produto = l.item.produto_id
@@ -148,25 +158,40 @@ export default function ListaSemana() {
         </div>
       )}
 
-      <div className="abas">
-        {historico && <button aria-pressed={abaAtual === 'principais'} onClick={() => setAba('principais')}>Principais {principais.length}</button>}
-        <button aria-pressed={abaAtual === 'todos'} onClick={() => setAba('todos')}>Todos {linhas.length}</button>
-        <button aria-pressed={abaAtual === 'conferir'} onClick={() => setAba('conferir')}>Conferir {conferir.length}</button>
-      </div>
+      <CartoesSituacao valor={abaAtual} aoEscolher={(v) => { if (v) setAba(v as Aba) }}
+        situacoes={[
+          ...(historico ? [{ valor: 'principais', nome: 'Principais', numero: principais.length, tom: 'neutro' as const }] : []),
+          { valor: 'todos', nome: 'Todos', numero: linhas.length, tom: 'neutro' as const },
+          { valor: 'conferir', nome: 'Conferir', numero: conferir.length, tom: 'atencao' as const },
+        ]} />
+      <BuscaFiltros valor={busca} aoMudar={setBusca} rotulo="Buscar produto" ligados={grupoFiltro ? 1 : 0} aoAbrir={() => setGaveta(true)} />
+      <Fichas fichas={grupoFiltro ? [{ chave: 'grupo', rotulo: grupoFiltro, aoTirar: () => setGrupoFiltro(null) }] : []} />
+      {gaveta && (
+        <GavetaFiltros aoFechar={() => setGaveta(false)} aoLimpar={() => { setGrupoFiltro(null); setBusca('') }} total={visiveis.length}>
+          <GrupoFiltro titulo="Grupo" valor={grupoFiltro} aoEscolher={setGrupoFiltro}
+            opcoes={['Bebidas', 'Insumos'].map((g) => ({ valor: g, contagem: daAba.filter((l) => casa(l, g) || false).filter((l) => ((g === 'Bebidas') === l.item.bebida)).length }))} />
+        </GavetaFiltros>
+      )}
 
-      {visiveis.map((l) => (
-        <Cartao key={l.item.id} l={l} editavel={editavel} situacao={situacao[l.item.produto_id]} onContar={contar} onAjustar={ajustarManual} />
-      ))}
+      {/* Celular: os 4 primeiros e "Ver mais" (tela de até 2,5 alturas); tablet e computador: tudo, em 2 colunas. */}
+      <VerMais itens={visiveis} primeiros={4} unidade={['produto', 'produtos']}>
+        {(mostrados) => (
+          <div className="lista-cartoes">
+            {mostrados.map((l) => (
+              <Cartao key={l.item.id} l={l} editavel={editavel} situacao={situacao[l.item.produto_id]} onContar={contar} onAjustar={ajustarManual} />
+            ))}
+          </div>
+        )}
+      </VerMais>
       {visiveis.length === 0 && <p className="vazio">Nenhum item aqui.<span className="vazio-passo">Troque o filtro acima para ver os outros itens.</span></p>}
 
-      <div style={{ height: 96 }} aria-hidden="true" />
       <div className="rodape">
         <div>
           <div>
             <div className="sub">Compra estimada</div>
             <b data-testid="total">{formatarReais(total)}</b>
             {(foraDoTotal > 0 || (editavel && resumo.faltam > 0)) && (
-              <div className="sub" style={{ fontSize: 14 }}>
+              <div className="sub">
                 {foraDoTotal > 0 && <span aria-label={`${foraDoTotal} ${foraDoTotal === 1 ? 'item fora do total' : 'itens fora do total'}: confira a unidade`}>Fora do total: {foraDoTotal}</span>}
                 {foraDoTotal > 0 && editavel && resumo.faltam > 0 && ' · '}
                 {editavel && resumo.faltam > 0 && <span aria-label={`Faltam contar ${resumo.faltam} dos principais`}>Faltam contar: {resumo.faltam}</span>}

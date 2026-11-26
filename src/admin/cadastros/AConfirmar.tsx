@@ -17,7 +17,7 @@ function CartaoFator({ f, rotulo, aoConfirmar, aoDescartar }: {
       <strong>{f.produto} · {rotulo}</strong>
       <p className="sub">
         {f.origem === 'nfe'
-          ? `a NF-e ${f.ref} do ${rotulo} trouxe esse fator`
+          ? `a nota fiscal ${f.ref} do ${rotulo} trouxe esse fator`
           : `o ${rotulo} cotou em ${texto}${f.vezes > 1 ? ` (${f.vezes} semanas)` : ''}`}
       </p>
       {f.conflito

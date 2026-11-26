@@ -68,7 +68,7 @@ describe('NotaSefaz: cargas fora de ordem', () => {
     await act(async () => { responderAntiga([]) })
     // a antiga chegou vazia: não vale mais; a tela continua esperando a carga do botão
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeDisabled()
-    expect(screen.queryByText('Nenhuma nota pendente da SEFAZ agora.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nenhuma nota pendente da Receita agora.')).not.toBeInTheDocument()
     await act(async () => { responderManual([nota()]) })
     expect(await screen.findByTestId('nota-a-lancar')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument()

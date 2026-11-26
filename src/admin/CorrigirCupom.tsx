@@ -186,7 +186,7 @@ function CaixaItem({ cupom, it, catalogo, catalogoFalhou, aoTentarCatalogo, esta
       {catalogo === null && !catalogoFalhou && <p className="sub">Carregando a lista de produtos…</p>}
       {catalogoFalhou && (
         <>
-          <p className="erro" role="alert">Não consegui carregar a lista de produtos.{aoTentarCatalogo ? ' Confira a internet e toque em “Tentar de novo”.' : ' Atualize a página.'}</p>
+          <p className="erro" role="alert">Não consegui carregar a lista de produtos.{aoTentarCatalogo ? ' Confira a internet e toque em “Tentar de novo”.' : ' Feche e abra o app de novo.'}</p>
           {aoTentarCatalogo && <button type="button" className="botao secundario" onClick={aoTentarCatalogo} data-testid="tentar-lista-produtos">Tentar de novo</button>}
         </>
       )}

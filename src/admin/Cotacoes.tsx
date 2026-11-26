@@ -20,7 +20,9 @@ import { chaveCot, ContextoCotacoes, useCotacoes, type Contexto, type Sessao } f
 import { BotoesCopiar, LinkWhatsApp } from './cotacoes/Copiar'
 import { prontaSemSinal } from './cotacoes/estado'
 import { textoMotivo } from './cotacoes/formato'
+import { BuscaFiltros, Fichas, GavetaFiltros, GrupoFiltro } from '../components/pecas/Filtros'
 import TituloDaTela from '../components/TituloDaTela'
+import VerMais, { Recolher } from '../components/pecas/VerMais'
 import { hojeLocal } from './ListaSemana'
 import { qtdNaTela } from './listaSemanaRegras'
 import { gruposDeLoja, resumoPedidos, type GrupoLoja } from './pedidosRegras'
@@ -242,7 +244,7 @@ export default function Cotacoes() {
           <a className="link" href="#/historico">Histórico</a>
           <button className="botao secundario" disabled={ocupado} onClick={() => void atualizar()}>Atualizar</button>
         </div>
-        {erroCarga && <p className="erro" role="alert">Não consegui atualizar: {erroCarga}</p>}
+        {erroCarga && <p className="erro" role="alert" title={erroCarga}>Não consegui atualizar. Tente de novo.</p>}
         {erros.geral && <p className="erro" role="alert">{erros.geral}</p>}
         {!semana && <p className="vazio">Aprove a lista da semana para montar as cotações.</p>}
         {semana && preparo && <SemanaEmCompra dados={dados} preparo={preparo} />}
@@ -255,7 +257,7 @@ export default function Cotacoes() {
         {semana && preparo && <ResumoDoRodape dados={dados} preparo={preparo} />}
         <p className="sub rodape-cotacoes" data-testid="rodape">
           Atualizado às {horaBr(horaLocal(dados.atualizadoEm))}. As respostas aparecem aqui ao atualizar (sozinho a cada 30 s).
-          O e-mail avisa nas coletas de seg a sex (8h17, 12h17, 16h17); o GitHub costuma atrasar de 5 a 30 min.
+          O e-mail avisa nas coletas de seg a sex (8h17, 12h17, 16h17); pode atrasar de 5 a 30 min.
         </p>
         <Chaves />
       </section>
@@ -279,13 +281,36 @@ async function checarSaude(codigo: string | null, itens: number): Promise<string
 
 function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) {
   const grupos = useGruposDeLoja(dados, preparo)
+  // manual visual v2 (5B): com muitos vendedores, busca por nome + gaveta de filtros (com ou sem cotação). Só aparência: os cartões são os mesmos.
+  const [busca, setBusca] = useState('')
+  const [pedido, setPedido] = useState<string | null>(null)
+  const [gaveta, setGaveta] = useState(false)
   const cotacoesDe = (vendedorId: number) => {
     const cartao = preparo.cartoes.find((c) => c.vendedor_id === vendedorId)
     const ids = cartao?.cotacoes ?? []
     return ids.map((id) => dados.daSemana.find((c) => c.id === id)).filter((c): c is Cotacao => c != null)
   }
+  const semAcento = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  const termo = semAcento(busca.trim())
+  const comCotacao = (vendedorId: number) => cotacoesDe(vendedorId).length > 0
+  const nomeDe = (vendedorId: number) => dados.vendedores.find((x) => x.id === vendedorId)?.nome ?? ''
+  const passa = (cartao: Preparo['cartoes'][number], p: string | null) => (!p || (p === 'Com cotação') === comCotacao(cartao.vendedor_id)) && (!termo || semAcento(nomeDe(cartao.vendedor_id)).includes(termo))
+  const cartoesVisiveis = preparo.cartoes.filter((c) => passa(c, pedido))
+  const comFiltros = preparo.cartoes.length >= 5
   return (
     <>
+      {comFiltros && (
+        <>
+          <BuscaFiltros valor={busca} aoMudar={setBusca} rotulo="Buscar vendedor" ligados={pedido ? 1 : 0} aoAbrir={() => setGaveta(true)} />
+          <Fichas fichas={pedido ? [{ chave: 'pedido', rotulo: pedido, aoTirar: () => setPedido(null) }] : []} />
+          {gaveta && (
+            <GavetaFiltros aoFechar={() => setGaveta(false)} aoLimpar={() => { setPedido(null); setBusca('') }} total={cartoesVisiveis.length} unidade={['vendedor', 'vendedores']}>
+              <GrupoFiltro titulo="Cotação" valor={pedido} aoEscolher={setPedido}
+                opcoes={['Com cotação', 'Sem cotação ainda'].map((g) => ({ valor: g, contagem: preparo.cartoes.filter((c) => passa(c, g)).length }))} />
+            </GavetaFiltros>
+          )}
+        </>
+      )}
       <CompraNaLoja grupos={grupos} />
       <ForaDaCotacao titulo="Fora da cotação já enviada" linhas={preparo.fora_da_enviada} dados={dados}
         botao={(rotulo, versao) => `Gerar v${versao} para ${rotulo} incluindo`} />
@@ -294,11 +319,11 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
       <DaSemanaAnterior linhas={preparo.atravessados} dados={dados} />
       <NaoEnviadas cotacoes={[...dados.daSemana, ...dados.anteriores]} />
       {preparo.cartoes.length === 0 && <p className="vazio">Nenhum item com vendedor nesta semana.<span className="vazio-passo">Associe um vendedor aos itens em Cadastros.</span></p>}
-      {preparo.cartoes.map((cartao) => {
+      <VerMais itens={cartoesVisiveis} primeiros={1} folga={0} unidade={['vendedor', 'vendedores']}>{(mostrados) => mostrados.map((cartao) => {
         const v = dados.vendedores.find((x) => x.id === cartao.vendedor_id)
         if (!v) return null
         return <CartaoVendedor key={v.id} v={v} cartao={cartao} cotacoes={cotacoesDe(v.id)} daSemana />
-      })}
+      })}</VerMais>
     </>
   )
 }
@@ -328,8 +353,7 @@ function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
   const ctx = useCotacoes()
   if (grupos.length === 0) return null
   return (
-    <>
-      <div className="grupo">Compra na loja</div>
+    <Recolher titulo="Compra na loja">
       {grupos.map((g) => (
         <div key={g.nome} className="cartao cartao-loja" data-testid={`loja-${g.nome}`}>
           <div className="linha">
@@ -372,7 +396,7 @@ function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
           <Link className="botao secundario" to="/comprar">Fazer esta compra agora</Link>
         </div>
       ))}
-    </>
+    </Recolher>
   )
 }
 

@@ -58,8 +58,8 @@ export function avisosEncerrar(cotacoes: Cotacao[], vendedores: Vendedor[], agor
   const pedidos = [...new Set(cotacoes.filter((c) => c.resultado === 'pedido').map((c) => rotulo(c.vendedor_id)))]
   if (pedidos.length > 0) {
     avisos.push(pedidos.length === 1
-      ? `Há pedido com ${pedidos[0]} confirmado nesta semana: ele só entra no estoque quando a NF-e for lançada no SisChef.`
-      : `Há pedidos com ${juntar(pedidos)} confirmados nesta semana: eles só entram no estoque quando as NF-e forem lançadas no SisChef.`)
+      ? `Há pedido com ${pedidos[0]} confirmado nesta semana: ele só entra no estoque quando a nota fiscal for lançada no SisChef.`
+      : `Há pedidos com ${juntar(pedidos)} confirmados nesta semana: eles só entram no estoque quando as notas fiscais forem lançadas no SisChef.`)
   }
   return avisos
 }

@@ -49,7 +49,7 @@ describe('NotaSefaz', () => {
 
   it('sem notas: avisa que não há pendentes nem lançadas', async () => {
     render(<NotaSefaz />)
-    expect(await screen.findByText('Nenhuma nota pendente da SEFAZ agora.')).toBeInTheDocument()
+    expect(await screen.findByText('Nenhuma nota pendente da Receita agora.')).toBeInTheDocument()
     expect(screen.getByText('Nenhuma nota lançada ainda.')).toBeInTheDocument()
   })
 
@@ -687,10 +687,10 @@ describe('NotaSefaz', () => {
         expect(screen.queryByTestId('aviso-financeiro')).not.toBeInTheDocument()
         const editor = screen.getByTestId('editor-parcelas')
         expect(within(editor).getByTestId('parcelas-xml-nao-lido'))
-          .toHaveTextContent('O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.')
-        expect(editor).not.toHaveTextContent('O XML desta nota não traz os boletos') // isso ainda não se sabe: o XML nem foi lido
+          .toHaveTextContent('O arquivo desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.')
+        expect(editor).not.toHaveTextContent('O arquivo desta nota não traz os boletos') // isso ainda não se sabe: o XML nem foi lido
         expect(within(screen.getByTestId('conferir')).getByTestId('fin-nao-lido'))
-          .toHaveTextContent('O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.')
+          .toHaveTextContent('O arquivo da nota ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.')
       })
 
       // De Marchi 113752 (31/10/2026): o robô parou porque o SisChef só tinha o RESUMO da nota e digitar parcelas NÃO o faz lançar. O quadro "O que fazer" manda não digitar e esperar o aviso sumir:
@@ -701,9 +701,9 @@ describe('NotaSefaz', () => {
         const linha = await screen.findByTestId('nota-a-lancar')
         expect(linha).toHaveTextContent('Não digite as parcelas ainda')                                  // o quadro de cima (motivoDoRobo)
         const editor = within(linha).getByTestId('editor-parcelas')
-        expect(editor).toHaveTextContent('Ainda não dá para saber os boletos desta nota: o XML completo não chegou ao SisChef.')
-        // o aviso começa com a MESMA frase que o quadro de cima manda esperar sumir (“O XML desta nota ainda não foi lido”): quem lê os dois não procura um aviso que não existe
-        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('O XML desta nota ainda não foi lido: o robô tentou e não conseguiu')
+        expect(editor).toHaveTextContent('Ainda não dá para saber os boletos desta nota: o arquivo completo da nota não chegou ao SisChef.')
+        // o aviso começa com a MESMA frase que o quadro de cima manda esperar sumir (“O arquivo desta nota ainda não foi lido”): quem lê os dois não procura um aviso que não existe
+        expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('O arquivo desta nota ainda não foi lido: o robô tentou e não conseguiu')
         expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.')
         expect(editor).not.toHaveTextContent('as parcelas que você digitar valem')
         expect(editor).not.toHaveTextContent('Digite as parcelas do boleto')
@@ -722,7 +722,7 @@ describe('NotaSefaz', () => {
         aLancar(pronta({ parcelas: [], lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }))
         render(<NotaSefaz />)
         const editor = await screen.findByTestId('editor-parcelas')
-        expect(editor).toHaveTextContent('O XML desta nota não traz os boletos. Digite as parcelas do boleto')
+        expect(editor).toHaveTextContent('O arquivo desta nota não traz os boletos. Digite as parcelas do boleto')
         expect(within(editor).queryByTestId('parcelas-xml-nao-lido')).not.toBeInTheDocument()
         expect(editor).not.toHaveTextContent('Ainda não dá para saber os boletos')
       })
@@ -874,7 +874,7 @@ describe('NotaSefaz', () => {
       render(<NotaSefaz />)
       const paineis = await screen.findAllByTestId('conferir')
       expect(within(paineis[0]).getByTestId('fin-total')).toHaveTextContent(/diferença de R\$\s10,00/)
-      expect(within(paineis[1]).getByTestId('fin-nao-lido')).toHaveTextContent('O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo')
+      expect(within(paineis[1]).getByTestId('fin-nao-lido')).toHaveTextContent('O arquivo da nota ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo')
       expect(within(paineis[2]).getByTestId('fin-sem-boleto')).toBeInTheDocument()
     })
   })
@@ -893,7 +893,7 @@ describe('NotaSefaz', () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
       const editor = await screen.findByTestId('editor-parcelas')
-      expect(editor).toHaveTextContent('O XML da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)')
+      expect(editor).toHaveTextContent('O arquivo da nota da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)')
       expect(botaoLancar()).toBeDisabled()
       expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Parcela 1: informe o vencimento')
       await digitar(1, '2026-11-05', '60,00')
@@ -995,13 +995,13 @@ describe('NotaSefaz', () => {
       expect(within(comBoleto).queryByTestId('editor-parcelas')).not.toBeInTheDocument()
       const editor = within(naoLida).getByTestId('editor-parcelas')
       expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toBeInTheDocument()
-      expect(editor).toHaveTextContent('O XML da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)') // o aviso da MATEUS continua
+      expect(editor).toHaveTextContent('O arquivo da nota da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)') // o aviso da MATEUS continua
     })
 
     it('fornecedor fora da regra provisória: aviso genérico, mesmo editor', async () => {
       aLancar(semDuplicata({ emitente: 'OUTRO LTDA', cnpj_emitente: '99999999000199' }))
       render(<NotaSefaz />)
-      expect(await screen.findByTestId('editor-parcelas')).toHaveTextContent('O XML desta nota não traz os boletos.')
+      expect(await screen.findByTestId('editor-parcelas')).toHaveTextContent('O arquivo desta nota não traz os boletos.')
     })
 
     it('nota que voltou do robô reabre com as parcelas que o Ivan já tinha digitado', async () => {
@@ -1204,9 +1204,9 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
     const pergunta = within(linha).getByTestId('confirmar-descarte')
     expect(pergunta).toHaveTextContent('Excluir a NF 000113871 de DE MARCHI BELEM COMERCIO DE ALIMENTOS LTDA?')
     expect(pergunta).toHaveTextContent('nada é lançado')
-    expect(pergunta).toHaveTextContent('Não muda nada no SisChef nem na SEFAZ')
+    expect(pergunta).toHaveTextContent('Não muda nada no SisChef nem na Receita')
     expect(pergunta).toHaveTextContent('Dá para desfazer em “Notas excluídas”')
-    expect(pergunta).not.toHaveTextContent('Se o XML completo chegar depois')   // esta nota tem itens
+    expect(pergunta).not.toHaveTextContent('Se o arquivo completo da nota chegar depois')   // esta nota tem itens
     expect(m.descartarNota).not.toHaveBeenCalled()                             // o 1º toque só pergunta
     await userEvent.type(within(pergunta).getByLabelText('Motivo (opcional)'), 'devolvida')
     await userEvent.click(within(pergunta).getByRole('button', { name: 'Excluir' }))
@@ -1232,7 +1232,7 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
     render(<NotaSefaz />)
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
-    expect(within(linha).getByTestId('confirmar-descarte')).toHaveTextContent('Se o XML completo chegar depois, você vê um aviso lá')
+    expect(within(linha).getByTestId('confirmar-descarte')).toHaveTextContent('Se o arquivo completo da nota chegar depois, você vê um aviso lá')
     await userEvent.type(within(linha).getByLabelText('Motivo (opcional)'), '  devolvida   ao fornecedor ')
     await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
     expect(m.descartarNota).toHaveBeenCalledWith(k('1'), 'Sem itens (XML resumido); devolvida ao fornecedor')
@@ -1257,7 +1257,7 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
     render(<NotaSefaz />)
     const linha = await screen.findByTestId('nota-a-lancar')
     await userEvent.click(within(linha).getByTestId('descartar-nota'))
-    expect(within(linha).getByTestId('confirmar-descarte')).not.toHaveTextContent('XML completo')
+    expect(within(linha).getByTestId('confirmar-descarte')).not.toHaveTextContent('arquivo completo')
     await userEvent.click(within(linha).getByRole('button', { name: 'Excluir' }))
     expect(m.descartarNota).toHaveBeenCalledWith(CHAVE, 'Item sem produto no SisChef')
   })
@@ -1301,7 +1301,7 @@ describe('NotaSefaz — excluir a nota da lista (regra 3 do Ivan, ampliada em 03
     expect(within(secao).getByTestId('descartadas-aviso')).toHaveTextContent('uma delas agora veio com itens')
     const avisos = within(secao).getAllByTestId('descartada-com-itens')
     expect(avisos).toHaveLength(1) // só a que tem itens
-    expect(avisos[0]).toHaveTextContent('Esta nota agora veio com 2 itens (o XML completo chegou)')
+    expect(avisos[0]).toHaveTextContent('Esta nota agora veio com 2 itens (o arquivo completo da nota chegou)')
   })
 
   it('erro ao voltar para a fila mostra a mensagem e a nota continua descartada', async () => {

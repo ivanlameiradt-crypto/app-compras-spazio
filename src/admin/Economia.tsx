@@ -5,12 +5,13 @@ import { mensagemDeErro } from '../lib/regras'
 import { type Periodo, datasDoPeriodo, ddmm, economia, ordenarItens, reais, textoEconomia, textoPct } from '../lib/contas'
 import { BarrasMeses, Curva, FaiscaItem } from './Graficos'
 import HistoricoItem from './HistoricoItem'
+import VerMais, { Recolher } from '../components/pecas/VerMais'
 
 // Fase 2, Bloco E1 (DESIGN-fase-2.md E.6): tela Economia (só admin). Números somados pelo banco
 // (cot_painel_economia), com a mesma regra de "comparável" da cot_economia.
 
 const CHIPS: { p: Periodo; rotulo: string }[] = [
-  { p: 'desde_inicio', rotulo: 'Desde o piloto' },
+  { p: 'desde_inicio', rotulo: 'Desde o começo' },
   { p: 'este_mes', rotulo: 'Este mês' },
   { p: 'mes_passado', rotulo: 'Mês passado' },
   { p: 'tres_meses', rotulo: '3 meses' },
@@ -113,7 +114,7 @@ export default function Economia() {
                   </table>
                 )}
 
-                <div className="grupo">Por mês</div>
+                <Recolher titulo="Por mês">
                 <BarrasMeses meses={p.meses} />
                 <table className="tabela">
                   <thead><tr><th>Mês</th><th>Pedidos</th><th>Pelo último</th><th>Economia</th><th>%</th></tr></thead>
@@ -126,8 +127,10 @@ export default function Economia() {
                     ))}
                   </tbody>
                 </table>
+                </Recolher>
 
-                <div className="grupo">Por vendedor</div>
+                {/* Celular: estes blocos abrem fechados (tela de até 2,5 alturas); tablet e computador: abertos. Nada sai da tela. */}
+                <Recolher titulo="Por vendedor">
                 <table className="tabela">
                   <thead><tr><th>Vendedor</th><th>Semanas</th><th>Comprado</th><th>Economia</th><th>%</th><th>Acima</th></tr></thead>
                   <tbody>
@@ -139,8 +142,9 @@ export default function Economia() {
                     ))}
                   </tbody>
                 </table>
+                </Recolher>
 
-                <div className="grupo">Por categoria</div>
+                <Recolher titulo="Por categoria">
                 <table className="tabela">
                   <thead><tr><th>Categoria</th><th>Pedidos</th><th>Comprado</th><th>Economia</th><th>%</th></tr></thead>
                   <tbody>
@@ -152,6 +156,7 @@ export default function Economia() {
                     ))}
                   </tbody>
                 </table>
+                </Recolher>
 
                 <div className="grupo">Itens</div>
                 <div className="chips">
@@ -160,7 +165,7 @@ export default function Economia() {
                   <button className={`chip${ordem === 'nome' ? ' ativo' : ''}`} onClick={() => setOrdem('nome')}>A–Z</button>
                 </div>
                 <input className="busca" aria-label="Buscar item" placeholder="Buscar item…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-                {itensOrdenados.map((i) => (
+                <VerMais itens={itensOrdenados} primeiros={4}>{(mostrados) => mostrados.map((i) => (
                   <button key={i.produto_id} className="cartao item" onClick={() => setItem({ id: i.produto_id, nome: i.produto })}>
                     <div className="nome">{i.produto}</div>
                     <div className="sub">
@@ -169,11 +174,11 @@ export default function Economia() {
                     </div>
                     <FaiscaItem item={i} />
                   </button>
-                ))}
+                ))}</VerMais>
               </>
             )}
 
-            <div className="grupo">Preço no SisChef (todas as compras)</div>
+            <Recolher titulo="Preço no SisChef (todas as compras)">
             <div className="sub">Maiores altas</div>
             {p.sischef.altas.length === 0 ? <p className="sub">—</p> : (
               <ul className="sischef">
@@ -194,12 +199,15 @@ export default function Economia() {
                 ))}
               </ul>
             )}
+            </Recolher>
 
+            <Recolher titulo="Como a conta é feita">
             <p className="rodape">
               Comparação só nos itens com último preço confiável (compra de até 90 dias e perto do custo médio).
               Itens em litro sem conversão, com último preço antigo ou sem referência ficam fora das somas.
               Mês = mês da segunda-feira da semana. Por vendedor e por categoria, a soma pode diferir do total em centavos.
             </p>
+            </Recolher>
           </>
         )
       })()}

@@ -21,6 +21,7 @@ import ConfirmarPedido from './ConfirmarPedido'
 import EntregaNfe from './EntregaNfe'
 import DigitarPrecos from './DigitarPrecos'
 import LimparRespostas from './LimparRespostas'
+import { Recolher } from '../../components/pecas/VerMais'
 
 /** Nota com "R$" ou número com vírgula: o vendedor vai ver, e preço nunca vaza para ele (D49). */
 export const NOTA_SUSPEITA = /R\$|\d,\d/
@@ -319,6 +320,8 @@ function SecaoViva({ c, v, daSemana }: { c: Cotacao; v: Vendedor; daSemana: bool
         <div className="acoes">
           <button className="botao secundario" disabled={ctx.ocupado} onClick={() => setAberto('digitar')}>Digitar preços</button>
           <button className="botao secundario" disabled={ctx.ocupado} onClick={() => setAberto('colar')}>Colar resposta</button>
+          {/* Celular: as ações menos usadas ficam atrás de "Mais ações" (tela de até 2,5 alturas); no tablet e no computador aparecem como sempre. */}
+          <Recolher titulo="Mais ações" classe="mais-acoes">
           {podeCobrar && (
             <>
               <LinkWhatsApp numero={v.whatsapp} texto={mensagemCobranca(v.nome, c.fechamento!, agora)} secundario>Cobrar no WhatsApp</LinkWhatsApp>
@@ -358,6 +361,7 @@ function SecaoViva({ c, v, daSemana }: { c: Cotacao; v: Vendedor; daSemana: bool
               }),
               () => api.cancelarCotacao(c.id))}>Cancelar cotação</button>
           )}
+          </Recolher>
           {temPreco && (
             <button className="botao" disabled={ctx.ocupado} onClick={() => setAberto('pedido')}>Confirmar pedido com {v.nome}</button>
           )}

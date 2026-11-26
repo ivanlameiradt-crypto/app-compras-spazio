@@ -191,7 +191,7 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
   if (RE_XML_NAO_LIDO.test(t)) {
     return {
       porque: 'O robô não conseguiu ler o XML completo desta nota. O motivo mais comum: o SisChef só recebeu da SEFAZ o resumo da nota, e o XML completo (com os itens, os valores e os boletos) costuma levar algumas horas para chegar. Também pode ter sido uma falha passageira na leitura.',
-      fazer: 'Não digite as parcelas ainda: enquanto só existe o resumo, o robô não lança, nem assim. O XML completo chega ao SisChef em algumas horas (de 1 hora até quase um dia): quando o aviso “O XML desta nota ainda não foi lido” sumir da nota, ou daqui a umas horas, toque em Lançar de novo. Se passar de um dia, chame o Claude.',
+      fazer: 'Não digite as parcelas ainda: enquanto só existe o resumo, o robô não lança, nem assim. O XML completo chega ao SisChef em algumas horas (de 1 hora até quase um dia): quando o aviso “O arquivo desta nota ainda não foi lido” sumir da nota, ou daqui a umas horas, toque em Lançar de novo. Se passar de um dia, chame o Claude.',
     }
   }
 

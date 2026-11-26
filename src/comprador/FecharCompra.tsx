@@ -48,8 +48,14 @@ export default function FecharCompra({ loja, totalSugerido, onConfirmar, onVolta
       </label>
       {processandoFoto && <p className="sub">Preparando foto…</p>}
       {erro && <p className="erro">{erro}</p>}
-      <button className="botao" disabled={comNota === null || processandoFoto} onClick={enviar}>Enviar para aprovação</button>
       <button className="link" onClick={onVoltar}>Voltar para a lista</button>
+      {/* Rodapé fixo com resumo (manual v2, 5B-7) */}
+      <div className="rodape com-resumo">
+        <div>
+          <p className="resumo-linha"><b>{loja}</b> · {comNota === null ? 'falta dizer se foi com nota' : comNota ? 'com nota' : 'sem nota'}{lerNumero(total) !== null && <> · <b>{formatarReais(lerNumero(total)!)}</b></>}</p>
+          <button className="botao" disabled={comNota === null || processandoFoto} onClick={enviar}>Enviar para aprovação</button>
+        </div>
+      </div>
     </section>
   )
 }

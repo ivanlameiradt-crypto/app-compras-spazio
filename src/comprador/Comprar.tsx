@@ -168,7 +168,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
 
   if (dados === undefined) return <p className="centro">Carregando…</p>
   const semana = dados.semana
-  if (!semana) return <p className="vazio">{aviso || 'Nenhuma lista liberada para compra agora.'}<span className="vazio-passo">Espere a administração liberar a lista e toque em Atualizar.</span></p>
+  if (!semana) return <p className="vazio">{aviso || 'Nenhuma lista liberada para compra agora.'}<span className="vazio-passo">Espere a administração liberar a lista. Depois, feche e abra o app de novo.</span></p>
 
   if (!compra || compra.semanaId !== semana.id) {
     return (
@@ -263,7 +263,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
       <div className="sub">{feitos} de {dados.itens.length} itens</div>
       <div className="progresso"><i style={{ width: `${dados.itens.length ? (100 * feitos) / dados.itens.length : 0}%` }} /></div>
       {grupos.map(([titulo, lista]) => lista.length > 0 && (
-        <div key={titulo}>
+        <div key={titulo} className="grupo-itens">
           <div className="grupo">{titulo}</div>
           {lista.map((i) => {
             const minha = minhas.get(i.id)
@@ -297,8 +297,10 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
           })}
         </div>
       ))}
-      <div className="rodape">
+      {/* Rodapé fixo com resumo (manual v2, 5B-7): o que vai acontecer + o botão principal de 60 px. */}
+      <div className="rodape com-resumo">
         <div>
+          <p className="resumo-linha"><b>{c.loja}</b> · {feitos} de {dados.itens.length} itens · <b>{formatarReais(totalMarcado)}</b>{minhas.size === 0 && ' · marque ao menos um item para fechar'}</p>
           <button className="botao" style={{ flex: 1 }} onClick={() => setFechando(true)} disabled={minhas.size === 0}>
             Fechar compra desta loja (nota / cupom)
           </button>

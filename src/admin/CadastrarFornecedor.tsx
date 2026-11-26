@@ -226,7 +226,7 @@ export default function CadastrarFornecedor({ cupom, acoes, aoReenviar, aoRecarr
             </label>
           </div>
           {!travado && ocupado && (
-            <p className="amarelo" role="status" data-testid="aguarde-robo">Aguarde o robô terminar de lançar a outra nota para pedir o cadastro: o GitHub guarda só um pedido na fila e cancelaria um dos dois.</p>
+            <p className="amarelo" role="status" data-testid="aguarde-robo">Aguarde o robô terminar de lançar a outra nota para pedir o cadastro: só cabe um pedido por vez na fila, e um dos dois seria cancelado.</p>
           )}
           {!travado && (
             <div className="acoes">
