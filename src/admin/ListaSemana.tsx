@@ -7,6 +7,7 @@ import { formatarData, formatarReais, mensagemDeErro } from '../lib/regras'
 import { lerQuantidadeBr } from '../lib/quantidade'
 import { sugerirCompras, type ProdutoHistorico, type SugestaoProduto } from '../lib/sugestaoCompra'
 import TituloDaTela from '../components/TituloDaTela'
+import VerMais from '../components/pecas/VerMais'
 import { BuscaFiltros, CartoesSituacao, Fichas, GavetaFiltros, GrupoFiltro } from '../components/pecas/Filtros'
 import {
   abaPrincipais, itensForaDoTotal, itensParaGravar, montarLinhas, nomeNaTela, qtdNaTela, resumoContagem, totalEstimadoLista, type LinhaLista,
@@ -83,7 +84,7 @@ export default function ListaSemana() {
     return (
       <section className="coluna">
         <TituloDaTela>Lista da semana</TituloDaTela>
-        <p className="vazio">Nenhuma lista nova. A próxima chega segunda às 6h.<span className="vazio-passo">Depois desse horário, toque em Atualizar.</span></p>
+        <p className="vazio">Nenhuma lista nova. A próxima chega segunda às 6h.<span className="vazio-passo">Depois desse horário, feche e abra o app de novo.</span></p>
         <a className="link" href="#/lista">Abrir a lista antiga</a>
       </section>
     )
@@ -172,19 +173,25 @@ export default function ListaSemana() {
         </GavetaFiltros>
       )}
 
-      {visiveis.map((l) => (
-        <Cartao key={l.item.id} l={l} editavel={editavel} situacao={situacao[l.item.produto_id]} onContar={contar} onAjustar={ajustarManual} />
-      ))}
+      {/* Celular: os 4 primeiros e "Ver mais" (tela de até 2,5 alturas); tablet e computador: tudo, em 2 colunas. */}
+      <VerMais itens={visiveis} primeiros={4} unidade={['produto', 'produtos']}>
+        {(mostrados) => (
+          <div className="lista-cartoes">
+            {mostrados.map((l) => (
+              <Cartao key={l.item.id} l={l} editavel={editavel} situacao={situacao[l.item.produto_id]} onContar={contar} onAjustar={ajustarManual} />
+            ))}
+          </div>
+        )}
+      </VerMais>
       {visiveis.length === 0 && <p className="vazio">Nenhum item aqui.<span className="vazio-passo">Troque o filtro acima para ver os outros itens.</span></p>}
 
-      <div style={{ height: 96 }} aria-hidden="true" />
       <div className="rodape">
         <div>
           <div>
             <div className="sub">Compra estimada</div>
             <b data-testid="total">{formatarReais(total)}</b>
             {(foraDoTotal > 0 || (editavel && resumo.faltam > 0)) && (
-              <div className="sub" style={{ fontSize: 14 }}>
+              <div className="sub">
                 {foraDoTotal > 0 && <span aria-label={`${foraDoTotal} ${foraDoTotal === 1 ? 'item fora do total' : 'itens fora do total'}: confira a unidade`}>Fora do total: {foraDoTotal}</span>}
                 {foraDoTotal > 0 && editavel && resumo.faltam > 0 && ' · '}
                 {editavel && resumo.faltam > 0 && <span aria-label={`Faltam contar ${resumo.faltam} dos principais`}>Faltam contar: {resumo.faltam}</span>}

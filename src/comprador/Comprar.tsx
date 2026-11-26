@@ -168,7 +168,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
 
   if (dados === undefined) return <p className="centro">Carregando…</p>
   const semana = dados.semana
-  if (!semana) return <p className="vazio">{aviso || 'Nenhuma lista liberada para compra agora.'}<span className="vazio-passo">Espere a administração liberar a lista e toque em Atualizar.</span></p>
+  if (!semana) return <p className="vazio">{aviso || 'Nenhuma lista liberada para compra agora.'}<span className="vazio-passo">Espere a administração liberar a lista. Depois, feche e abra o app de novo.</span></p>
 
   if (!compra || compra.semanaId !== semana.id) {
     return (
@@ -263,7 +263,7 @@ export default function Comprar({ usuario }: { usuario: Usuario }) {
       <div className="sub">{feitos} de {dados.itens.length} itens</div>
       <div className="progresso"><i style={{ width: `${dados.itens.length ? (100 * feitos) / dados.itens.length : 0}%` }} /></div>
       {grupos.map(([titulo, lista]) => lista.length > 0 && (
-        <div key={titulo}>
+        <div key={titulo} className="grupo-itens">
           <div className="grupo">{titulo}</div>
           {lista.map((i) => {
             const minha = minhas.get(i.id)

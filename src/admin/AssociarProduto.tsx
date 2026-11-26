@@ -212,7 +212,7 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, aoT
       {catalogo === null && !catalogoFalhou && <p className="sub">Carregando a lista de produtos…</p>}
       {catalogoFalhou && (
         <>
-          <p className="erro" role="alert">Não consegui carregar a lista de produtos.{aoTentarCatalogo ? ' Confira a internet e toque em “Tentar de novo”.' : ' Toque em “Atualizar”, no alto da tela.'}</p>
+          <p className="erro" role="alert">Não consegui carregar a lista de produtos.{aoTentarCatalogo ? ' Confira a internet e toque em “Tentar de novo”.' : ' Feche e abra o app de novo.'}</p>
           {aoTentarCatalogo && <button type="button" className="botao secundario" onClick={aoTentarCatalogo} data-testid="tentar-lista-produtos">Tentar de novo</button>}
         </>
       )}

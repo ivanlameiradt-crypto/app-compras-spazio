@@ -207,15 +207,15 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, pode
       <div className="grupo">Financeiro</div>
       {/* Regra do Ivan (07/10): com o XML por ler, o que ele determinar no app vale — não fica esperando a próxima leitura. Bonificação sem cobrança (CFOP 5910/6910 e o XML sem boletos): nada de boleto a digitar. */}
       {bonificacaoSemCobranca(nota) ? <p className="sub" data-testid="fin-bonificacao">Nota de bonificação: não tem boleto nem conta a pagar. Entra só no estoque.</p>
-        : !f.lido ? <p className="sub" data-testid="fin-nao-lido">O XML ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>
-        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">O XML da nota não traz boletos (duplicatas). Digite as parcelas do boleto ou escolha outra forma de pagamento.</p>
+        : !f.lido ? <p className="sub" data-testid="fin-nao-lido">O arquivo da nota ainda não foi lido. Escolha a forma de pagamento; se for boleto, digite as parcelas abaixo: o que você digitar vale para o lançamento.</p>
+        : f.parcelas.length === 0 ? <p className="sub" data-testid="fin-sem-boleto">O arquivo da nota não traz boletos (duplicatas). Digite as parcelas do boleto ou escolha outra forma de pagamento.</p>
         : (
           <>
             <ul className="conferir-itens">
               {f.parcelas.map((p, i) => (
                 <li key={i} data-testid="conferir-parcela">
                   {/* MAUES paga a compra da semana numa quarta: o vencimento que vale é a quarta da regra, não a data do boleto do XML */}
-                  <span>Parcela {p.numero ?? i + 1} · vence {dataBr(quartaDaMaues ?? p.vencimento)}{quartaDaMaues && ` (o XML trouxe ${dataBr(p.vencimento)})`}</span>
+                  <span>Parcela {p.numero ?? i + 1} · vence {dataBr(quartaDaMaues ?? p.vencimento)}{quartaDaMaues && ` (o arquivo da nota trouxe ${dataBr(p.vencimento)})`}</span>
                   <b>{formatarReais(p.valor)}</b>
                 </li>
               ))}
@@ -293,19 +293,19 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   return (
     <div className="editor-parcelas" data-testid="editor-parcelas">
       <div className="amarelo">
-        {soResumo ? 'Ainda não dá para saber os boletos desta nota: o XML completo não chegou ao SisChef.' : (
+        {soResumo ? 'Ainda não dá para saber os boletos desta nota: o arquivo completo da nota não chegou ao SisChef.' : (
           <>
             {fornecedor
-              ? `O XML da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
-              : xmlNaoLido ? 'A nota não veio informando os boletos.' : 'O XML desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
+              ? `O arquivo da nota da ${fornecedor} não traz a forma de pagamento nem os boletos (falha do fornecedor).`
+              : xmlNaoLido ? 'A nota não veio informando os boletos.' : 'O arquivo desta nota não traz os boletos.'} Digite as parcelas do boleto: o robô as aplica no SisChef. Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota.
           </>
         )}
       </div>
       {xmlNaoLido && (
         <p className="sub" data-testid="parcelas-xml-nao-lido">
           {soResumo
-            ? 'O XML desta nota ainda não foi lido: o robô tentou e não conseguiu (o mais comum: o SisChef só tem o resumo, e o XML completo chega em algumas horas). Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.'
-            : 'O XML desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.'}
+            ? 'O arquivo desta nota ainda não foi lido: o robô tentou e não conseguiu (o mais comum: o SisChef só tem o resumo, e o arquivo completo chega em algumas horas). Digitar as parcelas não adianta por enquanto: espere este aviso sumir e então toque em Lançar.'
+            : 'O arquivo desta nota ainda não foi lido: as parcelas que você digitar valem. Se a leitura trouxer boletos diferentes, o robô para e avisa.'}
         </p>
       )}
       {aguardandoProduto && (
@@ -387,7 +387,7 @@ function PagamentoSemanal({ plano, editando, desabilitado, onEditar, onMudar, on
         Regra da MAUES: a compra da semana de {ddmm(plano.semana.inicio)} a {ddmm(plano.semana.fim)} é paga na quarta seguinte ao sábado.{' '}
         {algumaEditada
           ? `A quarta da regra é ${dataBr(plano.quarta)}. A data que você escolheu é a que o robô lança.`
-          : `O XML trouxe ${doXml}; vale a quarta.`}
+          : `O arquivo da nota trouxe ${doXml}; vale a quarta.`}
       </p>
       {editando && plano.parcelas.map((p, i) => (
         <label key={i}>Vencimento da parcela {i + 1}
@@ -1036,8 +1036,8 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <div className="bloco-envio" data-testid="confirmar-descarte">
           <p>Excluir a NF {nota.numero} de {nota.emitente}?</p>
           <p className="sub">
-            Ela sai desta lista e nada é lançado. Não muda nada no SisChef nem na SEFAZ: a compra continua pendente lá, sem entrada no estoque nem no
-            financeiro. Dá para desfazer em “Notas excluídas”.{nota.itens.length === 0 && ' Se o XML completo chegar depois, você vê um aviso lá.'}
+            Ela sai desta lista e nada é lançado. Não muda nada no SisChef nem na Receita: a compra continua pendente lá, sem entrada no estoque nem no
+            financeiro. Dá para desfazer em “Notas excluídas”.{nota.itens.length === 0 && ' Se o arquivo completo da nota chegar depois, você vê um aviso lá.'}
           </p>
           <label>Motivo (opcional)
             <input type="text" value={motivoDito} maxLength={200} placeholder="ex.: devolvida" disabled={descartandoEnvio}
@@ -1234,7 +1234,7 @@ export default function NotaSefaz() {
         </p>
       )}
       {!falha && (aLancar.length === 0
-        ? <p className="sub">{carregando ? 'Carregando…' : 'Nenhuma nota pendente da SEFAZ agora.'}</p>
+        ? <p className="sub">{carregando ? 'Carregando…' : 'Nenhuma nota pendente da Receita agora.'}</p>
         : (
           <>
             <ul className="recentes">
@@ -1253,7 +1253,7 @@ export default function NotaSefaz() {
             Notas excluídas ({descartadas.length})
             {descartadas.some(descartadaVoltouComItens) && <b data-testid="descartadas-aviso"> · uma delas agora veio com itens</b>}
           </summary>
-          <p className="sub">Estas notas saíram de “Notas a lançar” e o robô não as lança. Nada foi mudado no SisChef nem na SEFAZ.</p>
+          <p className="sub">Estas notas saíram de “Notas a lançar” e o robô não as lança. Nada foi mudado no SisChef nem na Receita.</p>
           <ul className="conferir-itens">
             {descartadas.map((n) => (
               <li key={n.chave} data-testid="nota-descartada">
@@ -1261,7 +1261,7 @@ export default function NotaSefaz() {
                 {n.descartada_motivo && <span className="sub">Motivo: {n.descartada_motivo}</span>}
                 {descartadaVoltouComItens(n) && (
                   <span className="ok" data-testid="descartada-com-itens">
-                    Esta nota agora veio com {n.itens.length} {n.itens.length === 1 ? 'item' : 'itens'} (o XML completo chegou). Volte para a fila para conferir e lançar.
+                    Esta nota agora veio com {n.itens.length} {n.itens.length === 1 ? 'item' : 'itens'} (o arquivo completo da nota chegou). Volte para a fila para conferir e lançar.
                   </span>
                 )}
                 <button type="button" className="link" disabled={voltando !== null} onClick={() => void voltar(n.chave)}>

@@ -33,7 +33,7 @@ export default function TerminarPedido({ nota, ocupado, aoPedir }: { nota: NotaS
     <div className="terminar-pedido" data-testid="terminar-pedido">
       {pedido ? (
         <p className="ok" role="status">
-          Pedi ao robô para terminar este pedido. Leva de 2 a 3 minutos: depois toque em Atualizar. Não lance esta nota de novo.
+          Pedi ao robô para terminar este pedido. Leva de 2 a 3 minutos: depois feche e abra o app de novo. Não lance esta nota de novo.
         </p>
       ) : (
         <>

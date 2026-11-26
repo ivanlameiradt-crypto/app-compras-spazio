@@ -498,7 +498,7 @@ describe('Sub-fase 3: cupom', () => {
   // R1 (revisão do PR 91): o aviso não promete "nada foi perdido" (o servidor pode ter gravado) e separa "sem resposta" de "o servidor recusou".
   describe('A3: erro de Edge Function sem o texto do servidor sai em português', () => {
     const SEM_RESPOSTA = 'Sem resposta do servidor (internet ou servidor fora do ar). Confira se a ação aparece na lista antes de repetir.'
-    const RECUSOU = 'O servidor recusou o pedido. Atualize a tela e tente de novo; se continuar, avise o Ivan.'
+    const RECUSOU = 'O servidor recusou o pedido. Feche e abra o app de novo e tente outra vez; se continuar, avise o Ivan.'
     const itens = [{ indice: 0, insumo_id: '1', quantidade: 1, lembrar: false }]
     const ID_CUPOM = 'aaf54e6f-0000-4000-8000-000000000001'
     const semCorpo = (status: number) => ({ status, json: async () => { throw new SyntaxError('Unexpected token <') } }) as unknown as Response
@@ -940,16 +940,16 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
   }
   it.each([
     [403, { erro: 'apenas o administrador pode fazer isso' }, 'Só o administrador pode lançar notas.'],
-    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' }, 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi excluída. Atualize a tela e confira.'],
+    [409, { erro: 'esta nota não está disponível para lançar agora (já lançada, lançando, pela metade ou descartada)' }, 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi excluída. Feche e abra o app de novo e confira.'],
     [409, { erro: 'o robô está lançando outra nota: aguarde ela terminar e lance esta em seguida' }, 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'],
     [400, { erro: 'escolha como pagar (forma de pagamento inválida)' }, 'Escolha como pagar: a forma de pagamento não é válida.'],
     [400, { erro: 'as parcelas digitadas não fecham com o valor da nota' }, 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'],
-    [400, { erro: 'esta nota já tem boletos no XML (ou o XML ainda não foi lido): as parcelas digitadas não se aplicam' }, 'Esta nota já tem boletos no XML. Atualize a tela e confira.'],
+    [400, { erro: 'esta nota já tem boletos no XML (ou o XML ainda não foi lido): as parcelas digitadas não se aplicam' }, 'Esta nota já tem boletos no arquivo da nota. Feche e abra o app de novo e confira.'],
     [400, { erro: 'parcelas digitadas só valem para boleto' }, 'Parcelas digitadas só valem para a forma Boleto.'],
     [400, { erro: 'parcelas digitadas inválidas: confira o vencimento e o valor de cada uma' }, 'Confira o vencimento e o valor de cada parcela.'],
-    [400, { erro: 'chave da nota inválida' }, 'A chave da nota não é válida. Atualize a tela e tente de novo.'],
+    [400, { erro: 'chave da nota inválida' }, 'A chave da nota não é válida. Feche e abra o app de novo e tente outra vez.'],
     [400, { erro: 'frete inválido: confira o valor e o tipo do frete' }, 'O frete não está certo: confira o valor e o tipo do frete.'],
-    [400, { erro: 'qualquer outra recusa nova do servidor' }, 'O servidor recusou o pedido. Atualize a tela e confira a nota.'],
+    [400, { erro: 'qualquer outra recusa nova do servidor' }, 'O servidor recusou o pedido. Feche e abra o app de novo e confira a nota.'],
     [502, { erro: 'não consegui chamar o robô agora — tente de novo em instantes' }, 'Não consegui chamar o robô agora, tente de novo.'],
   ])('lancarNota: status %i vira texto claro em português', async (status, corpo, esperado) => {
     falhaHttp(status, corpo)
@@ -960,7 +960,7 @@ describe('Fase 3: aba Lançamento de nota SEFAZ (leitura e lancarNota)', () => {
     falhaHttp(undefined, { erro: 'apenas o administrador pode fazer isso' })
     await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Só o administrador pode lançar notas.')
     invoke.mockResolvedValue({ data: null, error: new Error('Failed to send a request to the Edge Function') })
-    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Sem resposta do servidor (internet ou servidor fora do ar). O robô pode ter sido chamado: atualize a tela e veja se a nota aparece como "lançando" antes de tocar em Lançar de novo.')
+    await expect(lancarNota('d'.repeat(44), 'boleto')).rejects.toThrow('Sem resposta do servidor (internet ou servidor fora do ar). O robô pode ter sido chamado: feche e abra o app de novo e veja se a nota aparece como "lançando" antes de tocar em Lançar de novo.')
   })
 
   it('"Notas a lançar" deixa de fora as descartadas (filtro no banco) e lê as colunas do descarte', async () => {

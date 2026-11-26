@@ -56,4 +56,4 @@ export const soltarVendedor = (rotulo: string): string =>
 export const tirarSempre = (produto: string): string =>
   `Tirar ${produto} de todas as listas a partir de agora? Motivo (aparece na Revisão):`
 
-export const FAIXA_VIRADA = 'Os cadastros agora são feitos aqui. Os arquivos CSV do robô foram aposentados em 29/10.'
+export const FAIXA_VIRADA = 'Os cadastros agora são feitos aqui.'

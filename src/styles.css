@@ -783,3 +783,116 @@ p.sub.vazio { padding: 16px; }
 .busca-linha .busca-campo input:not([type='checkbox']):not([type='radio']):not([type='file']) { padding-left: 46px; min-height: 56px; }
 .cartao-tarja > .acoes button:last-child:nth-child(odd) { grid-column: 1 / -1; border-right: 0; border-top: 1px solid var(--linha); }
 @media (min-width: 640px) { .cartao-tarja > .acoes button:last-child:nth-child(odd) { grid-column: auto; border-top: 0; } }
+
+/* ======================================================================================================================================================
+   Revisão final independente (25/11/2026): o que faltava no Comprar. Só aparência e texto de tela; nada aqui muda o que um botão faz.
+   1. rodapé fixo de ação com fundo próprio e espaço embaixo do conteúdo (não cobre mais a lista);  2. aviso de erro geral (faixa vermelha + "Tentar de novo");
+   3. tablet (768 px ou mais) com as listas em 2 colunas;  4. selos sempre com desenho;  5. rodapé da gaveta com os dois botões de 60 px.
+   ====================================================================================================================================================== */
+
+/* ---- 1. Rodapé fixo de ação ---- */
+/* Em qualquer aparelho a tela ganha, embaixo, o espaço do rodapé: o último item da lista para ACIMA dele. */
+.app:has(div.rodape) { padding-bottom: calc(var(--barra-baixo) + 208px + env(safe-area-inset-bottom)); }
+div.rodape { border-top: 2px solid var(--linha); }
+@media (min-width: 1024px) {
+  /* Notebook (1024 a 1279 px): não cabe ao lado do título sem cobrir a lista. Fica embaixo, na largura da coluna de conteúdo, com fundo próprio. */
+  div.rodape { top: auto; bottom: 0 !important; left: var(--menu-w, 0px); right: 0; width: auto; max-width: none; padding: 12px 24px; background: var(--cartao); border: 0; border-top: 2px solid var(--linha); border-radius: 0; }
+  div.rodape > div { max-width: 712px; margin: 0 auto; }
+  div.rodape.com-resumo > div { flex-direction: row; align-items: center; gap: 16px; }
+  div.rodape.com-resumo .resumo-linha { flex: 1; margin: 0; text-align: left; }
+  .app.com-menu:has(div.rodape) { padding-bottom: 152px; }
+}
+@media (min-width: 1280px) {
+  /* Computador: o botão principal fica no canto direito, na altura do título, numa coluna só dele; o conteúdo encolhe para o lado e nada fica por baixo. */
+  div.rodape { top: 86px; bottom: auto !important; left: auto; right: 24px; width: 320px; padding: 16px; border: 1px solid var(--linha); border-radius: var(--v-raio-cartao); }
+  div.rodape > div, div.rodape.com-resumo > div { max-width: none; flex-direction: column; align-items: stretch; gap: 12px; }
+  div.rodape.com-resumo .resumo-linha { text-align: center; }
+  div.rodape .botao:not(.secundario):not(.perigo) { width: 100%; min-width: 0; }
+  .app.com-menu:has(div.rodape) { padding-bottom: 32px; }
+  .app:has(div.rodape) .conteudo, .app:has(div.rodape) .barra-titulo { width: auto; margin-left: max(0px, calc((100% - 368px - 760px) / 2)); margin-right: 368px; }
+}
+
+/* ---- 2. Aviso de erro (manual §6): faixa vermelha com desenho + o que houve + "Tentar de novo" ---- */
+.aviso-erro { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 12px; align-items: start; max-width: 720px; margin: 16px 0; padding: 16px; border-radius: var(--v-raio-cartao); border-left: 8px solid var(--v-erro); background: var(--v-erro-fundo); color: var(--v-erro); }
+.aviso-erro p { margin: 0; font-size: 17px; }
+.aviso-erro .aviso-erro-titulo { font-size: 20px; font-weight: 800; line-height: 1.2; margin-bottom: 4px; }
+.aviso-erro .botao { grid-column: 1 / -1; }
+#root > .aviso-erro { margin: 24px 20px; }
+@media (min-width: 768px) { .aviso-erro .botao { justify-self: start; min-width: 240px; } }
+
+/* ---- 3. Tablet e computador (768 px ou mais): listas de cartões em 2 colunas; no celular continua uma coluna ---- */
+.lista-cartoes > .cartao:first-child { margin-top: 0; }
+@media (min-width: 768px) {
+  .lista-cartoes, .lista-pedidos, .grupo-itens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .lista-cartoes > *, .grupo-itens > .item { margin: 0; }
+  /* ocupa a linha inteira: o título do grupo, o item aberto para preencher, o cartão com a tabela de itens aberta e o cartão que está sozinho */
+  .grupo-itens > .grupo, .grupo-itens > .quadro, .grupo-itens > :not(.item), .lista-cartoes > .aberto, .lista-cartoes > :only-child, .lista-pedidos > :only-child { grid-column: 1 / -1; }
+  .lista-cartoes .cartao-tarja > .acoes button:last-child:nth-child(odd) { grid-column: 1 / -1; border-right: 0; border-top: 1px solid var(--linha); }
+  .lista-cartoes > .aberto.cartao-tarja > .acoes button:last-child:nth-child(odd) { grid-column: auto; border-top: 0; }
+  .lista-pedidos .botao-linha { height: 100%; }
+}
+
+/* ---- 4. Selos: cor + desenho + palavra em todos (antes alguns iam só com cor e palavra) ---- */
+:root {
+  --i-sacola: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.5 8.5h13l-1 11.5h-11z'/%3E%3Cpath d='M9 8.5V7a3 3 0 0 1 6 0v1.5'/%3E%3C/svg%3E");
+}
+.pill:not(.ok):not(.atencao):not(.neutro)::before, .selo::before, .selo-loja::before, .etiqueta-cotacao::before, .automatico::before, .atrasado::after {
+  content: ''; flex: none; display: inline-block; width: 16px; height: 16px; vertical-align: -2px; background: currentColor;
+  -webkit-mask: var(--i-alerta) center / contain no-repeat; mask: var(--i-alerta) center / contain no-repeat; }
+.selo::before, .selo-loja::before, .etiqueta-cotacao::before, .automatico::before { margin-right: 6px; }
+.etiqueta-cotacao::before { -webkit-mask-image: var(--i-relogio); mask-image: var(--i-relogio); }
+.selo-loja::before { -webkit-mask-image: var(--i-sacola); mask-image: var(--i-sacola); }
+.automatico::before { -webkit-mask-image: var(--i-check); mask-image: var(--i-check); }
+.atrasado::after { margin-left: 6px; }
+.pill .icone { flex: none; }
+
+/* ---- 5. Gaveta de filtros: "Limpar tudo" e "Ver N" com a mesma altura de 60 px; a contagem da opção desligada continua legível ---- */
+.folha-rodape .botao, .folha-rodape .botao.secundario { min-height: 60px; }
+.pilula:disabled .pilula-n { opacity: 1; }
+
+/* ---- 6. Menu lateral em 1024 px: nome comprido ("Lançamento de cupom") não encosta na borda ---- */
+@media (min-width: 1024px) {
+  .barra-abas a, .recolher-menu { padding: 4px 12px; white-space: normal; line-height: 1.2; }
+  .app.recolhido .barra-abas a, .app.recolhido .recolher-menu { padding: 0; }
+}
+.ver-mais { width: 100%; margin: 12px 0; }
+/* Pedidos: a parte de cada cotação dentro do cartão do vendedor usa o mesmo nome de classe (.secao) do botão de abrir e fechar dos Cadastros e herdava a linha
+   em colunas dele: os botões espremiam o texto e a tela passava da largura do celular. Aqui ela volta a ser um bloco comum, um embaixo do outro. */
+div.secao { display: block; width: auto; background: none; border: 0; border-top: 1px solid var(--linha); border-radius: 0; margin: 10px 0 0; padding: 10px 0 0; font-weight: inherit; cursor: auto; }
+
+/* ---- 7. Telas de até 2,5 alturas no celular: blocos que abrem pelo título (Recolher) e "Ver mais" nas listas ---- */
+.recolher { margin-top: 16px; border-top: 1px solid var(--linha); }
+.recolher > summary.grupo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; min-height: 56px; cursor: pointer; list-style: none; }
+.recolher > summary.grupo::-webkit-details-marker { display: none; }
+.recolher > summary.grupo::after { content: ''; flex: none; width: 10px; height: 10px; margin: 0 6px 4px 0; border-right: 3px solid var(--tinta); border-bottom: 3px solid var(--tinta); transform: rotate(45deg); }
+.recolher[open] > summary.grupo::after { transform: rotate(-135deg); margin: 4px 6px 0 0; }
+.economia .recolher .rodape { margin-top: 0; border-top: 0; padding-top: 0; }
+
+/* ---- 8. Economia: tabela larga rola dentro dela (a tela não rola para o lado) e a letra dos gráficos fica com 16 px ou mais na tela ---- */
+.economia table, .historico-item table { display: block; max-width: 100%; overflow-x: auto; }
+.curva-rotulo { font-size: 15px; }
+.curva-valor { font-size: 16px; }
+.barras text { font-size: 15px; }
+/* celular: um rótulo de data sim, um não (8 datas de 16 px não cabem lado a lado); a primeira e a última ficam para dentro do desenho */
+.curva .curva-rotulo:nth-of-type(even) { display: none; }
+.curva .curva-rotulo:first-of-type { text-anchor: start; }
+.curva .curva-rotulo:nth-last-of-type(2) { display: inline; text-anchor: end; }
+.curva .curva-rotulo:nth-last-of-type(3) { display: none; }
+@media (min-width: 768px) {
+  .curva-rotulo, .barras text { font-size: 8px; }
+  .curva-valor { font-size: 9px; }
+  .curva .curva-rotulo:nth-of-type(even), .curva .curva-rotulo:nth-last-of-type(3) { display: inline; }
+}
+/* "Mais ações" do cartão do vendedor (Pedidos): no celular é um bloco que abre pelo título; no tablet e no computador os botões aparecem soltos, como sempre */
+.acoes > .recolher.mais-acoes { flex: 1 0 100%; margin-top: 0; border-top: 0; }
+.acoes > .recolher.mais-acoes[open] { display: flex; flex-wrap: wrap; gap: 8px; }
+.acoes > .recolher.mais-acoes > summary.grupo { flex: 1 0 100%; font-size: 17px; min-height: 48px; }
+@media (min-width: 768px) {
+  .acoes > .recolher.mais-acoes, .acoes > .recolher.mais-acoes[open] { display: contents; }
+  .acoes > .recolher.mais-acoes > summary.grupo { display: none; }
+}
+/* espaço embaixo do conteúdo no celular e no tablet: a altura do rodapé de ação (resumo de 2 linhas + botão de 60 px) */
+@media (max-width: 1023px) {
+  .app:has(div.rodape) { padding-bottom: calc(var(--barra-baixo) + 124px + env(safe-area-inset-bottom)); }
+  .app:has(div.rodape.com-resumo) { padding-bottom: calc(var(--barra-baixo) + 176px + env(safe-area-inset-bottom)); }
+}

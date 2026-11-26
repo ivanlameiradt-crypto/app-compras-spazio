@@ -172,7 +172,7 @@ describe('Resumo — Fase 1B (cotações)', () => {
       await userEvent.click(await screen.findByRole('button', { name: 'Encerrar semana' }))
       expect(window.confirm).toHaveBeenCalledWith([
         "Há cotação aberta com MATEUS (fecha ter 13/10 às 17h): na semana nova os itens dela continuam 'Em cotação' até você decidir.",
-        'Há pedido com ATACADÃO confirmado nesta semana: ele só entra no estoque quando a NF-e for lançada no SisChef.',
+        'Há pedido com ATACADÃO confirmado nesta semana: ele só entra no estoque quando a nota fiscal for lançada no SisChef.',
         'Encerrar assim mesmo?',
       ].join('\n\n'))
       expect(m.cotacoesDaSemana).toHaveBeenCalledWith(7)

@@ -49,7 +49,6 @@ export default function FecharCompra({ loja, totalSugerido, onConfirmar, onVolta
       {processandoFoto && <p className="sub">Preparando foto…</p>}
       {erro && <p className="erro">{erro}</p>}
       <button className="link" onClick={onVoltar}>Voltar para a lista</button>
-      <div style={{ height: 112 }} aria-hidden="true" />
       {/* Rodapé fixo com resumo (manual v2, 5B-7) */}
       <div className="rodape com-resumo">
         <div>

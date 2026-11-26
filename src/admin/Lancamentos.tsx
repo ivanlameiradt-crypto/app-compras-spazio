@@ -8,6 +8,7 @@ import {
   ROTULO_STATUS, formatarData, formatarDataHora, formatarQtd, formatarReais, lerNumero, mensagemDeErro,
 } from '../lib/regras'
 import TituloDaTela from '../components/TituloDaTela'
+import VerMais from '../components/pecas/VerMais'
 import { BuscaFiltros, CartoesSituacao, Fichas, GavetaFiltros, GrupoFiltro, type Ficha } from '../components/pecas/Filtros'
 
 type Periodo = 'Últimos 7 dias' | 'Últimos 30 dias' | 'Mais de 30 dias'
@@ -271,7 +272,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
           ))}
         </>
       )}
-      {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.<span className="vazio-passo">Quando um comprador fechar uma compra, ela aparece aqui. Toque em Atualizar para conferir.</span></p>}
+      {fila.length === 0 && <p className="vazio">Nenhuma compra aguardando lançamento.<span className="vazio-passo">Quando um comprador fechar uma compra, ela aparece aqui. Para conferir, feche e abra o app de novo.</span></p>}
       {fila.length > 0 && (
         <>
           <CartoesSituacao valor={situacao ?? 'tudo'} aoEscolher={(v) => setSituacao(v === 'fechada' || v === 'aprovada' ? v : null)}
@@ -296,8 +297,11 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             opcoes={PERIODOS.map((p) => ({ valor: p, contagem: contar({ periodo: false }, undefined, undefined, p) }))} />
         </GavetaFiltros>
       )}
-      {visiveis.map((c) => (
-        <div key={c.id} className={`cartao cartao-tarja ${c.status === 'aprovada' ? 'ok' : 'atencao'}`}>
+      {/* Tablet e computador: cartões em 2 colunas (manual v2, 5B-5); no celular é uma coluna só. */}
+      <VerMais itens={visiveis} primeiros={4} unidade={['compra', 'compras']}>{(mostradas) => (
+      <div className="lista-cartoes">
+      {mostradas.map((c) => (
+        <div key={c.id} className={`cartao cartao-tarja ${c.status === 'aprovada' ? 'ok' : 'atencao'}${aberta === c.id ? ' aberto' : ''}`}>
           {/* Cartão com tarja lateral (manual v2, 5B-5): à esquerda a palavra do estado; no meio o nome, os dados e o valor em 32 px; no rodapé as ações. */}
           <div className="tarja">
             <Icone nome={c.status === 'aprovada' ? 'check' : 'relogio'} tamanho={28} />
@@ -310,7 +314,7 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
             </div>
             <div className="sub">
               {c.itens} itens ·{' '}
-              <span className="pill neutro">{c.com_nota ? 'Com nota' : 'Sem nota'}</span>
+              <span className="pill neutro com-desenho"><Icone nome={c.com_nota ? 'fiscal' : 'fechar'} tamanho={16} />{c.com_nota ? 'Com nota' : 'Sem nota'}</span>
             </div>
             <p className="sub o-que-fazer">{c.status === 'aprovada' ? 'Falta marcar como lançada, depois de lançar no SisChef.' : 'Confira os itens e toque em Aprovar.'}</p>
             {c.foto_cupom && <button className="link" onClick={() => cupom(c)}><Icone nome="foto" tamanho={22} /> Ver cupom</button>}
@@ -340,6 +344,8 @@ export default function Lancamentos({ usuario }: { usuario: Usuario }) {
           </div>
         </div>
       ))}
+      </div>
+      )}</VerMais>
     </section>
   )
 }

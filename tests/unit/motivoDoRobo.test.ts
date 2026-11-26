@@ -162,7 +162,7 @@ describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão q
     expect(e?.fazer).toContain('Não digite as parcelas ainda')
     expect(e?.fazer).toContain('toque em Lançar de novo')
     expect(e?.fazer).toContain('Se passar de um dia, chame o Claude')
-    expect(e?.fazer).toContain('“O XML desta nota ainda não foi lido”')          // o mesmo aviso que a tela mostra enquanto o XML não foi lido (notaSefazRegras/NotaSefaz)
+    expect(e?.fazer).toContain('“O arquivo desta nota ainda não foi lido”')          // o mesmo aviso que a tela mostra enquanto o XML não foi lido (notaSefazRegras/NotaSefaz)
   })
 
   it('XML não lido: reconhece também as outras causas da leitura (sem vProd/vNF, link que não clicou) e o começo técnico', () => {

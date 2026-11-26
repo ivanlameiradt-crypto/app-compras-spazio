@@ -10,6 +10,7 @@ import { ddmm, diaCurto, horaLocal, rotuloVendedor } from '../cotacao/mensagens'
 import * as cad from '../cadastros/api'
 import { tirarSempre as textoTirarSempre } from '../cadastros/textos'
 import TituloDaTela from '../components/TituloDaTela'
+import VerMais from '../components/pecas/VerMais'
 
 type Aba = 'conferir' | 'bebidas' | 'insumos' | 'negativos'
 /** Outra semana ainda em compra: só uma fica em compra por vez, então ela precisa ser encerrada antes de aprovar esta. */
@@ -49,7 +50,7 @@ export function etiquetasPedidoAnterior(pedidos: PedidoRecente[], vendedores: Ve
     const rotulo = v ? rotuloVendedor(v.empresa) : `vendedor ${p.vendedor_id}`
     const dia = horaLocal(p.confirmado_em).data
     for (const l of p.itens) {
-      if (!r.has(l.produto_id)) r.set(l.produto_id, `Pedido com ${rotulo} em ${diaCurto(dia)} ${ddmm(dia)}: a NF-e já entrou no SisChef?`)
+      if (!r.has(l.produto_id)) r.set(l.produto_id, `Pedido com ${rotulo} em ${diaCurto(dia)} ${ddmm(dia)}: a nota fiscal já entrou no SisChef?`)
     }
   }
   return r
@@ -212,9 +213,16 @@ export default function Revisao({ usuario }: { usuario: Usuario }) {
         <p className="aviso">Insumos com estoque negativo no SisChef: erro de baixa, não compra. Ficam fora da lista, a não ser que você inclua (entra com o estoque mínimo).</p>
       )}
 
-      {visiveis.map((i) => (
-        <Cartao key={i.id} item={i} editavel={editavel} onAjustar={ajustar} onTirarSempre={tirarSempre} onIncluirSempre={incluirSempre} pedidoAnterior={pedidosAnteriores.get(i.produto_id)} />
-      ))}
+      {/* Celular: os 6 primeiros e "Ver mais" (tela de até 2,5 alturas); tablet e computador: tudo, em 2 colunas. */}
+      <VerMais itens={visiveis} primeiros={6} unidade={['produto', 'produtos']}>
+        {(mostrados) => (
+          <div className="lista-cartoes">
+            {mostrados.map((i) => (
+              <Cartao key={i.id} item={i} editavel={editavel} onAjustar={ajustar} onTirarSempre={tirarSempre} onIncluirSempre={incluirSempre} pedidoAnterior={pedidosAnteriores.get(i.produto_id)} />
+            ))}
+          </div>
+        )}
+      </VerMais>
 
       {fora.length > 0 && (
         <details className="cartao" data-testid="fora-por-regra">

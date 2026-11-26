@@ -57,7 +57,7 @@ const SEM_TEXTO_DA_FUNCAO = /Failed to send a request to the Edge Function|Relay
 /** Sem resposta (ou servidor fora do ar, status 500 ou mais): NÃO dá para saber se o servidor gravou; por isso o aviso manda conferir antes de repetir, sem prometer que nada foi perdido. */
 const TEXTO_SEM_RESPOSTA = 'Sem resposta do servidor (internet ou servidor fora do ar). Confira se a ação aparece na lista antes de repetir.'
 /** O servidor respondeu recusando (status 4xx) e não disse o motivo de um jeito legível: repetir igual não resolve. */
-const TEXTO_RECUSOU = 'O servidor recusou o pedido. Atualize a tela e tente de novo; se continuar, avise o Ivan.'
+const TEXTO_RECUSOU = 'O servidor recusou o pedido. Feche e abra o app de novo e tente outra vez; se continuar, avise o Ivan.'
 /**
  * A mensagem de um erro de Edge Function, para a tela (A3 de 13/11/2026, separada na revisão do PR 91):
  * (b) o servidor devolveu o texto dele no corpo (JSON `erro`, já em português): passa como está, com qualquer status;
@@ -751,24 +751,24 @@ function mensagemDoLancar(status: number | undefined, texto: string): string {
   const t = texto.toLowerCase()
   if (status === 403 || t.includes('administrador')) return 'Só o administrador pode lançar notas.'
   if (t.includes('outra nota')) return 'O robô está lançando outra nota. Aguarde ela terminar (uns 3 minutos) e toque em Lançar de novo.'
-  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi excluída. Atualize a tela e confira.'
+  if (status === 409 || t.includes('não está disponível')) return 'Esta nota já está lançando, já foi lançada, ficou pela metade ou foi excluída. Feche e abra o app de novo e confira.'
   if (t.includes('parcelas digitadas')) {
     if (t.includes('não fecham')) return 'As parcelas digitadas não fecham com o valor da nota. Confira os valores.'
-    if (t.includes('já tem boletos')) return 'Esta nota já tem boletos no XML. Atualize a tela e confira.'
+    if (t.includes('já tem boletos')) return 'Esta nota já tem boletos no arquivo da nota. Feche e abra o app de novo e confira.'
     if (t.includes('só valem para boleto')) return 'Parcelas digitadas só valem para a forma Boleto.'
     if (t.includes('frete')) return 'O frete não está certo: confira o valor e o tipo do frete.'
     return 'Confira o vencimento e o valor de cada parcela.'
   }
   if (t.includes('frete')) return 'O frete não está certo: confira o valor e o tipo do frete.'
   if (status === 400 || t.includes('inválid')) {
-    if (t.includes('chave')) return 'A chave da nota não é válida. Atualize a tela e tente de novo.'
+    if (t.includes('chave')) return 'A chave da nota não é válida. Feche e abra o app de novo e tente outra vez.'
     // só a recusa da forma de pagamento fala em "pagar"/"forma"; qualquer outra recusa nova não pode se passar por ela
     if (t.includes('pagar') || t.includes('forma')) return 'Escolha como pagar: a forma de pagamento não é válida.'
-    return 'O servidor recusou o pedido. Atualize a tela e confira a nota.'
+    return 'O servidor recusou o pedido. Feche e abra o app de novo e confira a nota.'
   }
   if (status === 502 || t.includes('robô')) return 'Não consegui chamar o robô agora, tente de novo.'
   // sem resposta nenhuma (internet caiu): o servidor pode ter reservado a nota e chamado o robô antes de a resposta se perder; repetir o toque é seguro (o 2º vem como "já está lançando"), mas a pessoa precisa saber disso
-  if (status === undefined && !texto) return 'Sem resposta do servidor (internet ou servidor fora do ar). O robô pode ter sido chamado: atualize a tela e veja se a nota aparece como "lançando" antes de tocar em Lançar de novo.'
+  if (status === undefined && !texto) return 'Sem resposta do servidor (internet ou servidor fora do ar). O robô pode ter sido chamado: feche e abra o app de novo e veja se a nota aparece como "lançando" antes de tocar em Lançar de novo.'
   return 'Não consegui lançar agora. Confira a internet e tente de novo.'
 }
 /**
@@ -805,7 +805,7 @@ export async function terminarPedidoDaNota(chave: string): Promise<void> {
   }
   if (status === 403) throw new ErroApi('Só o administrador pode fazer isso.', status)
   if (status === 409 && texto) throw new ErroApi(`Não deu para chamar o robô: ${texto}.`, status)
-  if (status === 404) throw new ErroApi('Não achei esta nota. Atualize a tela.', status)
+  if (status === 404) throw new ErroApi('Não achei esta nota. Feche e abra o app de novo.', status)
   if (status === 502) throw new ErroApi('Não consegui chamar o robô agora, tente de novo.', status)
   throw new ErroApi('Não consegui chamar o robô agora. Confira a internet e tente de novo.', status)
 }

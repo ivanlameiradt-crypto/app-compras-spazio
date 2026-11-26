@@ -22,6 +22,7 @@ import { prontaSemSinal } from './cotacoes/estado'
 import { textoMotivo } from './cotacoes/formato'
 import { BuscaFiltros, Fichas, GavetaFiltros, GrupoFiltro } from '../components/pecas/Filtros'
 import TituloDaTela from '../components/TituloDaTela'
+import VerMais, { Recolher } from '../components/pecas/VerMais'
 import { hojeLocal } from './ListaSemana'
 import { qtdNaTela } from './listaSemanaRegras'
 import { gruposDeLoja, resumoPedidos, type GrupoLoja } from './pedidosRegras'
@@ -243,7 +244,7 @@ export default function Cotacoes() {
           <a className="link" href="#/historico">Histórico</a>
           <button className="botao secundario" disabled={ocupado} onClick={() => void atualizar()}>Atualizar</button>
         </div>
-        {erroCarga && <p className="erro" role="alert">Não consegui atualizar: {erroCarga}</p>}
+        {erroCarga && <p className="erro" role="alert" title={erroCarga}>Não consegui atualizar. Tente de novo.</p>}
         {erros.geral && <p className="erro" role="alert">{erros.geral}</p>}
         {!semana && <p className="vazio">Aprove a lista da semana para montar as cotações.</p>}
         {semana && preparo && <SemanaEmCompra dados={dados} preparo={preparo} />}
@@ -256,7 +257,7 @@ export default function Cotacoes() {
         {semana && preparo && <ResumoDoRodape dados={dados} preparo={preparo} />}
         <p className="sub rodape-cotacoes" data-testid="rodape">
           Atualizado às {horaBr(horaLocal(dados.atualizadoEm))}. As respostas aparecem aqui ao atualizar (sozinho a cada 30 s).
-          O e-mail avisa nas coletas de seg a sex (8h17, 12h17, 16h17); o GitHub costuma atrasar de 5 a 30 min.
+          O e-mail avisa nas coletas de seg a sex (8h17, 12h17, 16h17); pode atrasar de 5 a 30 min.
         </p>
         <Chaves />
       </section>
@@ -318,11 +319,11 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
       <DaSemanaAnterior linhas={preparo.atravessados} dados={dados} />
       <NaoEnviadas cotacoes={[...dados.daSemana, ...dados.anteriores]} />
       {preparo.cartoes.length === 0 && <p className="vazio">Nenhum item com vendedor nesta semana.<span className="vazio-passo">Associe um vendedor aos itens em Cadastros.</span></p>}
-      {cartoesVisiveis.map((cartao) => {
+      <VerMais itens={cartoesVisiveis} primeiros={1} folga={0} unidade={['vendedor', 'vendedores']}>{(mostrados) => mostrados.map((cartao) => {
         const v = dados.vendedores.find((x) => x.id === cartao.vendedor_id)
         if (!v) return null
         return <CartaoVendedor key={v.id} v={v} cartao={cartao} cotacoes={cotacoesDe(v.id)} daSemana />
-      })}
+      })}</VerMais>
     </>
   )
 }
@@ -352,8 +353,7 @@ function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
   const ctx = useCotacoes()
   if (grupos.length === 0) return null
   return (
-    <>
-      <div className="grupo">Compra na loja</div>
+    <Recolher titulo="Compra na loja">
       {grupos.map((g) => (
         <div key={g.nome} className="cartao cartao-loja" data-testid={`loja-${g.nome}`}>
           <div className="linha">
@@ -396,7 +396,7 @@ function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
           <Link className="botao secundario" to="/comprar">Fazer esta compra agora</Link>
         </div>
       ))}
-    </>
+    </Recolher>
   )
 }
 

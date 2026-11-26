@@ -45,7 +45,7 @@ describe('NotaSefaz — MAUES: a quarta de pagamento aparece na tela e a data po
     expect(bloco()).toHaveTextContent('Parcela 1 · vence quarta, 14/10/2026')
     expect(bloco()).toHaveTextContent(/R\$\s791,20/)
     expect(bloco()).toHaveTextContent('semana de 04/10 a 10/10')
-    expect(bloco()).toHaveTextContent('O XML trouxe 08/10/2026; vale a quarta')
+    expect(bloco()).toHaveTextContent('O arquivo da nota trouxe 08/10/2026; vale a quarta')
     expect(screen.queryByLabelText('Vencimento da parcela 1')).not.toBeInTheDocument() // a caixa de data só abre em "Mudar a data"
     expect(screen.getByRole('button', { name: 'Mudar a data' })).toBeInTheDocument()
   })
@@ -56,7 +56,7 @@ describe('NotaSefaz — MAUES: a quarta de pagamento aparece na tela e a data po
     await screen.findByTestId('nota-a-lancar')
     const parcela = within(screen.getByTestId('conferir')).getByTestId('conferir-parcela')
     expect(parcela).toHaveTextContent('vence 14/10/2026')
-    expect(parcela).toHaveTextContent('o XML trouxe 08/10/2026')
+    expect(parcela).toHaveTextContent('o arquivo da nota trouxe 08/10/2026')
   })
 
   it('Lançar → Confirmar manda a quarta de forma explícita (o que a tela mostrou é o que vale)', async () => {

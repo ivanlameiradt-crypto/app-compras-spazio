@@ -33,7 +33,7 @@ it('mostra a entrega prevista, o estado do recebimento e a NF-e casada', async (
   render(<EntregaNfe cotacao={7} vendedor={V} />)
   expect(await screen.findByText(/Entrega prevista qui 22\/10/)).toBeTruthy()
   expect(screen.getByText(/Recebido — completo/)).toBeTruthy()
-  expect(screen.getByText(/NF-e 123456/)).toBeTruthy()
+  expect(screen.getByText(/Nota fiscal 123456/)).toBeTruthy()
   expect(screen.getByText(/na fila do SisChef, ainda não lançada/)).toBeTruthy()
 })
 
@@ -49,6 +49,6 @@ it('sem NF casada, lista as NF-e do vendedor sem pedido com "É deste pedido"', 
   m.conferencia.mockResolvedValue([linha({ nf_chaves: [], preco: 'sem_nf', qtd_nf: 'sem_nf', marca_nf: null })])
   m.nfesSemPedido.mockResolvedValue([nfe({ chave: 'z', cotacao_id: null, vinculo: null })])
   render(<EntregaNfe cotacao={7} vendedor={V} />)
-  expect(await screen.findByText(/NF-e ainda não apareceu/)).toBeTruthy()
+  expect(await screen.findByText(/A nota fiscal ainda não apareceu/)).toBeTruthy()
   expect(screen.getByRole('button', { name: 'É deste pedido' })).toBeTruthy()
 })
