@@ -1,12 +1,13 @@
 // "Ler boleto pela foto": a Marilane tira a foto do boleto (ou digita o número) e o app preenche vencimento e valor da parcela, sem digitar.
 // Pedido do Ivan em 25/11/2026 (notas do MATEUS vêm sem boleto no XML). A foto é lida no próprio aparelho e não é guardada.
 import { useRef, useState } from 'react'
+import LeitorAoVivo from './LeitorAoVivo'
 import { lerDigitosDaFoto } from './boletoFoto'
 import { lerBoleto, type BoletoLido } from './boletoRegras'
 
 const MSG_NAO_ACHOU = 'Não consegui ler o código de barras nesta foto. Chegue mais perto, deixe o código reto e bem iluminado, ou digite o número do boleto.'
 
-export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler boleto pela foto' }: {
+export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler código de barras' }: {
   desabilitado: boolean
   rotulo?: string
   /** Devolve a mensagem para mostrar (sucesso ou aviso) quando o boleto foi usado, ou null se recusou. */
@@ -15,6 +16,7 @@ export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler
   const entrada = useRef<HTMLInputElement>(null)
   const [lendo, setLendo] = useState(false)
   const [digitando, setDigitando] = useState(false)
+  const [aoVivo, setAoVivo] = useState(false) // o leitor com a câmera ao vivo é o modo principal; a foto e o número ficam de reserva
   const [numero, setNumero] = useState('')
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null)
 
@@ -45,9 +47,10 @@ export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler
   return (
     <div className="leitor-boleto" data-testid="leitor-boleto">
       <div className="acoes">
-        <button type="button" className="botao" disabled={desabilitado || lendo} onClick={() => entrada.current?.click()} data-testid="boleto-foto-botao">
+        <button type="button" className="botao" disabled={desabilitado || lendo} onClick={() => { setAviso(null); setAoVivo(true) }} data-testid="boleto-foto-botao">
           {lendo ? 'Lendo a foto…' : rotulo}
         </button>
+        <button type="button" className="link" disabled={desabilitado || lendo} onClick={() => entrada.current?.click()} data-testid="boleto-galeria-botao">Usar uma foto do aparelho</button>
         <button type="button" className="link" disabled={desabilitado || lendo} onClick={() => setDigitando((v) => !v)} data-testid="boleto-digitar-botao">
           {digitando ? 'Fechar' : 'Digitar o número do boleto'}
         </button>
@@ -63,6 +66,13 @@ export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler
           </label>
           <button type="button" className="botao secundario" disabled={desabilitado || numero.trim() === ''} onClick={() => usar(numero)}>Usar este número</button>
         </div>
+      )}
+      {aoVivo && (
+        <LeitorAoVivo
+          aoLer={(d) => { setAoVivo(false); usar(d) }}
+          aoFechar={() => setAoVivo(false)}
+          aoDigitar={() => { setAoVivo(false); setDigitando(true) }}
+        />
       )}
       {aviso && <p className={aviso.ok ? 'ok' : 'erro'} role="status" data-testid="boleto-aviso">{aviso.texto}</p>}
     </div>
