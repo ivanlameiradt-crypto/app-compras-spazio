@@ -17,6 +17,7 @@ const mateus = (): NotaSefazLista => ({
 })
 // 10/12/2026 = fator 1656; valor R$ 469,74. O fator é lido pela data de hoje, então o teste vale enquanto "hoje" estiver entre 2024 e 2038.
 const CODIGO = barras('341', '1656', '46974')
+const PARCIAL = barras('341', '1656', '20000') // R$ 200,00: não fecha com a nota (469,74), então o editor segue aberto
 const botaoLancar = () => screen.getByRole('button', { name: 'Lançar' })
 
 beforeEach(async () => {
@@ -60,9 +61,9 @@ describe('NotaSefaz — boleto lido pela foto ou pelo número (25/11)', () => {
     render(<NotaSefaz />)
     await screen.findByTestId('editor-parcelas')
     await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
-    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(CODIGO))
+    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(PARCIAL))
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
-    expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('469,74')
+    expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('200,00')
     expect(screen.getByText('Boleto 1 de 1')).toBeInTheDocument()
     // existe mais um boleto: a parcela 2 nasce com o botão de foto dela
     await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
@@ -73,10 +74,10 @@ describe('NotaSefaz — boleto lido pela foto ou pelo número (25/11)', () => {
     await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(outro))
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
     expect(screen.getByLabelText('Valor da parcela 2')).toHaveValue('100,00')
-    expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('469,74')
+    expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('200,00')
     // o 1º boleto lido de novo na linha 2: já está na lista
     await userEvent.click(screen.getAllByTestId('boleto-digitar-botao')[1])
-    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), CODIGO)
+    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), PARCIAL)
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
     expect(screen.getAllByTestId('boleto-aviso').map((e) => e.textContent).join(' ')).toContain('já está na lista')
     expect(screen.getByLabelText('Valor da parcela 2')).toHaveValue('100,00')
@@ -104,5 +105,27 @@ describe('NotaSefaz — boleto lido pela foto ou pelo número (25/11)', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Confirmar/ }))
     await waitFor(() => expect(m.lancarNota).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(cartao.open).toBe(false))
+  })
+
+  it('quando a soma bate, os boletos recolhem num resumo; "Alterar boletos" reabre; ao tocar em Lançar sobra só o resumo e o Confirmar', async () => {
+    render(<NotaSefaz />)
+    await screen.findByTestId('editor-parcelas')
+    expect(screen.queryByTestId('boletos-resumo')).toBeNull()
+    await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
+    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(CODIGO))
+    await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
+    expect(await screen.findByTestId('boletos-resumo')).toHaveTextContent('Boleto 1 · vence 10/12/2026')
+    expect(screen.getByTestId('editor-linhas')).toHaveAttribute('hidden')
+    await userEvent.click(screen.getByRole('button', { name: 'Alterar boletos' }))
+    expect(screen.queryByTestId('boletos-resumo')).toBeNull()
+    expect(screen.getByTestId('editor-linhas')).not.toHaveAttribute('hidden')
+    // mexer num valor desfaz o "bate"; voltando a bater, recolhe de novo
+    await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
+    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(CODIGO))
+    await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
+    await userEvent.click(botaoLancar())
+    expect(screen.getByTestId('nota-recolhivel').querySelector('.nota-corpo')).toHaveClass('so-confirmar')
+    expect(screen.getByTestId('parcelas-confirmar')).toHaveTextContent('Total')
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
   })
 })
