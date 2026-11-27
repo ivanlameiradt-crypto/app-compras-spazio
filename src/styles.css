@@ -921,3 +921,15 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
 /* Ao tocar em Lançar (27/11/2026): sobra só o resumo do financeiro e o Confirmar; o resto fica escondido (continua montado, nada que foi digitado se perde). */
 .nota-corpo.so-confirmar > :not(.bloco-envio) { display: none; }
 .boletos-resumo { display: grid; gap: 8px; margin: 8px 0; }
+/* Leitor de código de barras ao vivo (27/11/2026): câmera em tela cheia, linha vermelha no meio, botões embaixo (48 px de toque, como o resto do app). */
+.leitor-vivo { position: fixed; inset: 0; z-index: 1000; background: #000; color: #fff; display: flex; flex-direction: column; justify-content: space-between; }
+.leitor-vivo-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.leitor-vivo-linha { position: absolute; left: 6%; right: 6%; top: 50%; height: 3px; margin-top: -1px; background: #ff3b30; box-shadow: 0 0 12px 2px rgba(255, 59, 48, 0.8); border-radius: 2px; pointer-events: none; }
+.leitor-vivo-topo, .leitor-vivo-base { position: relative; padding: 14px 16px; background: rgba(0, 0, 0, 0.55); }
+.leitor-vivo-topo p, .leitor-vivo-base p { margin: 0 0 6px; font-size: 18px; font-weight: 600; color: #fff; }
+.leitor-vivo-nota { font-size: 16px; font-weight: 500; opacity: 0.85; }
+.leitor-vivo-aviso { color: #ffd201; }
+.leitor-vivo-botoes { display: flex; flex-wrap: wrap; gap: 10px; }
+.leitor-vivo-botoes .botao { flex: 1 1 140px; min-height: 56px; }
+@media (prefers-reduced-motion: no-preference) { .leitor-vivo-linha { animation: pulsa-linha 1.6s ease-in-out infinite; } }
+@keyframes pulsa-linha { 50% { opacity: 0.55; } }

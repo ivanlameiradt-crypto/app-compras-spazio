@@ -338,7 +338,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           <label>Valor da parcela {i + 1}
             <input type="text" inputMode="decimal" placeholder="0,00" value={l.valor} disabled={desabilitado} onChange={(e) => mudar(i, 'valor', e.target.value)} />
           </label>
-          {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={(b) => receberBoleto(b, i)} rotulo={emBranco(l) ? 'Ler boleto pela foto' : 'Ler outro boleto pela foto'} />}
+          {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={(b) => receberBoleto(b, i)} rotulo={emBranco(l) ? 'Ler código de barras' : 'Ler outro boleto'} />}
           {linhas.length > 1 && (
             <button type="button" className="link" disabled={desabilitado} onClick={() => onChange(linhas.filter((_, j) => j !== i))}>
               Remover parcela {i + 1}
