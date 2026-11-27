@@ -142,7 +142,9 @@ export default function AssociarProduto({ item, n, catalogo, catalogoFalhou, aoT
     setEnviando(true); setErro('')
     try {
       // conversão = o número válido digitado (ou o sugerido que ele confirmou), ou null (campo vazio); desfazer (produtoId nulo) manda null
-      await salvar(n, produtoId, produtoId != null && lembrar && resumoDaNota !== '', produtoId != null ? conversao : null)
+      // "1 UN = 1 UN" não muda nada: com as unidades iguais (campo escondido) o 1 não é gravado. O robô parava a nota com "o número informado (1) não é de embalagem" (NF 90566, 27/11/2026).
+      const conversaoParaGravar = conversao === 1 && situacao === 'oculta' && fardo == null ? null : conversao
+      await salvar(n, produtoId, produtoId != null && lembrar && resumoDaNota !== '', produtoId != null ? conversaoParaGravar : null)
       limpar()
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui guardar a escolha agora. Tente de novo.')

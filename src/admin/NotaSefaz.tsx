@@ -123,6 +123,9 @@ function PainelConferir({ nota, catalogo, catalogoFalhou, aoTentarCatalogo, pode
   const quartaDaMaues = ehPagamentoSemanal(nota) ? planoSemanal(nota, [])?.quarta ?? null : null
   // Abre sozinho enquanto falta o Ivan escolher o produto de algum item (é lá que fica o campo para procurar e confirmar); depois o estado é dele.
   const [aberto, setAberto] = useState(() => nota.itens.some((it) => (!itemAssociado(it) && decisaoDoItem(nota, it) == null) || itemPedeConversao(nota, it)))
+  // Pedido do Ivan (27/11/2026): quando o último item é conferido, o bloco fecha sozinho e sobra só a tela final com o Lançar.
+  const algumPedeAcao = nota.itens.some((it) => (!itemAssociado(it) && decisaoDoItem(nota, it) == null) || itemPedeConversao(nota, it))
+  useEffect(() => { if (!algumPedeAcao) setAberto(false) }, [algumPedeAcao])
   // Pedido do Ivan (22/10/2026): o item confirmado sai da lista do que falta e vai para o resumo dos confirmados — a lista fica só com o que ainda pede algo dele.
   // "Editar" de um item confirmado abre a caixa dele ali mesmo, no resumo; só "Desfazer a escolha" (ou o robô pedir de novo) o devolve para a lista do que falta.
   const todos = nota.itens.map((it, i) => ({ it, i }))
@@ -245,6 +248,10 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   const xmlNaoLido = nota.parcelas == null // null = a leitura do SisChef ainda não abriu o XML desta nota ([] = leu e não há boletos)
   // O robô já tentou e só achou o resumo da nota: digitar parcelas não o faz lançar (De Marchi 113752, 31/10/2026). A tela deixa de mandar digitar e manda esperar o XML chegar.
   const soResumo = parouPorXmlNaoLido(nota)
+  // Pedido do Ivan (27/11/2026): quando a soma dos boletos bate com a nota, os blocos recolhem num resumo (a tela não fica comprida); "Alterar boletos" reabre.
+  const [editando, setEditando] = useState(false)
+  useEffect(() => { if (resultado.ok) setEditando(false) }, [resultado.ok])
+  const recolhido = resultado.ok && !editando
   const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
   // Linhas "em uso": as que têm alguma coisa digitada (linha totalmente em branco é só uma linha aberta e não conta; se TODAS estão em branco, valem todas).
   const emBranco = (l: LinhaParcela): boolean => l.vencimento.trim() === '' && l.valor.trim() === ''
@@ -313,6 +320,15 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           confirmado aqui no app, com a conversão de unidade se precisar).
         </p>
       )}
+      {recolhido && (
+        <div className="boletos-resumo" data-testid="boletos-resumo">
+          <ul className="conferir-itens">
+            {resultado.parcelas.map((p, i) => (<li key={i}><span>Boleto {i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>))}
+          </ul>
+          <button type="button" className="link" disabled={desabilitado} onClick={() => setEditando(true)}>Alterar boletos</button>
+        </div>
+      )}
+      <div hidden={recolhido} data-testid="editor-linhas">
       {linhas.map((l, i) => (
         <div key={i} className="linha-parcela" data-testid="linha-parcela">
           <div className="boleto-titulo"><b>Boleto {i + 1} de {linhas.length}</b>{!emBranco(l) && parseValorBr(l.valor) != null && l.vencimento !== '' && <span className="boleto-lido">preenchido</span>}</div>
@@ -342,6 +358,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           <button type="button" className="botao secundario" disabled={desabilitado} onClick={ajustarUltima}>Ajustar a última parcela</button>
         )}
         <button type="button" className="link" disabled={desabilitado} onClick={limpar}>Limpar parcelas</button>
+      </div>
       </div>
       {/* o que falta para o Lançar acender, em vermelho e logo acima do botão; bateu = verde. Linha em branco não conta; linha pela metade (só data ou só valor) trava com o número dela. */}
       <p className={resultado.ok ? 'ok' : resultado.motivo ? 'erro' : 'sub'} data-testid="resumo-parcelas">
@@ -777,7 +794,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <span className="nota-titulo-texto"><b>{nomeExibido ?? nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
         {etiqueta && <span className={`nota-etiqueta etq-${etiqueta.tom}`} data-testid="nota-etiqueta">{etiqueta.texto}</span>}
       </summary>
-      <div className="nota-corpo">
+      <div className={`nota-corpo${confirmando ? ' so-confirmar' : ''}`}>
 
       {/* Bonificação sem cobrança: uma informação calma (não é aviso) — o que é a nota e que ela entra só no estoque. */}
       {soEstoque && (
@@ -966,6 +983,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
               {(exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? []).map((p, i) => (
                 <li key={i}><span>Parcela {i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>
               ))}
+              <li><span><b>Total</b></span><b>{formatarReais((exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? []).reduce((s, p) => s + p.valor, 0))}</b></li>
             </ul>
           )}
           <div className="acoes">
