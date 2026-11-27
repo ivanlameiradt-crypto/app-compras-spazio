@@ -15,6 +15,7 @@
   --v-ok: #1E6B3A; --v-ok-fundo: #E6F4EA;
   --v-atencao: #5B300E; --v-atencao-fundo: #FFF1C2;
   --v-erro: #A3261B; --v-erro-fundo: #FDECEA;
+  --v-andamento: #0B4F8A; --v-andamento-fundo: #E3F0FB; /* "Lançando…": azul, só para o que o robô está fazendo agora (27/11/2026) */
   --v-neutro: #5C5859; --v-neutro-fundo: #E8E5DF;
   --v-toque: 48px; --v-botao: 56px; --v-botao-principal: 60px; --v-campo: 56px;
   --v-raio: 14px; --v-raio-cartao: 18px;
@@ -40,6 +41,7 @@
     --v-ok: #8BDCA6; --v-ok-fundo: #12301D;
     --v-atencao: #F3C88A; --v-atencao-fundo: #3A2A12;
     --v-erro: #FF9C93; --v-erro-fundo: #3D1512;
+    --v-andamento: #A9D2F5; --v-andamento-fundo: #12324F;
     --v-neutro: #CFCAC2; --v-neutro-fundo: #3A3536;
   }
 }
@@ -893,3 +895,25 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
   .app:has(div.rodape.com-resumo) { padding-bottom: calc(var(--barra-baixo) + 176px + env(safe-area-inset-bottom)); }
 }
 .curva-valor { paint-order: stroke; stroke: var(--fundo); stroke-width: 4px; stroke-linejoin: round; }
+
+/* "Lançando…" (27/11/2026): azul com um círculo que gira, para não se confundir com o amarelo dos avisos nem com o verde de "Pronta" e "Lançada". */
+.cupom .nota-etiqueta.etq-andamento { background: var(--v-andamento-fundo); color: var(--v-andamento); }
+.andamento { padding: 8px 10px; border-radius: 10px; background: var(--v-andamento-fundo); color: var(--v-andamento); font-size: 16px; font-weight: 600; }
+.selo-estado { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-weight: 700; }
+.selo-estado.andamento { background: var(--v-andamento-fundo); color: var(--v-andamento); }
+.selo-estado.lancado { background: var(--ok-fundo); color: var(--ok-texto); }
+.selo-estado.aviso { background: var(--aviso-fundo); color: var(--aviso-texto); }
+.cupom .nota-etiqueta.etq-andamento::before, .selo-estado.andamento::before {
+  content: ''; flex: none; display: inline-block; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box;
+  border: 3px solid currentColor; border-top-color: transparent; background: none; -webkit-mask: none; mask: none; animation: gira-andamento 0.9s linear infinite;
+}
+@keyframes gira-andamento { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cupom .nota-etiqueta.etq-andamento::before, .selo-estado.andamento::before { animation: none; } }
+
+/* Um bloco por boleto (27/11/2026): título "Boleto 2 de 3", leitor de foto dentro do bloco e o botão "Existe mais um boleto" embaixo. */
+.editor-parcelas .linha-parcela { border: 1px solid var(--linha); border-radius: var(--v-raio); padding: 12px; margin: 10px 0; display: grid; grid-template-columns: 1fr; gap: 12px; }
+.editor-parcelas .linha-parcela > * { min-width: 0; }
+.editor-parcelas .linha-parcela .leitor-boleto .botao { width: 100%; }
+.editor-parcelas .boleto-titulo { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 18px; }
+.editor-parcelas .boleto-lido { font-size: 16px; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--ok-fundo); color: var(--ok-texto); }
+.leitor-boleto .acoes { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }

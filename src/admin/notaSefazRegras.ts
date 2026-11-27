@@ -617,7 +617,7 @@ export function textoDoEstado(estado: EstadoLancamentoNfe | null | undefined, mo
 }
 
 // ---------- etiqueta no título da nota FECHADA
-export type TomEtiqueta = 'erro' | 'aviso' | 'ok'
+export type TomEtiqueta = 'erro' | 'aviso' | 'ok' | 'andamento'
 export interface EtiquetaNota { texto: string; tom: TomEtiqueta }
 /**
  * A etiqueta curta que fica no TÍTULO da nota, ao lado do nome (pedido do Ivan, 21/10/2026: a nota começa fechada e só o título aparece).
@@ -647,7 +647,7 @@ export function etiquetaDaNota(p: {
 }): EtiquetaNota | null {
   if (p.freteAberto) return { texto: 'Falta terminar no SisChef', tom: 'aviso' }
   if (p.estado === 'erro') return { texto: 'Ficou pela metade', tom: 'erro' }
-  if (p.estado === 'lancando' && !p.presa) return { texto: 'Lançando…', tom: 'aviso' }
+  if (p.estado === 'lancando' && !p.presa) return { texto: 'Lançando…', tom: 'andamento' }
   if (p.estado === 'revisar' || p.presa) return { texto: 'Precisa de você', tom: 'aviso' }
   if (p.estado === 'ensaio_ok') return { texto: 'Ensaio ok', tom: 'ok' }
   if (p.bloqueada) return { texto: 'Precisa de você', tom: 'aviso' }

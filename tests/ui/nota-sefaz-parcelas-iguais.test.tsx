@@ -35,8 +35,8 @@ const digitar = async (i: number, data: string, valor: string) => {
   if (valor) await userEvent.type(campo, valor)
 }
 const tresParcelas = async () => {
-  await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
-  await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
   for (const [i, d] of [[1, '2026-10-16'], [2, '2026-10-23'], [3, '2026-10-30']] as const) fireEvent.change(screen.getByLabelText(`Vencimento da parcela ${i}`), { target: { value: d } })
 }
 
@@ -107,7 +107,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
     m.notasALancar.mockResolvedValue([mateus({ valor_nf: 100 })])
     render(<NotaSefaz />)
     await screen.findByTestId('editor-parcelas')
-    for (let k = 0; k < 3; k++) await userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+    for (let k = 0; k < 3; k++) await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
     await userEvent.click(screen.getByRole('button', { name: 'Dividir em parcelas iguais' }))
     for (const i of [1, 2, 3, 4]) expect(screen.getByLabelText(`Valor da parcela ${i}`)).toHaveValue('25,00')
   })

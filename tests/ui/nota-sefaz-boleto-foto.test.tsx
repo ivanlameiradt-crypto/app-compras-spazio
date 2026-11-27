@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import NotaSefaz from '../../src/admin/NotaSefaz'
@@ -56,27 +56,30 @@ describe('NotaSefaz — boleto lido pela foto ou pelo número (25/11)', () => {
     expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('')
   })
 
-  it('digitando o número (linha digitável) preenche igual; segundo boleto abre a parcela 2; o mesmo boleto de novo é recusado', async () => {
+  it('cada boleto tem o seu botão: digita o 1º, "Existe mais um boleto" abre o 2º com o próprio leitor; o mesmo boleto de novo é recusado', async () => {
     render(<NotaSefaz />)
     await screen.findByTestId('editor-parcelas')
     await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
-    const campo = screen.getByPlaceholderText(/Cole ou digite/)
-    await userEvent.type(campo, linha(CODIGO))
+    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(CODIGO))
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
     expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('469,74')
-    // outro boleto de R$ 100,00 em outra data vira a parcela 2
+    expect(screen.getByText('Boleto 1 de 1')).toBeInTheDocument()
+    // existe mais um boleto: a parcela 2 nasce com o botão de foto dela
+    await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
+    expect(screen.getByText('Boleto 2 de 2')).toBeInTheDocument()
+    expect(screen.getAllByTestId('boleto-foto-botao')).toHaveLength(2)
     const outro = barras('001', '1670', '10000')
-    await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
+    await userEvent.click(screen.getAllByTestId('boleto-digitar-botao')[1])
     await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(outro))
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
-    expect(screen.getAllByTestId('linha-parcela')).toHaveLength(2)
     expect(screen.getByLabelText('Valor da parcela 2')).toHaveValue('100,00')
-    // o primeiro de novo: já está na lista
-    await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
+    expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('469,74')
+    // o 1º boleto lido de novo na linha 2: já está na lista
+    await userEvent.click(screen.getAllByTestId('boleto-digitar-botao')[1])
     await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), CODIGO)
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
-    expect(screen.getByTestId('boleto-aviso')).toHaveTextContent('já está na lista')
-    expect(screen.getAllByTestId('linha-parcela')).toHaveLength(2)
+    expect(screen.getAllByTestId('boleto-aviso').map((e) => e.textContent).join(' ')).toContain('já está na lista')
+    expect(screen.getByLabelText('Valor da parcela 2')).toHaveValue('100,00')
   })
 
   it('número errado: mostra o motivo e não preenche nada', async () => {
@@ -87,5 +90,19 @@ describe('NotaSefaz — boleto lido pela foto ou pelo número (25/11)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
     expect(screen.getByTestId('boleto-aviso')).toHaveClass('erro')
     expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('')
+  })
+
+  it('depois do Lançar + Confirmar o cartão da nota recolhe sozinho (27/11)', async () => {
+    render(<NotaSefaz />)
+    await screen.findByTestId('editor-parcelas')
+    const cartao = screen.getByTestId('nota-recolhivel') as HTMLDetailsElement
+    cartao.open = true
+    await userEvent.click(screen.getByTestId('boleto-digitar-botao'))
+    await userEvent.type(screen.getByPlaceholderText(/Cole ou digite/), linha(CODIGO))
+    await userEvent.click(screen.getByRole('button', { name: 'Usar este número' }))
+    await userEvent.click(botaoLancar())
+    await userEvent.click(await screen.findByRole('button', { name: /Confirmar/ }))
+    await waitFor(() => expect(m.lancarNota).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(cartao.open).toBe(false))
   })
 })

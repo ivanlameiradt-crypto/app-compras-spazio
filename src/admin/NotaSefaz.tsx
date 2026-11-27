@@ -271,13 +271,12 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
     onChange(linhas.map((l, i) => (alvo.includes(i) ? { ...l, valor: dividido[k++] } : l)))
   }
   // Boleto lido pela foto (ou pelo número digitado): preenche a primeira linha em branco ou abre uma nova. Boleto que já está na lista não entra de novo.
-  const receberBoleto = (b: BoletoLido): { ok: boolean; texto: string } => {
+  const receberBoleto = (b: BoletoLido, linha: number): { ok: boolean; texto: string } => {
     if (b.valor == null) return { ok: false, texto: 'Este boleto não traz o valor.' }
     const venc = b.vencimento ?? ''
-    if (venc !== '' && linhas.some((l) => l.vencimento === venc && parseValorBr(l.valor) === b.valor)) return { ok: false, texto: 'Esse boleto já está na lista de parcelas.' }
+    if (venc !== '' && linhas.some((l, j) => j !== linha && l.vencimento === venc && parseValorBr(l.valor) === b.valor)) return { ok: false, texto: 'Esse boleto já está na lista de parcelas.' }
     const nova: LinhaParcela = { vencimento: venc, valor: formatarValorBr(b.valor) }
-    const vazia = linhas.findIndex(emBranco)
-    onChange(vazia >= 0 ? linhas.map((l, i) => (i === vazia ? nova : l)) : [...linhas, nova])
+    onChange(linhas.map((l, i) => (i === linha ? nova : l)))
     const hoje = new Date()
     const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
     const base = venc === ''
@@ -314,15 +313,16 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           confirmado aqui no app, com a conversão de unidade se precisar).
         </p>
       )}
-      {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={receberBoleto} />}
       {linhas.map((l, i) => (
         <div key={i} className="linha-parcela" data-testid="linha-parcela">
+          <div className="boleto-titulo"><b>Boleto {i + 1} de {linhas.length}</b>{!emBranco(l) && parseValorBr(l.valor) != null && l.vencimento !== '' && <span className="boleto-lido">preenchido</span>}</div>
           <label>Vencimento da parcela {i + 1}
             <input type="date" value={l.vencimento} disabled={desabilitado} onChange={(e) => mudar(i, 'vencimento', e.target.value)} />
           </label>
           <label>Valor da parcela {i + 1}
             <input type="text" inputMode="decimal" placeholder="0,00" value={l.valor} disabled={desabilitado} onChange={(e) => mudar(i, 'valor', e.target.value)} />
           </label>
+          {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={(b) => receberBoleto(b, i)} rotulo={emBranco(l) ? 'Ler boleto pela foto' : 'Ler outro boleto pela foto'} />}
           {linhas.length > 1 && (
             <button type="button" className="link" disabled={desabilitado} onClick={() => onChange(linhas.filter((_, j) => j !== i))}>
               Remover parcela {i + 1}
@@ -332,7 +332,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
       ))}
       <div className="acoes">
         <button type="button" className="botao secundario" disabled={desabilitado || linhas.length >= 60} onClick={() => onChange([...linhas, { vencimento: '', valor: '' }])}>
-          Adicionar parcela
+          Existe mais um boleto
         </button>
         <button type="button" className="botao secundario" disabled={desabilitado || dividido == null} onClick={dividir}>Dividir em parcelas iguais</button>
         {resultado.falta != null && resultado.falta > 0 && (
@@ -511,6 +511,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [frete, setFrete] = useState<FreteConfirmado | null>(() => freteGravado(nota.frete_valor, nota.frete_tipo))
   const [comFrete, setComFrete] = useState(frete !== null)
   const fretePendente = comFrete && frete === null
+  const detalhesRef = useRef<HTMLDetailsElement>(null) // o cartão da nota: recolhe sozinho depois do Lançar (pedido do Ivan, 27/11/2026)
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
   // Itens cujo preço por unidade de estoque (total da linha ÷ o que entra no estoque) não se parece com o das últimas compras do produto (pedido do Ivan, 29/10/2026): só avisa, nunca trava.
   const precosFora = useMemo(() => itensComPrecoForaDoNormal(nota, catalogo, memoria), [nota, catalogo, memoria])
@@ -634,6 +635,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
     else await api.lancarNota(nota.chave, formaEnvio)
     lembrarForma(nota.emitente, formaEnvio)
     limparRascunhoDasParcelas(nota.chave) // o robô já recebeu as parcelas
+    if (detalhesRef.current) detalhesRef.current.open = false // o robô recebeu a nota: o cartão fecha e a etiqueta azul "Lançando…" fica à vista
   }
 
   async function confirmar() {
@@ -770,7 +772,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
       {/* A nota começa FECHADA (só o título + a etiqueta de estado) e abre/fecha pelo título (pedido do Ivan, 21/10/2026: as notas ficavam compridas demais).
           Sem `open` controlado de propósito: o navegador guarda se está aberta (o React não mexe nesse atributo ao reler a lista) e o conteúdo fica sempre
           montado, então o que o Ivan digitou dentro não se perde ao fechar. */}
-      <details className="nota-recolhivel" data-testid="nota-recolhivel">
+      <details className="nota-recolhivel" data-testid="nota-recolhivel" ref={detalhesRef}>
       <summary className="nota-titulo">
         <span className="nota-titulo-texto"><b>{nomeExibido ?? nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
         {etiqueta && <span className={`nota-etiqueta etq-${etiqueta.tom}`} data-testid="nota-etiqueta">{etiqueta.texto}</span>}
@@ -892,7 +894,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
           </details>
         </>
       ) : estadoTexto && (
-        <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
+        <div className={estado === 'erro' && !freteAberto(estado, nota.lancamento_motivo) ? 'erro' : estado === 'ensaio_ok' ? 'ok' : estado === 'lancando' && !presa ? 'andamento' : 'amarelo'} data-testid="status-nota">{estadoTexto}</div>
       )}
       {estado === 'erro' && nota.lancamento_motivo && <div className="sub">{traduzirMotivo(nota.lancamento_motivo, nota.itens)}</div>}
       {/* Terminar pedido (11/11/2026): o robô continua o pedido que ficou pela metade, quando é um caso que ele sabe terminar sozinho. */}

@@ -331,7 +331,7 @@ describe('Cupom — depois do envio', () => {
     await escolher('Sem cartão')
     await anexar()
     await userEvent.click(await enviarPronto())
-    expect(await screen.findByTestId('resultado')).toHaveClass('ok')
+    expect(await screen.findByTestId('resultado')).toHaveClass('andamento')
   })
 })
 
@@ -369,7 +369,7 @@ describe('Cupom — "Últimos envios"', () => {
     ])
     render(<Cupom />)
     const linhas = await screen.findAllByTestId('cupom-recente')
-    expect(linhas.map((l) => l.querySelector('b')?.textContent)).toEqual(['na fila', 'na fila', 'lançado ✓', 'precisa de você', 'teste ✓'])
+    expect(linhas.map((l) => l.querySelector('b')?.textContent)).toEqual(['na fila', 'lançando…', 'lançado ✓', 'precisa de você', 'teste ✓'])
   })
 
   it('sem envios ainda: avisa', async () => {
