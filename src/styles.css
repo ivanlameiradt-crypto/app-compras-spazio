@@ -15,6 +15,7 @@
   --v-ok: #1E6B3A; --v-ok-fundo: #E6F4EA;
   --v-atencao: #5B300E; --v-atencao-fundo: #FFF1C2;
   --v-erro: #A3261B; --v-erro-fundo: #FDECEA;
+  --v-leitor-linha: #FF3B30; /* linha do leitor de código de barras: vermelha nos dois modos */
   --v-andamento: #0B4F8A; --v-andamento-fundo: #E3F0FB; /* "Lançando…": azul, só para o que o robô está fazendo agora (27/11/2026) */
   --v-neutro: #5C5859; --v-neutro-fundo: #E8E5DF;
   --v-toque: 48px; --v-botao: 56px; --v-botao-principal: 60px; --v-campo: 56px;
@@ -924,7 +925,7 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
 /* Leitor de código de barras ao vivo (27/11/2026): câmera em tela cheia, linha vermelha no meio, botões embaixo (48 px de toque, como o resto do app). */
 .leitor-vivo { position: fixed; inset: 0; z-index: 1000; background: #000; color: #fff; display: flex; flex-direction: column; justify-content: space-between; }
 .leitor-vivo-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.leitor-vivo-linha { position: absolute; left: 6%; right: 6%; top: 50%; height: 3px; margin-top: -1px; background: #ff3b30; box-shadow: 0 0 12px 2px rgba(255, 59, 48, 0.8); border-radius: 2px; pointer-events: none; }
+.leitor-vivo-linha { position: absolute; left: 6%; right: 6%; top: 50%; height: 3px; margin-top: -1px; background: var(--v-leitor-linha); box-shadow: 0 0 12px 2px var(--v-leitor-linha); border-radius: 2px; pointer-events: none; }
 .leitor-vivo-topo, .leitor-vivo-base { position: relative; padding: 14px 16px; background: rgba(0, 0, 0, 0.55); }
 .leitor-vivo-topo p, .leitor-vivo-base p { margin: 0 0 6px; font-size: 18px; font-weight: 600; color: #fff; }
 .leitor-vivo-nota { font-size: 16px; font-weight: 500; opacity: 0.85; }
