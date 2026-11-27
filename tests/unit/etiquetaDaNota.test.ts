@@ -20,7 +20,7 @@ describe('etiquetaDaNota', () => {
   })
 
   it('o robô trabalhando: "Lançando…"; preso há mais de 30 min vira "Precisa de você"', () => {
-    expect(etiquetaDaNota({ ...base, estado: 'lancando' })).toEqual({ texto: 'Lançando…', tom: 'aviso' })
+    expect(etiquetaDaNota({ ...base, estado: 'lancando' })).toEqual({ texto: 'Lançando…', tom: 'andamento' })
     expect(etiquetaDaNota({ ...base, estado: 'lancando', presa: true })).toEqual({ texto: 'Precisa de você', tom: 'aviso' })
   })
 
