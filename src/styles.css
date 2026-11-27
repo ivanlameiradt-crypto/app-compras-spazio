@@ -870,19 +870,15 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
 
 /* ---- 8. Economia: tabela larga rola dentro dela (a tela não rola para o lado) e a letra dos gráficos fica com 16 px ou mais na tela ---- */
 .economia table, .historico-item table { display: block; max-width: 100%; overflow-x: auto; }
-.curva-rotulo { font-size: 15px; }
-.curva-valor { font-size: 16px; }
-.barras text { font-size: 15px; }
-/* celular: um rótulo de data sim, um não (8 datas de 16 px não cabem lado a lado); a primeira e a última ficam para dentro do desenho */
+.curva-rotulo, .curva-valor, .barras text { font-size: 16px; }
+/* O desenho tem largura máxima (480 px): assim a letra fica entre 16 e 24 px na tela em qualquer aparelho, sem encolher nem estourar.
+   Uma data sim, uma não (8 datas de 16 px não cabem lado a lado); a primeira e a última ficam para dentro do desenho. Revisão de 26/11/2026. */
+.curva, .barras { max-width: 480px; }
 .curva .curva-rotulo:nth-of-type(even) { display: none; }
 .curva .curva-rotulo:first-of-type { text-anchor: start; }
 .curva .curva-rotulo:nth-last-of-type(2) { display: inline; text-anchor: end; }
 .curva .curva-rotulo:nth-last-of-type(3) { display: none; }
-@media (min-width: 768px) {
-  .curva-rotulo, .barras text { font-size: 8px; }
-  .curva-valor { font-size: 9px; }
-  .curva .curva-rotulo:nth-of-type(even), .curva .curva-rotulo:nth-last-of-type(3) { display: inline; }
-}
+.curva-legenda { margin: 0 0 4px; }
 /* "Mais ações" do cartão do vendedor (Pedidos): no celular é um bloco que abre pelo título; no tablet e no computador os botões aparecem soltos, como sempre */
 .acoes > .recolher.mais-acoes { flex: 1 0 100%; margin-top: 0; border-top: 0; }
 .acoes > .recolher.mais-acoes[open] { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -896,3 +892,4 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
   .app:has(div.rodape) { padding-bottom: calc(var(--barra-baixo) + 124px + env(safe-area-inset-bottom)); }
   .app:has(div.rodape.com-resumo) { padding-bottom: calc(var(--barra-baixo) + 176px + env(safe-area-inset-bottom)); }
 }
+.curva-valor { paint-order: stroke; stroke: var(--fundo); stroke-width: 4px; stroke-linejoin: round; }

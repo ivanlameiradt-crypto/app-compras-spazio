@@ -319,7 +319,7 @@ function SemanaEmCompra({ dados, preparo }: { dados: Dados; preparo: Preparo }) 
       <DaSemanaAnterior linhas={preparo.atravessados} dados={dados} />
       <NaoEnviadas cotacoes={[...dados.daSemana, ...dados.anteriores]} />
       {preparo.cartoes.length === 0 && <p className="vazio">Nenhum item com vendedor nesta semana.<span className="vazio-passo">Associe um vendedor aos itens em Cadastros.</span></p>}
-      <VerMais itens={cartoesVisiveis} primeiros={1} folga={0} unidade={['vendedor', 'vendedores']}>{(mostrados) => mostrados.map((cartao) => {
+      <VerMais itens={cartoesVisiveis} primeiros={1} folga={0} naTelaBaixa unidade={['vendedor', 'vendedores']}>{(mostrados) => mostrados.map((cartao) => {
         const v = dados.vendedores.find((x) => x.id === cartao.vendedor_id)
         if (!v) return null
         return <CartaoVendedor key={v.id} v={v} cartao={cartao} cotacoes={cotacoesDe(v.id)} daSemana />
@@ -353,7 +353,7 @@ function CompraNaLoja({ grupos }: { grupos: GrupoLoja[] }) {
   const ctx = useCotacoes()
   if (grupos.length === 0) return null
   return (
-    <Recolher titulo="Compra na loja">
+    <Recolher naTelaBaixa titulo="Compra na loja">
       {grupos.map((g) => (
         <div key={g.nome} className="cartao cartao-loja" data-testid={`loja-${g.nome}`}>
           <div className="linha">

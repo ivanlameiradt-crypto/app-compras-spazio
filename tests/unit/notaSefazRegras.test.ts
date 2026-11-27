@@ -507,8 +507,8 @@ describe('notaSefazRegras', () => {
 
     it.each([
       // regra do Ivan (07/10): com o XML por ler, a nota segue NÃO pronta, mas o motivo já diz que o que ele digitar vale (antes dizia só "próxima leitura")
-      ['XML ainda não lido', null, 'Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)'],
-      ['nota sem boleto (à vista)', [], 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'],
+      ['XML ainda não lido', null, 'Boletos ainda não lidos do arquivo da nota: se for boleto, digite as parcelas (o que você digitar vale; se o arquivo da nota trouxer boletos, eles prevalecem e o robô avisa)'],
+      ['nota sem boleto (à vista)', [], 'O arquivo da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'],
       ['boletos que não fecham', boletos(10), 'Os boletos não fecham com o valor da nota'],
     ])('prontidaoDaNota: %s não é pronta e explica', (_n, parcelas, motivo) => {
       const r = prontidaoDaNota(nota({ valor_nf: 100, parcelas }))

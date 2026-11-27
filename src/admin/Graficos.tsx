@@ -16,17 +16,21 @@ export function Curva({ semanas }: { semanas: SemanaPainel[] }) {
   const ultimo = pts[pts.length - 1]
   const emCompra = semanas[semanas.length - 1].status === 'em_compra'
   return (
+    <>
     <svg className="curva" viewBox={`0 0 ${L} ${A + 24}`} role="img" aria-label={`Economia acumulada, último ponto ${reais(ultimo.valor)}`}>
       <line x1={0} x2={L} y1={zero.toFixed(1)} y2={zero.toFixed(1)} className="curva-zero" />
       <path d={d} className="curva-linha" fill="none" />
       {pts.map((p, i) => <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r={2.5} className="curva-ponto" />)}
       {pts.map((p, i) => (
         <text key={`r${i}`} x={p.x.toFixed(1)} y={A + 16} className="curva-rotulo" textAnchor="middle">
-          {p.rotulo}{emCompra && i === pts.length - 1 ? ' (em andamento)' : ''}
+          {p.rotulo}
         </text>
       ))}
       <text x={ultimo.x.toFixed(1)} y={Math.max(10, ultimo.y - 6).toFixed(1)} className="curva-valor" textAnchor="end">{reais(ultimo.valor)}</text>
     </svg>
+    {/* fora do desenho: dentro dele a frase passava por cima da data vizinha */}
+    {emCompra && <p className="sub curva-legenda">A semana de {ultimo.rotulo} ainda está em andamento.</p>}
+    </>
   )
 }
 

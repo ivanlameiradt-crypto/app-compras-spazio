@@ -90,26 +90,26 @@ export function seloPedidoAnterior(ctx: ContextoSelo): Selo {
   } else if (ctx.nf) {
     const nf = ctx.nf
     if (nf.situacao === 'na_fila') {
-      texto = `NF-e ${nf.numero} chegou em ${ddmm(dataLocal(nf.visto_na_fila_em))} e ainda não foi lançada — a sugestão não conta este pedido.`
+      texto = `Nota fiscal ${nf.numero} chegou em ${ddmm(dataLocal(nf.visto_na_fila_em))} e ainda não foi lançada — a sugestão não conta este pedido.`
     } else {
       const inicioIso = nf.situacao === 'lancada' ? (nf.lancada_em as string) : nf.visto_na_fila_em
       const fimIso = nf.situacao === 'lancada' ? (nf.lancada_em as string) : (nf.saiu_da_fila_em as string)
       const inicio = new Date(inicioIso).getTime()
       const fim = new Date(fimIso).getTime()
       if (fim <= gerada) {
-        texto = `NF-e ${nf.numero} entrou no SisChef em ${ddmm(dataLocal(fimIso))} — já está no estoque que o robô leu.`
+        texto = `Nota fiscal ${nf.numero} entrou no SisChef em ${ddmm(dataLocal(fimIso))} — já está no estoque que o robô leu.`
         cor = 'cinza'
       } else if (inicio > gerada) {
-        texto = `NF-e ${nf.numero} entrou no SisChef depois da leitura do estoque — a sugestão não conta este pedido.`
+        texto = `Nota fiscal ${nf.numero} entrou no SisChef depois da leitura do estoque — a sugestão não conta este pedido.`
       } else {
-        texto = `NF-e ${nf.numero} entrou no SisChef perto da leitura do estoque (entre dom 17h e seg 7h) — confira a sugestão.`
+        texto = `Nota fiscal ${nf.numero} entrou no SisChef perto da leitura do estoque (entre dom 17h e seg 7h) — confira a sugestão.`
       }
     }
   } else if (ctx.recebido) {
     const q = ctx.recebido_em ? ddmm(dataLocal(ctx.recebido_em)) : '—'
-    texto = `recebido em ${q}, sem NF-e no SisChef — a sugestão não conta este pedido.`
+    texto = `recebido em ${q}, sem nota fiscal no SisChef — a sugestão não conta este pedido.`
   } else {
-    texto = 'ainda não recebido e sem NF-e — confira antes de pedir de novo.'
+    texto = 'ainda não recebido e sem nota fiscal — confira antes de pedir de novo.'
   }
 
   let saida = prefixo + texto
