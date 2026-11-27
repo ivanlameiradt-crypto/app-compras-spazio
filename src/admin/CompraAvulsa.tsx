@@ -16,7 +16,7 @@ import { buscarFornecedores, nomeDoConhecido, type FornecedorConhecido } from '.
 import { formatarCnpj, nomeDoFornecedor } from './fornecedorRegras'
 import { faltaNaLinha, lerPreco, lerQuantidade, problemaDaCompra, totalDaLinha, totalGeral, type LinhaAvulsa } from './compraAvulsaRegras'
 import { unidadeDoProduto } from './unidadeEstoque'
-import { REPETIDA_PREFIXO, ehErroRepetida, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
+import { REPETIDA_PREFIXO, classeDoSeloDeEstado, ehErroRepetida, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
 import AvisoRepetida from './AvisoRepetida'
 import AvisoFalhaConferir from './AvisoFalhaConferir'
@@ -37,7 +37,7 @@ const novoId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16))
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
-  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançada ✓', REVISAR: 'precisa de você', TESTE: 'teste ✓', EXCLUIDO: 'excluída',
+  PENDENTE: 'na fila', PROCESSANDO: 'lançando…', LANCADO: 'lançada ✓', REVISAR: 'precisa de você', TESTE: 'teste ✓', EXCLUIDO: 'excluída',
 }
 const INTERVALO_RECENTES_MS = 30_000
 
@@ -338,7 +338,7 @@ export default function CompraAvulsa() {
             return (
               <li key={c.id} data-testid="compra-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto} onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {nome}{c.valor_a_pagar != null && <> · <b className="valor valor-linha">{formatarReais(c.valor_a_pagar)}</b></>}</span>
+                  <span><b className={classeDoSeloDeEstado(c.estado)}>{ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {nome}{c.valor_a_pagar != null && <> · <b className="valor valor-linha">{formatarReais(c.valor_a_pagar)}</b></>}</span>
                   <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                 </button>
                 {repetidaDaCompra && (

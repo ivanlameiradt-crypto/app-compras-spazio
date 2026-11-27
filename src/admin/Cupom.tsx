@@ -10,7 +10,7 @@ import type {
   CupomRecente, EstadoCupom, FormaCupom, ItemCupomRecente, PagamentoCupom, ProdutoCatalogo, RespostaConfirmacaoCupom, ResumoEnvioCupom,
 } from '../lib/tipos'
 import DetalheLancamento, { type LinhaDetalhe } from '../components/DetalheLancamento'
-import { BOTAO_TENTAR_DE_NOVO_LIGADO, diagnosticoDoCupom, envioRepetido, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
+import { BOTAO_TENTAR_DE_NOVO_LIGADO, classeDoSeloDeEstado, diagnosticoDoCupom, envioRepetido, falhaDeConferirDoCupom, motivoSemRepetida, podeExcluirCupom, repetidaDoCupom } from './cupomRegras'
 import ExcluirCupom from './ExcluirCupom'
 import AvisoRepetida from './AvisoRepetida'
 import AvisoFalhaConferir from './AvisoFalhaConferir'
@@ -23,7 +23,7 @@ import { cnpjLidoSuspeito, formatarCnpj, fornecedorNaoEncontrado, nomeDoForneced
 import TituloDaTela from '../components/TituloDaTela'
 
 const ROTULO_ESTADO: Record<EstadoCupom, string> = {
-  PENDENTE: 'na fila', PROCESSANDO: 'na fila', LANCADO: 'lançado ✓', REVISAR: 'precisa de você', TESTE: 'teste ✓', EXCLUIDO: 'excluído',
+  PENDENTE: 'na fila', PROCESSANDO: 'lançando…', LANCADO: 'lançado ✓', REVISAR: 'precisa de você', TESTE: 'teste ✓', EXCLUIDO: 'excluído',
 }
 
 /** Monta o pagamento a partir dos botões; null = ainda incompleto (PIX sem banco/empresa). */
@@ -381,7 +381,7 @@ export default function Cupom() {
       </button>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {resultado && (
-        <p className={pedeAtencao(resultado) ? 'amarelo' : 'ok'} data-testid="resultado">
+        <p className={pedeAtencao(resultado) ? 'amarelo' : resultado.estado === 'PENDENTE' || resultado.estado === 'PROCESSANDO' ? 'andamento' : 'ok'} data-testid="resultado">
           {resultado.estado === 'REVISAR'
             ? <>Cupom recebido, mas NÃO foi lançado: {resultado.resumo}. Veja em “Últimos envios”, logo abaixo, o que está errado e como resolver.</>
             : resultado.resumo}
@@ -407,7 +407,7 @@ export default function Cupom() {
               <li key={c.id} data-testid="cupom-recente">
                 <button type="button" className="recente-linha" aria-expanded={aberto}
                   onClick={() => setExpandido(aberto ? null : c.id)}>
-                  <span><b>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && !envioRepetido(c) && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && <> · <b className="valor valor-linha">{valor}</b></>}</span>
+                  <span><b className={envioRepetido(c) ? 'selo-estado lancado' : classeDoSeloDeEstado(c.estado)}>{envioRepetido(c) ? 'já lançado ✓' : ROTULO_ESTADO[c.estado]}{c.estado === 'REVISAR' && !envioRepetido(c) && <Icone nome="alerta" tamanho={18} className="no-texto" />}</b> · {c.emitente_nome ? nomeDoFornecedor(c.emitente_nome, fantasias[c.emitente_cnpj ?? '']) : 'cupom'}{valor && <> · <b className="valor valor-linha">{valor}</b></>}</span>
                   <span className="seta" aria-hidden="true"><Icone nome="dir" tamanho={18} className={aberto ? 'aberto' : undefined} /></span>
                 </button>
                 {reenviados[c.id] && (c.estado === 'PENDENTE' || c.estado === 'PROCESSANDO') && (

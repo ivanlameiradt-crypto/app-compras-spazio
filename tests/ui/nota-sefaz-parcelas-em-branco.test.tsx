@@ -17,7 +17,7 @@ const mateus = (extra: Partial<NotaSefazLista> = {}): NotaSefazLista => ({
 })
 const botaoLancar = () => screen.getByRole('button', { name: 'Lançar' })
 const resumo = () => screen.getByTestId('resumo-parcelas')
-const adicionar = () => userEvent.click(screen.getByRole('button', { name: 'Adicionar parcela' }))
+const adicionar = () => userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
 const data = (i: number, d: string) => fireEvent.change(screen.getByLabelText(`Vencimento da parcela ${i}`), { target: { value: d } })
 const valor = async (i: number, v: string) => { const c = screen.getByLabelText(`Valor da parcela ${i}`); await userEvent.clear(c); if (v) await userEvent.type(c, v) }
 

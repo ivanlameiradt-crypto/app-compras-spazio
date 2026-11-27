@@ -10,6 +10,10 @@ import { falhaPassageiraDeSugestoes } from './sugestoesDoRobo'
 
 export interface ItemComProblema { descricao: string; preco: string | null }
 /** O motivo que o envio grava quando o cupom está todo casado e só espera o Ivan confirmar (o mesmo texto das Edge Functions enviar-cupom e confirmar-cupom). */
+/** Classe do selo do estado na lista "Últimos envios" (27/11/2026): azul com círculo girando enquanto o robô lança, verde quando lançado, amarelo quando precisa do Ivan. */
+export const classeDoSeloDeEstado = (estado: string): string =>
+  estado === 'PENDENTE' || estado === 'PROCESSANDO' ? 'selo-estado andamento' : estado === 'LANCADO' ? 'selo-estado lancado' : estado === 'REVISAR' ? 'selo-estado aviso' : 'selo-estado'
+
 export const CONFIRMAR_PREFIXO = 'CONFIRMAR:'
 
 export interface DiagnosticoCupom {

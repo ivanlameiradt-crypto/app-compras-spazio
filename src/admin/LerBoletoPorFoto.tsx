@@ -6,8 +6,9 @@ import { lerBoleto, type BoletoLido } from './boletoRegras'
 
 const MSG_NAO_ACHOU = 'Não consegui ler o código de barras nesta foto. Chegue mais perto, deixe o código reto e bem iluminado, ou digite o número do boleto.'
 
-export default function LerBoletoPorFoto({ desabilitado, onBoleto }: {
+export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler boleto pela foto' }: {
   desabilitado: boolean
+  rotulo?: string
   /** Devolve a mensagem para mostrar (sucesso ou aviso) quando o boleto foi usado, ou null se recusou. */
   onBoleto: (b: BoletoLido) => { ok: boolean; texto: string }
 }) {
@@ -45,7 +46,7 @@ export default function LerBoletoPorFoto({ desabilitado, onBoleto }: {
     <div className="leitor-boleto" data-testid="leitor-boleto">
       <div className="acoes">
         <button type="button" className="botao" disabled={desabilitado || lendo} onClick={() => entrada.current?.click()} data-testid="boleto-foto-botao">
-          {lendo ? 'Lendo a foto…' : 'Ler boleto pela foto'}
+          {lendo ? 'Lendo a foto…' : rotulo}
         </button>
         <button type="button" className="link" disabled={desabilitado || lendo} onClick={() => setDigitando((v) => !v)} data-testid="boleto-digitar-botao">
           {digitando ? 'Fechar' : 'Digitar o número do boleto'}
