@@ -190,7 +190,7 @@ export const AVISO_CONTA_ESPECIAL = 'Conta especial: essa nota não é lançada 
  * Nota que a leitura do SisChef trouxe sem itens: não há o que conferir, e o robô também recusa. No SisChef ela costuma aparecer como
  * "XML resumido": a SEFAZ só entrega o resumo da nota até o destinatário registrar a ciência da operação; só depois vem o XML completo.
  */
-export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: no SisChef ela costuma aparecer como “XML resumido” (a SEFAZ só entregou o resumo da nota, e o XML completo só vem depois da ciência da operação). Sem os itens não dá para conferir nem lançar. Se ela não vai ser lançada, descarte-a.'
+export const AVISO_SEM_ITENS = 'Esta nota chegou sem itens: no SisChef ela costuma aparecer como “XML resumido” (a Receita só entregou o resumo da nota, e o arquivo completo só vem depois da ciência da operação). Sem os itens não dá para conferir nem lançar. Se ela não vai ser lançada, descarte-a.'
 
 const itemSemProduto = (it: ItemNotaSefaz): boolean =>
   it.produto_id == null || String(it.produto_id).trim() === '' || (it.associacao ?? '').trim().toLowerCase() === 'painel'
@@ -726,8 +726,8 @@ export function prontidaoDaNota(n: NotaSefazLista): ProntidaoNota {
   // Bonificação sem cobrança (CFOP 5910/6910, XML lido e sem boletos): entra só no estoque, não há boleto a conferir — a nota pode estar pronta sem ele.
   if (bonificacaoSemCobranca(n)) financeiro = null
   // Regra do Ivan (07/10): com o XML por ler, o que ele digitar no app vale — a nota segue NÃO pronta (não há boleto conferido), mas a tela abre o editor.
-  else if (!f.lido) financeiro = 'Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)'
-  else if (f.parcelas.length === 0) financeiro = 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'
+  else if (!f.lido) financeiro = 'Boletos ainda não lidos do arquivo da nota: se for boleto, digite as parcelas (o que você digitar vale; se o arquivo da nota trouxer boletos, eles prevalecem e o robô avisa)'
+  else if (f.parcelas.length === 0) financeiro = 'O arquivo da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'
   else if (!f.bate) financeiro = 'Os boletos não fecham com o valor da nota'
   if (financeiro) motivos.push(financeiro)
   // Bonificação que TRAZ boletos: nunca fica "pronta" sozinha — o Ivan confere com o fornecedor se há algo a pagar (a forma de pagamento segue a de sempre).
@@ -946,7 +946,7 @@ export function planoSemanal(n: NotaSefazLista, editadas: string[]): PlanoSemana
     if (!dataValida(p.vencimento)) motivo = `Parcela ${i + 1}: informe uma data de vencimento válida`
     else if (n.emissao && p.vencimento < n.emissao) motivo = `Parcela ${i + 1}: o vencimento é anterior à emissão da nota`
   })
-  if (!motivo && !resumoFinanceiro(n).bate) motivo = 'Os boletos do XML não fecham com o valor da nota'
+  if (!motivo && !resumoFinanceiro(n).bate) motivo = 'Os boletos do arquivo da nota não fecham com o valor da nota'
   return { quarta, semana, parcelas, ok: motivo === '', motivo }
 }
 

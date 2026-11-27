@@ -752,7 +752,7 @@ describe('NotaSefaz', () => {
         await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')
         expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
         expect(screen.getByTestId('aviso-financeiro'))
-          .toHaveTextContent('Boletos ainda não lidos do XML: se for boleto, digite as parcelas (o que você digitar vale; se o XML trouxer boletos, eles prevalecem e o robô avisa)')
+          .toHaveTextContent('Boletos ainda não lidos do arquivo da nota: se for boleto, digite as parcelas (o que você digitar vale; se o arquivo da nota trouxer boletos, eles prevalecem e o robô avisa)')
         expect(botaoLancar()).toBeEnabled()
         await userEvent.click(botaoLancar())
         await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }))

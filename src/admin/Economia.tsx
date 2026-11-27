@@ -114,7 +114,7 @@ export default function Economia() {
                   </table>
                 )}
 
-                <Recolher titulo="Por mês">
+                <Recolher naTelaBaixa titulo="Por mês">
                 <BarrasMeses meses={p.meses} />
                 <table className="tabela">
                   <thead><tr><th>Mês</th><th>Pedidos</th><th>Pelo último</th><th>Economia</th><th>%</th></tr></thead>
@@ -130,7 +130,7 @@ export default function Economia() {
                 </Recolher>
 
                 {/* Celular: estes blocos abrem fechados (tela de até 2,5 alturas); tablet e computador: abertos. Nada sai da tela. */}
-                <Recolher titulo="Por vendedor">
+                <Recolher naTelaBaixa titulo="Por vendedor">
                 <table className="tabela">
                   <thead><tr><th>Vendedor</th><th>Semanas</th><th>Comprado</th><th>Economia</th><th>%</th><th>Acima</th></tr></thead>
                   <tbody>
@@ -144,7 +144,7 @@ export default function Economia() {
                 </table>
                 </Recolher>
 
-                <Recolher titulo="Por categoria">
+                <Recolher naTelaBaixa titulo="Por categoria">
                 <table className="tabela">
                   <thead><tr><th>Categoria</th><th>Pedidos</th><th>Comprado</th><th>Economia</th><th>%</th></tr></thead>
                   <tbody>
@@ -178,7 +178,7 @@ export default function Economia() {
               </>
             )}
 
-            <Recolher titulo="Preço no SisChef (todas as compras)">
+            <Recolher naTelaBaixa titulo="Preço no SisChef (todas as compras)">
             <div className="sub">Maiores altas</div>
             {p.sischef.altas.length === 0 ? <p className="sub">—</p> : (
               <ul className="sischef">
@@ -201,7 +201,7 @@ export default function Economia() {
             )}
             </Recolher>
 
-            <Recolher titulo="Como a conta é feita">
+            <Recolher naTelaBaixa titulo="Como a conta é feita">
             <p className="rodape">
               Comparação só nos itens com último preço confiável (compra de até 90 dias e perto do custo médio).
               Itens em litro sem conversão, com último preço antigo ou sem referência ficam fora das somas.

@@ -225,8 +225,8 @@ describe('prontidaoDaNota: a bonificação sem cobrança está PRONTA sem boleto
   it('a MESMA nota sem o CFOP de bonificação continua pedindo o boleto (nada mudou para nota comum)', () => {
     for (const itens of [[item('5102')], [item()], [item('5910'), item('5102', { n: 2 })]]) {
       expect(prontidaoDaNota(nota({ itens }))).toEqual({
-        pronta: false, financeiro: 'O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento',
-        motivos: ['O XML da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'],
+        pronta: false, financeiro: 'O arquivo da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento',
+        motivos: ['O arquivo da nota não traz boletos: digite as parcelas ou escolha outra forma de pagamento'],
       })
     }
   })
@@ -262,7 +262,7 @@ describe('prontidaoDaNota: a bonificação sem cobrança está PRONTA sem boleto
   it('bonificação com o XML por ler: igual a nota comum (ainda não pronta, e o motivo é o de sempre)', () => {
     const p = prontidaoDaNota(nota({ parcelas: null }))
     expect(p.pronta).toBe(false)
-    expect(p.financeiro).toMatch(/^Boletos ainda não lidos do XML/)
+    expect(p.financeiro).toMatch(/^Boletos ainda não lidos do arquivo da nota/)
     expect(p.motivos).toEqual([p.financeiro])
   })
 })

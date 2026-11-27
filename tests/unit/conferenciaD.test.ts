@@ -47,11 +47,11 @@ describe('seloPedidoAnterior — as 6 regras (gerada_em antes, depois e no meio)
   it('5: sem NF, mas com recebimento → amarelo', () => {
     const s = seloPedidoAnterior({ ...base, recebido: true, recebido_em: '2026-10-22T12:00:00Z' })
     expect(s.cor).toBe('amarelo')
-    expect(s.texto).toContain('recebido em 22/10, sem NF-e')
+    expect(s.texto).toContain('recebido em 22/10, sem nota fiscal')
   })
   it('6: sem NF e sem recebimento → amarelo', () => {
     const s = seloPedidoAnterior({ ...base })
-    expect(s.texto).toContain('ainda não recebido e sem NF-e')
+    expect(s.texto).toContain('ainda não recebido e sem nota fiscal')
   })
   it('sufixo da falta definitiva', () => {
     const s = seloPedidoAnterior({ ...base, recebido: true, recebido_em: '2026-10-22T12:00:00Z', falta_definitiva: 24, unidade: 'un' })

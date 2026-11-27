@@ -157,7 +157,7 @@ const ITENS_JAMES: ItemNotaSefaz[] = [
 describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão que o SisChef fez sozinho (31/10/2026)', () => {
   it('XML não lido: o SisChef pode só ter o resumo; diz que digitar as parcelas não adianta e manda esperar e lançar de novo', () => {
     const e = explicarMotivoDoRobo(MOTIVO_XML, ITENS)
-    expect(e?.porque).toContain('o SisChef só recebeu da SEFAZ o resumo da nota')
+    expect(e?.porque).toContain('o SisChef só recebeu da Receita o resumo da nota')
     expect(e?.porque).toContain('algumas horas')
     expect(e?.fazer).toContain('Não digite as parcelas ainda')
     expect(e?.fazer).toContain('toque em Lançar de novo')
@@ -180,7 +180,7 @@ describe('explicarMotivoDoRobo — XML não lido, fornecedor novo e conversão q
 
   it('XML não lido: o aviso da nota é a frase curta de 14/11/2026 (nada foi lançado, por quê, não digitar as parcelas, Tentar de novo); a explicação longa segue em explicarMotivoDoRobo', () => {
     const texto = textoDoEstado('revisar', MOTIVO_XML, ITENS) ?? ''
-    expect(texto).toBe('Nada foi lançado. A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas). Não digite as parcelas ainda; toque em Tentar de novo mais tarde.')
+    expect(texto).toBe('Nada foi lançado. A nota ainda não chegou completa ao SisChef (o arquivo da nota pode levar algumas horas). Não digite as parcelas ainda; toque em Tentar de novo mais tarde.')
     expect(explicarMotivoDoRobo(MOTIVO_XML, ITENS)?.fazer).toContain('toque em Lançar de novo')
   })
 

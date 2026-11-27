@@ -190,8 +190,8 @@ export function explicarMotivoDoRobo(motivo: string | null | undefined, itens?: 
 
   if (RE_XML_NAO_LIDO.test(t)) {
     return {
-      porque: 'O robô não conseguiu ler o XML completo desta nota. O motivo mais comum: o SisChef só recebeu da SEFAZ o resumo da nota, e o XML completo (com os itens, os valores e os boletos) costuma levar algumas horas para chegar. Também pode ter sido uma falha passageira na leitura.',
-      fazer: 'Não digite as parcelas ainda: enquanto só existe o resumo, o robô não lança, nem assim. O XML completo chega ao SisChef em algumas horas (de 1 hora até quase um dia): quando o aviso “O arquivo desta nota ainda não foi lido” sumir da nota, ou daqui a umas horas, toque em Lançar de novo. Se passar de um dia, chame o Claude.',
+      porque: 'O robô não conseguiu ler o arquivo completo desta nota. O motivo mais comum: o SisChef só recebeu da Receita o resumo da nota, e o arquivo completo (com os itens, os valores e os boletos) costuma levar algumas horas para chegar. Também pode ter sido uma falha passageira na leitura.',
+      fazer: 'Não digite as parcelas ainda: enquanto só existe o resumo, o robô não lança, nem assim. O arquivo completo da nota chega ao SisChef em algumas horas (de 1 hora até quase um dia): quando o aviso “O arquivo desta nota ainda não foi lido” sumir da nota, ou daqui a umas horas, toque em Lançar de novo. Se passar de um dia, chame o Claude.',
     }
   }
 
@@ -267,7 +267,7 @@ const MOLDES_PASSAGEIROS: MoldePassageiro[] = [
   // outra importação aberta no SisChef (motor.MSG_OUTRA_ABERTA)
   { re: /há outra importação aberta no Sischef/i, exigeNada: false, corpo: 'Há outra nota aberta no SisChef (alguém começou e não terminou).', fim: 'Espere uns minutos e toque em Tentar de novo.' },
   // o XML completo ainda não chegou ao SisChef (motor.motivo_xml; o resumo da SEFAZ vem antes do XML, horas depois)
-  { re: /não consegui ler o XML da nota/i, exigeNada: false, corpo: 'A nota ainda não chegou completa ao SisChef (o XML pode levar algumas horas).', fim: 'Não digite as parcelas ainda; toque em Tentar de novo mais tarde.' },
+  { re: /não consegui ler o XML da nota/i, exigeNada: false, corpo: 'A nota ainda não chegou completa ao SisChef (o arquivo da nota pode levar algumas horas).', fim: 'Não digite as parcelas ainda; toque em Tentar de novo mais tarde.' },
   // leituras do cadastro do SisChef / do app (nfe_decisoes_app, lancar_nfe_nuvem.ler_memoria_de_embalagem)
   { re: /não consegui ler a memória de embalagens do app/i, exigeNada: false, corpo: 'O robô não conseguiu ler a memória de embalagens do app.' },
   { re: /catálogo vivo vazio/i, exigeNada: false, corpo: 'O robô não conseguiu ler a lista de produtos do SisChef.' },
