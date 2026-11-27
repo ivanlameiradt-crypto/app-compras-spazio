@@ -34,6 +34,18 @@ export async function trocarLanterna(trilha: MediaStreamTrack | null | undefined
   }
 }
 
+/** Foco contínuo e um pouco de zoom (o código fica maior sem encostar o celular no papel, onde o foco falha). Só aplica o que o aparelho oferece; nunca derruba a leitura. */
+export async function ajustarFocoEZoom(trilha: MediaStreamTrack | null | undefined): Promise<void> {
+  try {
+    const cap = (trilha as unknown as { getCapabilities?: () => { focusMode?: string[]; zoom?: { min: number; max: number } } } | null | undefined)?.getCapabilities?.()
+    if (!trilha || !cap) return
+    const avancado: Record<string, unknown>[] = []
+    if (cap.focusMode?.includes('continuous')) avancado.push({ focusMode: 'continuous' })
+    if (cap.zoom && cap.zoom.max >= 1.5) avancado.push({ zoom: Math.min(cap.zoom.max, Math.max(cap.zoom.min, 1.5)) })
+    if (avancado.length > 0) await trilha.applyConstraints({ advanced: avancado as MediaTrackConstraintSet[] })
+  } catch { /* o aparelho não aceitou: segue sem */ }
+}
+
 /**
  * Foto da câmera aberta, com FLASH AUTOMÁTICO quando o aparelho oferece (só dispara no escuro). Sem a função de foto do navegador (ImageCapture), devolve null e a tela
  * usa o quadro do vídeo. O flash da foto e a luz do leitor são o mesmo recurso do aparelho: se a luz já está ligada, a foto sai iluminada por ela.
@@ -42,7 +54,12 @@ export async function fotoComFlashAutomatico(trilha: MediaStreamTrack | null | u
   try {
     const Captura = (globalThis as unknown as { ImageCapture?: new (t: MediaStreamTrack) => { takePhoto: (o?: { fillLightMode?: string }) => Promise<Blob> } }).ImageCapture
     if (!Captura || !trilha) return null
-    return await new Captura(trilha).takePhoto({ fillLightMode: 'auto' })
+    const captura = new Captura(trilha)
+    try {
+      return await captura.takePhoto({ fillLightMode: 'auto' })
+    } catch {
+      return await captura.takePhoto() // alguns aparelhos não aceitam o modo do flash: a foto sai sem ele, mas sai
+    }
   } catch {
     return null
   }

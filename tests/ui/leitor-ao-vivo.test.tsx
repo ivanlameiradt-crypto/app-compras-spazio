@@ -5,10 +5,12 @@ import LerBoletoPorFoto from '../../src/admin/LerBoletoPorFoto'
 import { barras } from '../unit/boletoAjuda'
 
 const CODIGO = barras('341', '1656', '46974')
-const lerQuadro = vi.fn<(c: Uint8ClampedArray, l: number, a: number) => string | null>()
+const lerQuadro = vi.fn<() => string | null>()
 
 vi.mock('../../src/admin/boletoFoto', () => ({
-  criarLeitorDeBarras: async () => (c: Uint8ClampedArray, l: number, a: number) => lerQuadro(c, l, a),
+  criarLeitorDeBarras: async () => () => null,
+  criarDetectorNativo: async () => null,
+  lerQuadroAoVivo: () => lerQuadro(),
   cinzaDoDesenho: () => ({ cinza: new Uint8ClampedArray(4), largura: 2, altura: 2 }),
   lerDigitosDaFoto: vi.fn(async () => null),
   lerDigitosDaImagem: vi.fn(async () => null),
@@ -42,7 +44,7 @@ describe('LeitorAoVivo — câmera ao vivo para o código de barras do boleto (2
     camera(t)
     const aoLer = vi.fn()
     render(<LeitorAoVivo aoLer={aoLer} aoFechar={vi.fn()} aoDigitar={vi.fn()} />)
-    await screen.findByText(/Deixe o código de barras/)
+    await screen.findByText(/deixe o código de barras na linha/)
     lerQuadro.mockReturnValue(CODIGO)
     await waitFor(() => expect(aoLer).toHaveBeenCalledWith(CODIGO), { timeout: 3000 })
     expect(aoLer).toHaveBeenCalledTimes(1)
