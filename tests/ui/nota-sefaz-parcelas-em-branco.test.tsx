@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import NotaSefaz from '../../src/admin/NotaSefaz'
 import type { NotaSefazLista } from '../../src/lib/tipos'
+import { abrirEditorDeParcelas } from './abrirEditorDeParcelas'
 
 vi.mock('../../src/lib/api')
 const m = vi.mocked(api)
@@ -37,7 +38,7 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que vale; nada vem preenchido (MATEUS 000089284, 07/10)', () => {
   it('o editor abre ZERADO: uma linha sem data e sem valor (nada é preenchido sozinho)', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     expect(screen.getAllByTestId('linha-parcela')).toHaveLength(1)
     expect(screen.getByLabelText('Vencimento da parcela 1')).toHaveValue('')
     expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('')
@@ -46,7 +47,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('o caso da tela: parcela 1 com o valor todo e as linhas 2 e 3 só com data — trava, em VERMELHO, dizendo qual linha falta o valor', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar(); await adicionar()
     data(1, '2026-10-27'); data(2, '2026-11-06'); data(3, '2026-11-16')
     await valor(1, '1.794,49')
@@ -57,7 +58,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('apagando as linhas 2 e 3 (ou deixando-as totalmente em branco) o Lançar acende com 1 boleto de 1.794,49', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar(); await adicionar()          // duas linhas abertas e em BRANCO: não contam
     data(1, '2026-10-27')
     await valor(1, '1.794,49')
@@ -72,7 +73,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('3 boletos de valores DIFERENTES que somam o valor da nota: o Lançar acende sozinho e manda exatamente o que ele digitou', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar(); await adicionar()
     data(1, '2026-10-27'); data(2, '2026-11-06'); data(3, '2026-11-16')
     await valor(1, '1.000,00'); await valor(2, '500,00')
@@ -89,7 +90,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('soma que não fecha: vermelho e o Lançar apagado (o valor total da nota é o que prevalece)', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar()
     data(1, '2026-10-27'); data(2, '2026-11-06')
     await valor(1, '1.000,00'); await valor(2, '700,00')
@@ -100,7 +101,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('"Dividir em parcelas iguais" só age quando ele toca, e ignora a linha em branco (não cria valor sem data)', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar(); await adicionar()
     data(1, '2026-10-27'); data(2, '2026-11-06')          // a linha 3 fica em branco
     expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('')   // nada foi preenchido sozinho
@@ -113,7 +114,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('"Preencher o que falta na última" usa a última linha EM USO, não uma linha em branco depois dela', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar(); await adicionar()
     data(1, '2026-10-27'); data(2, '2026-11-06')
     await valor(1, '1.000,00'); await valor(2, '500,00')                  // a linha 3 em branco
@@ -125,7 +126,7 @@ describe('NotaSefaz — financeiro definido pelo Ivan: o que ele digita é o que
 
   it('"Limpar parcelas" recomeça com uma linha só, sem data e sem valor', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await adicionar(); await adicionar()
     data(1, '2026-10-27'); data(2, '2026-11-06'); data(3, '2026-11-16')
     await valor(1, '1.794,49')

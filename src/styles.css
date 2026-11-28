@@ -937,3 +937,8 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
 .nota-corpo.resumida > :not(.nota-resumo):not(.acoes):not(.bloco-envio):not([data-testid="nota-pronta"]) { display: none; }
 .nota-corpo.so-confirmar > .nota-resumo { display: none; }
 .nota-resumo { display: grid; gap: 8px; margin: 8px 0; }
+
+/* Quantos boletos tem a nota (27/11/2026): a pergunta que abre a leitura em sequência. */
+.quantos-boletos { display: grid; gap: 10px; margin: 8px 0; }
+.quantos-boletos p { margin: 0; font-size: 18px; }
+.quantos-boletos .acoes .botao { min-width: 56px; min-height: 56px; font-size: 22px; }

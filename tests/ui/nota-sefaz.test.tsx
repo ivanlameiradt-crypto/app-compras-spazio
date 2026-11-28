@@ -4,6 +4,7 @@ import * as api from '../../src/lib/api'
 import NotaSefaz from '../../src/admin/NotaSefaz'
 import { lembrarForma } from '../../src/admin/notaSefazRegras'
 import type { ItemNotaSefaz, NotaSefazLista, ProdutoCatalogo } from '../../src/lib/tipos'
+import { abrirEditorDeParcelas } from './abrirEditorDeParcelas'
 
 vi.mock('../../src/lib/api')
 const m = vi.mocked(api)
@@ -712,7 +713,7 @@ describe('NotaSefaz', () => {
       it('outro motivo do robô com o XML por ler: continua o texto de sempre ("as parcelas que você digitar valem") e o pedido para digitar', async () => {
         aLancar(pronta({ parcelas: null, lancamento_estado: 'revisar', lancamento_motivo: 'parou antes de gerar o pedido (nada lançado): item sem unidade' }))
         render(<NotaSefaz />)
-        const editor = await screen.findByTestId('editor-parcelas')
+        const editor = await abrirEditorDeParcelas()
         expect(within(editor).getByTestId('parcelas-xml-nao-lido')).toHaveTextContent('as parcelas que você digitar valem')
         expect(editor).toHaveTextContent('A nota não veio informando os boletos. Digite as parcelas do boleto')
         expect(editor).not.toHaveTextContent('Digitar as parcelas não adianta')
@@ -721,7 +722,7 @@ describe('NotaSefaz', () => {
       it('o XML já foi lido (sem boletos) e o motivo antigo ainda é "não consegui ler o XML": volta o texto de "não traz os boletos" e o pedido para digitar', async () => {
         aLancar(pronta({ parcelas: [], lancamento_estado: 'revisar', lancamento_motivo: 'não consegui ler o XML da nota (sem XML)' }))
         render(<NotaSefaz />)
-        const editor = await screen.findByTestId('editor-parcelas')
+        const editor = await abrirEditorDeParcelas()
         expect(editor).toHaveTextContent('O arquivo desta nota não traz os boletos. Digite as parcelas do boleto')
         expect(within(editor).queryByTestId('parcelas-xml-nao-lido')).not.toBeInTheDocument()
         expect(editor).not.toHaveTextContent('Ainda não dá para saber os boletos')
@@ -730,7 +731,7 @@ describe('NotaSefaz', () => {
       it('com Boleto: o Lançar fica apagado até a soma fechar; depois lança com as parcelas digitadas', async () => {
         aLancar(pronta({ parcelas: null }))
         render(<NotaSefaz />)
-        await screen.findByTestId('editor-parcelas')
+        await abrirEditorDeParcelas()
         expect(botaoLancar()).toBeDisabled()
         await digitar(1, '2026-11-05', '60,00')
         expect(botaoLancar()).toBeDisabled()                                            // faltam 40
@@ -748,7 +749,7 @@ describe('NotaSefaz', () => {
       it('com PIX (ou outra forma que não é boleto): sem editor; o aviso financeiro explica a regra e o Lançar vai sem parcelas', async () => {
         aLancar(pronta({ parcelas: null }))
         render(<NotaSefaz />)
-        await screen.findByTestId('editor-parcelas')
+        await abrirEditorDeParcelas()
         await userEvent.selectOptions(comoPagar(), 'pix:pangbank|ij')
         expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
         expect(screen.getByTestId('aviso-financeiro'))
@@ -892,7 +893,7 @@ describe('NotaSefaz', () => {
     it('mostra o editor com o aviso da falha do fornecedor e trava o Lançar até a soma fechar', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      const editor = await screen.findByTestId('editor-parcelas')
+      const editor = await abrirEditorDeParcelas()
       expect(editor).toHaveTextContent('O arquivo da nota da MATEUS SUPERMERCADOS não traz a forma de pagamento nem os boletos (falha do fornecedor)')
       expect(botaoLancar()).toBeDisabled()
       expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Parcela 1: informe o vencimento')
@@ -904,7 +905,7 @@ describe('NotaSefaz', () => {
     it('adicionar parcela, completar o que falta e lançar: manda as parcelas à função e confirma com a lista', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       await digitar(1, '2026-11-05', '60,00')
       await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
       fireEvent.change(screen.getByLabelText('Vencimento da parcela 2'), { target: { value: '2026-11-12' } })
@@ -923,7 +924,7 @@ describe('NotaSefaz', () => {
     it('regra 4: 3 parcelas de valores diferentes que somam o valor da nota liberam o Lançar e vão como foram digitadas', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       expect(screen.getByTestId('editor-parcelas')).toHaveTextContent('Podem ser iguais ou diferentes; o que vale é a soma ser igual ao valor da nota')
       await digitar(1, '2026-11-05', '70,00')
       await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
@@ -943,7 +944,7 @@ describe('NotaSefaz', () => {
     it('regra 4: 1 centavo a mais ou a menos no total trava o Lançar e diz quanto passou ou falta (e oferece completar a última)', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       await digitar(1, '2026-11-05', '100,01')
       expect(screen.getByTestId('resumo-parcelas')).toHaveTextContent('Passou 0,01 do valor da nota')
       expect(botaoLancar()).toBeDisabled()
@@ -958,7 +959,7 @@ describe('NotaSefaz', () => {
     it('parcela única com o valor total já libera o Lançar', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       await digitar(1, '2026-11-05', '100')
       expect(botaoLancar()).toBeEnabled()
     })
@@ -966,7 +967,7 @@ describe('NotaSefaz', () => {
     it('remover parcela (só com 2 ou mais) e vencimento antes da emissão trava', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       expect(screen.queryByRole('button', { name: /Remover parcela/ })).not.toBeInTheDocument()
       await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
       await userEvent.click(screen.getByRole('button', { name: 'Remover parcela 2' }))
@@ -979,7 +980,7 @@ describe('NotaSefaz', () => {
     it('outra forma de pagamento (cartão, dinheiro) esconde o editor e não manda parcelas', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       await userEvent.selectOptions(comoPagar(), 'cartao')
       expect(screen.queryByTestId('editor-parcelas')).not.toBeInTheDocument()
       await userEvent.click(botaoLancar())
@@ -1001,13 +1002,13 @@ describe('NotaSefaz', () => {
     it('fornecedor fora da regra provisória: aviso genérico, mesmo editor', async () => {
       aLancar(semDuplicata({ emitente: 'OUTRO LTDA', cnpj_emitente: '99999999000199' }))
       render(<NotaSefaz />)
-      expect(await screen.findByTestId('editor-parcelas')).toHaveTextContent('O arquivo desta nota não traz os boletos.')
+      expect(await abrirEditorDeParcelas()).toHaveTextContent('O arquivo desta nota não traz os boletos.')
     })
 
     it('nota que voltou do robô reabre com as parcelas que o Ivan já tinha digitado', async () => {
       aLancar(semDuplicata({ parcelas_manuais: [{ vencimento: '2026-11-05', valor: 60 }, { vencimento: '2026-11-12', valor: 40 }] }))
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       expect((screen.getByLabelText('Valor da parcela 1') as HTMLInputElement).value).toBe('60,00')
       expect((screen.getByLabelText('Vencimento da parcela 2') as HTMLInputElement).value).toBe('2026-11-12')
       expect(botaoLancar()).toBeEnabled()
@@ -1019,7 +1020,7 @@ describe('NotaSefaz', () => {
       it('o editor de parcelas e o Como pagar ABREM mesmo com item sem produto; o Lançar continua travado, com o aviso', async () => {
         aLancar(semProduto())
         render(<NotaSefaz />)
-        const editor = await screen.findByTestId('editor-parcelas')
+        const editor = await abrirEditorDeParcelas()
         expect(within(editor).getByTestId('parcelas-aguardando')).toHaveTextContent('Pode digitar as parcelas já: elas ficam guardadas neste aparelho')
         expect(comoPagar()).toBeEnabled()
         expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('Item sem produto no SisChef: escolha o produto na caixa de associação (ou associe no SisChef) antes de lançar')
@@ -1033,7 +1034,7 @@ describe('NotaSefaz', () => {
         aLancar(semProduto({ itens: [item({ produto_id: null, associacao: null, n: 1, unidade_sischef: 'UN' })],
           associacoes_app: { '1': { produto_id: 1854713, produto_nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg' } } }))
         render(<NotaSefaz />)
-        expect(await screen.findByTestId('editor-parcelas')).toBeInTheDocument()
+        expect(await abrirEditorDeParcelas()).toBeInTheDocument()
         expect(screen.getByTestId('bloqueio-nota')).toHaveClass('amarelo')
         expect(screen.getByTestId('bloqueio-nota')).toHaveTextContent('falta a conversão de unidade')
         await digitar(1, '2026-11-05', '100,00')
@@ -1044,7 +1045,7 @@ describe('NotaSefaz', () => {
         // o item é em KG (fixture padrão) e o produto confirmado tem "un" na lista — que é só um chute pelo nome: no SisChef pode estar em KG mesmo
         aLancar(semProduto({ associacoes_app: { '1': { produto_id: 3138573, produto_nome: 'ÓLEO DE SOJA - INSUMOS (UN)', unidade: 'un' } } }))
         render(<NotaSefaz />)
-        expect(await screen.findByTestId('editor-parcelas')).toBeInTheDocument()
+        expect(await abrirEditorDeParcelas()).toBeInTheDocument()
         expect(screen.queryByTestId('bloqueio-nota')).not.toBeInTheDocument()
         expect(screen.queryByTestId('parcelas-aguardando')).not.toBeInTheDocument()
         expect(screen.getByTestId('lancar-associa-item')).toHaveTextContent('unidade no SisChef não confirmada pelo app')
@@ -1055,7 +1056,7 @@ describe('NotaSefaz', () => {
       it('com a decisão do app completa (etapa 2) nada trava: o editor abre sem o aviso de "aguardando produto" e o Lançar libera quando a soma fecha', async () => {
         aLancar(semProduto({ associacoes_app: { '1': { produto_id: 1854713, produto_nome: 'Q. MUÇARELA - INSUMOS (KG)', unidade: 'kg' } } }))
         render(<NotaSefaz />)
-        expect(await screen.findByTestId('editor-parcelas')).toBeInTheDocument()
+        expect(await abrirEditorDeParcelas()).toBeInTheDocument()
         expect(screen.queryByTestId('parcelas-aguardando')).not.toBeInTheDocument()
         expect(screen.queryByTestId('bloqueio-nota')).not.toBeInTheDocument()
         expect(screen.getByTestId('lancar-associa')).toHaveTextContent('Q. MUÇARELA - INSUMOS (KG) (cód. 1854713)')
@@ -1067,7 +1068,7 @@ describe('NotaSefaz', () => {
       it('o que foi digitado fica guardado: recarregar a página (e a leitura trazer o produto já associado) não perde as parcelas; ao lançar, o rascunho some', async () => {
         aLancar(semProduto())
         const { unmount } = render(<NotaSefaz />)
-        await screen.findByTestId('editor-parcelas')
+        await abrirEditorDeParcelas()
         await digitar(1, '2026-11-05', '60,00')
         await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
         fireEvent.change(screen.getByLabelText('Vencimento da parcela 2'), { target: { value: '2026-11-12' } })
@@ -1077,7 +1078,7 @@ describe('NotaSefaz', () => {
 
         aLancar(semDuplicata())                                                           // ...e reabre depois de o Ivan associar no SisChef (todos os itens com produto)
         render(<NotaSefaz />)
-        await screen.findByTestId('editor-parcelas')
+        await abrirEditorDeParcelas()
         expect((screen.getByLabelText('Vencimento da parcela 1') as HTMLInputElement).value).toBe('2026-11-05')
         expect((screen.getByLabelText('Valor da parcela 1') as HTMLInputElement).value).toBe('60,00')
         expect((screen.getByLabelText('Valor da parcela 2') as HTMLInputElement).value).toBe('40,00')
@@ -1130,7 +1131,7 @@ describe('NotaSefaz', () => {
     it('nunca é "pronta" nem mostra o aviso financeiro duplicado', async () => {
       aLancar(semDuplicata())
       render(<NotaSefaz />)
-      await screen.findByTestId('editor-parcelas')
+      await abrirEditorDeParcelas()
       expect(screen.queryByTestId('nota-pronta')).not.toBeInTheDocument()
       expect(screen.queryByTestId('aviso-financeiro')).not.toBeInTheDocument()
     })

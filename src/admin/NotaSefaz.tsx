@@ -252,6 +252,11 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
   const [editando, setEditando] = useState(false)
   useEffect(() => { if (resultado.ok) setEditando(false) }, [resultado.ok])
   const recolhido = resultado.ok && !editando
+  // Pedido do Ivan (27/11/2026): antes de ler, o app pergunta QUANTOS boletos a nota tem; lê o 1º, abre o 2º sozinho, e assim até o último (aí vai ao resumo).
+  const [perguntado, setPerguntado] = useState(false)
+  const [vez, setVez] = useState<number | null>(null)   // índice do boleto cuja leitura está na vez (null = fora da sequência)
+  const perguntando = !soResumo && !perguntado && linhas.every((l) => l.vencimento.trim() === '' && l.valor.trim() === '')
+  const escolherQuantos = (n: number) => { onChange(Array.from({ length: n }, () => ({ vencimento: '', valor: '' }))); setPerguntado(true); setVez(0) }
   const mudar = (i: number, campo: keyof LinhaParcela, valor: string) => onChange(linhas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
   // Linhas "em uso": as que têm alguma coisa digitada (linha totalmente em branco é só uma linha aberta e não conta; se TODAS estão em branco, valem todas).
   const emBranco = (l: LinhaParcela): boolean => l.vencimento.trim() === '' && l.valor.trim() === ''
@@ -284,6 +289,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
     if (venc !== '' && linhas.some((l, j) => j !== linha && l.vencimento === venc && parseValorBr(l.valor) === b.valor)) return { ok: false, texto: 'Esse boleto já está na lista de parcelas.' }
     const nova: LinhaParcela = { vencimento: venc, valor: formatarValorBr(b.valor) }
     onChange(linhas.map((l, i) => (i === linha ? nova : l)))
+    if (vez === linha) setVez(linha + 1 < linhas.length ? linha + 1 : null)   // sequência: o leitor do próximo boleto abre sozinho (ou termina)
     const hoje = new Date()
     const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
     const base = venc === ''
@@ -320,6 +326,17 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           confirmado aqui no app, com a conversão de unidade se precisar).
         </p>
       )}
+      {perguntando && (
+        <div className="quantos-boletos" data-testid="quantos-boletos">
+          <p><b>Quantos boletos tem esta nota?</b></p>
+          <div className="acoes">
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <button key={n} type="button" className="botao" disabled={desabilitado} onClick={() => escolherQuantos(n)} data-testid={`quantos-${n}`}>{n}</button>
+            ))}
+          </div>
+          <button type="button" className="link" disabled={desabilitado} onClick={() => setPerguntado(true)} data-testid="quantos-digitar">Prefiro digitar as parcelas</button>
+        </div>
+      )}
       {recolhido && (
         <div className="boletos-resumo" data-testid="boletos-resumo">
           <ul className="conferir-itens">
@@ -328,7 +345,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           <button type="button" className="link" disabled={desabilitado} onClick={() => setEditando(true)}>Alterar boletos</button>
         </div>
       )}
-      <div hidden={recolhido} data-testid="editor-linhas">
+      <div hidden={recolhido || perguntando} data-testid="editor-linhas">
       {linhas.map((l, i) => (
         <div key={i} className="linha-parcela" data-testid="linha-parcela">
           <div className="boleto-titulo"><b>Boleto {i + 1} de {linhas.length}</b>{!emBranco(l) && parseValorBr(l.valor) != null && l.vencimento !== '' && <span className="boleto-lido">preenchido</span>}</div>
@@ -338,7 +355,7 @@ function EditorParcelas({ nota, linhas, resultado, desabilitado, aguardandoProdu
           <label>Valor da parcela {i + 1}
             <input type="text" inputMode="decimal" placeholder="0,00" value={l.valor} disabled={desabilitado} onChange={(e) => mudar(i, 'valor', e.target.value)} />
           </label>
-          {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={(b) => receberBoleto(b, i)} rotulo={emBranco(l) ? 'Ler código de barras' : 'Ler outro boleto'} />}
+          {!soResumo && <LerBoletoPorFoto desabilitado={desabilitado} onBoleto={(b) => receberBoleto(b, i)} abrirAgora={vez === i} rotulo={emBranco(l) ? 'Ler código de barras' : 'Ler outro boleto'} />}
           {linhas.length > 1 && (
             <button type="button" className="link" disabled={desabilitado} onClick={() => onChange(linhas.filter((_, j) => j !== i))}>
               Remover parcela {i + 1}
