@@ -26,8 +26,8 @@ import AvisoPreco from './AvisoPreco'
 import { Origem } from './Origem'
 import { ContaAutomatica } from './ContaAutomatica'
 import { contaDoItem } from './contaDoItem'
-import { avisoDePrecoDoItem, itensComPrecoForaDoNormal } from './precoDaNota'
-import { detalheDoPrecoForaDoNormal } from './precoForaDoNormal'
+import { avisoDePrecoDoItem, itensComPrecoAcimaDoHabitual, itensComPrecoForaDoNormal } from './precoDaNota'
+import { detalheDoPrecoForaDoNormal, textoAcimaDoHabitual } from './precoForaDoNormal'
 import {
   AVISO_BONIFICACAO_COM_BOLETO, AVISO_FALTA_CONVERSAO, AVISO_FORMA_NAO_PROVADA, AVISO_ITAU_EXTINTA, AVISO_PRESA, FORMA_ITAU_EXTINTA, FORMA_SO_ESTOQUE, OPCAO_BONIFICACAO, OPCOES_ANTES_DO_PIX, OPCOES_DEPOIS_DO_PIX, OPCOES_PIX,
   TEXTO_BONIFICACAO_DEVOLVIDA, TEXTO_CONFIRMA_BONIFICACAO, associacoesPeloRobo, bloqueiosDaNota, bonificacaoComBoletos, bonificacaoSemCobranca, cfopsDaBonificacao, devolvidaPorFormaDeBonificacao,
@@ -550,6 +550,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const trancado = useRef(false) // trava síncrona contra duplo toque (o `enviando` só vale depois do próximo desenho)
   // Itens cujo preço por unidade de estoque (total da linha ÷ o que entra no estoque) não se parece com o das últimas compras do produto (pedido do Ivan, 29/10/2026): só avisa, nunca trava.
   const precosFora = useMemo(() => itensComPrecoForaDoNormal(nota, catalogo, memoria), [nota, catalogo, memoria])
+  const precosAltos = useMemo(() => itensComPrecoAcimaDoHabitual(nota, catalogo, memoria), [nota, catalogo, memoria])
 
   // Bonificação sem cobrança (pedido do Ivan, 27/10/2026 — CFOP 5910/6910 em TODOS os itens e o XML lido sem boletos): "só estoque" sozinho. Vale mais que qualquer escolha anterior desta tela
   // (o robô pode etiquetar a nota depois de o Ivan mexer no "Como pagar"). Com boletos no XML a tela só avisa; com o XML por ler a nota é como qualquer outra (notaSefazRegras).
@@ -864,6 +865,16 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
             ))}
           </ul>
           <p>Quase sempre é a embalagem: a “UN” da nota é um fardo, uma caixa ou um pacote. Abra “Conferir itens e financeiro” e toque em Editar no item para acertar a conversão.</p>
+        </div>
+      )}
+      {precosAltos.length > 0 && !robotOuMetade && (
+        <div className="sub precos-altos" role="status" data-testid="precos-acima-do-habitual">
+          <b>{precosAltos.length === 1 ? 'Um item está mais caro que o habitual' : `${precosAltos.length} itens estão mais caros que o habitual`}</b> (só um aviso, o Lançar segue livre):
+          <ul>
+            {precosAltos.map(({ item, indice, aviso }) => (
+              <li key={indice} data-testid="preco-alto-item">{semCodFor(item.descricao)}: {textoAcimaDoHabitual(aviso, formatarReais)}</li>
+            ))}
+          </ul>
         </div>
       )}
       {planoTirar ? (

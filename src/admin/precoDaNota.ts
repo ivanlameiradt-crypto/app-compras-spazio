@@ -5,7 +5,7 @@
 import { conversaoDaDecisao, quantidadeNoEstoque } from './associacaoRegras'
 import { memoriaDoItem, situacaoDaMemoria } from './embalagemLembrada'
 import { CFOPS_BONIFICACAO, conversaoDeItemAssociado, decisaoCompleta, decisaoDoItem, itemAssociado, itemPedeConversao } from './notaSefazRegras'
-import { precoForaDoNormal, type PrecoForaDoNormal } from './precoForaDoNormal'
+import { precoAcimaDoHabitual, precoForaDoNormal, type PrecoAcimaDoHabitual, type PrecoForaDoNormal } from './precoForaDoNormal'
 import { unidadeDoProduto } from './unidadeEstoque'
 import type { ItemNotaSefaz, NfeAprendizado, NotaSefazLista, ProdutoCatalogo } from '../lib/tipos'
 
@@ -106,6 +106,27 @@ export function itensComPrecoForaDoNormal(
   ;(Array.isArray(nota.itens) ? nota.itens : []).forEach((item, indice) => {
     const aviso = avisoDePrecoDoItem(nota, item, catalogo, memoria)
     if (aviso) saida.push({ item, indice, aviso })
+  })
+  return saida
+}
+
+export interface ItemComPrecoAcimaDoHabitual { item: ItemNotaSefaz; indice: number; aviso: PrecoAcimaDoHabitual }
+
+/** Os itens da nota com preço 10% ou mais acima da média (aviso leve, sem travar), na ordem da nota. */
+export function itensComPrecoAcimaDoHabitual(
+  nota: NotaSefazLista,
+  catalogo: readonly ProdutoCatalogo[] | null | undefined,
+  memoria: readonly NfeAprendizado[] | null | undefined,
+): ItemComPrecoAcimaDoHabitual[] {
+  const saida: ItemComPrecoAcimaDoHabitual[] = []
+  ;(Array.isArray(nota.itens) ? nota.itens : []).forEach((item, indice) => {
+    try {
+      const p = precoPorUnidadeDoItem(nota, item, catalogo, memoria)
+      if (!p) return
+      const produto = (catalogo ?? []).find((x) => x.produto_id === p.produto_id)
+      const aviso = precoAcimaDoHabitual(p.preco, p.unidade, produto?.compras)
+      if (aviso) saida.push({ item, indice, aviso })
+    } catch { /* o aviso é um extra: item mal formado vira "sem aviso" */ }
   })
   return saida
 }
