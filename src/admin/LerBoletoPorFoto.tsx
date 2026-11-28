@@ -1,15 +1,19 @@
 // "Ler boleto pela foto": a Marilane tira a foto do boleto (ou digita o número) e o app preenche vencimento e valor da parcela, sem digitar.
 // Pedido do Ivan em 25/11/2026 (notas do MATEUS vêm sem boleto no XML). A foto é lida no próprio aparelho e não é guardada.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import LeitorAoVivo from './LeitorAoVivo'
 import { lerDigitosDaFoto } from './boletoFoto'
 import { lerBoleto, type BoletoLido } from './boletoRegras'
 
 const MSG_NAO_ACHOU = 'Não consegui ler o código de barras nesta foto. Chegue mais perto, deixe o código reto e bem iluminado, ou digite o número do boleto.'
 
-export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler código de barras' }: {
+export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler código de barras', abrirAgora = false, aoUsar }: {
   desabilitado: boolean
   rotulo?: string
+  /** Sequência de boletos (pedido do Ivan, 27/11): quando passa a true, abre o leitor ao vivo sozinho (é a vez deste boleto). */
+  abrirAgora?: boolean
+  /** Chamado depois que o boleto lido foi aceito (o pai avança para o próximo da sequência). */
+  aoUsar?: () => void
   /** Devolve a mensagem para mostrar (sucesso ou aviso) quando o boleto foi usado, ou null se recusou. */
   onBoleto: (b: BoletoLido) => { ok: boolean; texto: string }
 }) {
@@ -20,13 +24,16 @@ export default function LerBoletoPorFoto({ desabilitado, onBoleto, rotulo = 'Ler
   const [numero, setNumero] = useState('')
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null)
 
+  useEffect(() => { if (abrirAgora) { setAviso(null); setAoVivo(true) } }, [abrirAgora])
   const usar = (digitos: string) => {
     const r = lerBoleto(digitos)
     if (!r.ok) { setAviso({ ok: false, texto: r.motivo }); return }
     if (r.boleto.valor == null) { setAviso({ ok: false, texto: 'Este boleto não traz o valor (quem paga escolhe). Digite a parcela à mão.' }); return }
-    setAviso(onBoleto(r.boleto))
+    const resposta = onBoleto(r.boleto)
+    setAviso(resposta)
     setNumero('')
     setDigitando(false)
+    if (resposta.ok) aoUsar?.()
   }
   const aoEscolherFoto = async (arquivo: File | undefined) => {
     if (!arquivo) return

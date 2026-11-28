@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import * as api from '../../src/lib/api'
 import NotaSefaz from '../../src/admin/NotaSefaz'
 import type { NotaSefazLista, ProdutoCatalogo } from '../../src/lib/tipos'
+import { abrirEditorDeParcelas } from './abrirEditorDeParcelas'
 
 vi.mock('../../src/lib/api')
 const m = vi.mocked(api)
@@ -55,7 +56,7 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes iguais ao centavo (MATEUS 000089284, 07/10)', () => {
   it('3 parcelas "iguais" de 598,16: soma 1.794,48, falta 1 centavo — o Lançar fica apagado e a tela diz por quê e como resolver', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await tresParcelas()
     for (const i of [1, 2, 3]) await digitar(i, ['2026-10-16', '2026-10-23', '2026-10-30'][i - 1], '598,16')
     expect(botaoLancar()).toBeDisabled()
@@ -66,7 +67,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
 
   it('3 parcelas de 598,17: passa 2 centavos — também trava, e oferece ajustar a última', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await tresParcelas()
     for (const i of [1, 2, 3]) await digitar(i, ['2026-10-16', '2026-10-23', '2026-10-30'][i - 1], '598,17')
     expect(botaoLancar()).toBeDisabled()
@@ -79,7 +80,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
 
   it('"Dividir em parcelas iguais": com 3 linhas e as datas, preenche 598,16 + 598,16 + 598,17 e o Lançar acende sozinho', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await tresParcelas()
     expect(botaoLancar()).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Dividir em parcelas iguais' }))
@@ -92,7 +93,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
 
   it('com o Lançar aceso, Lançar → Confirmar manda as 3 parcelas (somando o valor da nota ao centavo)', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await tresParcelas()
     await userEvent.click(screen.getByRole('button', { name: 'Dividir em parcelas iguais' }))
     await userEvent.click(botaoLancar())
@@ -106,7 +107,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
   it('valor que divide certinho (R$ 100 em 4): todas iguais, sem centavo sobrando', async () => {
     m.notasALancar.mockResolvedValue([mateus({ valor_nf: 100 })])
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     for (let k = 0; k < 3; k++) await userEvent.click(screen.getByRole('button', { name: 'Existe mais um boleto' }))
     await userEvent.click(screen.getByRole('button', { name: 'Dividir em parcelas iguais' }))
     for (const i of [1, 2, 3, 4]) expect(screen.getByLabelText(`Valor da parcela ${i}`)).toHaveValue('25,00')
@@ -114,7 +115,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
 
   it('uma parcela só: recebe o valor total; sem a dica do centavo quando não falta nada', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await userEvent.click(screen.getByRole('button', { name: 'Dividir em parcelas iguais' }))
     expect(screen.getByLabelText('Valor da parcela 1')).toHaveValue('1.794,49')
     expect(screen.queryByTestId('dica-centavo')).not.toBeInTheDocument()
@@ -122,7 +123,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
 
   it('o Lançar acende SOZINHO assim que a soma bate (sem outro toque), inclusive digitando à mão a última parcela', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     await tresParcelas()
     await digitar(1, '2026-10-16', '598,16')
     await digitar(2, '2026-10-23', '598,16')
@@ -134,7 +135,7 @@ describe('NotaSefaz — parcelas iguais: R$ 1.794,49 não divide em 3 partes igu
 
   it('o painel de conferir mostra tudo certo (leite com 0,395) e nenhum aviso de item trava o Lançar', async () => {
     render(<NotaSefaz />)
-    await screen.findByTestId('editor-parcelas')
+    await abrirEditorDeParcelas()
     expect(screen.queryByTestId('bloqueio-nota')).not.toBeInTheDocument()
     expect(screen.queryByTestId('lancar-travado')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('conferir')).getAllByTestId('conferir-item').length).toBe(3)
