@@ -509,6 +509,7 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [mudandoForma, setMudandoForma] = useState(false)
+  const [verTudo, setVerTudo] = useState(false) // nota pronta: por padrão só o resumo e o Lançar; "Ver itens e financeiro" abre tudo (pedido do Ivan, 27/11/2026)
   const [tirando, setTirando] = useState(false) // "Tirar a conversão e lançar de novo" gravando (14/11/2026)
   const [erroTirar, setErroTirar] = useState('')
   const [sugerindo, setSugerindo] = useState(false) // uma sugestão com número pronto (conversão, boletos da nota, forma lembrada) gravando/lançando (14/11/2026)
@@ -571,6 +572,11 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
   const podeLancar = !travada && forma !== '' && !enviando && !outraOcupando && !fretePendente && (!exigeParcelas || resultadoParcelas.ok) && (!plano || plano.ok)
   // Etapa 2: o que AINDA trava o Lançar por item sem produto (decisão do app incompleta) e o que o robô vai associar no SisChef ao lançar (decisão completa).
   const pendencias = pendenciasParaLancar(nota)
+  // Pronta (o Lançar está aceso: itens com produto, forma escolhida e boletos que fecham, e o robô não devolveu a nota): o cartão mostra só o resumo e o Lançar. Com aviso de preço fora do normal
+  // ou com mensagem do robô ele fica aberto, para a mensagem ser lida; "Ver itens e financeiro" abre tudo (pedido do Ivan, 27/11/2026).
+  const resumida = podeLancar && pendencias.length === 0 && estado == null && precosFora.length === 0 && !verTudo
+  const prontaParaLancar = podeLancar && pendencias.length === 0 && estado == null && precosFora.length === 0
+  useEffect(() => { if (!prontaParaLancar) setVerTudo(false) }, [prontaParaLancar]) // desmanchou a prontidão: da próxima vez que ficar pronta, recolhe de novo
   const peloRobo = associacoesPeloRobo(nota)
   // Escolher produto de um item sem produto: não com o robô lançando a nota nem com ela pela metade (o banco também recusa).
   const podeAssociar = estado !== 'erro' && !(estado === 'lancando' && !presa)
@@ -794,7 +800,18 @@ function NotaALancar({ nota, nomeExibido, padroes, seguidas, recarregar, aplicar
         <span className="nota-titulo-texto"><b>{nomeExibido ?? nota.emitente}</b> · NF {nota.numero} · {ddmm(nota.emissao)}{nota.valor_nf != null && ` · ${formatarReais(nota.valor_nf)}`}</span>
         {etiqueta && <span className={`nota-etiqueta etq-${etiqueta.tom}`} data-testid="nota-etiqueta">{etiqueta.texto}</span>}
       </summary>
-      <div className={`nota-corpo${confirmando ? ' so-confirmar' : ''}`}>
+      <div className={`nota-corpo${confirmando ? ' so-confirmar' : ''}${resumida ? ' resumida' : ''}`}>
+      {resumida && (
+        <div className="nota-resumo" data-testid="nota-resumo">
+          {(() => {
+            const parcelas = exigeParcelas ? resultadoParcelas.parcelas : plano?.parcelas ?? (forma === 'boleto' ? financeiro.parcelas : [])
+            return parcelas.length > 0
+              ? (<ul className="conferir-itens">{parcelas.map((p, i) => (<li key={i}><span>Boleto {i + 1} · vence {dataBr(p.vencimento)}</span><b>{formatarReais(p.valor)}</b></li>))}</ul>)
+              : (<p className="sub">{soEstoque ? 'Nota de bonificação: entra só no estoque.' : `Pagamento: ${rotuloForma(forma)}`}</p>)
+          })()}
+          <button type="button" className="link" onClick={() => setVerTudo(true)} data-testid="ver-tudo">Ver itens e financeiro</button>
+        </div>
+      )}
 
       {/* Bonificação sem cobrança: uma informação calma (não é aviso) — o que é a nota e que ela entra só no estoque. */}
       {soEstoque && (

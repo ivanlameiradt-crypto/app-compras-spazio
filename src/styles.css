@@ -934,3 +934,8 @@ div.secao { display: block; width: auto; background: none; border: 0; border-top
 .leitor-vivo-botoes .botao { flex: 1 1 140px; min-height: 56px; }
 @media (prefers-reduced-motion: no-preference) { .leitor-vivo-linha { animation: pulsa-linha 1.6s ease-in-out infinite; } }
 @keyframes pulsa-linha { 50% { opacity: 0.55; } }
+
+/* Nota pronta (27/11/2026): só o resumo dos boletos, o aviso "Pronta para lançar" e o Lançar; "Ver itens e financeiro" mostra o resto. */
+.nota-corpo.resumida > :not(.nota-resumo):not(.acoes):not(.bloco-envio):not([data-testid="nota-pronta"]) { display: none; }
+.nota-corpo.so-confirmar > .nota-resumo { display: none; }
+.nota-resumo { display: grid; gap: 8px; margin: 8px 0; }
