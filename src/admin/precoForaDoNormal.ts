@@ -116,3 +116,41 @@ export function detalheDoPrecoForaDoNormal(a: PrecoForaDoNormal, reais: (v: numb
 export function textoDoPrecoForaDoNormal(a: PrecoForaDoNormal, reais: (v: number) => string): string {
   return `Preço fora do normal: ${detalheDoPrecoForaDoNormal(a, reais)} ${CONSELHO_DO_PRECO}`
 }
+
+/** Quanto acima da média (a mediana das últimas compras) o preço precisa estar para o aviso leve (28/11/2026: "alerta de preço", fase 1 do plano de compras). */
+export const LIMITE_ACIMA_DO_HABITUAL = 1.1
+/** Quantas compras (mínimo) para existir uma média confiável. */
+export const COMPRAS_PARA_A_MEDIA = 3
+
+export interface PrecoAcimaDoHabitual {
+  preco: number
+  /** O preço mais comum (mediana) das últimas compras, na mesma unidade. */
+  media: number
+  /** Quanto acima da média, em %, arredondado (18 = 18% mais caro). */
+  percentual: number
+  unidade: string
+}
+
+/**
+ * Aviso LEVE (não trava nada): o preço está 10% ou mais acima do que o produto custa normalmente (mediana das últimas compras, na mesma unidade), mas NÃO é o caso grave do
+ * precoForaDoNormal (3x, quase sempre erro de embalagem). Precisa de 3 ou mais compras e a última compra também não pode ser bem mais cara que a média (senão o "normal" mudou). Na dúvida, null.
+ */
+export function precoAcimaDoHabitual(
+  preco: number | null | undefined,
+  unidadeDoEstoque: string | null | undefined,
+  compras: readonly PrecoDeCompra[] | null | undefined,
+): PrecoAcimaDoHabitual | null {
+  if (!numeroBom(preco)) return null
+  if (precoForaDoNormal(preco, unidadeDoEstoque, compras)) return null // o caso grave já tem o aviso dele
+  const referencia = comprasDaReferencia(compras, unidadeDoEstoque)
+  if (referencia.length < COMPRAS_PARA_A_MEDIA) return null
+  const media = mediana(referencia.map((c) => c.preco))
+  if (!(media > 0) || preco / media < LIMITE_ACIMA_DO_HABITUAL) return null
+  if (referencia[0].preco / media >= LIMITE_ACIMA_DO_HABITUAL) return null // a última compra já foi cara: o preço "normal" mudou, não há o que alertar
+  return { preco, media, percentual: Math.round((preco / media - 1) * 100), unidade: unidadeNorm(unidadeDoEstoque) }
+}
+
+/** "Arroz: R$ 6,90 por KG, 18% acima da média de R$ 5,85." */
+export function textoAcimaDoHabitual(a: PrecoAcimaDoHabitual, reais: (v: number) => string): string {
+  return `${reais(a.preco)} por ${a.unidade.toUpperCase()}, ${a.percentual}% acima da média de ${reais(a.media)}.`
+}
