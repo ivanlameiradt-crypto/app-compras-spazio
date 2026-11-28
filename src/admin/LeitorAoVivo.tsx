@@ -1,8 +1,8 @@
 // Leitor de código de barras ao vivo (pedido do Ivan, 27/11/2026): abre a câmera com uma linha no meio da tela, lê sozinho e entrega os 44 dígitos. Sem bater foto.
 // Se não ler, "Tirar foto" (flash automático) e, por fora, "Digitar o número". A luz (lanterna) liga por um botão, quando o aparelho deixa.
 import { useEffect, useRef, useState } from 'react'
-import { cinzaDoDesenho, criarLeitorDeBarras, lerDigitosDaFoto, type LeitorDeBarras } from './boletoFoto'
-import { abrirCamera, fotoComFlashAutomatico, lanternaDisponivel, pararCamera, trocarLanterna } from './cameraAoVivo'
+import { cinzaDoDesenho, criarDetectorNativo, criarLeitorDeBarras, lerDigitosDaFoto, lerQuadroAoVivo, type LeitorDeBarras } from './boletoFoto'
+import { abrirCamera, ajustarFocoEZoom, fotoComFlashAutomatico, lanternaDisponivel, pararCamera, trocarLanterna } from './cameraAoVivo'
 
 /** Quantas vezes por segundo a tela tenta ler (a leitura pesa; o suficiente para parecer instantâneo). */
 const INTERVALO_MS = 220
@@ -19,6 +19,7 @@ export default function LeitorAoVivo({ aoLer, aoFechar, aoDigitar }: {
   const video = useRef<HTMLVideoElement>(null)
   const fluxo = useRef<MediaStream | null>(null)
   const leitor = useRef<LeitorDeBarras | null>(null)
+  const detector = useRef<((fonte: CanvasImageSource) => Promise<string | null>) | null>(null) // leitor nativo do navegador, quando existe (Android/Chrome)
   const encerrado = useRef(false)
   const [situacao, setSituacao] = useState<Situacao>('abrindo')
   const [temLuz, setTemLuz] = useState(false)
@@ -36,12 +37,14 @@ export default function LeitorAoVivo({ aoLer, aoFechar, aoDigitar }: {
       pararCamera(fluxo.current)
       aoLer(digitos)
     }
+    let n = 0
     const quadro = async () => {
       if (encerrado.current) return
       const v = video.current
       if (v && leitor.current && v.videoWidth > 0 && !v.paused) {
-        const q = cinzaDoDesenho(v, v.videoWidth, v.videoHeight, 1280)
-        const digitos = q ? leitor.current(q.cinza, q.largura, q.altura) : null
+        // primeiro o leitor nativo do aparelho (se tiver); depois a biblioteca, alternando a imagem inteira e a faixa do meio com contraste esticado, na resolução do vídeo
+        let digitos: string | null = detector.current ? await detector.current(v) : null
+        if (!digitos && !encerrado.current) digitos = lerQuadroAoVivo(leitor.current, v, v.videoWidth, v.videoHeight, n++)
         if (digitos) return entregar(digitos)
       }
       temporizador = setTimeout(() => void quadro(), INTERVALO_MS)
@@ -52,9 +55,11 @@ export default function LeitorAoVivo({ aoLer, aoFechar, aoDigitar }: {
         if (encerrado.current) { pararCamera(f); return }
         fluxo.current = f
         setTemLuz(lanternaDisponivel(f.getVideoTracks()[0]))
+        void ajustarFocoEZoom(f.getVideoTracks()[0]) // foco contínuo e um pouco de zoom, quando o aparelho deixa
         if (video.current) { video.current.srcObject = f; void video.current.play().catch(() => undefined) } // sem esperar o play: em alguns aparelhos ele demora para responder
         setSituacao('lendo')
         leitor.current = await criarLeitorDeBarras()
+        detector.current = await criarDetectorNativo()
         void quadro()
       } catch (e) {
         const nome = e instanceof Error ? e.name : ''
@@ -107,7 +112,7 @@ export default function LeitorAoVivo({ aoLer, aoFechar, aoDigitar }: {
           {situacao === 'abrindo' ? 'Abrindo a câmera…'
             : situacao === 'sem-permissao' ? 'Permita o uso da câmera para ler o boleto. Você pode tirar foto ou digitar o número.'
             : situacao === 'sem-camera' ? 'Não consegui abrir a câmera neste aparelho. Digite o número do boleto.'
-            : 'Deixe o código de barras do boleto na linha vermelha.'}
+            : 'Afaste um pouco o celular, deixe o código de barras na linha e espere focar.'}
         </p>
       </div>
       <div className="leitor-vivo-base">
